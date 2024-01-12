@@ -9,7 +9,7 @@ import (
 
 /**
  * Simple artificial latency for tests etc
- * Adds a RWMutex for this
+ * Adds a RWMutex for this, so that the added latency is within a lock
  *
  */
 type ArtificialLatency struct {

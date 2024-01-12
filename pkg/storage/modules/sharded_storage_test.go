@@ -1,15 +1,16 @@
-package sources
+package modules
 
 import (
 	"testing"
 
 	"github.com/loopholelabs/silo/pkg/storage"
+	"github.com/loopholelabs/silo/pkg/storage/sources"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestBlockStorage(t *testing.T) {
 	cr := func(s int) storage.StorageProvider {
-		return NewMemoryStorage(s)
+		return sources.NewMemoryStorage(s)
 	}
 
 	// Create a new block storage, backed by memory storage

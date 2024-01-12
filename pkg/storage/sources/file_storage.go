@@ -3,7 +3,7 @@ package sources
 import "os"
 
 /**
- * Simple file storage provider
+ * Simple fixed size file storage provider
  *
  */
 type FileStorage struct {

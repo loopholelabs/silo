@@ -6,6 +6,11 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage"
 )
 
+/**
+ * This filters out writes that aren't necessary based on a source. It can also compress writes to only areas that changed
+ *
+ */
+
 type FilterRedundantWrites struct {
 	prov                storage.StorageProvider
 	source              io.ReaderAt

@@ -1,5 +1,10 @@
 package modules
 
+/**
+ * Nothing storage - eg /dev/null
+ *
+ */
+
 type Nothing struct {
 }
 

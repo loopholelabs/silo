@@ -1,8 +1,8 @@
-package sources
+package modules
 
 /**
  * ShardedStorage is a StorageProvider which shards across multiple StorageProviders.
- * Using this, we can for example do concurrent writes across shards.
+ * Using this, we can for example do concurrent writes across shards, or we can mix different providers.
  *
  */
 

@@ -5,7 +5,7 @@ import (
 )
 
 /**
- * Simple memory based storage provider
+ * Simple fixed size memory based storage provider
  *
  *
  */

@@ -6,6 +6,15 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage"
 )
 
+/**
+ * This splitter does the following...
+ * There's a defaultProvider, which all reads and writes go to.
+ * There's also a list of dynamic providers which can be added to/removed from.
+ * Reads go through the dynamic providers, and if there's a hit, the data is returned.
+ * Writes go to everything.
+ * Reads to the defaultProvider get written back to all dynamic providers.
+ */
+
 type Splitter struct {
 	providers_lock         sync.RWMutex
 	providers              []storage.StorageProvider

@@ -27,7 +27,7 @@ func main() {
 		return sources.NewMemoryStorage(s)
 	}
 	// Setup some sharded memory storage (for concurrent write speed)
-	source := sources.NewShardedStorage(size, size/1024, cr)
+	source := modules.NewShardedStorage(size, size/1024, cr)
 	// Wrap it in metrics
 	metricsSource := modules.NewMetrics(source)
 	// Wrap that in a dirty tracker

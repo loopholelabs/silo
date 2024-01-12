@@ -8,6 +8,12 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage"
 )
 
+/**
+ * Simple cache StorageProvider
+ * This tracks which areas of the source we have, and will only allow reads for areas we have.
+ *
+ */
+
 var Err_Cache_Miss = errors.New("Cache Miss")
 
 type Cache struct {

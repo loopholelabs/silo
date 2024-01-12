@@ -6,6 +6,11 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage"
 )
 
+/**
+ * This adds the ability to lock a storageprovider, and wait until it's unlocked.
+ *
+ */
+
 type Lockable struct {
 	prov   storage.StorageProvider
 	lock   *sync.Cond

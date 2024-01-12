@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/loopholelabs/silo/pkg/storage"
+	"github.com/loopholelabs/silo/pkg/storage/modules"
 )
 
 type sourceInfo struct {
@@ -24,7 +25,7 @@ func BenchmarkSourcesRead(mb *testing.B) {
 	cr := func(s int) storage.StorageProvider {
 		return NewMemoryStorage(s)
 	}
-	sources = append(sources, sourceInfo{"ShardedMemoryStorage", NewShardedStorage(1024*1024*4, 1024*4, cr)})
+	sources = append(sources, sourceInfo{"ShardedMemoryStorage", modules.NewShardedStorage(1024*1024*4, 1024*4, cr)})
 
 	fileStorage, err := NewFileStorage("test_data", 1024*1024*4)
 	if err != nil {
@@ -76,7 +77,7 @@ func BenchmarkSourcesWrite(mb *testing.B) {
 	cr := func(s int) storage.StorageProvider {
 		return NewMemoryStorage(s)
 	}
-	sources = append(sources, sourceInfo{"ShardedMemoryStorage", NewShardedStorage(1024*1024*4, 1024*4, cr)})
+	sources = append(sources, sourceInfo{"ShardedMemoryStorage", modules.NewShardedStorage(1024*1024*4, 1024*4, cr)})
 
 	fileStorage, err := NewFileStorage("test_data", 1024*1024*4)
 	if err != nil {
@@ -100,7 +101,7 @@ func BenchmarkSourcesWrite(mb *testing.B) {
 		sharded_files[name] = fs
 		return NewMemoryStorage(s)
 	}
-	sources = append(sources, sourceInfo{"ShardedFileStorage", NewShardedStorage(1024*1024*4, 1024*4, crf)})
+	sources = append(sources, sourceInfo{"ShardedFileStorage", modules.NewShardedStorage(1024*1024*4, 1024*4, crf)})
 	defer func() {
 		for f, ms := range sharded_files {
 			ms.Close()

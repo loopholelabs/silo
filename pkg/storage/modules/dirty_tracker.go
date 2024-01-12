@@ -7,6 +7,11 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage"
 )
 
+/**
+ * This can track writes so that we can get a list of dirty areas after some period.
+ *
+ */
+
 type WriteInfo struct {
 	Offset int64
 	Length int
