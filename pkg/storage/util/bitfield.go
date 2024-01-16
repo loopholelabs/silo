@@ -12,6 +12,12 @@ func NewBitfield(size int) *Bitfield {
 	}
 }
 
+func (bf *Bitfield) Clear() {
+	for i := 0; i < len(bf.data); i++ {
+		bf.data[i] = 0
+	}
+}
+
 /**
  * Set the specified bit
  *

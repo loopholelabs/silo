@@ -90,3 +90,15 @@ func TestBitfieldBitsSet(t *testing.T) {
 	assert.Equal(t, false, bf.BitsSet(100, 180))
 
 }
+
+func TestBitfieldClear(t *testing.T) {
+	bf := NewBitfield(1000)
+	// TODO: Add a few test cases here...
+	bf.SetBits(100, 180)
+
+	bf.Clear()
+
+	for i := 0; i < 1000; i++ {
+		assert.Equal(t, false, bf.BitSet(i))
+	}
+}
