@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/modules"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
 	"github.com/stretchr/testify/assert"
@@ -46,73 +47,78 @@ func TestMigration(t *testing.T) {
 				n, err := sourceStorage.WriteAt(b, int64(o))
 				assert.NoError(t, err)
 				assert.Equal(t, 1, n)
-				fmt.Printf("source.WriteAt() [%d]\n", o)
+				block_no := o / blockSize
+				fmt.Printf("source.WriteAt(%d) [%d]\n", block_no, o)
 			}
 		}
 	}()
 
 	// START moving data from sourceStorage to destStorage
 
-	buff := make([]byte, blockSize)
-	for i := 0; i < size; i += blockSize {
-		n, err := sourceStorage.ReadAt(buff, int64(i))
+	mover := func(block uint) {
+		offset := int(block) * blockSize
+		buff := make([]byte, blockSize)
+		n, err := sourceStorage.ReadAt(buff, int64(offset))
 		assert.NoError(t, err)
 		assert.Equal(t, blockSize, n)
 		// Now write it to destStorage
-		n, err = destStorage.WriteAt(buff, int64(i))
+		n, err = destStorage.WriteAt(buff, int64(offset))
 		assert.NoError(t, err)
 		assert.Equal(t, blockSize, n)
-		fmt.Printf("Moved block from source to dest %d / %d\n", i, size)
+		fmt.Printf("Moved block from source to dest %d\n", block)
 		time.Sleep(5 * time.Millisecond)
 	}
 
-	// Get dirty blocks
+	blocks_to_move := make(chan uint, size/blockSize)
+	blocks_by_n := make(map[uint]bool)
+
+	// Queue up all blocks to be moved...
+	for i := 0; i < size/blockSize; i++ {
+		blocks_to_move <- uint(i)
+		blocks_by_n[uint(i)] = true
+	}
+
 	for {
-		blocks := sourceDirty.Sync()
 
-		fmt.Printf("Got %d dirty blocks...\n", blocks.Count(0, blocks.Length()))
-		changed := 0
+		// No more blocks to be moved! Lets see if we can find any more dirty blocks
+		if len(blocks_to_move) == 0 {
+			sourceStorage.Lock()
 
-		// Transfer any dirty blocks to dest
-		for i := 0; i < size; i += blockSize {
-			block_no := i / blockSize
-			if blocks.BitSet(block_no) {
-				changed++
-				n, err := sourceMetrics.ReadAt(buff, int64(i)) // Read from outside the lock
-				assert.NoError(t, err)
-				assert.Equal(t, blockSize, n)
-				// Now write it to destStorage
-				n, err = destStorage.WriteAt(buff, int64(i))
-				assert.NoError(t, err)
-				assert.Equal(t, blockSize, n)
-				fmt.Printf("Moved dirty block %d %d\n", i, i+blockSize)
-				time.Sleep(5 * time.Millisecond)
+			// Check for any dirty blocks to be added on
+			blocks := sourceDirty.Sync()
+			changed := blocks.Count(0, blocks.Length())
+			if changed != 0 {
+				sourceStorage.Unlock()
+			}
+
+			fmt.Printf("Got %d more dirty blocks...\n", changed)
+
+			blocks.Exec(0, blocks.Length(), func(pos uint) bool {
+				_, ok := blocks_by_n[pos] // Dedup pending by block
+				if !ok {
+					blocks_to_move <- pos
+					blocks_by_n[pos] = true
+				}
+				return true
+			})
+
+			// No new dirty blocks, that means we are completely synced, and source is LOCKED
+			if changed == 0 {
+				break
 			}
 		}
-		if changed == 0 {
-			break // Nothing changed, lets go.
-		}
-	}
 
-	// NOW stop writes to sourceStorage
-	sourceStorage.Lock()
+		// Move a block
+		i := <-blocks_to_move
+		mover(i)
+		delete(blocks_by_n, i)
+	}
 
 	fmt.Printf("Writes STOPPED\n")
-
 	fmt.Printf("Check data is equal\n")
 
-	// Assert the data in source and dest are equal
-	sourceBuff := make([]byte, blockSize)
-	destBuff := make([]byte, blockSize)
-	for i := 0; i < size; i += blockSize {
-		n, err := sourceStorageMem.ReadAt(sourceBuff, int64(i))
-		assert.NoError(t, err)
-		assert.Equal(t, blockSize, n)
-		n, err = destStorage.ReadAt(destBuff, int64(i))
-		assert.NoError(t, err)
-		assert.Equal(t, blockSize, n)
-		for j := 0; j < blockSize; j++ {
-			assert.Equal(t, sourceBuff[j], destBuff[j])
-		}
-	}
+	eq, err := storage.Equals(sourceStorageMem, destStorage, blockSize)
+	assert.NoError(t, err)
+	assert.True(t, eq)
+
 }

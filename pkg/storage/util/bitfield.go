@@ -9,6 +9,10 @@ type Bitfield struct {
 	size int
 }
 
+/**
+ * Create a new bitfield with the specified size
+ *
+ */
 func NewBitfield(size int) *Bitfield {
 	return &Bitfield{
 		size: size,
@@ -16,10 +20,45 @@ func NewBitfield(size int) *Bitfield {
 	}
 }
 
+/**
+ * Clone this into a new separate Bitfield
+ *
+ */
+func (bf *Bitfield) Clone() *Bitfield {
+	data2 := make([]uint64, len(bf.data))
+	for i := 0; i < len(bf.data); i++ {
+		v := atomic.LoadUint64(&bf.data[i])
+		data2[i] = v
+	}
+	//copy(data2, bf.data)		// Can't use, not atomic
+	return &Bitfield{
+		size: bf.size,
+		data: data2,
+	}
+}
+
+/**
+ * Clear the bitfield
+ *
+ */
 func (bf *Bitfield) Clear() {
 	for i := 0; i < len(bf.data); i++ {
-		bf.data[i] = 0
+		atomic.StoreUint64(&bf.data[i], 0)
 	}
+}
+
+/**
+ * Check if empty
+ *
+ */
+func (bf *Bitfield) Empty() bool {
+	for i := 0; i < len(bf.data); i++ {
+		v := atomic.LoadUint64(&bf.data[i])
+		if v != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 /**
@@ -59,20 +98,12 @@ func (bf *Bitfield) BitSet(i int) bool {
 	return (old & f) != 0
 }
 
+/**
+ * Get the length of the bitfield
+ *
+ */
 func (bf *Bitfield) Length() uint {
 	return uint(bf.size)
-}
-
-// Create a mask of bits at the start of this range
-func maskStart(start, end uint) (mask uint64) {
-	const max = ^uint64(0)
-	return ((max << (start & 63)) ^ (max << (end - start&^63))) & ((1 >> (start & 63)) - 1)
-}
-
-// Create a mask of bits at the end of this range
-func maskEnd(start, end uint) (mask uint64) {
-	const shiftBy = 31 + 32*(^uint(0)>>63)
-	return ((1 << (end & 63)) - 1) & uint64((((end&^63-start)>>shiftBy)&1)-1)
 }
 
 /**
@@ -307,4 +338,16 @@ func (bf *Bitfield) Equals(bf2 *Bitfield) bool {
 		}
 	}
 	return true
+}
+
+// Create a mask of bits at the start of this range
+func maskStart(start, end uint) (mask uint64) {
+	const max = ^uint64(0)
+	return ((max << (start & 63)) ^ (max << (end - start&^63))) & ((1 >> (start & 63)) - 1)
+}
+
+// Create a mask of bits at the end of this range
+func maskEnd(start, end uint) (mask uint64) {
+	const shiftBy = 31 + 32*(^uint(0)>>63)
+	return ((1 << (end & 63)) - 1) & uint64((((end&^63-start)>>shiftBy)&1)-1)
 }

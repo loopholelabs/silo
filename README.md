@@ -1,6 +1,12 @@
 # silo
 Silo is a general purpose storage engine
 
+## Migration
+
+Example of a migration
+
+![alt text](https://raw.githubusercontent.com/loopholelabs/silo/master/graph.png)
+
 ## Sources
 
 * File source

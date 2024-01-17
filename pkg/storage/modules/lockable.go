@@ -49,6 +49,10 @@ func (i *Lockable) Flush() error {
 	return i.prov.Flush()
 }
 
+func (i *Lockable) Size() uint64 {
+	return i.prov.Size()
+}
+
 func (i *Lockable) Unlock() {
 	i.lock.L.Lock()
 	i.locked = false

@@ -138,3 +138,18 @@ func TestBitfieldCount(t *testing.T) {
 
 	assert.Equal(t, 5, bf.Count(95, 105))
 }
+
+func TestBitfieldEmpty(t *testing.T) {
+	bf := NewBitfield(1000)
+
+	assert.True(t, bf.Empty())
+
+	bf.SetBits(100, 180)
+
+	assert.False(t, bf.Empty())
+
+	bf.ClearBits(100, 180)
+
+	assert.True(t, bf.Empty())
+
+}
