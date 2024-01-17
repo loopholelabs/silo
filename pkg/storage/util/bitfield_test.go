@@ -102,3 +102,25 @@ func TestBitfieldClear(t *testing.T) {
 		assert.Equal(t, false, bf.BitSet(i))
 	}
 }
+
+func TestBitfieldSetBitsIf(t *testing.T) {
+	bf := NewBitfield(1000)
+	bf_if := NewBitfield(1000)
+
+	bf.SetBit(99)
+
+	bf_if.SetBit(99)
+	bf_if.SetBit(100)
+
+	bf.SetBitsIf(bf_if, 90, 105)
+
+	for i := 0; i < 1000; i++ {
+		if i == 99 || i == 100 {
+			assert.Equal(t, true, bf.BitSet(i))
+
+		} else {
+			assert.Equal(t, false, bf.BitSet(i))
+
+		}
+	}
+}
