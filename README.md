@@ -5,7 +5,7 @@ Silo is a general purpose storage engine
 
 Example of a migration
 
-![alt text](https://raw.githubusercontent.com/loopholelabs/silo/master/graph.png)
+![alt text](./graph.png?raw=true)
 
 ## Sources
 
