@@ -124,3 +124,17 @@ func TestBitfieldSetBitsIf(t *testing.T) {
 		}
 	}
 }
+
+func TestBitfieldCount(t *testing.T) {
+	bf := NewBitfield(1000)
+
+	assert.Equal(t, 0, bf.Count(0, 1000))
+
+	bf.SetBits(100, 180)
+
+	assert.Equal(t, 80, bf.Count(0, 1000))
+
+	bf.SetBits(100, 180)
+
+	assert.Equal(t, 5, bf.Count(95, 105))
+}

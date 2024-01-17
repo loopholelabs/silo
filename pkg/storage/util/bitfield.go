@@ -1,13 +1,17 @@
 package util
 
-import "sync/atomic"
+import (
+	"sync/atomic"
+)
 
 type Bitfield struct {
 	data []uint64
+	size int
 }
 
 func NewBitfield(size int) *Bitfield {
 	return &Bitfield{
+		size: size,
 		data: make([]uint64, (size+63)>>6),
 	}
 }
@@ -56,7 +60,7 @@ func (bf *Bitfield) BitSet(i int) bool {
 }
 
 func (bf *Bitfield) Length() uint {
-	return uint(len(bf.data) >> 6)
+	return uint(bf.size)
 }
 
 // Create a mask of bits at the start of this range
@@ -209,6 +213,69 @@ func (bf *Bitfield) ClearBitsIf(if_bf *Bitfield, start uint, end uint) {
 			old := atomic.LoadUint64(&bf.data[p])
 			for !atomic.CompareAndSwapUint64(&bf.data[p], old, old&^i) {
 				old = atomic.LoadUint64(&bf.data[p])
+			}
+		}
+
+		// Move along one...
+		n++
+		i = i << 1
+		if i == 0 {
+			i = 1
+			p++
+		}
+	}
+}
+
+/**
+ * Count bits
+ */
+func (bf *Bitfield) Count(start uint, end uint) int {
+	p := start >> 6
+	i := uint64(1 << (start & 63))
+	n := start
+	count := 0
+	for {
+		if n == end {
+			break
+		}
+		val := atomic.LoadUint64(&bf.data[p])
+		// Check the bit
+		if (val & i) != 0 {
+			count++
+		}
+
+		// Move along one...
+		n++
+		i = i << 1
+		if i == 0 {
+			i = 1
+			p++
+		}
+	}
+	return count
+}
+
+/**
+ * Execute something for 1 bits.
+ * The function can clear the bit if it returns false.
+ */
+func (bf *Bitfield) Exec(start uint, end uint, cb func(position uint) bool) {
+	p := start >> 6
+	i := uint64(1 << (start & 63))
+	n := start
+	for {
+		if n == end {
+			break
+		}
+		val := atomic.LoadUint64(&bf.data[p])
+		// Check the bit
+		if (val & i) != 0 {
+			if !cb(n) {
+				// Clear the bit
+				old := atomic.LoadUint64(&bf.data[p])
+				for !atomic.CompareAndSwapUint64(&bf.data[p], old, old&^i) {
+					old = atomic.LoadUint64(&bf.data[p])
+				}
 			}
 		}
 
