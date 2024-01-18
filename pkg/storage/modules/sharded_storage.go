@@ -72,7 +72,6 @@ func (i *ShardedStorage) WriteAt(buffer []byte, offset int64) (int, error) {
 		left -= n
 	}
 	return len(buffer), nil
-
 }
 
 func (i *ShardedStorage) Flush() error {

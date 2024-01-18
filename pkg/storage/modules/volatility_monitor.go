@@ -68,8 +68,23 @@ func NewVolatilityMonitor(prov storage.StorageProvider, block_size int, expiry t
 	}
 }
 
+/**
+ * Add a block to be monitored
+ *
+ */
 func (i *VolatilityMonitor) BlockAvailable(block int) {
 	i.available.SetBit(block)
+}
+
+/**
+ * Remove a block from monitoring
+ *
+ */
+func (i *VolatilityMonitor) RemoveBlock(block int) {
+	i.block_data_lock.Lock()
+	delete(i.block_data, uint(block))
+	i.block_data_lock.Unlock()
+	i.available.ClearBit(block)
 }
 
 func (i *VolatilityMonitor) GetNextBlock() int {
