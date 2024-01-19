@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/loopholelabs/silo/pkg"
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/modules"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
@@ -22,7 +23,7 @@ func TestMigrator(t *testing.T) {
 
 	sourceMetrics := modules.NewMetrics(sourceStorageMem)
 	sourceDirty := modules.NewFilterReadDirtyTracker(sourceMetrics, blockSize)
-	sourceMonitor := modules.NewVolatilityMonitor(sourceDirty, blockSize, 100*time.Millisecond)
+	sourceMonitor := modules.NewVolatilityMonitor(sourceDirty, blockSize, 5000*time.Millisecond)
 	sourceStorage := modules.NewLockable(sourceMonitor)
 
 	// Set up some data here.
@@ -74,7 +75,7 @@ func TestMigrator(t *testing.T) {
 			block_no := o / blockSize
 			fmt.Printf(" CONSUMER %dms source.WriteAt(%d) [%d]\n", time.Since(ctime).Milliseconds(), block_no, o)
 
-			fmt.Printf("DATA %d, ,%d\n", time.Now().UnixMilli(), block_no)
+			fmt.Printf("DATA %d,,%d,,,\n", time.Now().UnixMilli(), block_no)
 
 			w := rand.Intn(100)
 
@@ -98,7 +99,6 @@ func TestMigrator(t *testing.T) {
 		// Restart consumer
 		sourceStorage.Unlock()
 	}
-	mig := storage.NewMigrator(sourceDirty, blockSize, locker, unlocker)
 
 	metrics := make([]*modules.Metrics, 0)
 
@@ -113,9 +113,55 @@ func TestMigrator(t *testing.T) {
 	destStorage := modules.NewShardedStorage(size, size/32, cr)
 	destStorageMetrics := modules.NewMetrics(destStorage)
 
+	mig := storage.NewMigrator(sourceDirty,
+		destStorageMetrics,
+		blockSize,
+		locker,
+		unlocker,
+		sourceMonitor.GetNextBlock)
+
+	lat_avg := pkg.NewReadings()
+
+	// Set something up to read dest...
+	go func() {
+		//		ticker := time.NewTicker(20 * time.Millisecond)
+		for {
+
+			o := rand.Intn(size)
+
+			v := rand.Intn(256)
+			b := make([]byte, 1)
+			b[0] = byte(v)
+
+			block_no := o / blockSize
+
+			// Ask migrator to prioritize it if we need to
+			getting := sourceMonitor.PrioritiseBlock(block_no)
+
+			n, err := destStorageMetrics.ReadAt(b, int64(o))
+			assert.NoError(t, err)
+			assert.Equal(t, 1, n)
+			fmt.Printf(" NEWCONSUMER %dms source.ReadAt(%d) [%d]\n", time.Since(ctime).Milliseconds(), block_no, o)
+
+			getting_lat := 0
+			if getting {
+				getting_lat = 1
+			}
+
+			lat_avg.Add(float64(getting_lat))
+			// Do a running stat for getting_lat
+
+			fmt.Printf("DATA %d,,,%d,%d,%f\n", time.Now().UnixMilli(), block_no, getting_lat, lat_avg.GetAverage(500*time.Millisecond))
+
+			w := rand.Intn(50)
+
+			time.Sleep(time.Duration(w) * time.Millisecond)
+		}
+	}()
+
 	// TODO: Currently this is done in a single go with no feedback.
 	m_start := time.Now()
-	mig.MigrateTo(destStorageMetrics, sourceMonitor.GetNextBlock)
+	mig.Migrate()
 	fmt.Printf("Migration took %d ms\n", time.Since(m_start).Milliseconds())
 
 	// This will end with migration completed, and consumer Locked.

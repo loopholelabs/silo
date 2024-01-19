@@ -4,27 +4,53 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/loopholelabs/silo/pkg/storage/util"
 )
 
+type BlockOrdererFunc func() int
+
 type Migrator struct {
 	src_track           TrackingStorageProvider
+	dest                StorageProvider
 	src_lock_fn         func()
 	src_unlock_fn       func()
 	block_size          int
-	metric_moved_blocks int
-	completed_blocks    *util.Bitfield
+	num_blocks          int
+	metric_moved_blocks int64
+	migrated_blocks     *util.Bitfield
+	clean_blocks        *util.Bitfield
+	block_order         BlockOrdererFunc
+	ctime               time.Time
+
+	// Our queue
+	blocks_to_move   chan uint
+	blocks_by_n      map[uint]bool
+	blocks_by_n_lock sync.Mutex
 }
 
-func NewMigrator(source TrackingStorageProvider, block_size int, lock_fn func(), unlock_fn func()) *Migrator {
+func NewMigrator(source TrackingStorageProvider,
+	dest StorageProvider,
+	block_size int,
+	lock_fn func(),
+	unlock_fn func(),
+	block_order BlockOrdererFunc) *Migrator {
+	num_blocks := (int(source.Size()) + block_size - 1) / block_size
 	return &Migrator{
+		dest:                dest,
 		src_track:           source,
 		src_lock_fn:         lock_fn,
 		src_unlock_fn:       unlock_fn,
 		block_size:          block_size,
+		num_blocks:          num_blocks,
 		metric_moved_blocks: 0,
+		block_order:         block_order,
+		migrated_blocks:     util.NewBitfield(num_blocks),
+		clean_blocks:        util.NewBitfield(num_blocks),
+		blocks_to_move:      make(chan uint, num_blocks),
+		blocks_by_n:         make(map[uint]bool),
 	}
 }
 
@@ -39,93 +65,38 @@ func (m *Migrator) RequestBlock(block int) {
  * This naively continues until all data is synced.
  * It relies on being able to transfer a block quickly before the source changes something again.
  */
-func (m *Migrator) MigrateTo(dest StorageProvider, block_order func() int) error {
-	if dest.Size() != m.src_track.Size() {
+func (m *Migrator) Migrate() error {
+	if m.dest.Size() != m.src_track.Size() {
 		return errors.New("Sizes must be equal for migration")
 	}
-	num_blocks := (int(m.src_track.Size()) + m.block_size - 1) / m.block_size
 
-	blocks_to_move := make(chan uint, num_blocks)
-	blocks_by_n := make(map[uint]bool)
-	var blocks_by_n_lock sync.Mutex
+	m.ctime = time.Now()
 
-	m.completed_blocks = util.NewBitfield(num_blocks)
-	ctime := time.Now()
-
-	concurrency := make(chan bool, 256) // max concurrency
+	concurrency := make(chan bool, 1) // max concurrency
 	var wg sync.WaitGroup
 
 	for {
-		// TODO: Check if we have any priority blocks we need to move...
-
-		// Find out which block we should migrate next...
-		//		if len(blocks_to_move) == 0 {
-		bl := block_order()
-		if bl != -1 {
-			// NB We don't need to dedup here, because it cannot be dirty yet.
-			blocks_by_n_lock.Lock()
-			blocks_to_move <- uint(bl)
-			blocks_by_n[uint(bl)] = true
-			blocks_by_n_lock.Unlock()
-		}
-		//		}
-
-		// No more blocks to be moved! Lets see if we can find any more dirty blocks
-		if len(blocks_to_move) == 0 {
-			m.src_lock_fn()
-
-			// Check for any dirty blocks to be added on
-			blocks := m.src_track.Sync()
-			changed := blocks.Count(0, blocks.Length())
-			if changed != 0 {
-				m.src_unlock_fn()
-
-				fmt.Printf("Got %d more dirty blocks...\n", changed)
-
-				blocks.Exec(0, blocks.Length(), func(pos uint) bool {
-					blocks_by_n_lock.Lock()
-					_, ok := blocks_by_n[pos] // Dedup pending by block
-					if !ok {
-						blocks_to_move <- pos
-						blocks_by_n[pos] = true
-						m.completed_blocks.ClearBit(int(pos))
-					}
-					blocks_by_n_lock.Unlock()
-					return true
-				})
-				m.showProgress(ctime, num_blocks)
-
-			} else {
-				// No new dirty blocks, that means we are completely synced, and source is LOCKED
-				break
-			}
-		}
-
-		if len(blocks_to_move) == 0 {
-			// Nothing left to do! Lets quit.
+		// This will get the next queued migration, OR from the priority list
+		i, done := m.getNextBlock()
+		if done {
 			break
 		}
 
+		// Start a migrator for the block...
 		concurrency <- true
 		wg.Add(1)
 
-		blocks_by_n_lock.Lock()
-		i := <-blocks_to_move
-		delete(blocks_by_n, i)
-		blocks_by_n_lock.Unlock()
-
 		go func(block_no uint) {
-			err := m.migrateBlock(dest, int(block_no))
+			err := m.migrateBlock(int(block_no))
 			if err != nil {
 				fmt.Printf("ERROR moving block %v\n", err)
 			}
 
-			m.showProgress(ctime, num_blocks)
-
+			m.showProgress()
 			// TODO: If we have a notify for this block, let everyone know it's available
 
 			fmt.Printf("Block moved %d\n", block_no)
-			fmt.Printf("DATA %d,%d,\n", time.Now().UnixMilli(), block_no)
+			fmt.Printf("DATA %d,%d,,,,\n", time.Now().UnixMilli(), block_no)
 			wg.Done()
 			<-concurrency
 		}(i)
@@ -134,7 +105,7 @@ func (m *Migrator) MigrateTo(dest StorageProvider, block_order func() int) error
 	fmt.Printf("Waiting for pending transfers...\n")
 	wg.Wait()
 
-	m.showProgress(ctime, num_blocks)
+	m.showProgress()
 
 	return nil
 }
@@ -143,21 +114,34 @@ func (m *Migrator) MigrateTo(dest StorageProvider, block_order func() int) error
  * Show progress...
  *
  */
-func (m *Migrator) showProgress(ctime time.Time, num_blocks int) {
-	completed := m.completed_blocks.Count(0, uint(num_blocks))
-	perc := float64(completed*100) / float64(num_blocks)
+func (m *Migrator) showProgress() {
+	migrated := m.migrated_blocks.Count(0, uint(m.num_blocks))
+	perc_mig := float64(migrated*100) / float64(m.num_blocks)
+
+	completed := m.clean_blocks.Count(0, uint(m.num_blocks))
+	perc_complete := float64(completed*100) / float64(m.num_blocks)
 	is_complete := ""
-	if completed == num_blocks {
+	if completed == m.num_blocks {
 		is_complete = " COMPLETE"
 	}
-	fmt.Printf("Migration %dms %d blocks / %d [%.2f%%]%s\n", time.Since(ctime).Milliseconds(), completed, num_blocks, perc, is_complete)
+	moved := atomic.LoadInt64(&m.metric_moved_blocks)
+	fmt.Printf("Migration %dms Migrated (%d/%d) [%.2f%%] Clean (%d/%d) [%.2f%%] %d blocks moved %s\n",
+		time.Since(m.ctime).Milliseconds(),
+		migrated,
+		m.num_blocks,
+		perc_mig,
+		completed,
+		m.num_blocks,
+		perc_complete,
+		moved,
+		is_complete)
 }
 
 /**
  * Migrate a single block to dest
  *
  */
-func (m *Migrator) migrateBlock(dest StorageProvider, block int) error {
+func (m *Migrator) migrateBlock(block int) error {
 	buff := make([]byte, m.block_size)
 	offset := int(block) * m.block_size
 	// Read from source
@@ -167,13 +151,84 @@ func (m *Migrator) migrateBlock(dest StorageProvider, block int) error {
 	}
 
 	// Now write it to destStorage
-	n, err = dest.WriteAt(buff, int64(offset))
+	n, err = m.dest.WriteAt(buff, int64(offset))
 	if n != m.block_size || err != nil {
 		return err
 	}
 
-	m.metric_moved_blocks++
+	atomic.AddInt64(&m.metric_moved_blocks, 1)
 	// Mark it as done
-	m.completed_blocks.SetBit(block)
+	m.migrated_blocks.SetBit(block)
+	m.clean_blocks.SetBit(block)
 	return nil
+}
+
+/**
+ * Check for any dirty blocks, and add them to the queue
+ *
+ */
+func (m *Migrator) queueDirtyBlocks() bool {
+	m.src_lock_fn()
+
+	// Check for any dirty blocks to be added on
+	blocks := m.src_track.Sync()
+	changed := blocks.Count(0, blocks.Length())
+	if changed != 0 {
+		m.src_unlock_fn()
+
+		fmt.Printf("Got %d more dirty blocks...\n", changed)
+
+		blocks.Exec(0, blocks.Length(), func(pos uint) bool {
+			m.blocks_by_n_lock.Lock()
+			_, ok := m.blocks_by_n[pos] // Dedup pending by block
+			if !ok {
+				m.blocks_to_move <- pos
+				m.blocks_by_n[pos] = true
+				m.clean_blocks.ClearBit(int(pos))
+			}
+			m.blocks_by_n_lock.Unlock()
+			return true
+		})
+		m.showProgress()
+		return true
+	}
+	return false
+}
+
+func (m *Migrator) queueNextMigration() {
+	for {
+		bl := m.block_order()
+		if bl == -1 { // No more blocks to migrate!
+			break
+		}
+		// Don't want to migrate blocks twice if we can help it...
+		if !m.migrated_blocks.BitSet(bl) {
+			// NB We don't need to dedup here, because it cannot be dirty yet.
+			m.blocks_by_n_lock.Lock()
+			m.blocks_to_move <- uint(bl)
+			m.blocks_by_n[uint(bl)] = true
+			m.blocks_by_n_lock.Unlock()
+		}
+	}
+}
+
+func (m *Migrator) getNextBlock() (uint, bool) {
+	bl := m.block_order()
+	if bl != -1 {
+		return uint(bl), false
+	}
+
+	// Migration complete, now do dirty blocks...
+
+	m.queueDirtyBlocks()
+
+	if len(m.blocks_to_move) == 0 {
+		return 0, true
+	}
+
+	m.blocks_by_n_lock.Lock()
+	i := <-m.blocks_to_move
+	delete(m.blocks_by_n, i)
+	m.blocks_by_n_lock.Unlock()
+	return i, false
 }
