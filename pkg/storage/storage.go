@@ -6,11 +6,6 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/util"
 )
 
-type StorageError int
-
-const StorageError_SUCCESS = StorageError(0)
-const StorageError_ERROR = StorageError(1)
-
 type StorageProvider interface {
 	io.ReaderAt
 	io.WriterAt
@@ -33,6 +28,12 @@ type ExposedStorage interface {
 	Handle(prov StorageProvider) error
 	WaitReady() error
 	Shutdown() error
+}
+
+type BlockOrder interface {
+	Add(block int)
+	Remove(block int)
+	GetNext() int
 }
 
 /**
