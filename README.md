@@ -3,9 +3,18 @@ Silo is a general purpose storage engine
 
 ## Migration
 
-Example of a migration
+Example of a basic migration
 
 ![alt text](./graph.png?raw=true)
+
+This example adds a device reading from the destination. The block order is by least volatile, but with a priority for the blocks needed for reading.
+
+![alt text](./images/example1.png?raw=true)
+
+Same as above, but with concurrency set to 32. As long as the destination can do concurrent writes, everything will flow.
+
+![alt text](./images/example2.png?raw=true)
+
 
 ## Sources
 
