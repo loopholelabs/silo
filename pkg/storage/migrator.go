@@ -52,12 +52,6 @@ func NewMigrator(source TrackingStorageProvider,
 	}
 }
 
-func (m *Migrator) RequestBlock(block int) {
-	// Request a block as priority...
-
-	// Wait until it's completed
-}
-
 /**
  * Migrate storage to dest.
  * This naively continues until all data is synced.
