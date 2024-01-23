@@ -9,8 +9,7 @@ import (
 )
 
 type blockData struct {
-	log      []int64
-	priority int64
+	log []int64
 }
 
 /**
@@ -69,26 +68,9 @@ func NewVolatilityMonitor(prov storage.StorageProvider, block_size int, expiry t
 	}
 }
 
-func (i *VolatilityMonitor) PrioritiseBlock(block int) bool {
-	i.block_data_lock.Lock()
-	defer i.block_data_lock.Unlock()
-	if i.available.BitSet(block) {
-		bd, ok := i.block_data[uint(block)]
-		if !ok {
-			// Need to add one here...
-			bd = &blockData{log: make([]int64, 0)}
-			i.block_data[uint(block)] = bd
-		}
-		bd.priority = time.Now().UnixMilli()
-		return true
-	}
-	return false
-}
-
-func (i *VolatilityMonitor) GetNextBlock() int {
+func (i *VolatilityMonitor) GetNext() int {
 	block := -1 // All done
 	block_count := 0
-	block_priority := int64(0)
 
 	// Find something...
 	i.block_data_lock.Lock()
@@ -98,26 +80,14 @@ func (i *VolatilityMonitor) GetNextBlock() int {
 		if i.available.BitSet(n) {
 			bd, ok := i.block_data[uint(n)]
 			c := 0
-			bd_priority := int64(0)
 			if ok {
 				c = bd.Count(i.expiry)
-				bd_priority = bd.priority
 			}
 
-			if bd_priority > 0 {
-				// This is a priority block, it overrules any other block as long as it's earlier...
-				if block_priority == 0 || bd_priority < block_priority {
-					block = int(n)
-					block_count = c
-					block_priority = bd_priority
-				}
-			} else {
-				// This is NOT a priority block, it only overrules another non-priority block with a smaller/eq count
-				if block == -1 || (block_priority == 0 && c <= block_count) {
-					block = int(n)
-					block_count = c
-					block_priority = bd_priority
-				}
+			// This is NOT a priority block, it only overrules another non-priority block with a smaller/eq count
+			if block == -1 || (c <= block_count) {
+				block = int(n)
+				block_count = c
 			}
 		}
 	}
@@ -134,7 +104,7 @@ func (i *VolatilityMonitor) GetNextBlock() int {
  * Add a block to be monitored
  *
  */
-func (i *VolatilityMonitor) BlockAvailable(block int) {
+func (i *VolatilityMonitor) Add(block int) {
 	i.available.SetBit(block)
 }
 
@@ -142,7 +112,7 @@ func (i *VolatilityMonitor) BlockAvailable(block int) {
  * Remove a block from monitoring
  *
  */
-func (i *VolatilityMonitor) RemoveBlock(block int) {
+func (i *VolatilityMonitor) Remove(block int) {
 	i.block_data_lock.Lock()
 	delete(i.block_data, uint(block))
 	i.block_data_lock.Unlock()

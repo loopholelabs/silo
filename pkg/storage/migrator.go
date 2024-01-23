@@ -10,8 +10,6 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/util"
 )
 
-type BlockOrdererFunc func() int
-
 type Migrator struct {
 	src_track           TrackingStorageProvider
 	dest                StorageProvider
@@ -22,7 +20,7 @@ type Migrator struct {
 	metric_moved_blocks int64
 	migrated_blocks     *util.Bitfield
 	clean_blocks        *util.Bitfield
-	block_order         BlockOrdererFunc
+	block_order         BlockOrder
 	ctime               time.Time
 
 	// Our queue
@@ -36,7 +34,7 @@ func NewMigrator(source TrackingStorageProvider,
 	block_size int,
 	lock_fn func(),
 	unlock_fn func(),
-	block_order BlockOrdererFunc) *Migrator {
+	block_order BlockOrder) *Migrator {
 	num_blocks := (int(source.Size()) + block_size - 1) / block_size
 	return &Migrator{
 		dest:                dest,
@@ -195,25 +193,8 @@ func (m *Migrator) queueDirtyBlocks() bool {
 	return false
 }
 
-func (m *Migrator) queueNextMigration() {
-	for {
-		bl := m.block_order()
-		if bl == -1 { // No more blocks to migrate!
-			break
-		}
-		// Don't want to migrate blocks twice if we can help it...
-		if !m.migrated_blocks.BitSet(bl) {
-			// NB We don't need to dedup here, because it cannot be dirty yet.
-			m.blocks_by_n_lock.Lock()
-			m.blocks_to_move <- uint(bl)
-			m.blocks_by_n[uint(bl)] = true
-			m.blocks_by_n_lock.Unlock()
-		}
-	}
-}
-
 func (m *Migrator) getNextBlock() (uint, bool) {
-	bl := m.block_order()
+	bl := m.block_order.GetNext()
 	if bl != -1 {
 		return uint(bl), false
 	}

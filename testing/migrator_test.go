@@ -9,6 +9,7 @@ import (
 
 	"github.com/loopholelabs/silo/pkg"
 	"github.com/loopholelabs/silo/pkg/storage"
+	"github.com/loopholelabs/silo/pkg/storage/blocks"
 	"github.com/loopholelabs/silo/pkg/storage/modules"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
 	"github.com/stretchr/testify/assert"
@@ -84,8 +85,10 @@ func TestMigrator(t *testing.T) {
 	}()
 
 	// Start monitoring blocks, and wait a bit...
+	orderer := blocks.NewPriorityBlockOrder(num_blocks, sourceMonitor)
+
 	for i := 0; i < num_blocks; i++ {
-		sourceMonitor.BlockAvailable(i)
+		orderer.Add(i)
 	}
 	time.Sleep(5000 * time.Millisecond)
 
@@ -118,7 +121,7 @@ func TestMigrator(t *testing.T) {
 		blockSize,
 		locker,
 		unlocker,
-		sourceMonitor.GetNextBlock)
+		orderer)
 
 	lat_avg := pkg.NewReadings()
 
@@ -136,7 +139,7 @@ func TestMigrator(t *testing.T) {
 			block_no := o / blockSize
 
 			// Ask migrator to prioritize it if we need to
-			getting := sourceMonitor.PrioritiseBlock(block_no)
+			getting := orderer.PrioritiseBlock(block_no)
 
 			n, err := destStorageMetrics.ReadAt(b, int64(o))
 			assert.NoError(t, err)
