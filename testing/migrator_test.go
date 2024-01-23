@@ -114,10 +114,12 @@ func TestMigrator(t *testing.T) {
 		return msm
 	}
 	destStorage := modules.NewShardedStorage(size, size/32, cr)
-	destStorageMetrics := modules.NewMetrics(destStorage)
+	//	destStorageMetrics := modules.NewMetrics(destStorage)
+	destWaiting := modules.NewWaitingCache(destStorage, blockSize)
+	destStorageMetrics := modules.NewMetrics(destWaiting)
 
 	mig := storage.NewMigrator(sourceDirty,
-		destStorageMetrics,
+		destWaiting,
 		blockSize,
 		locker,
 		unlocker,
@@ -132,29 +134,35 @@ func TestMigrator(t *testing.T) {
 
 			o := rand.Intn(size)
 
-			v := rand.Intn(256)
 			b := make([]byte, 1)
-			b[0] = byte(v)
 
 			block_no := o / blockSize
 
 			// Ask migrator to prioritize it if we need to
-			getting := orderer.PrioritiseBlock(block_no)
+			orderer.PrioritiseBlock(block_no)
 
-			n, err := destStorageMetrics.ReadAt(b, int64(o))
+			rtime := time.Now()
+			n, err := destWaiting.ReadAt(b, int64(o))
+			latency := time.Since(rtime).Milliseconds()
 			assert.NoError(t, err)
-			assert.Equal(t, 1, n)
+			assert.Equal(t, len(b), n)
 			fmt.Printf(" NEWCONSUMER %dms source.ReadAt(%d) [%d]\n", time.Since(ctime).Milliseconds(), block_no, o)
 
-			getting_lat := 0
-			if getting {
-				getting_lat = 1
+			// Check it's the same value as from SOURCE...
+			sb := make([]byte, len(b))
+			sn, serr := sourceDirty.ReadAt(sb, int64(o))
+			assert.NoError(t, serr)
+			assert.Equal(t, len(sb), sn)
+
+			// Check the data is the same...
+			for i, v := range b {
+				assert.Equal(t, v, sb[i])
 			}
 
-			lat_avg.Add(float64(getting_lat))
+			lat_avg.Add(float64(latency))
 			// Do a running stat for getting_lat
 
-			fmt.Printf("DATA %d,,,%d,%d,%f\n", time.Now().UnixMilli(), block_no, getting_lat, lat_avg.GetAverage(500*time.Millisecond))
+			fmt.Printf("DATA %d,,,%d,%d,%f\n", time.Now().UnixMilli(), block_no, latency, lat_avg.GetAverage(500*time.Millisecond))
 
 			w := rand.Intn(50)
 

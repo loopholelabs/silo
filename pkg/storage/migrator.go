@@ -70,7 +70,7 @@ func (m *Migrator) Migrate() error {
 
 	m.ctime = time.Now()
 
-	concurrency := make(chan bool, 1) // max concurrency
+	concurrency := make(chan bool, 32) // max concurrency
 	var wg sync.WaitGroup
 
 	for {

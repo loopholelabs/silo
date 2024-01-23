@@ -11,7 +11,6 @@ import (
  * Waiting cache StorageProvider
  *
  */
-
 type WaitingCache struct {
 	prov         storage.StorageProvider
 	available    util.Bitfield
@@ -28,6 +27,7 @@ func NewWaitingCache(prov storage.StorageProvider, block_size int) *WaitingCache
 		available:  *util.NewBitfield(num_blocks),
 		block_size: block_size,
 		size:       prov.Size(),
+		lockers:    make(map[uint]*sync.RWMutex),
 	}
 }
 
