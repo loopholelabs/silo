@@ -23,7 +23,7 @@ type Migrator struct {
 	block_order         BlockOrder
 	ctime               time.Time
 
-	// Our queue
+	// Our queue for dirty blocks (remigration)
 	blocks_to_move   chan uint
 	blocks_by_n      map[uint]bool
 	blocks_by_n_lock sync.Mutex
@@ -54,8 +54,6 @@ func NewMigrator(source TrackingStorageProvider,
 
 /**
  * Migrate storage to dest.
- * This naively continues until all data is synced.
- * It relies on being able to transfer a block quickly before the source changes something again.
  */
 func (m *Migrator) Migrate() error {
 	if m.dest.Size() != m.src_track.Size() {
@@ -64,7 +62,18 @@ func (m *Migrator) Migrate() error {
 
 	m.ctime = time.Now()
 
-	concurrency := make(chan bool, 32) // max concurrency
+	concurrency_by_block := map[int]int{
+		BlockTypeAny:      32,
+		BlockTypeStandard: 32,
+		BlockTypeDirty:    100,
+		BlockTypePriority: 16,
+	}
+
+	concurrency := make(map[int]chan bool) // max concurrency by block type
+	for b, v := range concurrency_by_block {
+		concurrency[b] = make(chan bool, v)
+	}
+
 	var wg sync.WaitGroup
 
 	for {
@@ -74,23 +83,33 @@ func (m *Migrator) Migrate() error {
 			break
 		}
 
-		// Start a migrator for the block...
-		concurrency <- true
+		cc, ok := concurrency[i.Type]
+		if !ok {
+			cc = concurrency[BlockTypeAny]
+		}
+		cc <- true
+
 		wg.Add(1)
 
-		go func(block_no uint) {
-			err := m.migrateBlock(int(block_no))
+		go func(block_no *BlockInfo) {
+			err := m.migrateBlock(block_no.Block)
 			if err != nil {
+				// TODO: Collect errors properly. Abort? Retry? fail?
 				fmt.Printf("ERROR moving block %v\n", err)
 			}
 
 			m.showProgress()
-			// TODO: If we have a notify for this block, let everyone know it's available
 
 			fmt.Printf("Block moved %d\n", block_no)
 			fmt.Printf("DATA %d,%d,,,,\n", time.Now().UnixMilli(), block_no)
 			wg.Done()
-			<-concurrency
+
+			cc, ok := concurrency[block_no.Type]
+			if !ok {
+				cc = concurrency[BlockTypeAny]
+			}
+			<-cc
+
 		}(i)
 	}
 
@@ -98,7 +117,6 @@ func (m *Migrator) Migrate() error {
 	wg.Wait()
 
 	m.showProgress()
-
 	return nil
 }
 
@@ -187,23 +205,22 @@ func (m *Migrator) queueDirtyBlocks() bool {
 	return false
 }
 
-func (m *Migrator) getNextBlock() (uint, bool) {
+func (m *Migrator) getNextBlock() (*BlockInfo, bool) {
 	bl := m.block_order.GetNext()
-	if bl != -1 {
-		return uint(bl), false
+	if bl != BlockInfoFinish {
+		return bl, false
 	}
 
 	// Migration complete, now do dirty blocks...
-
 	m.queueDirtyBlocks()
 
 	if len(m.blocks_to_move) == 0 {
-		return 0, true
+		return nil, true
 	}
 
 	m.blocks_by_n_lock.Lock()
 	i := <-m.blocks_to_move
 	delete(m.blocks_by_n, i)
 	m.blocks_by_n_lock.Unlock()
-	return i, false
+	return &BlockInfo{Block: int(i), Type: BlockTypeDirty}, false
 }

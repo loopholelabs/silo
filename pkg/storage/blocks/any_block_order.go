@@ -41,7 +41,7 @@ func (bo *AnyBlockOrder) Remove(block int) {
 }
 
 // Get the next block...
-func (bo *AnyBlockOrder) GetNext() int {
+func (bo *AnyBlockOrder) GetNext() *storage.BlockInfo {
 	bo.lock.Lock()
 	defer bo.lock.Unlock()
 
@@ -52,17 +52,17 @@ func (bo *AnyBlockOrder) GetNext() int {
 			if bo.next != nil {
 				bo.next.Remove(i)
 			}
-			return i
+			return &storage.BlockInfo{Block: i}
 		}
 	}
 
 	if bo.next == nil {
-		return -1
+		return storage.BlockInfoFinish
 	}
 	v := bo.next.GetNext()
-	if v != -1 {
+	if v != storage.BlockInfoFinish {
 		// Remove it from our own set
-		bo.available.ClearBit(v)
+		bo.available.ClearBit(v.Block)
 	}
 	return v
 }

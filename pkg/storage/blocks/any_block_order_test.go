@@ -3,6 +3,7 @@ package blocks
 import (
 	"testing"
 
+	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -22,13 +23,13 @@ func TestAnyBlockOrder(t *testing.T) {
 
 	for i := 0; i < 128; i++ {
 		ii := abo.GetNext()
-		_, ok := done[ii]
+		_, ok := done[ii.Block]
 		assert.False(t, ok)
-		done[ii] = true
+		done[ii.Block] = true
 	}
 
 	// Should signal end
-	assert.Equal(t, -1, abo.GetNext())
+	assert.Equal(t, storage.BlockInfoFinish, abo.GetNext())
 }
 
 /**
@@ -52,15 +53,15 @@ func TestAnyBlockOrderNext(t *testing.T) {
 
 	for i := 0; i < 128; i++ {
 		ii := abo2.GetNext()
-		_, ok := done[ii]
+		_, ok := done[ii.Block]
 		assert.False(t, ok)
-		done[ii] = true
+		done[ii.Block] = true
 	}
 
 	// Should signal end
-	assert.Equal(t, -1, abo.GetNext())
+	assert.Equal(t, storage.BlockInfoFinish, abo.GetNext())
 	// Should signal end
-	assert.Equal(t, -1, abo2.GetNext())
+	assert.Equal(t, storage.BlockInfoFinish, abo2.GetNext())
 }
 
 func TestAnyBlockOrderRemove(t *testing.T) {
@@ -78,14 +79,14 @@ func TestAnyBlockOrderRemove(t *testing.T) {
 
 	for i := 0; i < 127; i++ {
 		ii := abo.GetNext()
-		_, ok := done[ii]
+		_, ok := done[ii.Block]
 		assert.False(t, ok)
-		done[ii] = true
+		done[ii.Block] = true
 	}
 
 	_, ok_100 := done[100]
 	assert.False(t, ok_100)
 
 	// Should signal end
-	assert.Equal(t, -1, abo.GetNext())
+	assert.Equal(t, storage.BlockInfoFinish, abo.GetNext())
 }

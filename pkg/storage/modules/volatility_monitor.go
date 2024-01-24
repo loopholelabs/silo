@@ -68,7 +68,7 @@ func NewVolatilityMonitor(prov storage.StorageProvider, block_size int, expiry t
 	}
 }
 
-func (i *VolatilityMonitor) GetNext() int {
+func (i *VolatilityMonitor) GetNext() *storage.BlockInfo {
 	block := -1 // All done
 	block_count := 0
 
@@ -96,8 +96,11 @@ func (i *VolatilityMonitor) GetNext() int {
 		// Remove it
 		delete(i.block_data, uint(block))
 		i.available.ClearBit(block)
+		return &storage.BlockInfo{Block: block}
+	} else {
+		return storage.BlockInfoFinish
 	}
-	return block
+
 }
 
 /**

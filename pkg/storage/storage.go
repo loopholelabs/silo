@@ -33,8 +33,20 @@ type ExposedStorage interface {
 type BlockOrder interface {
 	Add(block int)
 	Remove(block int)
-	GetNext() int
+	GetNext() *BlockInfo
 }
+
+type BlockInfo struct {
+	Block int
+	Type  int
+}
+
+var BlockInfoFinish = &BlockInfo{Block: -1}
+
+var BlockTypeAny = -1
+var BlockTypeStandard = 0
+var BlockTypeDirty = 1
+var BlockTypePriority = 2
 
 /**
  * Check if two storageProviders hold the same data.

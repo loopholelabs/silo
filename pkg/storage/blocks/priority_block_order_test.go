@@ -27,13 +27,13 @@ func TestPriorityBlockOrder(t *testing.T) {
 	for i := 0; i < 128; i++ {
 		ii := abo.GetNext()
 		if i == 0 {
-			assert.Equal(t, 57, ii)
+			assert.Equal(t, 57, ii.Block)
 		}
-		_, ok := done[ii]
+		_, ok := done[ii.Block]
 		assert.False(t, ok)
-		done[ii] = true
+		done[ii.Block] = true
 	}
 
 	// Should signal end
-	assert.Equal(t, -1, abo.GetNext())
+	assert.Equal(t, -1, abo.GetNext().Block)
 }
