@@ -26,21 +26,25 @@ func (fp *FromProtocol) HandleReadAt() error {
 		if err != nil {
 			return err
 		}
-		offset, length, err := protocol.DecodeReadAt(data)
-		if err != nil {
-			return err
-		}
-		buff := make([]byte, length)
-		n, err := fp.prov.ReadAt(buff, offset)
-		rar := &protocol.ReadAtResponse{
-			Bytes: n,
-			Error: err,
-			Data:  buff,
-		}
-		_, err = fp.protocol.SendPacket(fp.dev, id, protocol.EncodeReadAtResponse(rar))
-		if err != nil {
-			return err
-		}
+
+		// Handle them in goroutines
+		go func(gdata []byte, gid uint32) {
+			offset, length, err := protocol.DecodeReadAt(gdata)
+			if err != nil {
+				// TODO: Report this to somewhere
+			}
+			buff := make([]byte, length)
+			n, err := fp.prov.ReadAt(buff, offset)
+			rar := &protocol.ReadAtResponse{
+				Bytes: n,
+				Error: err,
+				Data:  buff,
+			}
+			_, err = fp.protocol.SendPacket(fp.dev, gid, protocol.EncodeReadAtResponse(rar))
+			if err != nil {
+				// TODO: Report this to somewhere
+			}
+		}(data, id)
 	}
 }
 
@@ -51,18 +55,22 @@ func (fp *FromProtocol) HandleWriteAt() error {
 		if err != nil {
 			return err
 		}
-		offset, data, err := protocol.DecodeWriteAt(data)
-		if err != nil {
-			return err
-		}
-		n, err := fp.prov.WriteAt(data, offset)
-		war := &protocol.WriteAtResponse{
-			Bytes: n,
-			Error: err,
-		}
-		_, err = fp.protocol.SendPacket(fp.dev, id, protocol.EncodeWriteAtResponse(war))
-		if err != nil {
-			return err
-		}
+
+		// Handle in a goroutine
+		go func(gdata []byte, gid uint32) {
+			offset, data, err := protocol.DecodeWriteAt(gdata)
+			if err != nil {
+				// TODO
+			}
+			n, err := fp.prov.WriteAt(data, offset)
+			war := &protocol.WriteAtResponse{
+				Bytes: n,
+				Error: err,
+			}
+			_, err = fp.protocol.SendPacket(fp.dev, gid, protocol.EncodeWriteAtResponse(war))
+			if err != nil {
+				// TODO
+			}
+		}(data, id)
 	}
 }

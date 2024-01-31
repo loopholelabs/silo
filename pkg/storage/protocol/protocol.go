@@ -1,12 +1,15 @@
 package protocol
 
-const COMMAND_READ_AT = byte(1)
-const COMMAND_READ_AT_RESPONSE = byte(2)
-const COMMAND_READ_AT_RESPONSE_ERR = byte(3)
+const COMMAND_REQUEST = byte(0)
+const COMMAND_RESPONSE = byte(0x80)
 
-const COMMAND_WRITE_AT = byte(0x10)
-const COMMAND_WRITE_AT_RESPONSE = byte(0x11)
-const COMMAND_WRITE_AT_RESPONSE_ERR = byte(0x12)
+const COMMAND_READ_AT = COMMAND_REQUEST | byte(1)
+const COMMAND_WRITE_AT = COMMAND_REQUEST | byte(2)
+
+const COMMAND_READ_AT_RESPONSE = COMMAND_RESPONSE | byte(1)
+const COMMAND_READ_AT_RESPONSE_ERR = COMMAND_RESPONSE | byte(2)
+const COMMAND_WRITE_AT_RESPONSE = COMMAND_RESPONSE | byte(3)
+const COMMAND_WRITE_AT_RESPONSE_ERR = COMMAND_RESPONSE | byte(4)
 
 const ID_PICK_ANY = 0
 
@@ -19,4 +22,8 @@ type Protocol interface {
 
 	// Wait for a specific command
 	WaitForCommand(dev uint32, cmd byte) (uint32, []byte, error)
+}
+
+func IsResponse(cmd byte) bool {
+	return (cmd & COMMAND_RESPONSE) == COMMAND_RESPONSE
 }
