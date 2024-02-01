@@ -1,22 +1,27 @@
 package protocol
 
 import (
+	"context"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"sync"
 	"sync/atomic"
 )
 
 type ProtocolRW struct {
+	ctx          context.Context
 	r            io.Reader
 	w            io.Writer
+	w_lock       sync.Mutex
 	tx_id        uint32
 	waiters      map[uint32]Waiters
 	waiters_lock sync.Mutex
 }
 
-func NewProtocolRW(r io.Reader, w io.Writer) *ProtocolRW {
+func NewProtocolRW(ctx context.Context, r io.Reader, w io.Writer) *ProtocolRW {
 	return &ProtocolRW{
+		ctx:     ctx,
 		r:       r,
 		w:       w,
 		waiters: make(map[uint32]Waiters),
@@ -34,7 +39,11 @@ func (p *ProtocolRW) SendPacket(dev uint32, id uint32, data []byte) (uint32, err
 	binary.LittleEndian.PutUint32(buffer, dev)
 	binary.LittleEndian.PutUint32(buffer[4:], id)
 	binary.LittleEndian.PutUint32(buffer[8:], uint32(len(data)))
+	p.w_lock.Lock()
+	defer p.w_lock.Unlock()
+
 	_, err := p.w.Write(buffer)
+
 	if err != nil {
 		return 0, err
 	}
@@ -45,15 +54,19 @@ func (p *ProtocolRW) SendPacket(dev uint32, id uint32, data []byte) (uint32, err
 // Read a packet
 func (p *ProtocolRW) readPacket() (uint32, uint32, []byte, error) {
 	buffer := make([]byte, 4+4+4)
-	_, err := p.r.Read(buffer)
+
+	_, err := io.ReadFull(p.r, buffer)
 	if err != nil {
 		return 0, 0, nil, err
 	}
 	dev := binary.LittleEndian.Uint32(buffer)
 	id := binary.LittleEndian.Uint32(buffer[4:])
 	length := binary.LittleEndian.Uint32(buffer[8:])
+
 	data := make([]byte, length)
-	_, err = p.r.Read(data)
+
+	_, err = io.ReadFull(p.r, data)
+
 	if err != nil {
 		return 0, 0, nil, err
 	}
@@ -66,7 +79,9 @@ func (p *ProtocolRW) Handle() error {
 		if err != nil {
 			return err
 		}
-		// Now queue it up...
+		// Now queue it up in a channel
+
+		fmt.Printf("DEV %d ID %d DATA %d\n", dev, id, len(data))
 
 		cmd := data[0]
 
@@ -93,10 +108,6 @@ func (p *ProtocolRW) Handle() error {
 		}
 
 		p.waiters_lock.Unlock()
-
-		// Send it to any listeners
-		// If this matches something being waited for, route it there.
-		// TODO: Don't always do this, expire, etc etc
 
 		if IsResponse(cmd) {
 			wq_id <- packetinfo{
@@ -129,12 +140,13 @@ func (mp *ProtocolRW) WaitForPacket(dev uint32, id uint32) ([]byte, error) {
 	}
 	mp.waiters_lock.Unlock()
 
-	// Wait for the packet to appear on the channel
-	p := <-wq
-
-	// TODO: Could remove the channel now idk... we'll see...
-
-	return p.data, nil
+	select {
+	case p := <-wq:
+		// TODO: Remove the channel, as we only expect a SINGLE response with this ID.
+		return p.data, nil
+	case <-mp.ctx.Done():
+		return nil, mp.ctx.Err()
+	}
 }
 
 func (mp *ProtocolRW) WaitForCommand(dev uint32, cmd byte) (uint32, []byte, error) {
@@ -154,7 +166,11 @@ func (mp *ProtocolRW) WaitForCommand(dev uint32, cmd byte) (uint32, []byte, erro
 	}
 	mp.waiters_lock.Unlock()
 
-	// Wait for the packet to appear on the channel
-	p := <-wq
-	return p.id, p.data, nil
+	select {
+	case p := <-wq:
+		// TODO: Remove the channel, as we only expect a SINGLE response with this ID.
+		return p.id, p.data, nil
+	case <-mp.ctx.Done():
+		return 0, nil, mp.ctx.Err()
+	}
 }

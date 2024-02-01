@@ -1,6 +1,7 @@
 package testing
 
 import (
+	"context"
 	"crypto/rand"
 	"io"
 	"testing"
@@ -26,6 +27,7 @@ func TestProtocolWriteAt(t *testing.T) {
 	// Now do some things and make sure they happen...
 
 	// TODO: Shutdown...
+	go destFromProtocol.HandleSend(context.TODO())
 	go destFromProtocol.HandleReadAt()
 	go destFromProtocol.HandleWriteAt()
 
@@ -67,6 +69,7 @@ func TestProtocolReadAt(t *testing.T) {
 	// Now do some things and make sure they happen...
 
 	// TODO: Shutdown...
+	go destFromProtocol.HandleSend(context.TODO())
 	go destFromProtocol.HandleReadAt()
 	go destFromProtocol.HandleWriteAt()
 
@@ -89,8 +92,8 @@ func TestProtocolRWWriteAt(t *testing.T) {
 	r1, w1 := io.Pipe()
 	r2, w2 := io.Pipe()
 
-	prSource := protocol.NewProtocolRW(r1, w2)
-	prDest := protocol.NewProtocolRW(r2, w1)
+	prSource := protocol.NewProtocolRW(context.TODO(), r1, w2)
+	prDest := protocol.NewProtocolRW(context.TODO(), r2, w1)
 
 	sourceToProtocol := modules.NewToProtocol(uint64(size), 1, prSource)
 
@@ -103,6 +106,7 @@ func TestProtocolRWWriteAt(t *testing.T) {
 	// Now do some things and make sure they happen...
 
 	// TODO: Shutdown...
+	go destFromProtocol.HandleSend(context.TODO())
 	go destFromProtocol.HandleReadAt()
 	go destFromProtocol.HandleWriteAt()
 
@@ -139,8 +143,8 @@ func TestProtocolRWReadAt(t *testing.T) {
 	r1, w1 := io.Pipe()
 	r2, w2 := io.Pipe()
 
-	prSource := protocol.NewProtocolRW(r1, w2)
-	prDest := protocol.NewProtocolRW(r2, w1)
+	prSource := protocol.NewProtocolRW(context.TODO(), r1, w2)
+	prDest := protocol.NewProtocolRW(context.TODO(), r2, w1)
 
 	sourceToProtocol := modules.NewToProtocol(uint64(size), 1, prSource)
 
@@ -153,6 +157,7 @@ func TestProtocolRWReadAt(t *testing.T) {
 	// Now do some things and make sure they happen...
 
 	// TODO: Shutdown...
+	go destFromProtocol.HandleSend(context.TODO())
 	go destFromProtocol.HandleReadAt()
 	go destFromProtocol.HandleWriteAt()
 

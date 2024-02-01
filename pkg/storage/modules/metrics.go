@@ -27,6 +27,20 @@ type Metrics struct {
 	metric_flush_errors uint64
 }
 
+type MetricsSnapshot struct {
+	Read_ops     uint64
+	Read_bytes   uint64
+	Read_time    uint64
+	Read_errors  uint64
+	Write_ops    uint64
+	Write_bytes  uint64
+	Write_time   uint64
+	Write_errors uint64
+	Flush_ops    uint64
+	Flush_time   uint64
+	Flush_errors uint64
+}
+
 func NewMetrics(prov storage.StorageProvider) *Metrics {
 	return &Metrics{
 		prov: prov,
@@ -72,7 +86,22 @@ func (i *Metrics) ShowStats(prefix string) {
 		flush_avg_time,
 		atomic.LoadUint64(&i.metric_flush_errors),
 	)
+}
 
+func (i *Metrics) Snapshot() *MetricsSnapshot {
+	return &MetricsSnapshot{
+		Read_ops:     atomic.LoadUint64(&i.metric_read_ops),
+		Read_bytes:   atomic.LoadUint64(&i.metric_read_bytes),
+		Read_time:    atomic.LoadUint64(&i.metric_read_time),
+		Read_errors:  atomic.LoadUint64(&i.metric_read_errors),
+		Write_ops:    atomic.LoadUint64(&i.metric_write_ops),
+		Write_bytes:  atomic.LoadUint64(&i.metric_write_bytes),
+		Write_time:   atomic.LoadUint64(&i.metric_write_time),
+		Write_errors: atomic.LoadUint64(&i.metric_write_errors),
+		Flush_ops:    atomic.LoadUint64(&i.metric_flush_ops),
+		Flush_time:   atomic.LoadUint64(&i.metric_flush_time),
+		Flush_errors: atomic.LoadUint64(&i.metric_flush_errors),
+	}
 }
 
 func (i *Metrics) ResetMetrics() {

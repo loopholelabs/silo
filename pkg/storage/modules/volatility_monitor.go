@@ -20,6 +20,7 @@ func (bd *blockData) Add(expiry time.Duration) {
 	n := time.Now().UnixNano()
 
 	// Either add it on, or replace an expired one...
+	// TODO: Should probably periodically do a cleanup
 	for i := 0; i < len(bd.log); i++ {
 		if bd.log[i] < n-int64(expiry) {
 			bd.log[i] = n
@@ -53,6 +54,7 @@ type VolatilityMonitor struct {
 	block_data      map[uint]*blockData
 	block_data_lock sync.Mutex
 	available       util.Bitfield
+	total_data      *blockData
 }
 
 func NewVolatilityMonitor(prov storage.StorageProvider, block_size int, expiry time.Duration) *VolatilityMonitor {
@@ -65,6 +67,7 @@ func NewVolatilityMonitor(prov storage.StorageProvider, block_size int, expiry t
 		block_data: make(map[uint]*blockData),
 		available:  *util.NewBitfield(num_blocks),
 		expiry:     expiry,
+		total_data: &blockData{log: make([]int64, 0)},
 	}
 }
 
@@ -136,6 +139,16 @@ func (i *VolatilityMonitor) GetVolatility(block int) int {
 	return 0
 }
 
+/**
+ * Get a reading for a specific block
+ *
+ */
+func (i *VolatilityMonitor) GetTotalVolatility() int {
+	i.block_data_lock.Lock()
+	defer i.block_data_lock.Unlock()
+	return i.total_data.Count(i.expiry)
+}
+
 func (i *VolatilityMonitor) ReadAt(buffer []byte, offset int64) (int, error) {
 	return i.prov.ReadAt(buffer, offset)
 }
@@ -162,6 +175,8 @@ func (i *VolatilityMonitor) WriteAt(buffer []byte, offset int64) (int, error) {
 			bd.Add(i.expiry)
 			i.block_data_lock.Unlock()
 		}
+		// Always measure this...
+		i.total_data.Add(i.expiry) // Add to the total volatility counter
 	}
 
 	return n, err
