@@ -69,3 +69,20 @@ func (i *ToProtocol) Flush() error {
 func (i *ToProtocol) Size() uint64 {
 	return i.size
 }
+
+// Handle any ReadAt commands, and send to an orderer...
+func (i *ToProtocol) HandleNeedAt(cb func(offset int64, length int32)) error {
+	for {
+		_, data, err := i.protocol.WaitForCommand(i.dev, protocol.COMMAND_NEED_AT)
+		if err != nil {
+			return err
+		}
+		offset, length, err := protocol.DecodeNeedAt(data)
+		if err != nil {
+			return err
+		}
+
+		// We could spin up a goroutine here, but the assumption is that cb won't take long.
+		cb(offset, length)
+	}
+}

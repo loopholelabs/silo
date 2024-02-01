@@ -3,7 +3,6 @@ package protocol
 import (
 	"context"
 	"encoding/binary"
-	"fmt"
 	"io"
 	"sync"
 	"sync/atomic"
@@ -80,8 +79,6 @@ func (p *ProtocolRW) Handle() error {
 			return err
 		}
 		// Now queue it up in a channel
-
-		fmt.Printf("DEV %d ID %d DATA %d\n", dev, id, len(data))
 
 		cmd := data[0]
 

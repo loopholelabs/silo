@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"math"
+	"math/rand"
 	"net"
 	"net/http"
 	"os"
@@ -40,7 +42,7 @@ func init() {
 	rootCmd.AddCommand(cmdServe)
 	cmdServe.Flags().StringVarP(&serve_addr, "addr", "a", ":5170", "Address to serve from")
 	cmdServe.Flags().StringVarP(&serve_dev, "dev", "d", "", "Device eg nbd1")
-	cmdServe.Flags().IntVarP(&serve_size, "size", "s", 1024*1024*10, "Size")
+	cmdServe.Flags().IntVarP(&serve_size, "size", "s", 1024*1024*1024, "Size")
 }
 
 var (
@@ -66,7 +68,7 @@ func runServe(ccmd *cobra.Command, args []string) {
 	http.Handle("/metrics", promhttp.Handler())
 	go http.ListenAndServe(":2112", nil)
 
-	block_size := 4096
+	block_size := 1024 * 64
 	num_blocks := (serve_size + block_size - 1) / block_size
 
 	var p storage.ExposedStorage
@@ -82,6 +84,8 @@ func runServe(ccmd *cobra.Command, args []string) {
 	sourceDirty := modules.NewFilterReadDirtyTracker(sourceMetrics, block_size)
 	sourceMonitor := modules.NewVolatilityMonitor(sourceDirty, block_size, 10*time.Second)
 	sourceStorage := modules.NewLockable(sourceMonitor)
+
+	go writeRandom(sourceStorage)
 
 	// Start monitoring blocks.
 	orderer := blocks.NewPriorityBlockOrder(num_blocks, sourceMonitor)
@@ -114,7 +118,7 @@ func runServe(ccmd *cobra.Command, args []string) {
 		fmt.Printf("Ready...\n")
 	}
 
-	// TODO: Setup listener here. When client connects, migrate to it.
+	// Setup listener here. When client connects, migrate data to it.
 
 	l, err := net.Listen("tcp", serve_addr)
 	if err != nil {
@@ -146,6 +150,22 @@ func runServe(ccmd *cobra.Command, args []string) {
 
 			go pro.Handle()
 
+			go dest.HandleNeedAt(func(offset int64, length int32) {
+				// Prioritize blocks...
+				end := uint64(offset + int64(length))
+				if end > uint64(serve_size) {
+					end = uint64(serve_size)
+				}
+
+				b_start := int(offset / int64(block_size))
+				b_end := int((end-1)/uint64(block_size)) + 1
+				for b := b_start; b < b_end; b++ {
+					// Ask the orderer to prioritize these blocks...
+					fmt.Printf("ORDER - Prioritizing block %d\n", b)
+					orderer.PrioritiseBlock(b)
+				}
+			})
+
 			mig := storage.NewMigrator(sourceDirty,
 				dest,
 				block_size,
@@ -156,6 +176,8 @@ func runServe(ccmd *cobra.Command, args []string) {
 			// Now do the migration...
 			err = mig.Migrate()
 			fmt.Printf("MIGRATION DONE %v\n", err)
+
+			c.Close()
 		}
 	}()
 
@@ -251,4 +273,33 @@ func shutdown(device string, p storage.ExposedStorage) error {
 		return err
 	}
 	return nil
+}
+
+func writeRandom(s storage.StorageProvider) {
+	size := int(s.Size())
+
+	for {
+		mid := size / 2
+		quarter := size / 4
+
+		var o int
+		area := rand.Intn(4)
+		if area == 0 {
+			// random in upper half
+			o = mid + rand.Intn(mid)
+		} else {
+			// random in the lower quarter
+			v := rand.Float64() * math.Pow(float64(quarter), 8)
+			o = quarter + int(math.Sqrt(math.Sqrt(math.Sqrt(v))))
+		}
+
+		v := rand.Intn(256)
+		b := make([]byte, 1)
+		b[0] = byte(v)
+		s.WriteAt(b, int64(o))
+
+		w := rand.Intn(100)
+		time.Sleep(time.Duration(w) * time.Millisecond)
+	}
+
 }

@@ -99,3 +99,9 @@ func (fp *FromProtocol) HandleWriteAt() error {
 		}(offset, write_data, id)
 	}
 }
+
+func (i *FromProtocol) NeedAt(offset int64, length int32) error {
+	b := protocol.EncodeNeedAt(offset, length)
+	_, err := i.protocol.SendPacket(i.dev, protocol.ID_PICK_ANY, b)
+	return err
+}

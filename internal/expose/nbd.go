@@ -154,12 +154,13 @@ func (s *NBDExposedStorage) Shutdown() error {
 	}
 
 	for _, c := range calls {
-		//		fmt.Printf("IOCTL %d %d\n", c.Cmd, c.Value)
+		fmt.Printf("IOCTL %d %d\n", c.Cmd, c.Value)
 		_, _, en := syscall.Syscall(syscall.SYS_IOCTL, s.fp, c.Cmd, c.Value)
 		if en != 0 {
 			return fmt.Errorf("syscall error %s", syscall.Errno(en))
 		}
 	}
+	fmt.Printf("CLOSING DEVICE...\n")
 	/*
 		fmt.Printf("Close socketPair[1] %d\n", s.socketPair[1])
 		err := syscall.Close(s.socketPair[1])

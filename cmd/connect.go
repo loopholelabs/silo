@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"net"
 	"net/http"
 	"os"
@@ -36,7 +37,7 @@ func init() {
 	rootCmd.AddCommand(cmdConnect)
 	cmdConnect.Flags().StringVarP(&connect_addr, "addr", "a", "localhost:5170", "Address to serve from")
 	cmdConnect.Flags().StringVarP(&connect_dev, "dev", "d", "", "Device eg nbd1")
-	cmdConnect.Flags().IntVarP(&connect_size, "size", "s", 1024*1024*10, "Size")
+	cmdConnect.Flags().IntVarP(&connect_size, "size", "s", 1024*1024*1024, "Size")
 }
 
 func runConnect(ccmd *cobra.Command, args []string) {
@@ -46,7 +47,7 @@ func runConnect(ccmd *cobra.Command, args []string) {
 	http.Handle("/metrics", promhttp.Handler())
 	go http.ListenAndServe(":4114", nil)
 
-	block_size := 4096
+	block_size := 1024 * 64
 
 	var p storage.ExposedStorage
 
@@ -67,11 +68,35 @@ func runConnect(ccmd *cobra.Command, args []string) {
 	pro := protocol.NewProtocolRW(context.TODO(), con, con)
 	dest := modules.NewFromProtocol(777, destStorageMetrics, pro)
 
+	destWaiting.NeedAt = func(offset int64, length int32) {
+		fmt.Printf("Asking to prioritize range %d len %d\n", offset, length)
+		dest.NeedAt(offset, length)
+	}
+
 	go pro.Handle()
 
 	go dest.HandleSend(context.TODO())
 	go dest.HandleReadAt()
 	go dest.HandleWriteAt()
+
+	// Something to randomly read...
+	go func() {
+		for {
+
+			o := rand.Intn(connect_size)
+
+			b := make([]byte, 1)
+
+			//			rtime := time.Now()
+			destStorageMetrics.ReadAt(b, int64(o))
+
+			//			fmt.Printf("DATA READ %d %d %v %dms\n", o, n, err, time.Since(rtime).Milliseconds())
+
+			w := rand.Intn(10)
+
+			time.Sleep(time.Duration(w) * time.Millisecond)
+		}
+	}()
 
 	c := make(chan os.Signal)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)

@@ -18,6 +18,7 @@ type WaitingCache struct {
 	size         uint64
 	lockers      map[uint]*sync.RWMutex
 	lockers_lock sync.Mutex
+	NeedAt       func(offset int64, length int32)
 }
 
 func NewWaitingCache(prov storage.StorageProvider, block_size int) *WaitingCache {
@@ -28,6 +29,7 @@ func NewWaitingCache(prov storage.StorageProvider, block_size int) *WaitingCache
 		block_size: block_size,
 		size:       prov.Size(),
 		lockers:    make(map[uint]*sync.RWMutex),
+		NeedAt:     func(offset int64, length int32) {},
 	}
 }
 
@@ -39,6 +41,16 @@ func (i *WaitingCache) ReadAt(buffer []byte, offset int64) (int, error) {
 
 	b_start := uint(offset / int64(i.block_size))
 	b_end := uint((end-1)/uint64(i.block_size)) + 1
+
+	// Check if we have all the data
+	i.lockers_lock.Lock()
+	avail := i.available.BitsSet(uint(b_start), uint(b_end))
+	i.lockers_lock.Unlock()
+
+	if !avail {
+		// Send a request...
+		i.NeedAt(offset, int32(len(buffer)))
+	}
 
 	// WAIT until all the data is available.
 	for b := b_start; b < b_end; b++ {
