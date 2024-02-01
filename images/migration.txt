@@ -1,0 +1,30 @@
+seqdiag {
+  === 1. Consumer A Reads ===
+
+Consumer_A -> Silo_A [label = "Read"];
+Consumer_A <- Silo_A [label = "DATA"];
+
+  === 2. Consumer A Writes ===
+
+Consumer_A => Silo_A [label = "Write"];
+
+  === 3. Migration ===
+
+Silo_A => Silo_B [label = "Blocks"];
+
+  === 4. Consumer B Reads ===
+
+Consumer_B => Silo_B [label = "Read 1"];
+
+Consumer_B -> Silo_B [label = "Read 2"];
+Silo_B => Silo_A [label = "Request"];
+Consumer_B <- Silo_B [label = "Block received"];
+
+  === 5. (Optional) Get dirty blocks ===
+Silo_A => Silo_B [label = "List of dirty blocks"];
+
+  === 6. (Optional) ReMigration ===
+
+Silo_A => Silo_B [label = "Dirty Blocks"];
+
+}

@@ -1,0 +1,152 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.0//EN" "http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd">
+<svg viewBox="0 0 832 1580" xmlns="http://www.w3.org/2000/svg" xmlns:inkspace="http://www.inkscape.org/namespaces/inkscape" xmlns:xlink="http://www.w3.org/1999/xlink">
+  <defs id="defs_block">
+    <filter height="1.504" id="filter_blur" inkspace:collect="always" width="1.1575" x="-0.07875" y="-0.252">
+      <feGaussianBlur id="feGaussianBlur3780" inkspace:collect="always" stdDeviation="4.2" />
+    </filter>
+  </defs>
+  <title>blockdiag</title>
+  <desc>seqdiag {
+  === 1. Consumer A Reads ===
+
+Consumer_A -&gt; Silo_A [label = "Read"];
+Consumer_A &lt;- Silo_A [label = "DATA"];
+
+  === 2. Consumer A Writes ===
+
+Consumer_A =&gt; Silo_A [label = "Write"];
+
+  === 3. Migration ===
+
+Silo_A =&gt; Silo_B [label = "Blocks"];
+
+  === 4. Consumer B Reads ===
+
+Consumer_B =&gt; Silo_B [label = "Read 1"];
+
+Consumer_B -&gt; Silo_B [label = "Read 2"];
+Silo_B =&gt; Silo_A [label = "Request"];
+Consumer_B &lt;- Silo_B [label = "Block received"];
+
+  === 5. (Optional) Get dirty blocks ===
+Silo_A =&gt; Silo_B [label = "List of dirty blocks"];
+
+  === 6. (Optional) ReMigration ===
+
+Silo_A =&gt; Silo_B [label = "Dirty Blocks"];
+
+}</desc>
+  <rect fill="rgb(0,0,0)" height="1432" style="filter:url(#filter_blur);opacity:0.7;fill-opacity:1" width="8" x="127" y="126" />
+  <rect fill="rgb(0,0,0)" height="65" style="filter:url(#filter_blur);opacity:0.7;fill-opacity:1" width="8" x="319" y="221" />
+  <rect fill="rgb(0,0,0)" height="50" style="filter:url(#filter_blur);opacity:0.7;fill-opacity:1" width="8" x="319" y="431" />
+  <rect fill="rgb(0,0,0)" height="50" style="filter:url(#filter_blur);opacity:0.7;fill-opacity:1" width="8" x="319" y="1003" />
+  <rect fill="rgb(0,0,0)" height="50" style="filter:url(#filter_blur);opacity:0.7;fill-opacity:1" width="8" x="511" y="626" />
+  <rect fill="rgb(0,0,0)" height="50" style="filter:url(#filter_blur);opacity:0.7;fill-opacity:1" width="8" x="511" y="821" />
+  <rect fill="rgb(0,0,0)" height="182" style="filter:url(#filter_blur);opacity:0.7;fill-opacity:1" width="8" x="511" y="936" />
+  <rect fill="rgb(0,0,0)" height="50" style="filter:url(#filter_blur);opacity:0.7;fill-opacity:1" width="8" x="511" y="1265" />
+  <rect fill="rgb(0,0,0)" height="50" style="filter:url(#filter_blur);opacity:0.7;fill-opacity:1" width="8" x="511" y="1462" />
+  <rect fill="rgb(0,0,0)" height="40" stroke="rgb(0,0,0)" style="filter:url(#filter_blur);opacity:0.7;fill-opacity:1" width="128" x="67" y="46" />
+  <rect fill="rgb(0,0,0)" height="40" stroke="rgb(0,0,0)" style="filter:url(#filter_blur);opacity:0.7;fill-opacity:1" width="128" x="259" y="46" />
+  <rect fill="rgb(0,0,0)" height="40" stroke="rgb(0,0,0)" style="filter:url(#filter_blur);opacity:0.7;fill-opacity:1" width="128" x="451" y="46" />
+  <rect fill="rgb(0,0,0)" height="40" stroke="rgb(0,0,0)" style="filter:url(#filter_blur);opacity:0.7;fill-opacity:1" width="128" x="643" y="46" />
+  <path d="M 128 80 L 128 1568" fill="none" stroke="rgb(0,0,0)" stroke-dasharray="8 4" />
+  <rect fill="moccasin" height="1432" stroke="rgb(0,0,0)" width="8" x="124" y="120" />
+  <path d="M 320 80 L 320 1568" fill="none" stroke="rgb(0,0,0)" stroke-dasharray="8 4" />
+  <rect fill="moccasin" height="65" stroke="rgb(0,0,0)" width="8" x="316" y="215" />
+  <rect fill="moccasin" height="50" stroke="rgb(0,0,0)" width="8" x="316" y="425" />
+  <rect fill="moccasin" height="50" stroke="rgb(0,0,0)" width="8" x="316" y="997" />
+  <path d="M 512 80 L 512 1568" fill="none" stroke="rgb(0,0,0)" stroke-dasharray="8 4" />
+  <rect fill="moccasin" height="50" stroke="rgb(0,0,0)" width="8" x="508" y="620" />
+  <rect fill="moccasin" height="50" stroke="rgb(0,0,0)" width="8" x="508" y="815" />
+  <rect fill="moccasin" height="182" stroke="rgb(0,0,0)" width="8" x="508" y="930" />
+  <rect fill="moccasin" height="50" stroke="rgb(0,0,0)" width="8" x="508" y="1259" />
+  <rect fill="moccasin" height="50" stroke="rgb(0,0,0)" width="8" x="508" y="1456" />
+  <path d="M 704 80 L 704 1568" fill="none" stroke="rgb(0,0,0)" stroke-dasharray="8 4" />
+  <rect fill="rgb(255,255,255)" height="40" stroke="rgb(0,0,0)" width="128" x="64" y="40" />
+  <text fill="rgb(0,0,0)" font-family="sans-serif" font-size="11" font-style="normal" font-weight="normal" text-anchor="middle" textLength="72" x="128.0" y="67">Consumer_A</text>
+  <rect fill="rgb(255,255,255)" height="40" stroke="rgb(0,0,0)" width="128" x="256" y="40" />
+  <text fill="rgb(0,0,0)" font-family="sans-serif" font-size="11" font-style="normal" font-weight="normal" text-anchor="middle" textLength="36" x="320.0" y="67">Silo_A</text>
+  <rect fill="rgb(255,255,255)" height="40" stroke="rgb(0,0,0)" width="128" x="448" y="40" />
+  <text fill="rgb(0,0,0)" font-family="sans-serif" font-size="11" font-style="normal" font-weight="normal" text-anchor="middle" textLength="35" x="512.5" y="67">Silo_B</text>
+  <rect fill="rgb(255,255,255)" height="40" stroke="rgb(0,0,0)" width="128" x="640" y="40" />
+  <text fill="rgb(0,0,0)" font-family="sans-serif" font-size="11" font-style="normal" font-weight="normal" text-anchor="middle" textLength="71" x="704.5" y="67">Consumer_B</text>
+  <path d="M 136 215 L 312 215" fill="none" stroke="rgb(0,0,0)" />
+  <polygon fill="rgb(0,0,0)" points="304,211 312,215 304,219" stroke="rgb(0,0,0)" />
+  <path d="M 136 280 L 312 280" fill="none" stroke="rgb(0,0,0)" />
+  <polygon fill="rgb(0,0,0)" points="144,276 136,280 144,284" stroke="rgb(0,0,0)" />
+  <path d="M 136 425 L 312 425" fill="none" stroke="rgb(0,0,0)" />
+  <polygon fill="rgb(0,0,0)" points="304,421 312,425 304,429" stroke="rgb(0,0,0)" />
+  <path d="M 136 475 L 312 475" fill="none" stroke="rgb(0,0,0)" stroke-dasharray="4" />
+  <polygon fill="rgb(0,0,0)" points="144,471 136,475 144,479" stroke="rgb(0,0,0)" />
+  <path d="M 328 620 L 504 620" fill="none" stroke="rgb(0,0,0)" />
+  <polygon fill="rgb(0,0,0)" points="496,616 504,620 496,624" stroke="rgb(0,0,0)" />
+  <path d="M 328 670 L 504 670" fill="none" stroke="rgb(0,0,0)" stroke-dasharray="4" />
+  <polygon fill="rgb(0,0,0)" points="336,666 328,670 336,674" stroke="rgb(0,0,0)" />
+  <path d="M 520 815 L 696 815" fill="none" stroke="rgb(0,0,0)" />
+  <polygon fill="rgb(0,0,0)" points="528,811 520,815 528,819" stroke="rgb(0,0,0)" />
+  <path d="M 520 865 L 696 865" fill="none" stroke="rgb(0,0,0)" stroke-dasharray="4" />
+  <polygon fill="rgb(0,0,0)" points="688,861 696,865 688,869" stroke="rgb(0,0,0)" />
+  <path d="M 520 930 L 696 930" fill="none" stroke="rgb(0,0,0)" />
+  <polygon fill="rgb(0,0,0)" points="528,926 520,930 528,934" stroke="rgb(0,0,0)" />
+  <path d="M 328 997 L 504 997" fill="none" stroke="rgb(0,0,0)" />
+  <polygon fill="rgb(0,0,0)" points="336,993 328,997 336,1001" stroke="rgb(0,0,0)" />
+  <path d="M 328 1047 L 504 1047" fill="none" stroke="rgb(0,0,0)" stroke-dasharray="4" />
+  <polygon fill="rgb(0,0,0)" points="496,1043 504,1047 496,1051" stroke="rgb(0,0,0)" />
+  <path d="M 520 1112 L 696 1112" fill="none" stroke="rgb(0,0,0)" />
+  <polygon fill="rgb(0,0,0)" points="688,1108 696,1112 688,1116" stroke="rgb(0,0,0)" />
+  <path d="M 328 1259 L 504 1259" fill="none" stroke="rgb(0,0,0)" />
+  <polygon fill="rgb(0,0,0)" points="496,1255 504,1259 496,1263" stroke="rgb(0,0,0)" />
+  <path d="M 328 1309 L 504 1309" fill="none" stroke="rgb(0,0,0)" stroke-dasharray="4" />
+  <polygon fill="rgb(0,0,0)" points="336,1305 328,1309 336,1313" stroke="rgb(0,0,0)" />
+  <path d="M 328 1456 L 504 1456" fill="none" stroke="rgb(0,0,0)" />
+  <polygon fill="rgb(0,0,0)" points="496,1452 504,1456 496,1460" stroke="rgb(0,0,0)" />
+  <path d="M 328 1506 L 504 1506" fill="none" stroke="rgb(0,0,0)" stroke-dasharray="4" />
+  <polygon fill="rgb(0,0,0)" points="336,1502 328,1506 336,1510" stroke="rgb(0,0,0)" />
+  <text fill="rgb(0,0,0)" font-family="sans-serif" font-size="11" font-style="normal" font-weight="normal" text-anchor="middle" textLength="28" x="158.0" y="211">Read</text>
+  <text fill="rgb(0,0,0)" font-family="sans-serif" font-size="11" font-style="normal" font-weight="normal" text-anchor="middle" textLength="32" x="292.0" y="276">DATA</text>
+  <text fill="rgb(0,0,0)" font-family="sans-serif" font-size="11" font-style="normal" font-weight="normal" text-anchor="middle" textLength="31" x="159.5" y="421">Write</text>
+  <text fill="rgb(0,0,0)" font-family="sans-serif" font-size="11" font-style="normal" font-weight="normal" text-anchor="middle" textLength="37" x="354.5" y="616">Blocks</text>
+  <text fill="rgb(0,0,0)" font-family="sans-serif" font-size="11" font-style="normal" font-weight="normal" text-anchor="middle" textLength="39" x="672.5" y="811">Read 1</text>
+  <text fill="rgb(0,0,0)" font-family="sans-serif" font-size="11" font-style="normal" font-weight="normal" text-anchor="middle" textLength="39" x="672.5" y="926">Read 2</text>
+  <text fill="rgb(0,0,0)" font-family="sans-serif" font-size="11" font-style="normal" font-weight="normal" text-anchor="middle" textLength="46" x="477.0" y="993">Request</text>
+  <text fill="rgb(0,0,0)" font-family="sans-serif" font-size="11" font-style="normal" font-weight="normal" text-anchor="middle" textLength="82" x="569.0" y="1108">Block received</text>
+  <text fill="rgb(0,0,0)" font-family="sans-serif" font-size="11" font-style="normal" font-weight="normal" text-anchor="middle" textLength="105" x="388.5" y="1255">List of dirty blocks</text>
+  <text fill="rgb(0,0,0)" font-family="sans-serif" font-size="11" font-style="normal" font-weight="normal" text-anchor="middle" textLength="69" x="370.5" y="1452">Dirty Blocks</text>
+  <path d="M 40 137 L 346 137" fill="none" stroke="rgb(0,0,0)" />
+  <path d="M 40 141 L 346 141" fill="none" stroke="rgb(0,0,0)" />
+  <path d="M 486 137 L 792 137" fill="none" stroke="rgb(0,0,0)" />
+  <path d="M 486 141 L 792 141" fill="none" stroke="rgb(0,0,0)" />
+  <rect fill="rgb(208,208,208)" height="19" stroke="rgb(0,0,0)" width="140" x="346" y="130" />
+  <text fill="rgb(0,0,0)" font-family="sans-serif" font-size="11" font-style="normal" font-weight="normal" text-anchor="middle" textLength="120" x="416.0" y="145">1. Consumer A Reads</text>
+  <path d="M 40 347 L 344 347" fill="none" stroke="rgb(0,0,0)" />
+  <path d="M 40 351 L 344 351" fill="none" stroke="rgb(0,0,0)" />
+  <path d="M 487 347 L 792 347" fill="none" stroke="rgb(0,0,0)" />
+  <path d="M 487 351 L 792 351" fill="none" stroke="rgb(0,0,0)" />
+  <rect fill="rgb(208,208,208)" height="19" stroke="rgb(0,0,0)" width="143" x="344" y="340" />
+  <text fill="rgb(0,0,0)" font-family="sans-serif" font-size="11" font-style="normal" font-weight="normal" text-anchor="middle" textLength="123" x="415.5" y="355">2. Consumer A Writes</text>
+  <path d="M 40 542 L 371 542" fill="none" stroke="rgb(0,0,0)" />
+  <path d="M 40 546 L 371 546" fill="none" stroke="rgb(0,0,0)" />
+  <path d="M 460 542 L 792 542" fill="none" stroke="rgb(0,0,0)" />
+  <path d="M 460 546 L 792 546" fill="none" stroke="rgb(0,0,0)" />
+  <rect fill="rgb(208,208,208)" height="21" stroke="rgb(0,0,0)" width="89" x="371" y="534" />
+  <text fill="rgb(0,0,0)" font-family="sans-serif" font-size="11" font-style="normal" font-weight="normal" text-anchor="middle" textLength="69" x="415.5" y="551">3. Migration</text>
+  <path d="M 40 737 L 345 737" fill="none" stroke="rgb(0,0,0)" />
+  <path d="M 40 741 L 345 741" fill="none" stroke="rgb(0,0,0)" />
+  <path d="M 486 737 L 792 737" fill="none" stroke="rgb(0,0,0)" />
+  <path d="M 486 741 L 792 741" fill="none" stroke="rgb(0,0,0)" />
+  <rect fill="rgb(208,208,208)" height="19" stroke="rgb(0,0,0)" width="141" x="345" y="730" />
+  <text fill="rgb(0,0,0)" font-family="sans-serif" font-size="11" font-style="normal" font-weight="normal" text-anchor="middle" textLength="121" x="415.5" y="745">4. Consumer B Reads</text>
+  <path d="M 40 1179 L 324 1179" fill="none" stroke="rgb(0,0,0)" />
+  <path d="M 40 1183 L 324 1183" fill="none" stroke="rgb(0,0,0)" />
+  <path d="M 507 1179 L 792 1179" fill="none" stroke="rgb(0,0,0)" />
+  <path d="M 507 1183 L 792 1183" fill="none" stroke="rgb(0,0,0)" />
+  <rect fill="rgb(208,208,208)" height="21" stroke="rgb(0,0,0)" width="183" x="324" y="1171" />
+  <text fill="rgb(0,0,0)" font-family="sans-serif" font-size="11" font-style="normal" font-weight="normal" text-anchor="middle" textLength="163" x="415.5" y="1188">5. (Optional) Get dirty blocks</text>
+  <path d="M 40 1376 L 334 1376" fill="none" stroke="rgb(0,0,0)" />
+  <path d="M 40 1380 L 334 1380" fill="none" stroke="rgb(0,0,0)" />
+  <path d="M 498 1376 L 792 1376" fill="none" stroke="rgb(0,0,0)" />
+  <path d="M 498 1380 L 792 1380" fill="none" stroke="rgb(0,0,0)" />
+  <rect fill="rgb(208,208,208)" height="21" stroke="rgb(0,0,0)" width="164" x="334" y="1368" />
+  <text fill="rgb(0,0,0)" font-family="sans-serif" font-size="11" font-style="normal" font-weight="normal" text-anchor="middle" textLength="144" x="416.0" y="1385">6. (Optional) ReMigration</text>
+</svg>
