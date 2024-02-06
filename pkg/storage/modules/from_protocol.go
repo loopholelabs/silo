@@ -100,6 +100,22 @@ func (fp *FromProtocol) HandleWriteAt() error {
 	}
 }
 
+// Handle any DirtyList commands
+func (fp *FromProtocol) HandleDirtyList(cb func(blocks []uint32)) error {
+	for {
+		_, data, err := fp.protocol.WaitForCommand(fp.dev, protocol.COMMAND_DIRTY_LIST)
+		if err != nil {
+			return err
+		}
+		blocks, err := protocol.DecodeDirtyList(data)
+		if err != nil {
+			return err
+		}
+
+		cb(blocks)
+	}
+}
+
 func (i *FromProtocol) NeedAt(offset int64, length int32) error {
 	b := protocol.EncodeNeedAt(offset, length)
 	_, err := i.protocol.SendPacket(i.dev, protocol.ID_PICK_ANY, b)

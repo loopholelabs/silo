@@ -10,6 +10,8 @@ import (
 /**
  * Waiting cache StorageProvider
  *
+ * NB: This tracks COMPLETE blocks only. Not partial ones.
+ *
  */
 type WaitingCache struct {
 	prov         storage.StorageProvider
@@ -42,7 +44,7 @@ func (i *WaitingCache) ReadAt(buffer []byte, offset int64) (int, error) {
 	b_start := uint(offset / int64(i.block_size))
 	b_end := uint((end-1)/uint64(i.block_size)) + 1
 
-	// Check if we have all the data
+	// Check if we have all the data required
 	i.lockers_lock.Lock()
 	avail := i.available.BitsSet(uint(b_start), uint(b_end))
 	i.lockers_lock.Unlock()
@@ -79,6 +81,15 @@ func (i *WaitingCache) haveBlock(b uint) {
 	i.lockers_lock.Unlock()
 }
 
+func (i *WaitingCache) haveNotBlock(b uint) {
+	i.lockers_lock.Lock()
+	avail := i.available.BitSet(int(b))
+	if avail {
+		i.available.ClearBit(int(b))
+	}
+	i.lockers_lock.Unlock()
+}
+
 func (i *WaitingCache) waitForBlock(b uint) {
 	i.lockers_lock.Lock()
 	avail := i.available.BitSet(int(b))
@@ -109,11 +120,26 @@ func (i *WaitingCache) WriteAt(buffer []byte, offset int64) (int, error) {
 
 	n, err := i.prov.WriteAt(buffer, offset)
 
-	for b := b_start; b < b_end; b++ {
-		i.haveBlock(b)
+	// If the first block is incomplete, we won't mark it.
+	if offset > (int64(b_start) * int64(i.block_size)) {
+		b_start++
+	}
+	// If the last block is incomplete, we won't mark it.
+	if (end % uint64(i.block_size)) > 0 {
+		b_end--
+	}
+
+	if b_end > b_start {
+		for b := b_start; b < b_end; b++ {
+			i.haveBlock(b)
+		}
 	}
 
 	return n, err
+}
+
+func (i *WaitingCache) Unmark(block uint) {
+	i.haveNotBlock(block)
 }
 
 func (i *WaitingCache) Flush() error {

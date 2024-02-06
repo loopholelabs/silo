@@ -111,3 +111,43 @@ func TestWriteAtResponse(t *testing.T) {
 	assert.Error(t, rare.Error)
 
 }
+
+func TestNeedAt(t *testing.T) {
+
+	b := EncodeNeedAt(12345, 10)
+
+	off, length, err := DecodeNeedAt(b)
+	assert.NoError(t, err)
+	assert.Equal(t, int64(12345), off)
+	assert.Equal(t, int32(10), length)
+
+	// Make sure we can't decode silly things
+	_, _, err = DecodeNeedAt(nil)
+	assert.Error(t, err)
+
+	_, _, err = DecodeNeedAt([]byte{
+		99,
+	})
+	assert.Error(t, err)
+
+}
+
+func TestDirtyList(t *testing.T) {
+
+	blocks := []uint32{1, 7, 100}
+	b := EncodeDirtyList(blocks)
+
+	blocks2, err := DecodeDirtyList(b)
+	assert.NoError(t, err)
+	assert.Equal(t, blocks, blocks2)
+
+	// Make sure we can't decode silly things
+	_, err = DecodeDirtyList(nil)
+	assert.Error(t, err)
+
+	_, err = DecodeDirtyList([]byte{
+		99,
+	})
+	assert.Error(t, err)
+
+}

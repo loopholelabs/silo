@@ -73,7 +73,13 @@ func runConnect(ccmd *cobra.Command, args []string) {
 		dest.NeedAt(offset, length)
 	}
 
-	go pro.Handle()
+	go func() {
+		err := pro.Handle()
+		fmt.Printf("PROTOCOL ERROR %v\n", err)
+
+		// If it's EOF then the migration is completed, and we can switch to r/w
+
+	}()
 
 	go dest.HandleSend(context.TODO())
 	go dest.HandleReadAt()

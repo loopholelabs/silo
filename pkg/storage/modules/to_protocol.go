@@ -18,6 +18,12 @@ func NewToProtocol(size uint64, deviceID uint32, p protocol.Protocol) *ToProtoco
 	}
 }
 
+func (i *ToProtocol) DirtyList(blocks []uint32) error {
+	b := protocol.EncodeDirtyList(blocks)
+	_, err := i.protocol.SendPacket(i.dev, protocol.ID_PICK_ANY, b)
+	return err
+}
+
 func (i *ToProtocol) ReadAt(buffer []byte, offset int64) (int, error) {
 	b := protocol.EncodeReadAt(offset, int32(len(buffer)))
 	id, err := i.protocol.SendPacket(i.dev, protocol.ID_PICK_ANY, b)
