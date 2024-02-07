@@ -145,7 +145,6 @@ func (m *Migrator) GetLatestDirty() []uint {
  * MigrateDirty migrates a list of dirty blocks.
  */
 func (m *Migrator) MigrateDirty(blocks []uint) error {
-	m.ctime = time.Now()
 
 	for _, pos := range blocks {
 		i := &BlockInfo{Block: int(pos), Type: BlockTypeDirty}
