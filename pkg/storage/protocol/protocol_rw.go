@@ -165,7 +165,6 @@ func (mp *ProtocolRW) WaitForCommand(dev uint32, cmd byte) (uint32, []byte, erro
 
 	select {
 	case p := <-wq:
-		// TODO: Remove the channel, as we only expect a SINGLE response with this ID.
 		return p.id, p.data, nil
 	case <-mp.ctx.Done():
 		return 0, nil, mp.ctx.Err()

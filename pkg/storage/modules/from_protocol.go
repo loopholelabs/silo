@@ -101,7 +101,7 @@ func (fp *FromProtocol) HandleWriteAt() error {
 }
 
 // Handle any DirtyList commands
-func (fp *FromProtocol) HandleDirtyList(cb func(blocks []uint32)) error {
+func (fp *FromProtocol) HandleDirtyList(cb func(blocks []uint)) error {
 	for {
 		_, data, err := fp.protocol.WaitForCommand(fp.dev, protocol.COMMAND_DIRTY_LIST)
 		if err != nil {

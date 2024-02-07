@@ -138,8 +138,10 @@ func (i *WaitingCache) WriteAt(buffer []byte, offset int64) (int, error) {
 	return n, err
 }
 
-func (i *WaitingCache) Unmark(block uint) {
-	i.haveNotBlock(block)
+func (i *WaitingCache) DirtyBlocks(blocks []uint) {
+	for _, v := range blocks {
+		i.haveNotBlock(v)
+	}
 }
 
 func (i *WaitingCache) Flush() error {

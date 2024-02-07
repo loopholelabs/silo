@@ -175,6 +175,27 @@ func runServe(ccmd *cobra.Command, args []string) {
 
 			// Now do the migration...
 			err = mig.Migrate()
+
+			for {
+				blocks := mig.GetLatestDirty()
+				if blocks == nil {
+					break
+				}
+
+				// Optional: Send the list of dirty blocks over...
+				dest.DirtyList(blocks)
+
+				err := mig.MigrateDirty(blocks)
+				if err != nil {
+					panic(err)
+				}
+			}
+
+			err = mig.WaitForCompletion()
+			if err != nil {
+				panic(err)
+			}
+
 			fmt.Printf("MIGRATION DONE %v\n", err)
 
 			c.Close()

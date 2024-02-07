@@ -1,7 +1,6 @@
 package storage
 
 import (
-	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -9,6 +8,9 @@ import (
 
 	"github.com/loopholelabs/silo/pkg/storage/util"
 )
+
+type MigratorConfig struct {
+}
 
 type Migrator struct {
 	src_track           TrackingStorageProvider
@@ -18,15 +20,18 @@ type Migrator struct {
 	block_size          int
 	num_blocks          int
 	metric_moved_blocks int64
+	moving_blocks       *util.Bitfield
 	migrated_blocks     *util.Bitfield
 	clean_blocks        *util.Bitfield
 	block_order         BlockOrder
 	ctime               time.Time
 
 	// Our queue for dirty blocks (remigration)
-	blocks_to_move   chan uint
-	blocks_by_n      map[uint]bool
-	blocks_by_n_lock sync.Mutex
+	blocks_to_move chan uint
+	blocks_by_n    map[uint]bool
+
+	concurrency map[int]chan bool
+	wg          sync.WaitGroup
 }
 
 func NewMigrator(source TrackingStorageProvider,
@@ -35,8 +40,17 @@ func NewMigrator(source TrackingStorageProvider,
 	lock_fn func(),
 	unlock_fn func(),
 	block_order BlockOrder) *Migrator {
+
+	// TODO: Pass in configuration...
+	concurrency_by_block := map[int]int{
+		BlockTypeAny:      32,
+		BlockTypeStandard: 32,
+		BlockTypeDirty:    100,
+		BlockTypePriority: 16,
+	}
+
 	num_blocks := (int(source.Size()) + block_size - 1) / block_size
-	return &Migrator{
+	m := &Migrator{
 		dest:                dest,
 		src_track:           source,
 		src_lock_fn:         lock_fn,
@@ -49,47 +63,40 @@ func NewMigrator(source TrackingStorageProvider,
 		clean_blocks:        util.NewBitfield(num_blocks),
 		blocks_to_move:      make(chan uint, num_blocks),
 		blocks_by_n:         make(map[uint]bool),
+		concurrency:         make(map[int]chan bool),
 	}
+
+	if m.dest.Size() != m.src_track.Size() {
+		// TODO: Return as error
+		panic("Sizes must be equal for migration")
+	}
+
+	// Initialize concurrency channels
+	for b, v := range concurrency_by_block {
+		m.concurrency[b] = make(chan bool, v)
+	}
+	return m
 }
 
 /**
  * Migrate storage to dest.
  */
 func (m *Migrator) Migrate() error {
-	if m.dest.Size() != m.src_track.Size() {
-		return errors.New("Sizes must be equal for migration")
-	}
-
 	m.ctime = time.Now()
 
-	concurrency_by_block := map[int]int{
-		BlockTypeAny:      32,
-		BlockTypeStandard: 32,
-		BlockTypeDirty:    100,
-		BlockTypePriority: 16,
-	}
-
-	concurrency := make(map[int]chan bool) // max concurrency by block type
-	for b, v := range concurrency_by_block {
-		concurrency[b] = make(chan bool, v)
-	}
-
-	var wg sync.WaitGroup
-
 	for {
-		// This will get the next queued migration, OR from the priority list
-		i, done := m.getNextBlock()
-		if done {
+		i := m.block_order.GetNext()
+		if i == BlockInfoFinish {
 			break
 		}
 
-		cc, ok := concurrency[i.Type]
+		cc, ok := m.concurrency[i.Type]
 		if !ok {
-			cc = concurrency[BlockTypeAny]
+			cc = m.concurrency[BlockTypeAny]
 		}
 		cc <- true
 
-		wg.Add(1)
+		m.wg.Add(1)
 
 		go func(block_no *BlockInfo) {
 			err := m.migrateBlock(block_no.Block)
@@ -102,20 +109,86 @@ func (m *Migrator) Migrate() error {
 
 			fmt.Printf("Block moved %d\n", block_no)
 			fmt.Printf("DATA %d,%d,,,,\n", time.Now().UnixMilli(), block_no)
-			wg.Done()
+			m.wg.Done()
 
-			cc, ok := concurrency[block_no.Type]
+			cc, ok := m.concurrency[block_no.Type]
 			if !ok {
-				cc = concurrency[BlockTypeAny]
+				cc = m.concurrency[BlockTypeAny]
 			}
 			<-cc
-
 		}(i)
 	}
+	return nil
+}
 
+/**
+ * Get the latest dirty blocks.
+ * If there a no more dirty blocks, we leave the src locked.
+ */
+func (m *Migrator) GetLatestDirty() []uint {
+	// Queue up some dirty blocks
+	m.src_lock_fn()
+
+	// Check for any dirty blocks to be added on
+	blocks := m.src_track.Sync()
+	changed := blocks.Count(0, blocks.Length())
+	if changed != 0 {
+		m.src_unlock_fn()
+
+		block_nos := blocks.Collect(0, blocks.Length())
+		return block_nos
+	}
+	return nil
+}
+
+/**
+ * MigrateDirty migrates a list of dirty blocks.
+ */
+func (m *Migrator) MigrateDirty(blocks []uint) error {
+	m.ctime = time.Now()
+
+	for _, pos := range blocks {
+		i := &BlockInfo{Block: int(pos), Type: BlockTypeDirty}
+
+		cc, ok := m.concurrency[i.Type]
+		if !ok {
+			cc = m.concurrency[BlockTypeAny]
+		}
+		cc <- true
+
+		m.wg.Add(1)
+
+		go func(block_no *BlockInfo) {
+			err := m.migrateBlock(block_no.Block)
+			if err != nil {
+				// TODO: Collect errors properly. Abort? Retry? fail?
+				fmt.Printf("ERROR moving block %v\n", err)
+			}
+
+			m.showProgress()
+
+			fmt.Printf("Dirty block moved %d\n", block_no)
+			fmt.Printf("DATA %d,%d,,,,\n", time.Now().UnixMilli(), block_no)
+			m.wg.Done()
+
+			cc, ok := m.concurrency[block_no.Type]
+			if !ok {
+				cc = m.concurrency[BlockTypeAny]
+			}
+			<-cc
+		}(i)
+
+		m.clean_blocks.ClearBit(int(pos))
+
+		m.showProgress()
+	}
+
+	return nil
+}
+
+func (m *Migrator) WaitForCompletion() error {
 	fmt.Printf("Waiting for pending transfers...\n")
-	wg.Wait()
-
+	m.wg.Wait()
 	m.showProgress()
 	return nil
 }
@@ -171,56 +244,4 @@ func (m *Migrator) migrateBlock(block int) error {
 	m.migrated_blocks.SetBit(block)
 	m.clean_blocks.SetBit(block)
 	return nil
-}
-
-/**
- * Check for any dirty blocks, and add them to the queue
- *
- */
-func (m *Migrator) queueDirtyBlocks() bool {
-	m.src_lock_fn()
-
-	// Check for any dirty blocks to be added on
-	blocks := m.src_track.Sync()
-	changed := blocks.Count(0, blocks.Length())
-	if changed != 0 {
-		m.src_unlock_fn()
-
-		fmt.Printf("Got %d more dirty blocks...\n", changed)
-
-		blocks.Exec(0, blocks.Length(), func(pos uint) bool {
-			m.blocks_by_n_lock.Lock()
-			_, ok := m.blocks_by_n[pos] // Dedup pending by block
-			if !ok {
-				m.blocks_to_move <- pos
-				m.blocks_by_n[pos] = true
-				m.clean_blocks.ClearBit(int(pos))
-			}
-			m.blocks_by_n_lock.Unlock()
-			return true
-		})
-		m.showProgress()
-		return true
-	}
-	return false
-}
-
-func (m *Migrator) getNextBlock() (*BlockInfo, bool) {
-	bl := m.block_order.GetNext()
-	if bl != BlockInfoFinish {
-		return bl, false
-	}
-
-	// Migration complete, now do dirty blocks...
-	m.queueDirtyBlocks()
-
-	if len(m.blocks_to_move) == 0 {
-		return nil, true
-	}
-
-	m.blocks_by_n_lock.Lock()
-	i := <-m.blocks_to_move
-	delete(m.blocks_by_n, i)
-	m.blocks_by_n_lock.Unlock()
-	return &BlockInfo{Block: int(i), Type: BlockTypeDirty}, false
 }

@@ -171,25 +171,27 @@ func (bf *Bitfield) BitsSet(start uint, end uint) bool {
 	p := start >> 6
 	i := uint64(1 << (start & 63))
 	n := start
-	for {
-		if n == end {
-			break
-		}
+	if n < end {
 		val := atomic.LoadUint64(&bf.data[p])
-		// Check the bit
-		if (val & i) == 0 {
-			return false
-		}
+		for {
+			// Check the bit
+			if (val & i) == 0 {
+				return false
+			}
 
-		// Move along one...
-		n++
-		i = i << 1
-		if i == 0 {
-			i = 1
-			p++
+			// Move along one...
+			n++
+			if n == end {
+				break
+			}
+			i = i << 1
+			if i == 0 {
+				i = 1
+				p++
+				val = atomic.LoadUint64(&bf.data[p])
+			}
 		}
 	}
-
 	return true
 }
 
@@ -201,26 +203,29 @@ func (bf *Bitfield) SetBitsIf(if_bf *Bitfield, start uint, end uint) {
 	p := start >> 6
 	i := uint64(1 << (start & 63))
 	n := start
-	for {
-		if n == end {
-			break
-		}
+	if n < end {
 		val := atomic.LoadUint64(&if_bf.data[p])
-		// Check the bit
-		if (val & i) != 0 {
-			// Set the bit in bf
-			old := atomic.LoadUint64(&bf.data[p])
-			for !atomic.CompareAndSwapUint64(&bf.data[p], old, old|i) {
-				old = atomic.LoadUint64(&bf.data[p])
+		for {
+			// Check the bit
+			if (val & i) != 0 {
+				// Set the bit in bf
+				old := atomic.LoadUint64(&bf.data[p])
+				for !atomic.CompareAndSwapUint64(&bf.data[p], old, old|i) {
+					old = atomic.LoadUint64(&bf.data[p])
+				}
 			}
-		}
 
-		// Move along one...
-		n++
-		i = i << 1
-		if i == 0 {
-			i = 1
-			p++
+			// Move along one...
+			n++
+			if n == end {
+				break
+			}
+			i = i << 1
+			if i == 0 {
+				i = 1
+				p++
+				val = atomic.LoadUint64(&if_bf.data[p])
+			}
 		}
 	}
 }
@@ -233,26 +238,29 @@ func (bf *Bitfield) ClearBitsIf(if_bf *Bitfield, start uint, end uint) {
 	p := start >> 6
 	i := uint64(1 << (start & 63))
 	n := start
-	for {
-		if n == end {
-			break
-		}
+	if n < end {
 		val := atomic.LoadUint64(&if_bf.data[p])
-		// Check the bit
-		if (val & i) != 0 {
-			// Set the bit in bf
-			old := atomic.LoadUint64(&bf.data[p])
-			for !atomic.CompareAndSwapUint64(&bf.data[p], old, old&^i) {
-				old = atomic.LoadUint64(&bf.data[p])
+		for {
+			// Check the bit
+			if (val & i) != 0 {
+				// Set the bit in bf
+				old := atomic.LoadUint64(&bf.data[p])
+				for !atomic.CompareAndSwapUint64(&bf.data[p], old, old&^i) {
+					old = atomic.LoadUint64(&bf.data[p])
+				}
 			}
-		}
 
-		// Move along one...
-		n++
-		i = i << 1
-		if i == 0 {
-			i = 1
-			p++
+			// Move along one...
+			n++
+			if n == end {
+				break
+			}
+			i = i << 1
+			if i == 0 {
+				i = 1
+				p++
+				val = atomic.LoadUint64(&if_bf.data[p])
+			}
 		}
 	}
 }
@@ -265,22 +273,25 @@ func (bf *Bitfield) Count(start uint, end uint) int {
 	i := uint64(1 << (start & 63))
 	n := start
 	count := 0
-	for {
-		if n == end {
-			break
-		}
+	if n < end {
 		val := atomic.LoadUint64(&bf.data[p])
-		// Check the bit
-		if (val & i) != 0 {
-			count++
-		}
+		for {
+			// Check the bit
+			if (val & i) != 0 {
+				count++
+			}
 
-		// Move along one...
-		n++
-		i = i << 1
-		if i == 0 {
-			i = 1
-			p++
+			// Move along one...
+			n++
+			if n == end {
+				break
+			}
+			i = i << 1
+			if i == 0 {
+				i = 1
+				p++
+				val = atomic.LoadUint64(&bf.data[p])
+			}
 		}
 	}
 	return count
@@ -294,30 +305,66 @@ func (bf *Bitfield) Exec(start uint, end uint, cb func(position uint) bool) {
 	p := start >> 6
 	i := uint64(1 << (start & 63))
 	n := start
-	for {
-		if n == end {
-			break
-		}
+	if n < end {
 		val := atomic.LoadUint64(&bf.data[p])
-		// Check the bit
-		if (val & i) != 0 {
-			if !cb(n) {
-				// Clear the bit
-				old := atomic.LoadUint64(&bf.data[p])
-				for !atomic.CompareAndSwapUint64(&bf.data[p], old, old&^i) {
-					old = atomic.LoadUint64(&bf.data[p])
+		for {
+			// Check the bit
+			if (val & i) != 0 {
+				if !cb(n) {
+					// Clear the bit
+					old := atomic.LoadUint64(&bf.data[p])
+					for !atomic.CompareAndSwapUint64(&bf.data[p], old, old&^i) {
+						old = atomic.LoadUint64(&bf.data[p])
+					}
 				}
 			}
-		}
 
-		// Move along one...
-		n++
-		i = i << 1
-		if i == 0 {
-			i = 1
-			p++
+			// Move along one...
+			n++
+			if n == end {
+				break
+			}
+			i = i << 1
+			if i == 0 {
+				i = 1
+				p++
+				val = atomic.LoadUint64(&bf.data[p])
+			}
 		}
 	}
+}
+
+/**
+ * Collect the positions of all 1 bits
+ *
+ */
+func (bf *Bitfield) Collect(start uint, end uint) []uint {
+	positions := make([]uint, 0)
+	p := start >> 6
+	i := uint64(1 << (start & 63))
+	n := start
+	if n < end {
+		val := atomic.LoadUint64(&bf.data[p])
+		for {
+			// Check the bit
+			if (val & i) != 0 {
+				positions = append(positions, n)
+			}
+
+			// Move along one...
+			n++
+			if n == end {
+				break
+			}
+			i = i << 1
+			if i == 0 {
+				i = 1
+				p++
+				val = atomic.LoadUint64(&bf.data[p])
+			}
+		}
+	}
+	return positions
 }
 
 /**

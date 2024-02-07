@@ -108,7 +108,7 @@ func TestMigrator(t *testing.T) {
 	//destStorage := sources.NewMemoryStorage(size)
 	cr := func(s int) storage.StorageProvider {
 		ms := sources.NewMemoryStorage(s)
-		msLat := modules.NewArtificialLatency(ms, 0, 10*time.Millisecond)
+		msLat := modules.NewArtificialLatency(ms, 0, 0, 10*time.Millisecond, 0)
 		msm := modules.NewMetrics(msLat)
 		metrics = append(metrics, msm)
 		return msm
@@ -170,9 +170,20 @@ func TestMigrator(t *testing.T) {
 		}
 	}()
 
-	// TODO: Currently this is done in a single go with no feedback.
 	m_start := time.Now()
 	mig.Migrate()
+
+	for {
+		blocks := mig.GetLatestDirty()
+		if blocks == nil {
+			break
+		}
+		err := mig.MigrateDirty(blocks)
+		assert.NoError(t, err)
+	}
+
+	err = mig.WaitForCompletion()
+	assert.NoError(t, err)
 	fmt.Printf("Migration took %d ms\n", time.Since(m_start).Milliseconds())
 
 	// This will end with migration completed, and consumer Locked.

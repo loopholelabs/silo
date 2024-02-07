@@ -13,17 +13,21 @@ import (
  *
  */
 type ArtificialLatency struct {
-	lock         sync.RWMutex
-	prov         storage.StorageProvider
-	latencyRead  time.Duration
-	latencyWrite time.Duration
+	lock                sync.RWMutex
+	prov                storage.StorageProvider
+	latencyRead         time.Duration
+	latencyWrite        time.Duration
+	latencyReadPerByte  time.Duration
+	latencyWritePerByte time.Duration
 }
 
-func NewArtificialLatency(prov storage.StorageProvider, latencyRead time.Duration, latencyWrite time.Duration) *ArtificialLatency {
+func NewArtificialLatency(prov storage.StorageProvider, latencyRead time.Duration, latencyReadPerByte time.Duration, latencyWrite time.Duration, latencyWritePerByte time.Duration) *ArtificialLatency {
 	return &ArtificialLatency{
-		prov:         prov,
-		latencyRead:  latencyRead,
-		latencyWrite: latencyWrite,
+		prov:                prov,
+		latencyRead:         latencyRead,
+		latencyWrite:        latencyWrite,
+		latencyReadPerByte:  latencyReadPerByte,
+		latencyWritePerByte: latencyWritePerByte,
 	}
 }
 
@@ -33,6 +37,9 @@ func (i *ArtificialLatency) ReadAt(buffer []byte, offset int64) (int, error) {
 	if i.latencyRead != 0 {
 		time.Sleep(i.latencyRead)
 	}
+	if i.latencyReadPerByte != 0 {
+		time.Sleep(i.latencyReadPerByte * time.Duration(len(buffer)))
+	}
 	return i.prov.ReadAt(buffer, offset)
 }
 
@@ -41,6 +48,9 @@ func (i *ArtificialLatency) WriteAt(buffer []byte, offset int64) (int, error) {
 	defer i.lock.Unlock()
 	if i.latencyWrite != 0 {
 		time.Sleep(i.latencyWrite)
+	}
+	if i.latencyWritePerByte != 0 {
+		time.Sleep(i.latencyWritePerByte * time.Duration(len(buffer)))
 	}
 	return i.prov.WriteAt(buffer, offset)
 }

@@ -153,3 +153,14 @@ func TestBitfieldEmpty(t *testing.T) {
 	assert.True(t, bf.Empty())
 
 }
+
+func TestBitfieldCollect(t *testing.T) {
+	bf := NewBitfield(1000)
+
+	bf.SetBits(100, 104)
+	bf.SetBit(200)
+
+	c := bf.Collect(0, bf.Length())
+
+	assert.Equal(t, []uint{100, 101, 102, 103, 200}, c)
+}

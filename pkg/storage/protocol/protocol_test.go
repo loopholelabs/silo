@@ -134,7 +134,7 @@ func TestNeedAt(t *testing.T) {
 
 func TestDirtyList(t *testing.T) {
 
-	blocks := []uint32{1, 7, 100}
+	blocks := []uint{1, 7, 100}
 	b := EncodeDirtyList(blocks)
 
 	blocks2, err := DecodeDirtyList(b)

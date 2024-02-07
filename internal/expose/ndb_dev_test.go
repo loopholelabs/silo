@@ -26,7 +26,7 @@ func BenchmarkDevRead(mb *testing.B) {
 			// Setup...
 			// Lets simulate a little latency
 			store := sources.NewMemoryStorage(int(diskSize))
-			store_latency := modules.NewArtificialLatency(store, 100*time.Millisecond, 100*time.Millisecond)
+			store_latency := modules.NewArtificialLatency(store, 100*time.Millisecond, 0, 100*time.Millisecond, 0)
 			driver := modules.NewMetrics(store_latency)
 
 			var d NBDDispatcher
@@ -131,7 +131,7 @@ func BenchmarkDevWrite(mb *testing.B) {
 			// Setup...
 			// Lets simulate a little latency
 			store := sources.NewMemoryStorage(int(diskSize))
-			store_latency := modules.NewArtificialLatency(store, 100*time.Millisecond, 100*time.Millisecond)
+			store_latency := modules.NewArtificialLatency(store, 100*time.Millisecond, 0, 100*time.Millisecond, 0)
 			driver := modules.NewMetrics(store_latency)
 
 			var d NBDDispatcher

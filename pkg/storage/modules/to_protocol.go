@@ -18,7 +18,7 @@ func NewToProtocol(size uint64, deviceID uint32, p protocol.Protocol) *ToProtoco
 	}
 }
 
-func (i *ToProtocol) DirtyList(blocks []uint32) error {
+func (i *ToProtocol) DirtyList(blocks []uint) error {
 	b := protocol.EncodeDirtyList(blocks)
 	_, err := i.protocol.SendPacket(i.dev, protocol.ID_PICK_ANY, b)
 	return err
