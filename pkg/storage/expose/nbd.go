@@ -2,10 +2,12 @@ package expose
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"os"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/loopholelabs/silo/pkg/storage"
 )
@@ -65,136 +67,198 @@ type IoctlCall struct {
 	Value uintptr
 }
 
-type NBDExposedStorage struct {
-	device       *os.File
-	fp           uintptr
-	socketPair   [2]int
-	readyChannel chan error
-	dispatcher   *Dispatch
+type ExposedStorageNBD struct {
+	dev             string
+	num_connections int
+	timeout         uint64
+	size            uint64
+	block_size      uint64
+	flags           uint64
+	socketPairs     [][2]int
+	device_file     uintptr
+	dispatch        *Dispatch
+	prov            storage.StorageProvider
 }
 
-/**
- * Handle storage requests using the provider
- *
- */
-func (s *NBDExposedStorage) Handle(prov storage.StorageProvider) error {
-	go func() {
-		err := s.dispatcher.Handle(s.socketPair[0], prov)
-		if err != nil {
-			fmt.Printf("RequestHandler quit unexpectedly %v\n", err)
-			//			fmt.Printf("Sleeping for a min...\n")
-			//			time.Sleep(time.Minute)
-			// Shutdown properly...
-			s.Shutdown()
-		}
-		/*
-			fmt.Printf("Close socketPair[0] %d\n", s.socketPair[0])
-			err = syscall.Close(s.socketPair[0])
-			if err != nil {
-				fmt.Printf("RequestHandler close error %v\n", err)
-			}
-		*/
-	}()
+func NewExposedStorageNBD(prov storage.StorageProvider, dev string, num_connections int, timeout uint64, size uint64, block_size uint64, flags uint64) *ExposedStorageNBD {
+	return &ExposedStorageNBD{
+		prov:            prov,
+		dev:             dev,
+		num_connections: num_connections,
+		timeout:         timeout,
+		size:            size,
+		block_size:      block_size,
+		flags:           flags,
+		dispatch:        NewDispatch(),
+	}
+}
 
-	// Issue ioctl calls to set it up
-	calls := []IoctlCall{
-		{NBD_SET_BLKSIZE, 4096},
-		{NBD_SET_TIMEOUT, 0},
-		{NBD_PRINT_DEBUG, 1},
-		{NBD_SET_SIZE, uintptr(prov.Size())},
-		{NBD_CLEAR_QUE, 0},
-		{NBD_CLEAR_SOCK, 0},
-		{NBD_SET_SOCK, uintptr(s.socketPair[1])},
-		{NBD_SET_FLAGS, NBD_FLAG_SEND_TRIM},
-		{NBD_DO_IT, 0},
+func (n *ExposedStorageNBD) setSizes(fp uintptr, size uint64, block_size uint64, flags uint64) error {
+	//read_only := ((flags & NBD_FLAG_READ_ONLY) == 1)
+
+	tmp_blocksize := uint64(4096)
+	if size/block_size <= ^uint64(0) {
+		tmp_blocksize = block_size
+	}
+	_, _, en := syscall.Syscall(syscall.SYS_IOCTL, fp, NBD_SET_BLKSIZE, uintptr(tmp_blocksize))
+	if en != 0 {
+		return errors.New(fmt.Sprintf("Error setting blocksize %d\n", tmp_blocksize))
+	}
+	size_blocks := size / tmp_blocksize
+	_, _, en = syscall.Syscall(syscall.SYS_IOCTL, fp, NBD_SET_SIZE_BLOCKS, uintptr(size_blocks))
+	if en != 0 {
+		return errors.New(fmt.Sprintf("Error setting blocks %d\n", size_blocks))
+	}
+	if tmp_blocksize != block_size {
+		_, _, en = syscall.Syscall(syscall.SYS_IOCTL, fp, NBD_SET_BLKSIZE, uintptr(block_size))
+		if en != 0 {
+			return errors.New(fmt.Sprintf("Error setting blocksize %d\n", block_size))
+		}
 	}
 
-	for _, c := range calls {
-		if c.Cmd == NBD_DO_IT {
-			s.readyChannel <- nil
-		}
-		//		fmt.Printf("IOCTL %d %d\n", c.Cmd, c.Value)
-		_, _, en := syscall.Syscall(syscall.SYS_IOCTL, s.fp, c.Cmd, c.Value)
-		if en != 0 {
-			err := fmt.Errorf("syscall error %s", syscall.Errno(en))
-			if c.Cmd != NBD_DO_IT {
-				s.readyChannel <- err
-			}
-			return err
-		}
+	syscall.Syscall(syscall.SYS_IOCTL, fp, NBD_CLEAR_SOCK, 0)
+
+	syscall.Syscall(syscall.SYS_IOCTL, fp, NBD_SET_FLAGS, uintptr(flags))
+
+	// 	if (ioctl(nbd, BLKROSET, (unsigned long) &read_only) < 0)
+	return nil
+}
+
+func (n *ExposedStorageNBD) setTimeout(fp uintptr, timeout uint64) error {
+	_, _, en := syscall.Syscall(syscall.SYS_IOCTL, fp, NBD_SET_TIMEOUT, uintptr(timeout))
+	if en != 0 {
+		return errors.New(fmt.Sprintf("Error setting timeout %d", timeout))
+	}
+	return nil
+}
+
+func (n *ExposedStorageNBD) finishSock(fp uintptr, sock int) error {
+	_, _, en := syscall.Syscall(syscall.SYS_IOCTL, fp, NBD_SET_SOCK, uintptr(sock))
+	if en == syscall.EBUSY {
+		return errors.New(fmt.Sprintf("Kernel doesn't support multiple connections"))
+	} else if en != 0 {
+		return errors.New(fmt.Sprintf("Error setting socket"))
 	}
 	return nil
 }
 
 /**
- * Wait until things are running
- * This can only be called ONCE
- */
-func (s *NBDExposedStorage) WaitReady() error {
-	//	fmt.Printf("WaitReady\n")
-	// Wait for a ready signal (The ioctl DO_IT has just about been sent)
-	return <-s.readyChannel
-}
-
-/**
- * Shutdown the nbd device
+ * Check if the nbd connection is up and running...
  *
  */
-func (s *NBDExposedStorage) Shutdown() error {
-	s.dispatcher.Wait()
+func (n *ExposedStorageNBD) checkConn(dev string) error {
+	_, err := os.ReadFile(fmt.Sprintf("/sys/block/%s/pid", dev))
+	if err == nil {
+		//fmt.Printf("Connection %s\n", data)
+	}
+	return err
+}
 
-	calls := []IoctlCall{
-		{NBD_DISCONNECT, 0},
-		{NBD_CLEAR_SOCK, 0},
+func (n *ExposedStorageNBD) Start() error {
+	device_file := fmt.Sprintf("/dev/%s", n.dev)
+
+	fp, err := os.OpenFile(device_file, os.O_RDWR, 0600)
+	if err != nil {
+		return err
 	}
 
-	for _, c := range calls {
-		fmt.Printf("IOCTL %d %d\n", c.Cmd, c.Value)
-		_, _, en := syscall.Syscall(syscall.SYS_IOCTL, s.fp, c.Cmd, c.Value)
-		if en != 0 {
-			return fmt.Errorf("syscall error %s", syscall.Errno(en))
-		}
-	}
-	fmt.Printf("CLOSING DEVICE...\n")
-	/*
-		fmt.Printf("Close socketPair[1] %d\n", s.socketPair[1])
-		err := syscall.Close(s.socketPair[1])
+	n.device_file = fp.Fd()
+
+	// Create the socket pairs, and setup NBD options.
+	for i := 0; i < n.num_connections; i++ {
+		sockPair, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_STREAM, 0)
 		if err != nil {
 			return err
 		}
-	*/
-	return s.device.Close()
+		n.socketPairs = append(n.socketPairs, sockPair)
+
+		// Start reading commands on the socket and dispatching them to our provider
+		go func(fd int) {
+			n.dispatch.Handle(fd, n.prov)
+		}(sockPair[1])
+
+		if i == 0 {
+			n.setSizes(fp.Fd(), n.size, n.block_size, n.flags)
+			n.setTimeout(fp.Fd(), n.timeout)
+		}
+		n.finishSock(fp.Fd(), sockPair[0])
+	}
+
+	go func() {
+		for {
+			err := n.checkConn(n.dev)
+			if err == nil {
+				break
+			}
+			// Sleep a bit
+			// nanosleep(&req, NULL)
+			time.Sleep(100000000 * time.Nanosecond)
+		}
+		_, err := os.OpenFile(device_file, os.O_RDWR, 0600)
+		if err != nil {
+			fmt.Printf("Could not open device for updating partition table\n")
+		}
+	}()
+
+	// Now do it...
+	_, _, en := syscall.Syscall(syscall.SYS_IOCTL, fp.Fd(), NBD_DO_IT, 0)
+
+	// Clear the socket
+	syscall.Syscall(syscall.SYS_IOCTL, fp.Fd(), NBD_CLEAR_SOCK, 0)
+
+	if en != 0 {
+		return errors.New(fmt.Sprintf("Error after DO_IT %d\n", en))
+	}
+
+	// Close the device...
+	fp.Close()
+	return nil
 }
 
-/**
- * Create a new NBD device
- *
- */
-func NewNBD(dev string) (storage.ExposedStorage, error) {
-	// Create a pair of sockets to communicate with the NBD device over
-	//	fmt.Printf("Create socketpair\n")
-	sockPair, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_STREAM, 0)
-	if err != nil {
-		return nil, err
+// Wait until it's ready...
+func (n *ExposedStorageNBD) Ready() {
+	for {
+		err := n.checkConn(n.dev)
+		if err == nil {
+			break
+		}
+		time.Sleep(100 * time.Nanosecond)
 	}
-	//	fmt.Printf("Socketpair %d %d\n", sockPair[0], sockPair[1])
+}
 
-	// Open the nbd device
-	//	fmt.Printf("Open device %s\n", dev)
-	fp, err := os.OpenFile(dev, os.O_RDWR, 0600)
-	if err != nil {
-		return nil, err
-	}
+func (n *ExposedStorageNBD) Disconnect() error {
 
-	es := &NBDExposedStorage{
-		socketPair:   sockPair,
-		device:       fp,
-		fp:           fp.Fd(),
-		readyChannel: make(chan error),
-		dispatcher:   NewDispatch(),
+	fmt.Printf("Closing sockets...\n")
+	// Close all the socket pairs...
+	for _, v := range n.socketPairs {
+		err := syscall.Close(v[1])
+		if err != nil {
+			return err
+		}
 	}
 
-	return es, nil
+	fmt.Printf("NBD_DISCONNECT\n")
+	_, _, en := syscall.Syscall(syscall.SYS_IOCTL, uintptr(n.device_file), NBD_DISCONNECT, 0)
+	if en != 0 {
+		return errors.New(fmt.Sprintf("Error disconnecting %d", en))
+	}
+	fmt.Printf("NBD_CLEAR_SOCK\n")
+	_, _, en = syscall.Syscall(syscall.SYS_IOCTL, uintptr(n.device_file), NBD_CLEAR_SOCK, 0)
+	if en != 0 {
+		return errors.New(fmt.Sprintf("Error clearing sock %d", en))
+	}
+
+	// Wait for the pid to go away
+	fmt.Printf("Wait pid\n")
+	for {
+		err := n.checkConn(n.dev)
+		if err != nil {
+			break
+		}
+		time.Sleep(100 * time.Nanosecond)
+	}
+
+	return nil
 }
 
 type Dispatch struct {
@@ -297,7 +361,7 @@ func (d *Dispatch) Handle(fd int, prov storage.StorageProvider) error {
 				}
 
 				if request.Type == NBD_CMD_DISCONNECT {
-					//			fmt.Printf("CMD_DISCONNECT")
+					fmt.Printf(" -> CMD_DISCONNECT\n")
 					return nil // All done
 				} else if request.Type == NBD_CMD_FLUSH {
 					return fmt.Errorf("Not supported: Flush")
@@ -317,7 +381,7 @@ func (d *Dispatch) Handle(fd int, prov storage.StorageProvider) error {
 					data := make([]byte, request.Length)
 					copy(data, buffer[rp:rp+int(request.Length)])
 					rp += int(request.Length)
-					//					fmt.Printf("WRITE %x %d\n", request.Handle, request.Length)
+					//fmt.Printf("WRITE %x %d\n", request.Handle, request.Length)
 					err := d.cmdWrite(request.Handle, request.From, request.Length, data)
 					if err != nil {
 						return err

@@ -11,7 +11,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/loopholelabs/silo/internal/expose"
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/modules"
 	"github.com/loopholelabs/silo/pkg/storage/protocol"
@@ -122,8 +121,7 @@ func runConnect(ccmd *cobra.Command, args []string) {
 	}()
 
 	if connect_dev != "" {
-		d := expose.NewDispatch()
-		p, err = setup(connect_dev, d, destStorageMetrics, false)
+		p, err = setup(connect_dev, destStorageMetrics, false)
 		if err != nil {
 			fmt.Printf("Error during setup %v\n", err)
 			return

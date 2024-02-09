@@ -66,8 +66,7 @@ func main() {
 		os.Exit(1)
 	}()
 
-	d := expose.NewDispatch()
-	p, err := setup(d, driver)
+	p, err := setup(driver)
 
 	// Add a cache NOW
 	driver.AddProvider(cache)
@@ -99,8 +98,8 @@ func main() {
  * Setup a disk with some files created.
  *
  */
-func setup(dispatch expose.NBDDispatcher, prov storage.StorageProvider) (storage.ExposedStorage, error) {
-	p, err := expose.NewNBD(dispatch, device)
+func setup(prov storage.StorageProvider) (storage.ExposedStorage, error) {
+	p, err := expose.NewNBD(device)
 	if err != nil {
 		return nil, err
 	}

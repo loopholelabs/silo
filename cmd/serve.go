@@ -109,8 +109,7 @@ func runServe(ccmd *cobra.Command, args []string) {
 
 	if serve_dev != "" {
 		var err error
-		d := expose.NewDispatch()
-		p, err = setup(serve_dev, d, sourceStorage, true)
+		p, err = setup(serve_dev, sourceStorage, true)
 		if err != nil {
 			fmt.Printf("Error during setup %v\n", err)
 			return
@@ -234,8 +233,8 @@ func runServe(ccmd *cobra.Command, args []string) {
  * Setup a disk
  *
  */
-func setup(device string, dispatch expose.NBDDispatcher, prov storage.StorageProvider, server bool) (storage.ExposedStorage, error) {
-	p, err := expose.NewNBD(dispatch, fmt.Sprintf("/dev/%s", device))
+func setup(device string, prov storage.StorageProvider, server bool) (storage.ExposedStorage, error) {
+	p, err := expose.NewNBD(fmt.Sprintf("/dev/%s", device))
 	if err != nil {
 		return nil, err
 	}

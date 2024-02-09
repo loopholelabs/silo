@@ -21,7 +21,7 @@ const NBDdevice = "nbd2"
  * Setup a disk with some files created.
  *
  */
-func setup(dispatch NBDDispatcher, prov storage.StorageProvider, fileMin uint64, fileMax uint64, maxSize uint64) (storage.ExposedStorage, []string, error) {
+func setup(prov storage.StorageProvider, fileMin uint64, fileMax uint64, maxSize uint64) (storage.ExposedStorage, []string, error) {
 	defer func() {
 		//		fmt.Printf("umount\n")
 		cmd := exec.Command("umount", fmt.Sprintf("/dev/%s", NBDdevice))
@@ -36,7 +36,7 @@ func setup(dispatch NBDDispatcher, prov storage.StorageProvider, fileMin uint64,
 		}
 	}()
 
-	p, err := NewNBD(dispatch, fmt.Sprintf("/dev/%s", NBDdevice))
+	p, err := NewNBD(fmt.Sprintf("/dev/%s", NBDdevice))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -138,103 +138,91 @@ func BenchmarkRead(mb *testing.B) {
 		{"SmallFiles", 100 * 1024 * 1024, 8 * 1024, 8 * 1024},
 	}
 
-	dispatchers := []string{
-		"simple", "dispatch",
-	}
+	for _, c := range tests {
 
-	for _, dt := range dispatchers {
-		for _, c := range tests {
+		mb.Run(c.Name, func(b *testing.B) {
 
-			mb.Run(fmt.Sprintf("%s_%s", dt, c.Name), func(b *testing.B) {
+			// Setup...
+			driver := modules.NewMetrics(sources.NewMemoryStorage(int(c.Size)))
 
-				// Setup...
-				driver := modules.NewMetrics(sources.NewMemoryStorage(int(c.Size)))
+			p, files, err := setup(driver, c.FileMin, c.FileMax, uint64(float64(c.Size)*0.8))
+			if err != nil {
+				fmt.Printf("Error setup %v\n", err)
+				return
+			}
 
-				var d NBDDispatcher
-				if dt == "simple" {
-					d = NewDispatchSimple()
-				} else if dt == "dispatch" {
-					d = NewDispatch()
-				}
-				p, files, err := setup(d, driver, c.FileMin, c.FileMax, uint64(float64(c.Size)*0.8))
-				if err != nil {
-					fmt.Printf("Error setup %v\n", err)
-					return
-				}
+			// Now mount the disk...
+			err = os.Mkdir(fmt.Sprintf("/mnt/bench%s", NBDdevice), 0600)
+			if err != nil {
+				panic(err)
+			}
 
-				// Now mount the disk...
-				err = os.Mkdir(fmt.Sprintf("/mnt/bench%s", NBDdevice), 0600)
-				if err != nil {
-					panic(err)
-				}
+			//				fmt.Printf("mount\n")
+			cmd := exec.Command("mount", fmt.Sprintf("/dev/%s", NBDdevice), fmt.Sprintf("/mnt/bench%s", NBDdevice))
+			err = cmd.Run()
+			if err != nil {
+				panic(err)
+			}
 
-				//				fmt.Printf("mount\n")
-				cmd := exec.Command("mount", fmt.Sprintf("/dev/%s", NBDdevice), fmt.Sprintf("/mnt/bench%s", NBDdevice))
-				err = cmd.Run()
-				if err != nil {
-					panic(err)
-				}
-
-				/**
-				 * Cleanup everything
-				 *
-				 */
-				b.Cleanup(func() {
-					shutdown(p)
-					driver.ShowStats("stats")
-				})
-
-				driver.ResetMetrics() // Only start counting from now...
-
-				// Here's the actual benchmark...
-
-				var wg sync.WaitGroup
-				concurrent := make(chan bool, 32)
-
-				// Now do some timing...
-				b.ResetTimer()
-
-				totalData := int64(0)
-
-				for i := 0; i < b.N; i++ {
-					fileno := rand.Intn(len(files))
-					name := files[fileno]
-
-					fi, err := os.Stat(name)
-					if err != nil {
-						fmt.Printf("Error statting file %v\n", err)
-					} else {
-
-						wg.Add(1)
-						concurrent <- true
-						totalData += fi.Size()
-
-						// Test read speed...
-						go func(filename string) {
-
-							data, err := os.ReadFile(filename)
-							if err != nil {
-								fmt.Printf("Error reading file %v\n", err)
-							}
-
-							if len(data) == 0 {
-								fmt.Printf("Warning: The file %s was not there\n", filename)
-							}
-
-							wg.Done()
-							<-concurrent
-						}(name)
-					}
-				}
-
-				b.SetBytes(totalData)
-
-				wg.Wait()
-
-				fmt.Printf("Total Data %d\n", totalData)
-
+			/**
+			 * Cleanup everything
+			 *
+			 */
+			b.Cleanup(func() {
+				shutdown(p)
+				driver.ShowStats("stats")
 			})
-		}
+
+			driver.ResetMetrics() // Only start counting from now...
+
+			// Here's the actual benchmark...
+
+			var wg sync.WaitGroup
+			concurrent := make(chan bool, 32)
+
+			// Now do some timing...
+			b.ResetTimer()
+
+			totalData := int64(0)
+
+			for i := 0; i < b.N; i++ {
+				fileno := rand.Intn(len(files))
+				name := files[fileno]
+
+				fi, err := os.Stat(name)
+				if err != nil {
+					fmt.Printf("Error statting file %v\n", err)
+				} else {
+
+					wg.Add(1)
+					concurrent <- true
+					totalData += fi.Size()
+
+					// Test read speed...
+					go func(filename string) {
+
+						data, err := os.ReadFile(filename)
+						if err != nil {
+							fmt.Printf("Error reading file %v\n", err)
+						}
+
+						if len(data) == 0 {
+							fmt.Printf("Warning: The file %s was not there\n", filename)
+						}
+
+						wg.Done()
+						<-concurrent
+					}(name)
+				}
+			}
+
+			b.SetBytes(totalData)
+
+			wg.Wait()
+
+			fmt.Printf("Total Data %d\n", totalData)
+
+		})
 	}
 }
 
@@ -245,116 +233,104 @@ func BenchmarkWrite(mb *testing.B) {
 		{"SmallFiles", 100 * 1024 * 1024, 8 * 1024, 8 * 1024},
 	}
 
-	dispatchers := []string{
-		"simple", "dispatch",
-	}
+	for _, c := range tests {
 
-	for _, dt := range dispatchers {
-		for _, c := range tests {
+		mb.Run(c.Name, func(b *testing.B) {
 
-			mb.Run(fmt.Sprintf("%s_%s", dt, c.Name), func(b *testing.B) {
+			// Setup...
+			driver := modules.NewMetrics(sources.NewMemoryStorage(int(c.Size)))
 
-				// Setup...
-				driver := modules.NewMetrics(sources.NewMemoryStorage(int(c.Size)))
+			p, files, err := setup(driver, c.FileMin, c.FileMax, uint64(float64(c.Size)*0.8))
 
-				var d NBDDispatcher
-				if dt == "simple" {
-					d = NewDispatchSimple()
-				} else if dt == "dispatch" {
-					d = NewDispatch()
-				}
-				p, files, err := setup(d, driver, c.FileMin, c.FileMax, uint64(float64(c.Size)*0.8))
+			if err != nil {
+				fmt.Printf("Error setup %v\n", err)
+				return
+			}
 
+			// Now mount the disk...
+			err = os.Mkdir(fmt.Sprintf("/mnt/bench%s", NBDdevice), 0600)
+			if err != nil {
+				panic(err)
+			}
+
+			cmd := exec.Command("mount", fmt.Sprintf("/dev/%s", NBDdevice), fmt.Sprintf("/mnt/bench%s", NBDdevice))
+			err = cmd.Run()
+			if err != nil {
+				panic(err)
+			}
+
+			/**
+			 * Cleanup everything
+			 *
+			 */
+			b.Cleanup(func() {
+				shutdown(p)
+				driver.ShowStats("stats")
+			})
+
+			driver.ResetMetrics()
+
+			// Here's the actual benchmark...
+
+			var wg sync.WaitGroup
+			concurrent := make(chan bool, 32)
+
+			// Now do some timing...
+			b.ResetTimer()
+
+			totalData := int64(0)
+
+			for i := 0; i < b.N; i++ {
+				fileno := rand.Intn(len(files))
+				name := files[fileno]
+
+				fi, err := os.Stat(name)
 				if err != nil {
-					fmt.Printf("Error setup %v\n", err)
-					return
-				}
+					fmt.Printf("Error statting file %v\n", err)
+				} else {
 
-				// Now mount the disk...
-				err = os.Mkdir(fmt.Sprintf("/mnt/bench%s", NBDdevice), 0600)
-				if err != nil {
-					panic(err)
-				}
+					totalData += fi.Size()
 
-				cmd := exec.Command("mount", fmt.Sprintf("/dev/%s", NBDdevice), fmt.Sprintf("/mnt/bench%s", NBDdevice))
-				err = cmd.Run()
-				if err != nil {
-					panic(err)
-				}
+					newData := make([]byte, fi.Size())
+					crand.Read(newData)
 
-				/**
-				 * Cleanup everything
-				 *
-				 */
-				b.Cleanup(func() {
-					shutdown(p)
-					driver.ShowStats("stats")
-				})
+					wg.Add(1)
+					concurrent <- true
 
-				driver.ResetMetrics()
+					// Test write speed... FIXME: Concurrent access to same file
+					go func(filename string, data []byte) {
 
-				// Here's the actual benchmark...
-
-				var wg sync.WaitGroup
-				concurrent := make(chan bool, 32)
-
-				// Now do some timing...
-				b.ResetTimer()
-
-				totalData := int64(0)
-
-				for i := 0; i < b.N; i++ {
-					fileno := rand.Intn(len(files))
-					name := files[fileno]
-
-					fi, err := os.Stat(name)
-					if err != nil {
-						fmt.Printf("Error statting file %v\n", err)
-					} else {
-
-						totalData += fi.Size()
-
-						newData := make([]byte, fi.Size())
-						crand.Read(newData)
-
-						wg.Add(1)
-						concurrent <- true
-
-						// Test write speed... FIXME: Concurrent access to same file
-						go func(filename string, data []byte) {
-
-							af, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
-							if err != nil {
-								fmt.Printf("Error opening file %v\n", err)
-							} else {
-								_, err = af.Write(data)
-								if err != nil {
-									fmt.Printf("Error writing file %v\n", err)
-									time.Sleep(1 * time.Minute)
-								}
-								err = af.Close()
-								if err != nil {
-									fmt.Printf("Error closing file %v\n", err)
-								}
-							}
-
-							//err := os.WriteFile(filename, data, 0600)
+						af, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+						if err != nil {
+							fmt.Printf("Error opening file %v\n", err)
+						} else {
+							_, err = af.Write(data)
 							if err != nil {
 								fmt.Printf("Error writing file %v\n", err)
+								time.Sleep(1 * time.Minute)
 							}
+							err = af.Close()
+							if err != nil {
+								fmt.Printf("Error closing file %v\n", err)
+							}
+						}
 
-							wg.Done()
-							<-concurrent
-						}(name, newData)
-					}
+						//err := os.WriteFile(filename, data, 0600)
+						if err != nil {
+							fmt.Printf("Error writing file %v\n", err)
+						}
+
+						wg.Done()
+						<-concurrent
+					}(name, newData)
 				}
+			}
 
-				b.SetBytes(totalData)
+			b.SetBytes(totalData)
 
-				wg.Wait()
+			wg.Wait()
 
-				fmt.Printf("Total Data %d\n", totalData)
-			})
-		}
+			fmt.Printf("Total Data %d\n", totalData)
+		})
 	}
 }
