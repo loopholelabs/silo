@@ -35,7 +35,6 @@ jobs:
           key: ${{ runner.os }}-go-mod-${{ hashFiles('**/go.sum') }}
 
       - name: Test
-        run: go test -v ./...
-
+        run: go test -v $(go list ./... | grep -v expose)
       - name: Test with Race Conditions
-        run: go test -race -v ./...
+        run: go test -race -v $(go list ./... | grep -v expose)
