@@ -85,6 +85,7 @@ func runServe(ccmd *cobra.Command, args []string) {
 	sourceMonitor := modules.NewVolatilityMonitor(sourceDirty, block_size, 10*time.Second)
 	sourceStorage := modules.NewLockable(sourceMonitor)
 
+	// Write some random stuff to the device...
 	go writeRandom(sourceStorage)
 
 	// Start monitoring blocks.
