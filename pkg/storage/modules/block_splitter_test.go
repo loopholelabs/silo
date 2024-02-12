@@ -45,7 +45,8 @@ func TestBlockSplitterRead(t *testing.T) {
 	assert.Equal(t, buffer2, buffer)
 
 	fmt.Printf("Read took %dms. Read split took %dms.\n", read_duration.Milliseconds(), read_duration_split.Milliseconds())
-	metrics.ShowStats("Source")
+	//
+	// metrics.ShowStats("Source")
 }
 
 func TestBlockSplitterWrite(t *testing.T) {

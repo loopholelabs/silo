@@ -9,7 +9,7 @@ import (
 
 /**
  * This can track writes so that we can get a list of dirty areas after some period.
- * Tracking is enabled for a block when a Read is performed
+ * Tracking is enabled for a block when a Read is performed on that block
  */
 
 type FilterReadDirtyTracker struct {
