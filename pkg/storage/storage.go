@@ -25,7 +25,7 @@ type TrackingStorageProvider interface {
 }
 
 type ExposedStorage interface {
-	Handle(prov StorageProvider) error
+	Handle() error
 	WaitReady() error
 	Shutdown() error
 }

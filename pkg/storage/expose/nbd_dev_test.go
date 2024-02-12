@@ -5,95 +5,108 @@ import (
 	"os"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/loopholelabs/silo/pkg/storage/modules"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
 )
 
-func BenchmarkDevRead(b *testing.B) {
-	NBDdevice := "nbd1"
-	diskSize := 1024 * 1024 * 1024 * 4
+func BenchmarkDevRead(mb *testing.B) {
 
-	// Setup...
-	// Lets simulate a little latency here
-	store := sources.NewMemoryStorage(int(diskSize))
-	//store_latency := modules.NewArtificialLatency(store, 100*time.Millisecond, 0, 100*time.Millisecond, 0)
-	driver := modules.NewMetrics(store)
+	sizes := []int64{4096, 65536, 1024 * 1024}
 
-	n := NewExposedStorageNBD(driver, NBDdevice, 1, 0, uint64(driver.Size()), 4096, 0)
+	for _, v := range sizes {
+		name := fmt.Sprintf("blocksize_%d", v)
+		mb.Run(name, func(b *testing.B) {
+			NBDdevice := "nbd1"
+			diskSize := 1024 * 1024 * 1024 * 4
 
-	go func() {
-		err := n.Start()
-		if err != nil {
-			panic(err)
-		}
-	}()
+			// Setup...
+			// Lets simulate a little latency here
+			store := sources.NewMemoryStorage(int(diskSize))
+			//store_latency := modules.NewArtificialLatency(store, 100*time.Millisecond, 0, 100*time.Millisecond, 0)
+			driver := modules.NewMetrics(store)
 
-	n.Ready()
+			n := NewExposedStorageNBD(driver, NBDdevice, 1, 0, uint64(driver.Size()), 4096, 0)
 
-	/**
-	* Cleanup everything
-	*
-	 */
-	b.Cleanup(func() {
-		err := n.Disconnect()
-		if err != nil {
-			fmt.Printf("Error cleaning up %v\n", err)
-		}
-		driver.ShowStats("stats")
-	})
+			go func() {
+				err := n.Handle()
+				if err != nil {
+					panic(err)
+				}
+			}()
 
-	driver.ResetMetrics() // Only start counting from now...
+			n.WaitReady()
 
-	// Here's the actual benchmark...
+			/**
+			* Cleanup everything
+			*
+			 */
+			b.Cleanup(func() {
+				err := n.Shutdown()
+				if err != nil {
+					fmt.Printf("Error cleaning up %v\n", err)
+				}
+			})
 
-	devfile, err := os.OpenFile(fmt.Sprintf("/dev/%s", NBDdevice), os.O_RDWR, 0666)
-	if err != nil {
-		panic("Error opening dev file\n")
-	}
+			driver.ResetMetrics() // Only start counting from now...
 
-	b.Cleanup(func() {
-		devfile.Close()
-	})
+			// Here's the actual benchmark...
 
-	var wg sync.WaitGroup
-	concurrent := make(chan bool, 100) // Do max 100 reads concurrently
-
-	// Now do some timing...
-	b.ResetTimer()
-
-	read_size := 4096
-	offset := int64(0)
-	totalData := int64(0)
-
-	for i := 0; i < b.N; i++ {
-		wg.Add(1)
-		concurrent <- true
-		length := int64(read_size)
-		offset += int64(read_size)
-		if offset+length >= int64(diskSize) {
-			offset = 0
-		}
-		totalData += length
-
-		// Test read speed...
-		go func(f_offset int64, f_length int64) {
-			buffer := make([]byte, f_length)
-			_, err := devfile.ReadAt(buffer, f_offset)
+			devfile, err := os.OpenFile(fmt.Sprintf("/dev/%s", NBDdevice), os.O_RDWR, 0666)
 			if err != nil {
-				fmt.Printf("Error reading file %v\n", err)
+				panic("Error opening dev file\n")
 			}
 
-			wg.Done()
-			<-concurrent
-		}(offset, length)
+			b.Cleanup(func() {
+				devfile.Close()
+			})
+
+			var wg sync.WaitGroup
+			concurrent := make(chan bool, 100) // Do max 100 reads concurrently
+
+			// Now do some timing...
+			b.ResetTimer()
+			ctime := time.Now()
+
+			read_size := int64(v)
+			offset := int64(0)
+			totalData := int64(0)
+
+			for i := 0; i < b.N; i++ {
+				wg.Add(1)
+				concurrent <- true
+				length := read_size
+				offset += read_size
+				if offset+length >= int64(diskSize) {
+					offset = 0
+				}
+				totalData += length
+
+				// Test read speed...
+				go func(f_offset int64, f_length int64) {
+					buffer := make([]byte, f_length)
+					_, err := devfile.ReadAt(buffer, f_offset)
+					if err != nil {
+						fmt.Printf("Error reading file %v\n", err)
+					}
+
+					wg.Done()
+					<-concurrent
+				}(offset, length)
+			}
+
+			b.SetBytes(int64(read_size))
+
+			wg.Wait()
+
+			duration := time.Since(ctime).Seconds()
+			mb_per_sec := float64(totalData) / (duration * 1024 * 1024)
+
+			fmt.Printf("Total Data %d from %d ops in %dms RATE %.2fMB/s\n", totalData, b.N, time.Since(ctime).Milliseconds(), mb_per_sec)
+			driver.ShowStats("stats")
+		})
 	}
-
-	b.SetBytes(totalData)
-
-	wg.Wait()
-
-	fmt.Printf("Total Data %d from %d ops\n", totalData, b.N)
 }
 
 func BenchmarkDevWrite(b *testing.B) {
@@ -109,24 +122,23 @@ func BenchmarkDevWrite(b *testing.B) {
 	n := NewExposedStorageNBD(driver, NBDdevice, 1, 0, uint64(driver.Size()), 4096, 0)
 
 	go func() {
-		err := n.Start()
+		err := n.Handle()
 		if err != nil {
 			panic(err)
 		}
 	}()
 
-	n.Ready()
+	n.WaitReady()
 
 	/**
 	* Cleanup everything
 	*
 	 */
 	b.Cleanup(func() {
-		err := n.Disconnect()
+		err := n.Shutdown()
 		if err != nil {
 			fmt.Printf("Error cleaning up %v\n", err)
 		}
-		driver.ShowStats("stats")
 	})
 
 	driver.ResetMetrics() // Only start counting from now...
@@ -138,26 +150,22 @@ func BenchmarkDevWrite(b *testing.B) {
 		panic("Error opening dev file\n")
 	}
 
-	/*
-		b.Cleanup(func() {
-			devfile.Close()
-		})
-	*/
-
 	var wg sync.WaitGroup
 	concurrent := make(chan bool, 100) // Do max 100 writes concurrently
 
 	// Now do some timing...
 	b.ResetTimer()
+	ctime := time.Now()
 
 	offset := int64(0)
 	totalData := int64(0)
+	write_size := int64(4096)
 
 	for i := 0; i < b.N; i++ {
 		wg.Add(1)
 		concurrent <- true
-		length := int64(4096)
-		offset += 4096
+		length := write_size
+		offset += write_size
 		if offset+length >= int64(diskSize) {
 			offset = 0
 		}
@@ -176,7 +184,7 @@ func BenchmarkDevWrite(b *testing.B) {
 		}(offset, length)
 	}
 
-	b.SetBytes(totalData)
+	b.SetBytes(int64(write_size))
 
 	wg.Wait()
 
@@ -185,10 +193,13 @@ func BenchmarkDevWrite(b *testing.B) {
 	if err != nil {
 		fmt.Printf("Error performing sync %v\n", err)
 	}
+
 	err = devfile.Close()
 	if err != nil {
 		fmt.Printf("Error closing dev %v\n", err)
 	}
 
-	fmt.Printf("Total Data %d from %d ops\n", totalData, b.N)
+	fmt.Printf("Total Data %d from %d ops in %dms\n", totalData, b.N, time.Since(ctime).Milliseconds())
+	driver.ShowStats("stats")
+
 }

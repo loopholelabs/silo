@@ -13,9 +13,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/loopholelabs/silo/internal/expose"
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/blocks"
+	"github.com/loopholelabs/silo/pkg/storage/expose"
 	"github.com/loopholelabs/silo/pkg/storage/modules"
 	"github.com/loopholelabs/silo/pkg/storage/protocol"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
@@ -234,13 +234,10 @@ func runServe(ccmd *cobra.Command, args []string) {
  *
  */
 func setup(device string, prov storage.StorageProvider, server bool) (storage.ExposedStorage, error) {
-	p, err := expose.NewNBD(fmt.Sprintf("/dev/%s", device))
-	if err != nil {
-		return nil, err
-	}
+	p := expose.NewExposedStorageNBD(prov, device, 1, 0, prov.Size(), 4096, 0)
 
 	go func() {
-		err := p.Handle(prov)
+		err := p.Handle()
 		if err != nil {
 			fmt.Printf("p.Handle returned %v\n", err)
 		}
@@ -248,7 +245,7 @@ func setup(device string, prov storage.StorageProvider, server bool) (storage.Ex
 
 	p.WaitReady()
 
-	err = os.Mkdir(fmt.Sprintf("/mnt/mount%s", device), 0600)
+	err := os.Mkdir(fmt.Sprintf("/mnt/mount%s", device), 0600)
 	if err != nil {
 		return nil, fmt.Errorf("Error mkdir %v", err)
 	}

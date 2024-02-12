@@ -14,7 +14,7 @@ func TestNBDDevice(t *testing.T) {
 	dev := "nbd1"
 	defer func() {
 		fmt.Printf("Shutting down properly...\n")
-		err := n.Disconnect()
+		err := n.Shutdown()
 		assert.NoError(t, err)
 		fmt.Printf("Shutdown complete\n")
 	}()
@@ -25,11 +25,11 @@ func TestNBDDevice(t *testing.T) {
 	n = NewExposedStorageNBD(prov, dev, 1, 0, uint64(size), 4096, 0)
 
 	go func() {
-		err := n.Start()
+		err := n.Handle()
 		assert.NoError(t, err)
 	}()
 
-	n.Ready()
+	n.WaitReady()
 
 	devfile, err := os.OpenFile(fmt.Sprintf("/dev/%s", dev), os.O_RDWR, 0666)
 	assert.NoError(t, err)

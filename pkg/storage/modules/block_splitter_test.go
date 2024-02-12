@@ -15,10 +15,10 @@ func TestBlockSplitter(t *testing.T) {
 	// Create a new block storage, backed by memory storage
 	size := 1024 * 1024 * 32
 	mem := sources.NewMemoryStorage(size)
-	source := NewArtificialLatency(mem, 10*time.Millisecond, 100*time.Nanosecond, 10*time.Millisecond, 100*time.Nanosecond)
-	metrics := NewMetrics(source)
-	log := NewLogger(metrics)
-	split := NewBlockSplitter(log, 100) // Block size of 100 bytes
+	//	source := NewArtificialLatency(mem, 10*time.Millisecond, 100*time.Nanosecond, 10*time.Millisecond, 100*time.Nanosecond)
+	metrics := NewMetrics(mem)
+	//log := NewLogger(metrics)
+	split := NewBlockSplitter(metrics, 100) // Block size of 100 bytes
 
 	// Fill it with stuff
 	data := make([]byte, size)
@@ -39,7 +39,7 @@ func TestBlockSplitter(t *testing.T) {
 	// Read in a single go from the source itself
 	buffer2 := make([]byte, read_len)
 	ctime_2 := time.Now()
-	_, err = source.ReadAt(buffer2, 10)
+	_, err = mem.ReadAt(buffer2, 10)
 	read_duration := time.Since(ctime_2)
 
 	assert.Equal(t, buffer2, buffer)

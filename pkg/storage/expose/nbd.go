@@ -154,7 +154,7 @@ func (n *ExposedStorageNBD) checkConn(dev string) error {
 	return err
 }
 
-func (n *ExposedStorageNBD) Start() error {
+func (n *ExposedStorageNBD) Handle() error {
 	device_file := fmt.Sprintf("/dev/%s", n.dev)
 
 	fp, err := os.OpenFile(device_file, os.O_RDWR, 0600)
@@ -216,7 +216,7 @@ func (n *ExposedStorageNBD) Start() error {
 }
 
 // Wait until it's ready...
-func (n *ExposedStorageNBD) Ready() {
+func (n *ExposedStorageNBD) WaitReady() error {
 	for {
 		err := n.checkConn(n.dev)
 		if err == nil {
@@ -224,9 +224,10 @@ func (n *ExposedStorageNBD) Ready() {
 		}
 		time.Sleep(100 * time.Nanosecond)
 	}
+	return nil
 }
 
-func (n *ExposedStorageNBD) Disconnect() error {
+func (n *ExposedStorageNBD) Shutdown() error {
 
 	fmt.Printf("Closing sockets...\n")
 	// Close all the socket pairs...
