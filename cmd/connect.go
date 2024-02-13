@@ -67,8 +67,8 @@ func runConnect(ccmd *cobra.Command, args []string) {
 	pro := protocol.NewProtocolRW(context.TODO(), con, con)
 	dest := modules.NewFromProtocol(777, destStorageMetrics, pro)
 
+	// Connect the waitingCache to the FromProtocol
 	destWaiting.NeedAt = func(offset int64, length int32) {
-		fmt.Printf("Asking to prioritize range %d len %d\n", offset, length)
 		dest.NeedAt(offset, length)
 	}
 

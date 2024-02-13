@@ -118,13 +118,14 @@ func TestMigrator(t *testing.T) {
 	destWaiting := modules.NewWaitingCache(destStorage, blockSize)
 	destStorageMetrics := modules.NewMetrics(destWaiting)
 
-	mig := storage.NewMigrator(sourceDirty,
+	mig, err := storage.NewMigrator(sourceDirty,
 		destWaiting,
 		blockSize,
 		locker,
 		unlocker,
 		orderer)
 
+	assert.NoError(t, err)
 	lat_avg := pkg.NewReadings()
 
 	// Set something up to read dest...
@@ -172,19 +173,23 @@ func TestMigrator(t *testing.T) {
 
 	m_start := time.Now()
 	mig.Migrate()
+	mig.ShowProgress()
 
 	for {
 		blocks := mig.GetLatestDirty()
 		if blocks == nil {
 			break
 		}
+		fmt.Printf("Got %d dirty blocks to move...\n", len(blocks))
 		err := mig.MigrateDirty(blocks)
 		assert.NoError(t, err)
+		mig.ShowProgress()
 	}
 
 	err = mig.WaitForCompletion()
 	assert.NoError(t, err)
 	fmt.Printf("Migration took %d ms\n", time.Since(m_start).Milliseconds())
+	mig.ShowProgress()
 
 	// This will end with migration completed, and consumer Locked.
 	destStorageMetrics.ShowStats("dest")

@@ -161,20 +161,24 @@ func runServe(ccmd *cobra.Command, args []string) {
 				b_end := int((end-1)/uint64(block_size)) + 1
 				for b := b_start; b < b_end; b++ {
 					// Ask the orderer to prioritize these blocks...
-					fmt.Printf("ORDER - Prioritizing block %d\n", b)
 					orderer.PrioritiseBlock(b)
 				}
 			})
 
-			mig := storage.NewMigrator(sourceDirty,
+			mig, err := storage.NewMigrator(sourceDirty,
 				dest,
 				block_size,
 				locker,
 				unlocker,
 				orderer)
 
+			if err != nil {
+				panic(err)
+			}
+
 			// Now do the migration...
 			err = mig.Migrate()
+			mig.ShowProgress()
 
 			for {
 				blocks := mig.GetLatestDirty()
@@ -189,6 +193,8 @@ func runServe(ccmd *cobra.Command, args []string) {
 				if err != nil {
 					panic(err)
 				}
+				fmt.Printf("DIRTY BLOCKS %d\n", len(blocks))
+				mig.ShowProgress()
 			}
 
 			err = mig.WaitForCompletion()
@@ -197,6 +203,7 @@ func runServe(ccmd *cobra.Command, args []string) {
 			}
 
 			fmt.Printf("MIGRATION DONE %v\n", err)
+			mig.ShowProgress()
 
 			c.Close()
 		}

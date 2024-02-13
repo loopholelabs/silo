@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -13,7 +14,7 @@ type MigratorConfig struct {
 }
 
 type Migrator struct {
-	src_track           TrackingStorageProvider
+	src_track           TrackingStorageProvider // Tracks writes so we know which are dirty
 	dest                StorageProvider
 	src_lock_fn         func()
 	src_unlock_fn       func()
@@ -25,13 +26,8 @@ type Migrator struct {
 	clean_blocks        *util.Bitfield
 	block_order         BlockOrder
 	ctime               time.Time
-
-	// Our queue for dirty blocks (remigration)
-	blocks_to_move chan uint
-	blocks_by_n    map[uint]bool
-
-	concurrency map[int]chan bool
-	wg          sync.WaitGroup
+	concurrency         map[int]chan bool
+	wg                  sync.WaitGroup
 }
 
 func NewMigrator(source TrackingStorageProvider,
@@ -39,7 +35,7 @@ func NewMigrator(source TrackingStorageProvider,
 	block_size int,
 	lock_fn func(),
 	unlock_fn func(),
-	block_order BlockOrder) *Migrator {
+	block_order BlockOrder) (*Migrator, error) {
 
 	// TODO: Pass in configuration...
 	concurrency_by_block := map[int]int{
@@ -61,25 +57,22 @@ func NewMigrator(source TrackingStorageProvider,
 		block_order:         block_order,
 		migrated_blocks:     util.NewBitfield(num_blocks),
 		clean_blocks:        util.NewBitfield(num_blocks),
-		blocks_to_move:      make(chan uint, num_blocks),
-		blocks_by_n:         make(map[uint]bool),
 		concurrency:         make(map[int]chan bool),
 	}
 
 	if m.dest.Size() != m.src_track.Size() {
-		// TODO: Return as error
-		panic("Sizes must be equal for migration")
+		return nil, errors.New("source and destination sizes must be equal for migration.")
 	}
 
 	// Initialize concurrency channels
 	for b, v := range concurrency_by_block {
 		m.concurrency[b] = make(chan bool, v)
 	}
-	return m
+	return m, nil
 }
 
 /**
- * Migrate storage to dest.
+ * Migrate all storage to dest.
  */
 func (m *Migrator) Migrate() error {
 	m.ctime = time.Now()
@@ -101,16 +94,13 @@ func (m *Migrator) Migrate() error {
 		go func(block_no *BlockInfo) {
 			err := m.migrateBlock(block_no.Block)
 			if err != nil {
-				// TODO: Collect errors properly. Abort? Retry? fail?
+				// If there was an error, we'll simply add it back to the block_order to be retried later for now.
+				m.block_order.Add(block_no.Block)
+				// TODO: Allow other options for error handling
 				fmt.Printf("ERROR moving block %v\n", err)
 			}
 
-			m.showProgress()
-
-			fmt.Printf("Block moved %d\n", block_no)
-			fmt.Printf("DATA %d,%d,,,,\n", time.Now().UnixMilli(), block_no)
 			m.wg.Done()
-
 			cc, ok := m.concurrency[block_no.Type]
 			if !ok {
 				cc = m.concurrency[BlockTypeAny]
@@ -164,12 +154,7 @@ func (m *Migrator) MigrateDirty(blocks []uint) error {
 				fmt.Printf("ERROR moving block %v\n", err)
 			}
 
-			m.showProgress()
-
-			fmt.Printf("Dirty block moved %d\n", block_no)
-			fmt.Printf("DATA %d,%d,,,,\n", time.Now().UnixMilli(), block_no)
 			m.wg.Done()
-
 			cc, ok := m.concurrency[block_no.Type]
 			if !ok {
 				cc = m.concurrency[BlockTypeAny]
@@ -178,17 +163,12 @@ func (m *Migrator) MigrateDirty(blocks []uint) error {
 		}(i)
 
 		m.clean_blocks.ClearBit(int(pos))
-
-		m.showProgress()
 	}
-
 	return nil
 }
 
 func (m *Migrator) WaitForCompletion() error {
-	fmt.Printf("Waiting for pending transfers...\n")
 	m.wg.Wait()
-	m.showProgress()
 	return nil
 }
 
@@ -196,7 +176,7 @@ func (m *Migrator) WaitForCompletion() error {
  * Show progress...
  *
  */
-func (m *Migrator) showProgress() {
+func (m *Migrator) ShowProgress() {
 	migrated := m.migrated_blocks.Count(0, uint(m.num_blocks))
 	perc_mig := float64(migrated*100) / float64(m.num_blocks)
 
