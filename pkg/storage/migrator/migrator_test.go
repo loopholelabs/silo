@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/loopholelabs/silo/pkg"
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/blocks"
 	"github.com/loopholelabs/silo/pkg/storage/modules"
@@ -17,14 +16,12 @@ import (
 
 func TestMigrator(t *testing.T) {
 	size := 1024 * 1024
-	sourceStorageMem := sources.NewMemoryStorage(size)
-
 	blockSize := 4096
 	num_blocks := (size + blockSize - 1) / blockSize
 
-	sourceMetrics := modules.NewMetrics(sourceStorageMem)
-	sourceDirty := modules.NewFilterReadDirtyTracker(sourceMetrics, blockSize)
-	sourceMonitor := modules.NewVolatilityMonitor(sourceDirty, blockSize, 5000*time.Millisecond)
+	sourceStorageMem := sources.NewMemoryStorage(size)
+	sourceDirty := modules.NewFilterReadDirtyTracker(sourceStorageMem, blockSize)
+	sourceMonitor := modules.NewVolatilityMonitor(sourceDirty, blockSize, 2*time.Second)
 	sourceStorage := modules.NewLockable(sourceMonitor)
 
 	// Set up some data here.
@@ -37,11 +34,8 @@ func TestMigrator(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, len(buffer), n)
 
-	ctime := time.Now()
-
-	// Periodically write to sourceStorage
+	// Periodically write to sourceStorage (Make it non-uniform)
 	go func() {
-		//		ticker := time.NewTicker(20 * time.Millisecond)
 		for {
 			mid := size / 2
 			quarter := size / 4
@@ -56,31 +50,15 @@ func TestMigrator(t *testing.T) {
 				v := rand.Float64() * math.Pow(float64(quarter), 8)
 				o = quarter + int(math.Sqrt(math.Sqrt(math.Sqrt(v))))
 			}
-			/*
-				// Perform a write somewhere...
-				o := rand.Intn(size * 2)
-				// Simulate some non-uniform distribution
-				if o > quarter && o < mid {
-					o = o - quarter
-				}
-				if o > size {
-					o = o % quarter
-				}
-			*/
+
 			v := rand.Intn(256)
 			b := make([]byte, 1)
 			b[0] = byte(v)
 			n, err := sourceStorage.WriteAt(b, int64(o))
 			assert.NoError(t, err)
 			assert.Equal(t, 1, n)
-			block_no := o / blockSize
-			fmt.Printf(" CONSUMER %dms source.WriteAt(%d) [%d]\n", time.Since(ctime).Milliseconds(), block_no, o)
 
-			fmt.Printf("DATA %d,,%d,,,\n", time.Now().UnixMilli(), block_no)
-
-			w := rand.Intn(100)
-
-			time.Sleep(time.Duration(w) * time.Millisecond)
+			time.Sleep(time.Duration(rand.Intn(100)) * time.Millisecond)
 		}
 	}()
 
@@ -90,64 +68,46 @@ func TestMigrator(t *testing.T) {
 	for i := 0; i < num_blocks; i++ {
 		orderer.Add(i)
 	}
-	time.Sleep(5000 * time.Millisecond)
+	time.Sleep(2000 * time.Millisecond)
 
 	// START moving data from sourceStorage to destStorage
 
-	locker := func() {
-		// This could be used to pause VM/consumer etc...
-		sourceStorage.Lock()
-	}
-	unlocker := func() {
-		// Restart consumer
-		sourceStorage.Unlock()
-	}
-
-	metrics := make([]*modules.Metrics, 0)
-
-	//destStorage := sources.NewMemoryStorage(size)
-	cr := func(s int) storage.StorageProvider {
-		ms := sources.NewMemoryStorage(s)
-		msLat := modules.NewArtificialLatency(ms, 0, 0, 10*time.Millisecond, 0)
-		msm := modules.NewMetrics(msLat)
-		metrics = append(metrics, msm)
-		return msm
-	}
-	destStorage := modules.NewShardedStorage(size, size/32, cr)
-	//	destStorageMetrics := modules.NewMetrics(destStorage)
+	destStorage := sources.NewMemoryStorage(size)
 	destWaiting := modules.NewWaitingCache(destStorage, blockSize)
-	destStorageMetrics := modules.NewMetrics(destWaiting)
 
 	mig, err := NewMigrator(sourceDirty,
 		destWaiting,
 		blockSize,
-		locker,
-		unlocker,
+		sourceStorage.Lock,
+		sourceStorage.Unlock,
 		orderer)
 
 	assert.NoError(t, err)
-	lat_avg := pkg.NewReadings()
+
+	// Setup destWaiting to ask for prioritization of blocks as reads come through
+	destWaiting.NeedAt = func(offset int64, length int32) {
+		end := uint64(offset + int64(length))
+		if end > uint64(size) {
+			end = uint64(size)
+		}
+
+		b_start := int(offset / int64(blockSize))
+		b_end := int((end-1)/uint64(blockSize)) + 1
+		for b := b_start; b < b_end; b++ {
+			// Ask the orderer to prioritize these blocks...
+			orderer.PrioritiseBlock(b)
+		}
+	}
 
 	// Set something up to read dest...
 	go func() {
-		//		ticker := time.NewTicker(20 * time.Millisecond)
 		for {
-
 			o := rand.Intn(size)
-
 			b := make([]byte, 1)
 
-			block_no := o / blockSize
-
-			// Ask migrator to prioritize it if we need to
-			orderer.PrioritiseBlock(block_no)
-
-			rtime := time.Now()
 			n, err := destWaiting.ReadAt(b, int64(o))
-			latency := time.Since(rtime).Milliseconds()
 			assert.NoError(t, err)
 			assert.Equal(t, len(b), n)
-			fmt.Printf(" NEWCONSUMER %dms source.ReadAt(%d) [%d]\n", time.Since(ctime).Milliseconds(), block_no, o)
 
 			// Check it's the same value as from SOURCE...
 			sb := make([]byte, len(b))
@@ -160,20 +120,11 @@ func TestMigrator(t *testing.T) {
 				assert.Equal(t, v, sb[i])
 			}
 
-			lat_avg.Add(float64(latency))
-			// Do a running stat for getting_lat
-
-			fmt.Printf("DATA %d,,,%d,%d,%f\n", time.Now().UnixMilli(), block_no, latency, lat_avg.GetAverage(500*time.Millisecond))
-
-			w := rand.Intn(50)
-
-			time.Sleep(time.Duration(w) * time.Millisecond)
+			time.Sleep(time.Duration(rand.Intn(50)) * time.Millisecond)
 		}
 	}()
 
-	m_start := time.Now()
 	mig.Migrate(num_blocks)
-	mig.ShowProgress()
 
 	for {
 		blocks := mig.GetLatestDirty()
@@ -188,20 +139,13 @@ func TestMigrator(t *testing.T) {
 
 	err = mig.WaitForCompletion()
 	assert.NoError(t, err)
-	fmt.Printf("Migration took %d ms\n", time.Since(m_start).Milliseconds())
 	mig.ShowProgress()
 
 	// This will end with migration completed, and consumer Locked.
-	destStorageMetrics.ShowStats("dest")
-	for i, m := range metrics {
-		m.ShowStats(fmt.Sprintf(" SHARD%d", i))
-	}
-
-	fmt.Printf("Writes STOPPED\n")
-	fmt.Printf("Check data is equal\n")
-
 	eq, err := storage.Equals(sourceStorageMem, destStorage, blockSize)
 	assert.NoError(t, err)
 	assert.True(t, eq)
+
+	assert.True(t, sourceStorage.IsLocked())
 
 }

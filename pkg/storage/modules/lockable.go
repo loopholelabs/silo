@@ -55,13 +55,19 @@ func (i *Lockable) Size() uint64 {
 
 func (i *Lockable) Unlock() {
 	i.lock.L.Lock()
+	defer i.lock.L.Unlock()
 	i.locked = false
 	i.lock.Broadcast()
-	i.lock.L.Unlock()
 }
 
 func (i *Lockable) Lock() {
 	i.lock.L.Lock()
+	defer i.lock.L.Unlock()
 	i.locked = true
-	i.lock.L.Unlock()
+}
+
+func (i *Lockable) IsLocked() bool {
+	i.lock.L.Lock()
+	defer i.lock.L.Unlock()
+	return i.locked
 }
