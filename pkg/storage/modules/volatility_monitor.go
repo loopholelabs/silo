@@ -140,7 +140,7 @@ func (i *VolatilityMonitor) GetVolatility(block int) int {
 }
 
 /**
- * Get a reading for a specific block
+ * Get a total reading
  *
  */
 func (i *VolatilityMonitor) GetTotalVolatility() int {

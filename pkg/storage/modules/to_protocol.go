@@ -76,7 +76,7 @@ func (i *ToProtocol) Size() uint64 {
 	return i.size
 }
 
-// Handle any ReadAt commands, and send to an orderer...
+// Handle any NeedAt commands, and send to an orderer...
 func (i *ToProtocol) HandleNeedAt(cb func(offset int64, length int32)) error {
 	for {
 		_, data, err := i.protocol.WaitForCommand(i.dev, protocol.COMMAND_NEED_AT)
