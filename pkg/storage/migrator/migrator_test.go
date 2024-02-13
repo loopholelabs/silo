@@ -1,7 +1,9 @@
 package migrator
 
 import (
+	"context"
 	"fmt"
+	"io"
 	"math"
 	"math/rand"
 	"testing"
@@ -10,11 +12,146 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/blocks"
 	"github.com/loopholelabs/silo/pkg/storage/modules"
+	"github.com/loopholelabs/silo/pkg/storage/protocol"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
 	"github.com/stretchr/testify/assert"
 )
 
-func TestMigrator(t *testing.T) {
+/**
+ * Test a simple migration. No writer no reader.
+ *
+ */
+func TestMigratorSimple(t *testing.T) {
+	size := 1024 * 1024
+	blockSize := 4096
+	num_blocks := (size + blockSize - 1) / blockSize
+
+	sourceStorageMem := sources.NewMemoryStorage(size)
+	sourceDirty := modules.NewFilterReadDirtyTracker(sourceStorageMem, blockSize)
+	sourceStorage := modules.NewLockable(sourceDirty)
+
+	// Set up some data here.
+	buffer := make([]byte, size)
+	for i := 0; i < size; i++ {
+		buffer[i] = 9
+	}
+
+	n, err := sourceStorage.WriteAt(buffer, 0)
+	assert.NoError(t, err)
+	assert.Equal(t, len(buffer), n)
+
+	orderer := blocks.NewAnyBlockOrder(num_blocks, nil)
+
+	for i := 0; i < num_blocks; i++ {
+		orderer.Add(i)
+	}
+
+	// START moving data from sourceStorage to destStorage
+
+	destStorage := sources.NewMemoryStorage(size)
+	destWaiting := modules.NewWaitingCache(destStorage, blockSize)
+
+	mig, err := NewMigrator(sourceDirty,
+		destWaiting,
+		blockSize,
+		sourceStorage.Lock,
+		sourceStorage.Unlock,
+		orderer)
+
+	assert.NoError(t, err)
+
+	mig.Migrate(num_blocks)
+
+	err = mig.WaitForCompletion()
+	assert.NoError(t, err)
+	mig.ShowProgress()
+
+	// This will end with migration completed, and consumer Locked.
+	eq, err := storage.Equals(sourceStorageMem, destStorage, blockSize)
+	assert.NoError(t, err)
+	assert.True(t, eq)
+}
+
+/**
+ * Test a simple migration through a pipe. No writer no reader.
+ *
+ */
+func TestMigratorSimplePipe(t *testing.T) {
+	size := 1024 * 1024
+	blockSize := 4096
+	num_blocks := (size + blockSize - 1) / blockSize
+
+	sourceStorageMem := sources.NewMemoryStorage(size)
+	sourceDirty := modules.NewFilterReadDirtyTracker(sourceStorageMem, blockSize)
+	sourceStorage := modules.NewLockable(sourceDirty)
+
+	// Set up some data here.
+	buffer := make([]byte, size)
+	for i := 0; i < size; i++ {
+		buffer[i] = 9
+	}
+
+	n, err := sourceStorage.WriteAt(buffer, 0)
+	assert.NoError(t, err)
+	assert.Equal(t, len(buffer), n)
+
+	orderer := blocks.NewAnyBlockOrder(num_blocks, nil)
+
+	for i := 0; i < num_blocks; i++ {
+		orderer.Add(i)
+	}
+
+	// START moving data from sourceStorage to destStorage
+
+	destStorage := sources.NewMemoryStorage(size)
+	destWaiting := modules.NewWaitingCache(destStorage, blockSize)
+
+	// Create a simple pipe
+	r1, w1 := io.Pipe()
+	r2, w2 := io.Pipe()
+
+	prSource := protocol.NewProtocolRW(context.TODO(), r1, w2)
+	prDest := protocol.NewProtocolRW(context.TODO(), r2, w1)
+
+	go prSource.Handle()
+	go prDest.Handle()
+
+	// Pipe a destination to the protocol
+	destination := modules.NewToProtocol(sourceDirty.Size(), 17, prSource)
+
+	// Pipe from the protocol to destWaiting
+	destFrom := modules.NewFromProtocol(17, destWaiting, prDest)
+	ctx := context.TODO()
+	go destFrom.HandleSend(ctx)
+	go destFrom.HandleReadAt()
+	go destFrom.HandleWriteAt()
+
+	mig, err := NewMigrator(sourceDirty,
+		destination,
+		blockSize,
+		sourceStorage.Lock,
+		sourceStorage.Unlock,
+		orderer)
+
+	assert.NoError(t, err)
+
+	mig.Migrate(num_blocks)
+
+	err = mig.WaitForCompletion()
+	assert.NoError(t, err)
+	mig.ShowProgress()
+
+	// This will end with migration completed, and consumer Locked.
+	eq, err := storage.Equals(sourceStorageMem, destStorage, blockSize)
+	assert.NoError(t, err)
+	assert.True(t, eq)
+}
+
+/**
+ * Test a migration with reader and writer.
+ *
+ */
+func TestMigratorWithReaderWriter(t *testing.T) {
 	size := 1024 * 1024
 	blockSize := 4096
 	num_blocks := (size + blockSize - 1) / blockSize
