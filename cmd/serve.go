@@ -178,7 +178,7 @@ func runServe(ccmd *cobra.Command, args []string) {
 			}
 
 			// Now do the migration...
-			err = mig.Migrate()
+			err = mig.Migrate(num_blocks)
 			mig.ShowProgress()
 
 			for {

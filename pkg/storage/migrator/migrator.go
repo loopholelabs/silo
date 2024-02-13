@@ -19,6 +19,7 @@ type Migrator struct {
 	dest                storage.StorageProvider
 	src_lock_fn         func()
 	src_unlock_fn       func()
+	error_fn            func(block *storage.BlockInfo, err error)
 	block_size          int
 	num_blocks          int
 	metric_moved_blocks int64
@@ -38,12 +39,16 @@ func NewMigrator(source storage.TrackingStorageProvider,
 	unlock_fn func(),
 	block_order storage.BlockOrder) (*Migrator, error) {
 
-	// TODO: Pass in configuration...
+	// TODO: Pass this in configuration...
 	concurrency_by_block := map[int]int{
 		storage.BlockTypeAny:      32,
 		storage.BlockTypeStandard: 32,
 		storage.BlockTypeDirty:    100,
 		storage.BlockTypePriority: 16,
+	}
+
+	error_fn := func(b *storage.BlockInfo, err error) {
+		// TODO: Requeue? Let the user of this decide.
 	}
 
 	num_blocks := (int(source.Size()) + block_size - 1) / block_size
@@ -52,6 +57,7 @@ func NewMigrator(source storage.TrackingStorageProvider,
 		src_track:           source,
 		src_lock_fn:         lock_fn,
 		src_unlock_fn:       unlock_fn,
+		error_fn:            error_fn,
 		block_size:          block_size,
 		num_blocks:          num_blocks,
 		metric_moved_blocks: 0,
@@ -73,12 +79,12 @@ func NewMigrator(source storage.TrackingStorageProvider,
 }
 
 /**
- * Migrate all storage to dest.
+ * Migrate storage to dest.
  */
-func (m *Migrator) Migrate() error {
+func (m *Migrator) Migrate(num_blocks int) error {
 	m.ctime = time.Now()
 
-	for {
+	for b := 0; b < num_blocks; b++ {
 		i := m.block_order.GetNext()
 		if i == storage.BlockInfoFinish {
 			break
@@ -95,10 +101,7 @@ func (m *Migrator) Migrate() error {
 		go func(block_no *storage.BlockInfo) {
 			err := m.migrateBlock(block_no.Block)
 			if err != nil {
-				// If there was an error, we'll simply add it back to the block_order to be retried later for now.
-				m.block_order.Add(block_no.Block)
-				// TODO: Allow other options for error handling
-				fmt.Printf("ERROR moving block %v\n", err)
+				m.error_fn(block_no, err)
 			}
 
 			m.wg.Done()
@@ -136,7 +139,6 @@ func (m *Migrator) GetLatestDirty() []uint {
  * MigrateDirty migrates a list of dirty blocks.
  */
 func (m *Migrator) MigrateDirty(blocks []uint) error {
-
 	for _, pos := range blocks {
 		i := &storage.BlockInfo{Block: int(pos), Type: storage.BlockTypeDirty}
 
@@ -151,8 +153,7 @@ func (m *Migrator) MigrateDirty(blocks []uint) error {
 		go func(block_no *storage.BlockInfo) {
 			err := m.migrateBlock(block_no.Block)
 			if err != nil {
-				// TODO: Collect errors properly. Abort? Retry? fail?
-				fmt.Printf("ERROR moving block %v\n", err)
+				m.error_fn(block_no, err)
 			}
 
 			m.wg.Done()

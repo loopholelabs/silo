@@ -172,7 +172,7 @@ func TestMigrator(t *testing.T) {
 	}()
 
 	m_start := time.Now()
-	mig.Migrate()
+	mig.Migrate(num_blocks)
 	mig.ShowProgress()
 
 	for {
