@@ -1,4 +1,4 @@
-package testing
+package migrator
 
 import (
 	"fmt"
@@ -118,7 +118,7 @@ func TestMigrator(t *testing.T) {
 	destWaiting := modules.NewWaitingCache(destStorage, blockSize)
 	destStorageMetrics := modules.NewMetrics(destWaiting)
 
-	mig, err := storage.NewMigrator(sourceDirty,
+	mig, err := NewMigrator(sourceDirty,
 		destWaiting,
 		blockSize,
 		locker,

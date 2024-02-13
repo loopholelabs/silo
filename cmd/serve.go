@@ -16,6 +16,7 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/blocks"
 	"github.com/loopholelabs/silo/pkg/storage/expose"
+	"github.com/loopholelabs/silo/pkg/storage/migrator"
 	"github.com/loopholelabs/silo/pkg/storage/modules"
 	"github.com/loopholelabs/silo/pkg/storage/protocol"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
@@ -165,7 +166,7 @@ func runServe(ccmd *cobra.Command, args []string) {
 				}
 			})
 
-			mig, err := storage.NewMigrator(sourceDirty,
+			mig, err := migrator.NewMigrator(sourceDirty,
 				dest,
 				block_size,
 				locker,

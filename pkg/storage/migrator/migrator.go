@@ -1,4 +1,4 @@
-package storage
+package migrator
 
 import (
 	"errors"
@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/util"
 )
 
@@ -14,8 +15,8 @@ type MigratorConfig struct {
 }
 
 type Migrator struct {
-	src_track           TrackingStorageProvider // Tracks writes so we know which are dirty
-	dest                StorageProvider
+	src_track           storage.TrackingStorageProvider // Tracks writes so we know which are dirty
+	dest                storage.StorageProvider
 	src_lock_fn         func()
 	src_unlock_fn       func()
 	block_size          int
@@ -24,25 +25,25 @@ type Migrator struct {
 	moving_blocks       *util.Bitfield
 	migrated_blocks     *util.Bitfield
 	clean_blocks        *util.Bitfield
-	block_order         BlockOrder
+	block_order         storage.BlockOrder
 	ctime               time.Time
 	concurrency         map[int]chan bool
 	wg                  sync.WaitGroup
 }
 
-func NewMigrator(source TrackingStorageProvider,
-	dest StorageProvider,
+func NewMigrator(source storage.TrackingStorageProvider,
+	dest storage.StorageProvider,
 	block_size int,
 	lock_fn func(),
 	unlock_fn func(),
-	block_order BlockOrder) (*Migrator, error) {
+	block_order storage.BlockOrder) (*Migrator, error) {
 
 	// TODO: Pass in configuration...
 	concurrency_by_block := map[int]int{
-		BlockTypeAny:      32,
-		BlockTypeStandard: 32,
-		BlockTypeDirty:    100,
-		BlockTypePriority: 16,
+		storage.BlockTypeAny:      32,
+		storage.BlockTypeStandard: 32,
+		storage.BlockTypeDirty:    100,
+		storage.BlockTypePriority: 16,
 	}
 
 	num_blocks := (int(source.Size()) + block_size - 1) / block_size
@@ -79,19 +80,19 @@ func (m *Migrator) Migrate() error {
 
 	for {
 		i := m.block_order.GetNext()
-		if i == BlockInfoFinish {
+		if i == storage.BlockInfoFinish {
 			break
 		}
 
 		cc, ok := m.concurrency[i.Type]
 		if !ok {
-			cc = m.concurrency[BlockTypeAny]
+			cc = m.concurrency[storage.BlockTypeAny]
 		}
 		cc <- true
 
 		m.wg.Add(1)
 
-		go func(block_no *BlockInfo) {
+		go func(block_no *storage.BlockInfo) {
 			err := m.migrateBlock(block_no.Block)
 			if err != nil {
 				// If there was an error, we'll simply add it back to the block_order to be retried later for now.
@@ -103,7 +104,7 @@ func (m *Migrator) Migrate() error {
 			m.wg.Done()
 			cc, ok := m.concurrency[block_no.Type]
 			if !ok {
-				cc = m.concurrency[BlockTypeAny]
+				cc = m.concurrency[storage.BlockTypeAny]
 			}
 			<-cc
 		}(i)
@@ -137,17 +138,17 @@ func (m *Migrator) GetLatestDirty() []uint {
 func (m *Migrator) MigrateDirty(blocks []uint) error {
 
 	for _, pos := range blocks {
-		i := &BlockInfo{Block: int(pos), Type: BlockTypeDirty}
+		i := &storage.BlockInfo{Block: int(pos), Type: storage.BlockTypeDirty}
 
 		cc, ok := m.concurrency[i.Type]
 		if !ok {
-			cc = m.concurrency[BlockTypeAny]
+			cc = m.concurrency[storage.BlockTypeAny]
 		}
 		cc <- true
 
 		m.wg.Add(1)
 
-		go func(block_no *BlockInfo) {
+		go func(block_no *storage.BlockInfo) {
 			err := m.migrateBlock(block_no.Block)
 			if err != nil {
 				// TODO: Collect errors properly. Abort? Retry? fail?
@@ -157,7 +158,7 @@ func (m *Migrator) MigrateDirty(blocks []uint) error {
 			m.wg.Done()
 			cc, ok := m.concurrency[block_no.Type]
 			if !ok {
-				cc = m.concurrency[BlockTypeAny]
+				cc = m.concurrency[storage.BlockTypeAny]
 			}
 			<-cc
 		}(i)
