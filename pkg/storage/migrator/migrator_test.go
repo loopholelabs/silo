@@ -51,12 +51,14 @@ func TestMigratorSimple(t *testing.T) {
 	destStorage := sources.NewMemoryStorage(size)
 	destWaiting := modules.NewWaitingCache(destStorage, blockSize)
 
+	conf := NewMigratorConfig().WithBlockSize(blockSize)
+	conf.LockerHandler = sourceStorage.Lock
+	conf.UnlockerHandler = sourceStorage.Unlock
+
 	mig, err := NewMigrator(sourceDirty,
 		destWaiting,
-		blockSize,
-		sourceStorage.Lock,
-		sourceStorage.Unlock,
-		orderer)
+		orderer,
+		conf)
 
 	assert.NoError(t, err)
 
@@ -126,12 +128,14 @@ func TestMigratorSimplePipe(t *testing.T) {
 	go destFrom.HandleReadAt()
 	go destFrom.HandleWriteAt()
 
+	conf := NewMigratorConfig().WithBlockSize(blockSize)
+	conf.LockerHandler = sourceStorage.Lock
+	conf.UnlockerHandler = sourceStorage.Unlock
+
 	mig, err := NewMigrator(sourceDirty,
 		destination,
-		blockSize,
-		sourceStorage.Lock,
-		sourceStorage.Unlock,
-		orderer)
+		orderer,
+		conf)
 
 	assert.NoError(t, err)
 
@@ -212,12 +216,14 @@ func TestMigratorWithReaderWriter(t *testing.T) {
 	destStorage := sources.NewMemoryStorage(size)
 	destWaiting := modules.NewWaitingCache(destStorage, blockSize)
 
+	conf := NewMigratorConfig().WithBlockSize(blockSize)
+	conf.LockerHandler = sourceStorage.Lock
+	conf.UnlockerHandler = sourceStorage.Unlock
+
 	mig, err := NewMigrator(sourceDirty,
 		destWaiting,
-		blockSize,
-		sourceStorage.Lock,
-		sourceStorage.Unlock,
-		orderer)
+		orderer,
+		conf)
 
 	assert.NoError(t, err)
 

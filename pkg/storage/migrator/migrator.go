@@ -12,6 +12,31 @@ import (
 )
 
 type MigratorConfig struct {
+	BlockSize       int
+	LockerHandler   func()
+	UnlockerHandler func()
+	ErrorHandler    func(b *storage.BlockInfo, err error)
+	Concurrency     map[int]int
+}
+
+func NewMigratorConfig() *MigratorConfig {
+	return &MigratorConfig{
+		BlockSize:       0,
+		LockerHandler:   func() {},
+		UnlockerHandler: func() {},
+		ErrorHandler:    func(b *storage.BlockInfo, err error) {},
+		Concurrency: map[int]int{
+			storage.BlockTypeAny:      32,
+			storage.BlockTypeStandard: 32,
+			storage.BlockTypeDirty:    100,
+			storage.BlockTypePriority: 16,
+		},
+	}
+}
+
+func (mc *MigratorConfig) WithBlockSize(bs int) *MigratorConfig {
+	mc.BlockSize = bs
+	return mc
 }
 
 type Migrator struct {
@@ -34,31 +59,17 @@ type Migrator struct {
 
 func NewMigrator(source storage.TrackingStorageProvider,
 	dest storage.StorageProvider,
-	block_size int,
-	lock_fn func(),
-	unlock_fn func(),
-	block_order storage.BlockOrder) (*Migrator, error) {
+	block_order storage.BlockOrder,
+	config *MigratorConfig) (*Migrator, error) {
 
-	// TODO: Pass this in configuration...
-	concurrency_by_block := map[int]int{
-		storage.BlockTypeAny:      32,
-		storage.BlockTypeStandard: 32,
-		storage.BlockTypeDirty:    100,
-		storage.BlockTypePriority: 16,
-	}
-
-	error_fn := func(b *storage.BlockInfo, err error) {
-		// TODO: Requeue? Let the user of this decide.
-	}
-
-	num_blocks := (int(source.Size()) + block_size - 1) / block_size
+	num_blocks := (int(source.Size()) + config.BlockSize - 1) / config.BlockSize
 	m := &Migrator{
 		dest:                dest,
 		src_track:           source,
-		src_lock_fn:         lock_fn,
-		src_unlock_fn:       unlock_fn,
-		error_fn:            error_fn,
-		block_size:          block_size,
+		src_lock_fn:         config.LockerHandler,
+		src_unlock_fn:       config.UnlockerHandler,
+		error_fn:            config.ErrorHandler,
+		block_size:          config.BlockSize,
 		num_blocks:          num_blocks,
 		metric_moved_blocks: 0,
 		block_order:         block_order,
@@ -72,7 +83,7 @@ func NewMigrator(source storage.TrackingStorageProvider,
 	}
 
 	// Initialize concurrency channels
-	for b, v := range concurrency_by_block {
+	for b, v := range config.Concurrency {
 		m.concurrency[b] = make(chan bool, v)
 	}
 	return m, nil

@@ -137,15 +137,6 @@ func runServe(ccmd *cobra.Command, args []string) {
 			fmt.Printf("GOT CONNECTION\n")
 			// Now we can migrate to the client...
 
-			locker := func() {
-				// This could be used to pause VM/consumer etc...
-				sourceStorage.Lock()
-			}
-			unlocker := func() {
-				// Restart consumer
-				sourceStorage.Unlock()
-			}
-
 			pro := protocol.NewProtocolRW(context.TODO(), c, c)
 			dest := modules.NewToProtocol(uint64(serve_size), 777, pro)
 
@@ -166,12 +157,14 @@ func runServe(ccmd *cobra.Command, args []string) {
 				}
 			})
 
+			conf := migrator.NewMigratorConfig().WithBlockSize(block_size)
+			conf.LockerHandler = sourceStorage.Lock
+			conf.UnlockerHandler = sourceStorage.Unlock
+
 			mig, err := migrator.NewMigrator(sourceDirty,
 				dest,
-				block_size,
-				locker,
-				unlocker,
-				orderer)
+				orderer,
+				conf)
 
 			if err != nil {
 				panic(err)
