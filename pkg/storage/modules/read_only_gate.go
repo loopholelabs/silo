@@ -16,8 +16,8 @@ type ReadOnlyGate struct {
 	locked bool
 }
 
-func NewReadOnlyGate(prov storage.StorageProvider) *Lockable {
-	return &Lockable{
+func NewReadOnlyGate(prov storage.StorageProvider) *ReadOnlyGate {
+	return &ReadOnlyGate{
 		prov:   prov,
 		lock:   sync.NewCond(&sync.Mutex{}),
 		locked: false,
