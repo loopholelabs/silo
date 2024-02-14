@@ -3,6 +3,7 @@ package expose
 import (
 	"fmt"
 	"os"
+	"os/user"
 	"testing"
 
 	"github.com/loopholelabs/silo/pkg/storage/sources"
@@ -10,6 +11,15 @@ import (
 )
 
 func TestNBDDevice(t *testing.T) {
+	currentUser, err := user.Current()
+	if err != nil {
+		panic(err)
+	}
+	if currentUser.Username != "root" {
+		fmt.Printf("Cannot run test unless we are root.\n")
+		return
+	}
+
 	var n *ExposedStorageNBD
 	dev := "nbd1"
 	defer func() {

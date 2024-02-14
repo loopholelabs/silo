@@ -3,6 +3,7 @@ package expose
 import (
 	"fmt"
 	"os"
+	"os/user"
 	"sync"
 	"testing"
 	"time"
@@ -12,6 +13,14 @@ import (
 )
 
 func BenchmarkDevRead(mb *testing.B) {
+	currentUser, err := user.Current()
+	if err != nil {
+		panic(err)
+	}
+	if currentUser.Username != "root" {
+		fmt.Printf("Cannot run test unless we are root.\n")
+		return
+	}
 
 	sizes := []int64{4096, 65536, 1024 * 1024}
 
@@ -110,6 +119,15 @@ func BenchmarkDevRead(mb *testing.B) {
 }
 
 func BenchmarkDevWrite(b *testing.B) {
+	currentUser, err := user.Current()
+	if err != nil {
+		panic(err)
+	}
+	if currentUser.Username != "root" {
+		fmt.Printf("Cannot run test unless we are root.\n")
+		return
+	}
+
 	NBDdevice := "nbd1"
 	diskSize := 1024 * 1024 * 1024 * 4
 
