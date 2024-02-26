@@ -273,6 +273,9 @@ func TestMigratorWithReaderWriter(t *testing.T) {
 
 	mig.Migrate(num_blocks)
 
+	err = mig.WaitForCompletion()
+	assert.NoError(t, err)
+
 	for {
 		blocks := mig.GetLatestDirty()
 		if blocks == nil {
