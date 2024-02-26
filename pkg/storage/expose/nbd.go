@@ -2,7 +2,6 @@ package expose
 
 import (
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"os"
 	"sync"
@@ -96,24 +95,17 @@ func NewExposedStorageNBD(prov storage.StorageProvider, dev string, num_connecti
 func (n *ExposedStorageNBD) setSizes(fp uintptr, size uint64, block_size uint64, flags uint64) error {
 	//read_only := ((flags & NBD_FLAG_READ_ONLY) == 1)
 
-	tmp_blocksize := uint64(4096)
-	if size/block_size <= ^uint64(0) {
-		tmp_blocksize = block_size
-	}
-	_, _, en := syscall.Syscall(syscall.SYS_IOCTL, fp, NBD_SET_BLKSIZE, uintptr(tmp_blocksize))
+	// TODO: Should we throw an error if size isn't a multiple, or should we do something else...
+
+	// Round up
+	size_blocks := (size + block_size - 1) / block_size
+	_, _, en := syscall.Syscall(syscall.SYS_IOCTL, fp, NBD_SET_SIZE_BLOCKS, uintptr(size_blocks))
 	if en != 0 {
-		return errors.New(fmt.Sprintf("Error setting blocksize %d\n", tmp_blocksize))
+		return fmt.Errorf("error setting blocks %d", size_blocks)
 	}
-	size_blocks := size / tmp_blocksize
-	_, _, en = syscall.Syscall(syscall.SYS_IOCTL, fp, NBD_SET_SIZE_BLOCKS, uintptr(size_blocks))
+	_, _, en = syscall.Syscall(syscall.SYS_IOCTL, fp, NBD_SET_BLKSIZE, uintptr(block_size))
 	if en != 0 {
-		return errors.New(fmt.Sprintf("Error setting blocks %d\n", size_blocks))
-	}
-	if tmp_blocksize != block_size {
-		_, _, en = syscall.Syscall(syscall.SYS_IOCTL, fp, NBD_SET_BLKSIZE, uintptr(block_size))
-		if en != 0 {
-			return errors.New(fmt.Sprintf("Error setting blocksize %d\n", block_size))
-		}
+		return fmt.Errorf("error setting blocksize %d", block_size)
 	}
 
 	syscall.Syscall(syscall.SYS_IOCTL, fp, NBD_CLEAR_SOCK, 0)
@@ -127,7 +119,7 @@ func (n *ExposedStorageNBD) setSizes(fp uintptr, size uint64, block_size uint64,
 func (n *ExposedStorageNBD) setTimeout(fp uintptr, timeout uint64) error {
 	_, _, en := syscall.Syscall(syscall.SYS_IOCTL, fp, NBD_SET_TIMEOUT, uintptr(timeout))
 	if en != 0 {
-		return errors.New(fmt.Sprintf("Error setting timeout %d", timeout))
+		return fmt.Errorf("error setting timeout %d", timeout)
 	}
 	return nil
 }
@@ -135,9 +127,9 @@ func (n *ExposedStorageNBD) setTimeout(fp uintptr, timeout uint64) error {
 func (n *ExposedStorageNBD) finishSock(fp uintptr, sock int) error {
 	_, _, en := syscall.Syscall(syscall.SYS_IOCTL, fp, NBD_SET_SOCK, uintptr(sock))
 	if en == syscall.EBUSY {
-		return errors.New(fmt.Sprintf("Kernel doesn't support multiple connections"))
+		return fmt.Errorf("kernel doesn't support multiple connections")
 	} else if en != 0 {
-		return errors.New(fmt.Sprintf("Error setting socket"))
+		return fmt.Errorf("error setting socket")
 	}
 	return nil
 }
@@ -148,9 +140,11 @@ func (n *ExposedStorageNBD) finishSock(fp uintptr, sock int) error {
  */
 func (n *ExposedStorageNBD) checkConn(dev string) error {
 	_, err := os.ReadFile(fmt.Sprintf("/sys/block/%s/pid", dev))
-	if err == nil {
-		//fmt.Printf("Connection %s\n", data)
-	}
+	/*
+		if err == nil {
+			//fmt.Printf("Connection %s\n", data)
+		}
+	*/
 	return err
 }
 
@@ -207,7 +201,7 @@ func (n *ExposedStorageNBD) Handle() error {
 	syscall.Syscall(syscall.SYS_IOCTL, fp.Fd(), NBD_CLEAR_SOCK, 0)
 
 	if en != 0 {
-		return errors.New(fmt.Sprintf("Error after DO_IT %d\n", en))
+		return fmt.Errorf("error after DO_IT %d", en)
 	}
 
 	// Close the device...
@@ -241,12 +235,12 @@ func (n *ExposedStorageNBD) Shutdown() error {
 	fmt.Printf("NBD_DISCONNECT\n")
 	_, _, en := syscall.Syscall(syscall.SYS_IOCTL, uintptr(n.device_file), NBD_DISCONNECT, 0)
 	if en != 0 {
-		return errors.New(fmt.Sprintf("Error disconnecting %d", en))
+		return fmt.Errorf("error disconnecting %d", en)
 	}
 	fmt.Printf("NBD_CLEAR_SOCK\n")
 	_, _, en = syscall.Syscall(syscall.SYS_IOCTL, uintptr(n.device_file), NBD_CLEAR_SOCK, 0)
 	if en != 0 {
-		return errors.New(fmt.Sprintf("Error clearing sock %d", en))
+		return fmt.Errorf("error clearing sock %d", en)
 	}
 
 	// Wait for the pid to go away
@@ -358,14 +352,14 @@ func (d *Dispatch) Handle(fd int, prov storage.StorageProvider) error {
 				request.Length = binary.BigEndian.Uint32(header[24:28])
 
 				if request.Magic != NBD_REQUEST_MAGIC {
-					return fmt.Errorf("Received invalid MAGIC")
+					return fmt.Errorf("received invalid MAGIC")
 				}
 
 				if request.Type == NBD_CMD_DISCONNECT {
 					fmt.Printf(" -> CMD_DISCONNECT\n")
 					return nil // All done
 				} else if request.Type == NBD_CMD_FLUSH {
-					return fmt.Errorf("Not supported: Flush")
+					return fmt.Errorf("not supported: Flush")
 				} else if request.Type == NBD_CMD_READ {
 					//					fmt.Printf("READ %x %d\n", request.Handle, request.Length)
 					rp += 28
@@ -395,7 +389,7 @@ func (d *Dispatch) Handle(fd int, prov storage.StorageProvider) error {
 						return err
 					}
 				} else {
-					return fmt.Errorf("NBD Not implemented %d\n", request.Type)
+					return fmt.Errorf("nbd not implemented %d", request.Type)
 				}
 
 			} else {

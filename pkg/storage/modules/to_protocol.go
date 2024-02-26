@@ -92,3 +92,20 @@ func (i *ToProtocol) HandleNeedAt(cb func(offset int64, length int32)) error {
 		cb(offset, length)
 	}
 }
+
+// Handle any DontNeedAt commands, and send to an orderer...
+func (i *ToProtocol) HandleDontNeedAt(cb func(offset int64, length int32)) error {
+	for {
+		_, data, err := i.protocol.WaitForCommand(i.dev, protocol.COMMAND_DONT_NEED_AT)
+		if err != nil {
+			return err
+		}
+		offset, length, err := protocol.DecodeDontNeedAt(data)
+		if err != nil {
+			return err
+		}
+
+		// We could spin up a goroutine here, but the assumption is that cb won't take long.
+		cb(offset, length)
+	}
+}

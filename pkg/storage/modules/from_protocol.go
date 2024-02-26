@@ -121,3 +121,9 @@ func (i *FromProtocol) NeedAt(offset int64, length int32) error {
 	_, err := i.protocol.SendPacket(i.dev, protocol.ID_PICK_ANY, b)
 	return err
 }
+
+func (i *FromProtocol) DontNeedAt(offset int64, length int32) error {
+	b := protocol.EncodeDontNeedAt(offset, length)
+	_, err := i.protocol.SendPacket(i.dev, protocol.ID_PICK_ANY, b)
+	return err
+}

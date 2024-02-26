@@ -79,3 +79,27 @@ func Equals(sp1 StorageProvider, sp2 StorageProvider, block_size int) (bool, err
 
 	return true, nil
 }
+
+/**
+ * Map a function over blocks within the range.
+ *
+ */
+func MapOverBlocks(offset int64, length int32, block_size int, f func(b int, complete bool)) {
+	end := uint64(offset + int64(length))
+
+	b_start := int(offset / int64(block_size))
+	b_end := int((end-1)/uint64(block_size)) + 1
+	for b := b_start; b < b_end; b++ {
+		complete := true
+		// If the first block is incomplete
+		if offset > (int64(b_start) * int64(block_size)) {
+			complete = false
+		}
+		// If the last block is incomplete
+		if (end % uint64(block_size)) > 0 {
+			complete = false
+		}
+
+		f(b, complete)
+	}
+}

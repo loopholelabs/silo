@@ -157,6 +157,19 @@ func runServe(ccmd *cobra.Command, args []string) {
 				}
 			})
 
+			go dest.HandleDontNeedAt(func(offset int64, length int32) {
+				end := uint64(offset + int64(length))
+				if end > uint64(serve_size) {
+					end = uint64(serve_size)
+				}
+
+				b_start := int(offset / int64(block_size))
+				b_end := int((end-1)/uint64(block_size)) + 1
+				for b := b_start; b < b_end; b++ {
+					orderer.Remove(b)
+				}
+			})
+
 			conf := migrator.NewMigratorConfig().WithBlockSize(block_size)
 			conf.LockerHandler = sourceStorage.Lock
 			conf.UnlockerHandler = sourceStorage.Unlock

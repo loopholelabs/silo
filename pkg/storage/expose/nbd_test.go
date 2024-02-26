@@ -41,6 +41,8 @@ func TestNBDDevice(t *testing.T) {
 
 	n.WaitReady()
 
+	//time.Sleep(2 * time.Second)
+
 	devfile, err := os.OpenFile(fmt.Sprintf("/dev/%s", dev), os.O_RDWR, 0666)
 	assert.NoError(t, err)
 

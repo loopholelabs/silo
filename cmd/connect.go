@@ -56,8 +56,8 @@ func runConnect(ccmd *cobra.Command, args []string) {
 	// Setup some sharded memory storage (for concurrent write speed)
 	destStorage := modules.NewShardedStorage(connect_size, connect_size/1024, cr)
 	// Wrap it in metrics
-	destWaiting := modules.NewWaitingCache(destStorage, block_size)
-	destStorageMetrics := modules.NewMetrics(destWaiting)
+	destWaitingLocal, destWaitingRemote := modules.NewWaitingCache(destStorage, block_size)
+	destStorageMetrics := modules.NewMetrics(destWaitingLocal)
 
 	con, err := net.Dial("tcp", connect_addr)
 	if err != nil {
@@ -65,11 +65,15 @@ func runConnect(ccmd *cobra.Command, args []string) {
 	}
 
 	pro := protocol.NewProtocolRW(context.TODO(), con, con)
-	dest := modules.NewFromProtocol(777, destStorageMetrics, pro)
+	dest := modules.NewFromProtocol(777, destWaitingRemote, pro)
 
 	// Connect the waitingCache to the FromProtocol
-	destWaiting.NeedAt = func(offset int64, length int32) {
+	destWaitingLocal.NeedAt = func(offset int64, length int32) {
 		dest.NeedAt(offset, length)
+	}
+
+	destWaitingLocal.DontNeedAt = func(offset int64, length int32) {
+		dest.DontNeedAt(offset, length)
 	}
 
 	go func() {
