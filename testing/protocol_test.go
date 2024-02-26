@@ -237,6 +237,8 @@ func TestProtocolEvents(t *testing.T) {
 	// Send some events and make sure they happen at the other end...
 
 	sourceToProtocol.SendEvent(protocol.EventPreLock)
+	// There should be the event waiting for us already.
+	assert.Equal(t, 1, len(events))
 	e := <-events
 	assert.Equal(t, protocol.EventPreLock, e)
 	sourceToProtocol.SendEvent(protocol.EventPostLock)

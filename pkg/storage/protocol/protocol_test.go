@@ -132,6 +132,26 @@ func TestNeedAt(t *testing.T) {
 
 }
 
+func TestDontNeedAt(t *testing.T) {
+
+	b := EncodeDontNeedAt(12345, 10)
+
+	off, length, err := DecodeDontNeedAt(b)
+	assert.NoError(t, err)
+	assert.Equal(t, int64(12345), off)
+	assert.Equal(t, int32(10), length)
+
+	// Make sure we can't decode silly things
+	_, _, err = DecodeDontNeedAt(nil)
+	assert.Error(t, err)
+
+	_, _, err = DecodeDontNeedAt([]byte{
+		99,
+	})
+	assert.Error(t, err)
+
+}
+
 func TestDirtyList(t *testing.T) {
 
 	blocks := []uint{1, 7, 100}
@@ -146,6 +166,59 @@ func TestDirtyList(t *testing.T) {
 	assert.Error(t, err)
 
 	_, err = DecodeDirtyList([]byte{
+		99,
+	})
+	assert.Error(t, err)
+
+}
+
+func TestDevInfo(t *testing.T) {
+	b := EncodeDevInfo(&DevInfo{Size: 12345})
+
+	di, err := DecodeDevInfo(b)
+	assert.NoError(t, err)
+	assert.Equal(t, uint64(12345), di.Size)
+
+	// Make sure we can't decode silly things
+	_, err = DecodeDevInfo(nil)
+	assert.Error(t, err)
+
+	_, err = DecodeDevInfo([]byte{
+		99,
+	})
+	assert.Error(t, err)
+
+}
+
+func TestEvent(t *testing.T) {
+	b := EncodeEvent(&Event{Type: EventCompleted})
+
+	e, err := DecodeEvent(b)
+	assert.NoError(t, err)
+	assert.Equal(t, EventCompleted, e.Type)
+
+	// Make sure we can't decode silly things
+	_, err = DecodeEvent(nil)
+	assert.Error(t, err)
+
+	_, err = DecodeEvent([]byte{
+		99,
+	})
+	assert.Error(t, err)
+
+}
+
+func TestEventResponse(t *testing.T) {
+	b := EncodeEventResponse()
+
+	err := DecodeEventResponse(b)
+	assert.NoError(t, err)
+
+	// Make sure we can't decode silly things
+	err = DecodeEventResponse(nil)
+	assert.Error(t, err)
+
+	err = DecodeEventResponse([]byte{
 		99,
 	})
 	assert.Error(t, err)
