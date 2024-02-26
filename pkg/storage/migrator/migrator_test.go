@@ -65,7 +65,6 @@ func TestMigratorSimple(t *testing.T) {
 
 	err = mig.WaitForCompletion()
 	assert.NoError(t, err)
-	mig.ShowProgress()
 
 	// This will end with migration completed, and consumer Locked.
 	eq, err := storage.Equals(sourceStorageMem, destStorage, blockSize)
@@ -149,7 +148,6 @@ func TestMigratorSimplePipe(t *testing.T) {
 
 	err = mig.WaitForCompletion()
 	assert.NoError(t, err)
-	mig.ShowProgress()
 
 	// This will end with migration completed, and consumer Locked.
 	eq, err := storage.Equals(sourceStorageMem, destStorage, blockSize)
@@ -283,12 +281,10 @@ func TestMigratorWithReaderWriter(t *testing.T) {
 		fmt.Printf("Got %d dirty blocks to move...\n", len(blocks))
 		err := mig.MigrateDirty(blocks)
 		assert.NoError(t, err)
-		mig.ShowProgress()
 	}
 
 	err = mig.WaitForCompletion()
 	assert.NoError(t, err)
-	mig.ShowProgress()
 
 	// This will end with migration completed, and consumer Locked.
 	eq, err := storage.Equals(sourceStorageMem, destStorage, blockSize)
@@ -439,7 +435,6 @@ func TestMigratorWithReaderWriterWrite(t *testing.T) {
 
 	err = mig.WaitForCompletion()
 	assert.NoError(t, err)
-	mig.ShowProgress()
 
 	assert.Equal(t, int64(num_blocks-num_local_blocks), mig.metric_moved_blocks)
 

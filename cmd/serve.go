@@ -175,6 +175,12 @@ func runServe(ccmd *cobra.Command, args []string) {
 			conf := migrator.NewMigratorConfig().WithBlockSize(block_size)
 			conf.LockerHandler = sourceStorage.Lock
 			conf.UnlockerHandler = sourceStorage.Unlock
+			conf.ProgressHandler = func(p *migrator.MigrationProgress) {
+
+				fmt.Printf("Progress Moved: %d/%d %.2f%% Clean: %d/%d %.2f%%\n",
+					p.MigratedBlocks, p.TotalBlocks, p.MigratedBlocksPerc,
+					p.ReadyBlocks, p.TotalBlocks, p.ReadyBlocksPerc)
+			}
 
 			mig, err := migrator.NewMigrator(sourceDirty,
 				dest,
@@ -187,7 +193,11 @@ func runServe(ccmd *cobra.Command, args []string) {
 
 			// Now do the migration...
 			err = mig.Migrate(num_blocks)
-			mig.ShowProgress()
+
+			err = mig.WaitForCompletion()
+			if err != nil {
+				panic(err)
+			}
 
 			for {
 				blocks := mig.GetLatestDirty()
@@ -203,7 +213,6 @@ func runServe(ccmd *cobra.Command, args []string) {
 					panic(err)
 				}
 				fmt.Printf("DIRTY BLOCKS %d\n", len(blocks))
-				mig.ShowProgress()
 			}
 
 			err = mig.WaitForCompletion()
@@ -212,7 +221,6 @@ func runServe(ccmd *cobra.Command, args []string) {
 			}
 
 			fmt.Printf("MIGRATION DONE %v\n", err)
-			mig.ShowProgress()
 
 			c.Close()
 		}
