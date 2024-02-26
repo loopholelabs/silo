@@ -34,6 +34,30 @@ func NewFromProtocol(dev uint32, provFactory func(*protocol.DevInfo) storage.Sto
 	return fp
 }
 
+// Handle any Events
+func (fp *FromProtocol) HandleEvent(cb func(protocol.EventType)) error {
+	fp.init.Wait()
+
+	for {
+		id, data, err := fp.protocol.WaitForCommand(fp.dev, protocol.COMMAND_EVENT)
+		if err != nil {
+			return err
+		}
+		ev, err := protocol.DecodeEvent(data)
+		if err != nil {
+			return err
+		}
+
+		// Relay the event, wait, and then respond.
+		cb(ev.Type)
+
+		fp.send_queue <- sendData{
+			id:   id,
+			data: protocol.EncodeEventResponse(),
+		}
+	}
+}
+
 // Handle a DevInfo, and create the storage
 func (fp *FromProtocol) HandleDevInfo() error {
 	_, data, err := fp.protocol.WaitForCommand(fp.dev, protocol.COMMAND_DEV_INFO)

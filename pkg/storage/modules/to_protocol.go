@@ -18,6 +18,25 @@ func NewToProtocol(size uint64, deviceID uint32, p protocol.Protocol) *ToProtoco
 	}
 }
 
+func (i *ToProtocol) SendEvent(e protocol.EventType) error {
+	ev := &protocol.Event{
+		Type: e,
+	}
+	b := protocol.EncodeEvent(ev)
+	id, err := i.protocol.SendPacket(i.dev, protocol.ID_PICK_ANY, b)
+	if err != nil {
+		return err
+	}
+
+	// Wait for acknowledgement
+	r, err := i.protocol.WaitForPacket(i.dev, id)
+	if err != nil {
+		return err
+	}
+
+	return protocol.DecodeEventResponse(r)
+}
+
 func (i *ToProtocol) SendDevInfo() error {
 	di := &protocol.DevInfo{
 		Size: i.size,

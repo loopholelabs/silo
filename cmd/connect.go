@@ -116,6 +116,9 @@ func runConnect(ccmd *cobra.Command, args []string) {
 	go dest.HandleReadAt()
 	go dest.HandleWriteAt()
 	go dest.HandleDevInfo()
+	go dest.HandleEvent(func(e protocol.EventType) {
+		fmt.Printf("= Event %s\n", protocol.EventsByType[e])
+	})
 
 	go dest.HandleDirtyList(func(dirty []uint) {
 		fmt.Printf("GOT LIST OF DIRTY BLOCKS %v\n", dirty)

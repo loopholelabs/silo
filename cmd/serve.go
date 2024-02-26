@@ -173,10 +173,17 @@ func runServe(ccmd *cobra.Command, args []string) {
 			})
 
 			conf := migrator.NewMigratorConfig().WithBlockSize(block_size)
-			conf.LockerHandler = sourceStorage.Lock
-			conf.UnlockerHandler = sourceStorage.Unlock
+			conf.LockerHandler = func() {
+				dest.SendEvent(protocol.EventPreLock)
+				sourceStorage.Lock()
+				dest.SendEvent(protocol.EventPostLock)
+			}
+			conf.UnlockerHandler = func() {
+				dest.SendEvent(protocol.EventPreUnlock)
+				sourceStorage.Unlock()
+				dest.SendEvent(protocol.EventPostUnlock)
+			}
 			conf.ProgressHandler = func(p *migrator.MigrationProgress) {
-
 				fmt.Printf("Progress Moved: %d/%d %.2f%% Clean: %d/%d %.2f%%\n",
 					p.MigratedBlocks, p.TotalBlocks, p.MigratedBlocksPerc,
 					p.ReadyBlocks, p.TotalBlocks, p.ReadyBlocksPerc)
@@ -221,6 +228,7 @@ func runServe(ccmd *cobra.Command, args []string) {
 			}
 
 			fmt.Printf("MIGRATION DONE %v\n", err)
+			dest.SendEvent(protocol.EventCompleted)
 
 			c.Close()
 		}
