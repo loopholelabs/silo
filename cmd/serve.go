@@ -184,9 +184,10 @@ func runServe(ccmd *cobra.Command, args []string) {
 				dest.SendEvent(protocol.EventPostUnlock)
 			}
 			conf.ProgressHandler = func(p *migrator.MigrationProgress) {
-				fmt.Printf("Progress Moved: %d/%d %.2f%% Clean: %d/%d %.2f%%\n",
+				fmt.Printf("Progress Moved: %d/%d %.2f%% Clean: %d/%d %.2f%% InProgress: %d\n",
 					p.MigratedBlocks, p.TotalBlocks, p.MigratedBlocksPerc,
-					p.ReadyBlocks, p.TotalBlocks, p.ReadyBlocksPerc)
+					p.ReadyBlocks, p.TotalBlocks, p.ReadyBlocksPerc,
+					p.ActiveBlocks)
 			}
 
 			mig, err := migrator.NewMigrator(sourceDirty,

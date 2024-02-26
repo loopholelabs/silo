@@ -107,6 +107,14 @@ func (i *VolatilityMonitor) GetNext() *storage.BlockInfo {
 }
 
 /**
+ * Add all blocks
+ *
+ */
+func (i *VolatilityMonitor) AddAll() {
+	i.available.SetBits(0, uint(i.num_blocks))
+}
+
+/**
  * Add a block to be monitored
  *
  */

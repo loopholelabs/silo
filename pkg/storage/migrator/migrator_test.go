@@ -41,10 +41,7 @@ func TestMigratorSimple(t *testing.T) {
 	assert.Equal(t, len(buffer), n)
 
 	orderer := blocks.NewAnyBlockOrder(num_blocks, nil)
-
-	for i := 0; i < num_blocks; i++ {
-		orderer.Add(i)
-	}
+	orderer.AddAll()
 
 	// START moving data from sourceStorage to destStorage
 
@@ -96,10 +93,7 @@ func TestMigratorSimplePipe(t *testing.T) {
 	assert.Equal(t, len(buffer), n)
 
 	orderer := blocks.NewAnyBlockOrder(num_blocks, nil)
-
-	for i := 0; i < num_blocks; i++ {
-		orderer.Add(i)
-	}
+	orderer.AddAll()
 
 	// START moving data from sourceStorage to destStorage
 
@@ -210,9 +204,7 @@ func TestMigratorWithReaderWriter(t *testing.T) {
 	// Start monitoring blocks, and wait a bit...
 	orderer := blocks.NewPriorityBlockOrder(num_blocks, sourceMonitor)
 
-	for i := 0; i < num_blocks; i++ {
-		orderer.Add(i)
-	}
+	orderer.AddAll()
 	time.Sleep(2000 * time.Millisecond)
 
 	// START moving data from sourceStorage to destStorage
@@ -440,5 +432,4 @@ func TestMigratorWithReaderWriterWrite(t *testing.T) {
 	assert.NoError(t, err)
 
 	assert.Equal(t, int64(num_blocks-num_local_blocks), mig.metric_moved_blocks)
-
 }

@@ -22,6 +22,15 @@ func NewAnyBlockOrder(num_blocks int, next storage.BlockOrder) *AnyBlockOrder {
 	}
 }
 
+func (bo *AnyBlockOrder) AddAll() {
+	bo.lock.Lock()
+	defer bo.lock.Unlock()
+	bo.available.SetBits(0, uint(bo.num_blocks))
+	if bo.next != nil {
+		bo.next.AddAll()
+	}
+}
+
 func (bo *AnyBlockOrder) Add(block int) {
 	bo.lock.Lock()
 	defer bo.lock.Unlock()

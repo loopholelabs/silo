@@ -46,6 +46,7 @@ type MigrationProgress struct {
 	MigratedBlocksPerc float64
 	ReadyBlocks        int // Number of blocks which are up to date (clean). May go down as well as up.
 	ReadyBlocksPerc    float64
+	ActiveBlocks       int // Number of blocks in progress now
 }
 
 type Migrator struct {
@@ -84,6 +85,7 @@ func NewMigrator(source storage.TrackingStorageProvider,
 		num_blocks:          num_blocks,
 		metric_moved_blocks: 0,
 		block_order:         block_order,
+		moving_blocks:       util.NewBitfield(num_blocks),
 		migrated_blocks:     util.NewBitfield(num_blocks),
 		clean_blocks:        util.NewBitfield(num_blocks),
 		concurrency:         make(map[int]chan bool),
@@ -120,8 +122,10 @@ func (m *Migrator) Migrate(num_blocks int) error {
 
 		m.wg.Add(1)
 
+		m.moving_blocks.SetBit(i.Block)
 		go func(block_no *storage.BlockInfo) {
 			err := m.migrateBlock(block_no.Block)
+			m.moving_blocks.ClearBit(i.Block)
 			if err != nil {
 				m.error_fn(block_no, err)
 			}
@@ -172,8 +176,10 @@ func (m *Migrator) MigrateDirty(blocks []uint) error {
 
 		m.wg.Add(1)
 
+		m.moving_blocks.SetBit(i.Block)
 		go func(block_no *storage.BlockInfo) {
 			err := m.migrateBlock(block_no.Block)
+			m.moving_blocks.ClearBit(i.Block)
 			if err != nil {
 				m.error_fn(block_no, err)
 			}
@@ -211,6 +217,7 @@ func (m *Migrator) reportProgress() {
 		MigratedBlocksPerc: perc_mig,
 		ReadyBlocks:        completed,
 		ReadyBlocksPerc:    perc_complete,
+		ActiveBlocks:       m.moving_blocks.Count(0, uint(m.num_blocks)),
 	})
 }
 

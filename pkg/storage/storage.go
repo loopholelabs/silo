@@ -31,6 +31,7 @@ type ExposedStorage interface {
 }
 
 type BlockOrder interface {
+	AddAll()
 	Add(block int)
 	Remove(block int)
 	GetNext() *BlockInfo

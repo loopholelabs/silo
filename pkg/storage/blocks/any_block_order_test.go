@@ -14,9 +14,7 @@ import (
 func TestAnyBlockOrder(t *testing.T) {
 	abo := NewAnyBlockOrder(128, nil)
 
-	for i := 0; i < 128; i++ {
-		abo.Add(i)
-	}
+	abo.AddAll()
 
 	done := make(map[int]bool)
 	// Now pull them out and make sure they all come out, with no dupes

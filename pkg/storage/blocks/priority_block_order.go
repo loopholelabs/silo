@@ -30,6 +30,15 @@ func NewPriorityBlockOrder(num_blocks int, next storage.BlockOrder) *PriorityBlo
 	}
 }
 
+func (bo *PriorityBlockOrder) AddAll() {
+	bo.lock.Lock()
+	defer bo.lock.Unlock()
+	bo.available.SetBits(0, uint(bo.num_blocks))
+	if bo.next != nil {
+		bo.next.AddAll()
+	}
+}
+
 func (bo *PriorityBlockOrder) Add(block int) {
 	bo.lock.Lock()
 	defer bo.lock.Unlock()
