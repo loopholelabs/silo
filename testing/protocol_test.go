@@ -6,6 +6,7 @@ import (
 	"io"
 	"testing"
 
+	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/modules"
 	"github.com/loopholelabs/silo/pkg/storage/protocol"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
@@ -14,7 +15,7 @@ import (
 
 func TestProtocolWriteAt(t *testing.T) {
 	size := 1024 * 1024
-	store := sources.NewMemoryStorage(size)
+	var store storage.StorageProvider
 
 	// Setup a protocol in the middle, and make sure our reads/writes get through ok
 
@@ -22,14 +23,23 @@ func TestProtocolWriteAt(t *testing.T) {
 
 	sourceToProtocol := modules.NewToProtocol(uint64(size), 1, pr)
 
-	destFromProtocol := modules.NewFromProtocol(1, store, pr)
+	storeFactory := func(di *protocol.DevInfo) storage.StorageProvider {
+		store = sources.NewMemoryStorage(int(di.Size))
+		return store
+	}
+
+	destFromProtocol := modules.NewFromProtocol(1, storeFactory, pr)
 
 	// Now do some things and make sure they happen...
 
 	// TODO: Shutdown...
+	go destFromProtocol.HandleDevInfo()
 	go destFromProtocol.HandleSend(context.TODO())
 	go destFromProtocol.HandleReadAt()
 	go destFromProtocol.HandleWriteAt()
+
+	// Send devInfo
+	sourceToProtocol.SendDevInfo()
 
 	buff := make([]byte, 4096)
 	rand.Read(buff)
@@ -49,33 +59,43 @@ func TestProtocolWriteAt(t *testing.T) {
 
 func TestProtocolReadAt(t *testing.T) {
 	size := 1024 * 1024
-	store := sources.NewMemoryStorage(size)
+	var store storage.StorageProvider
+
+	// Setup a protocol in the middle, and make sure our reads/writes get through ok
 
 	buff := make([]byte, 4096)
 	rand.Read(buff)
-	n, err := store.WriteAt(buff, 12)
-
-	assert.NoError(t, err)
-	assert.Equal(t, len(buff), n)
-
-	// Setup a protocol in the middle, and make sure our reads/writes get through ok
 
 	pr := protocol.NewMockProtocol()
 
 	sourceToProtocol := modules.NewToProtocol(uint64(size), 1, pr)
 
-	destFromProtocol := modules.NewFromProtocol(1, store, pr)
+	storeFactory := func(di *protocol.DevInfo) storage.StorageProvider {
+		store = sources.NewMemoryStorage(int(di.Size))
+
+		n, err := store.WriteAt(buff, 12)
+
+		assert.NoError(t, err)
+		assert.Equal(t, len(buff), n)
+
+		return store
+	}
+
+	destFromProtocol := modules.NewFromProtocol(1, storeFactory, pr)
 
 	// Now do some things and make sure they happen...
 
 	// TODO: Shutdown...
+	go destFromProtocol.HandleDevInfo()
 	go destFromProtocol.HandleSend(context.TODO())
 	go destFromProtocol.HandleReadAt()
 	go destFromProtocol.HandleWriteAt()
 
+	sourceToProtocol.SendDevInfo()
+
 	// Now check it was written to the source
 	buff2 := make([]byte, 4096)
-	n, err = sourceToProtocol.ReadAt(buff2, 12)
+	n, err := sourceToProtocol.ReadAt(buff2, 12)
 	assert.NoError(t, err)
 	assert.Equal(t, len(buff2), n)
 
@@ -84,7 +104,7 @@ func TestProtocolReadAt(t *testing.T) {
 
 func TestProtocolRWWriteAt(t *testing.T) {
 	size := 1024 * 1024
-	store := sources.NewMemoryStorage(size)
+	var store storage.StorageProvider
 
 	// Setup a protocol in the middle, and make sure our reads/writes get through ok
 
@@ -97,7 +117,12 @@ func TestProtocolRWWriteAt(t *testing.T) {
 
 	sourceToProtocol := modules.NewToProtocol(uint64(size), 1, prSource)
 
-	destFromProtocol := modules.NewFromProtocol(1, store, prDest)
+	storeFactory := func(di *protocol.DevInfo) storage.StorageProvider {
+		store = sources.NewMemoryStorage(int(di.Size))
+		return store
+	}
+
+	destFromProtocol := modules.NewFromProtocol(1, storeFactory, prDest)
 
 	// TODO: Cleanup
 	go prSource.Handle()
@@ -106,9 +131,12 @@ func TestProtocolRWWriteAt(t *testing.T) {
 	// Now do some things and make sure they happen...
 
 	// TODO: Shutdown...
+	go destFromProtocol.HandleDevInfo()
 	go destFromProtocol.HandleSend(context.TODO())
 	go destFromProtocol.HandleReadAt()
 	go destFromProtocol.HandleWriteAt()
+
+	sourceToProtocol.SendDevInfo()
 
 	buff := make([]byte, 4096)
 	rand.Read(buff)
@@ -128,14 +156,10 @@ func TestProtocolRWWriteAt(t *testing.T) {
 
 func TestProtocolRWReadAt(t *testing.T) {
 	size := 1024 * 1024
-	store := sources.NewMemoryStorage(size)
+	var store storage.StorageProvider
 
 	buff := make([]byte, 4096)
 	rand.Read(buff)
-	n, err := store.WriteAt(buff, 12)
-
-	assert.NoError(t, err)
-	assert.Equal(t, len(buff), n)
 
 	// Setup a protocol in the middle, and make sure our reads/writes get through ok
 
@@ -148,7 +172,17 @@ func TestProtocolRWReadAt(t *testing.T) {
 
 	sourceToProtocol := modules.NewToProtocol(uint64(size), 1, prSource)
 
-	destFromProtocol := modules.NewFromProtocol(1, store, prDest)
+	storeFactory := func(di *protocol.DevInfo) storage.StorageProvider {
+		store = sources.NewMemoryStorage(int(di.Size))
+		n, err := store.WriteAt(buff, 12)
+
+		assert.NoError(t, err)
+		assert.Equal(t, len(buff), n)
+
+		return store
+	}
+
+	destFromProtocol := modules.NewFromProtocol(1, storeFactory, prDest)
 
 	// TODO: Cleanup
 	go prSource.Handle()
@@ -157,13 +191,16 @@ func TestProtocolRWReadAt(t *testing.T) {
 	// Now do some things and make sure they happen...
 
 	// TODO: Shutdown...
+	go destFromProtocol.HandleDevInfo()
 	go destFromProtocol.HandleSend(context.TODO())
 	go destFromProtocol.HandleReadAt()
 	go destFromProtocol.HandleWriteAt()
 
+	sourceToProtocol.SendDevInfo()
+
 	// Now check it was written to the source
 	buff2 := make([]byte, 4096)
-	n, err = sourceToProtocol.ReadAt(buff2, 12)
+	n, err := sourceToProtocol.ReadAt(buff2, 12)
 	assert.NoError(t, err)
 	assert.Equal(t, len(buff2), n)
 

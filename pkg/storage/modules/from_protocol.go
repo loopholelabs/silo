@@ -2,6 +2,7 @@ package modules
 
 import (
 	"context"
+	"sync"
 
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/protocol"
@@ -13,19 +14,41 @@ type sendData struct {
 }
 
 type FromProtocol struct {
-	dev        uint32
-	prov       storage.StorageProvider
-	protocol   protocol.Protocol
-	send_queue chan sendData
+	dev         uint32
+	prov        storage.StorageProvider
+	provFactory func(*protocol.DevInfo) storage.StorageProvider
+	protocol    protocol.Protocol
+	send_queue  chan sendData
+	init        sync.WaitGroup
 }
 
-func NewFromProtocol(dev uint32, prov storage.StorageProvider, protocol protocol.Protocol) *FromProtocol {
-	return &FromProtocol{
-		dev:        dev,
-		prov:       prov,
-		protocol:   protocol,
-		send_queue: make(chan sendData),
+func NewFromProtocol(dev uint32, provFactory func(*protocol.DevInfo) storage.StorageProvider, protocol protocol.Protocol) *FromProtocol {
+	fp := &FromProtocol{
+		dev:         dev,
+		provFactory: provFactory,
+		protocol:    protocol,
+		send_queue:  make(chan sendData),
 	}
+	// We need to wait for the DevInfo before allowing any reads/writes.
+	fp.init.Add(1)
+	return fp
+}
+
+// Handle a DevInfo, and create the storage
+func (fp *FromProtocol) HandleDevInfo() error {
+	_, data, err := fp.protocol.WaitForCommand(fp.dev, protocol.COMMAND_DEV_INFO)
+	if err != nil {
+		return err
+	}
+	di, err := protocol.DecodeDevInfo(data)
+	if err != nil {
+		return err
+	}
+
+	// Create storage
+	fp.prov = fp.provFactory(di)
+	fp.init.Done() // Allow reads/writes
+	return nil
 }
 
 // Send packets out
@@ -45,6 +68,8 @@ func (fp *FromProtocol) HandleSend(ctx context.Context) error {
 
 // Handle any ReadAt commands, and send to provider
 func (fp *FromProtocol) HandleReadAt() error {
+	fp.init.Wait()
+
 	for {
 		id, data, err := fp.protocol.WaitForCommand(fp.dev, protocol.COMMAND_READ_AT)
 		if err != nil {
@@ -74,6 +99,8 @@ func (fp *FromProtocol) HandleReadAt() error {
 
 // Handle any WriteAt commands, and send to provider
 func (fp *FromProtocol) HandleWriteAt() error {
+	fp.init.Wait()
+
 	for {
 		id, data, err := fp.protocol.WaitForCommand(fp.dev, protocol.COMMAND_WRITE_AT)
 		if err != nil {

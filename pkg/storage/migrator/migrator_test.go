@@ -104,7 +104,7 @@ func TestMigratorSimplePipe(t *testing.T) {
 
 	// START moving data from sourceStorage to destStorage
 
-	destStorage := sources.NewMemoryStorage(size)
+	var destStorage storage.StorageProvider
 
 	// Create a simple pipe
 	r1, w1 := io.Pipe()
@@ -119,12 +119,20 @@ func TestMigratorSimplePipe(t *testing.T) {
 	// Pipe a destination to the protocol
 	destination := modules.NewToProtocol(sourceDirty.Size(), 17, prSource)
 
+	destStorageFactory := func(di *protocol.DevInfo) storage.StorageProvider {
+		destStorage = sources.NewMemoryStorage(int(di.Size))
+		return destStorage
+	}
+
 	// Pipe from the protocol to destWaiting
-	destFrom := modules.NewFromProtocol(17, destStorage, prDest)
+	destFrom := modules.NewFromProtocol(17, destStorageFactory, prDest)
 	ctx := context.TODO()
 	go destFrom.HandleSend(ctx)
 	go destFrom.HandleReadAt()
 	go destFrom.HandleWriteAt()
+	go destFrom.HandleDevInfo()
+
+	destination.SendDevInfo()
 
 	conf := NewMigratorConfig().WithBlockSize(blockSize)
 	conf.LockerHandler = sourceStorage.Lock
