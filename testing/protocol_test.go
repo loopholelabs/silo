@@ -206,3 +206,50 @@ func TestProtocolRWReadAt(t *testing.T) {
 
 	assert.Equal(t, buff, buff2)
 }
+
+func TestProtocolEvents(t *testing.T) {
+	size := 1024 * 1024
+	var store storage.StorageProvider
+
+	pr := protocol.NewMockProtocol()
+
+	sourceToProtocol := modules.NewToProtocol(uint64(size), 1, pr)
+
+	storeFactory := func(di *protocol.DevInfo) storage.StorageProvider {
+		store = sources.NewMemoryStorage(int(di.Size))
+		return store
+	}
+
+	destFromProtocol := modules.NewFromProtocol(1, storeFactory, pr)
+
+	events := make(chan protocol.EventType, 10)
+
+	// Now do some things and make sure they happen...
+	go destFromProtocol.HandleDevInfo()
+	go destFromProtocol.HandleEvent(func(e protocol.EventType) {
+		events <- e
+	})
+	go destFromProtocol.HandleSend(context.TODO())
+
+	// Send devInfo
+	sourceToProtocol.SendDevInfo()
+
+	// Send some events and make sure they happen at the other end...
+
+	sourceToProtocol.SendEvent(protocol.EventPreLock)
+	e := <-events
+	assert.Equal(t, protocol.EventPreLock, e)
+	sourceToProtocol.SendEvent(protocol.EventPostLock)
+	sourceToProtocol.SendEvent(protocol.EventPreUnlock)
+	sourceToProtocol.SendEvent(protocol.EventPostUnlock)
+	sourceToProtocol.SendEvent(protocol.EventCompleted)
+	e = <-events
+	assert.Equal(t, protocol.EventPostLock, e)
+	e = <-events
+	assert.Equal(t, protocol.EventPreUnlock, e)
+	e = <-events
+	assert.Equal(t, protocol.EventPostUnlock, e)
+	e = <-events
+	assert.Equal(t, protocol.EventCompleted, e)
+
+}
