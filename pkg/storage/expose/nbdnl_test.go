@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestNBDDevice(t *testing.T) {
+func TestNBDNLDevice(t *testing.T) {
 	currentUser, err := user.Current()
 	if err != nil {
 		panic(err)
@@ -20,8 +20,7 @@ func TestNBDDevice(t *testing.T) {
 		return
 	}
 
-	var n *ExposedStorageNBD
-	dev := "nbd0"
+	var n *ExposedStorageNBDNL
 	defer func() {
 		fmt.Printf("Shutting down properly...\n")
 		err := n.Shutdown()
@@ -32,25 +31,23 @@ func TestNBDDevice(t *testing.T) {
 	size := 4096 * 1024 * 1024
 	prov := sources.NewMemoryStorage(size)
 
-	n = NewExposedStorageNBD(prov, dev, 1, 0, uint64(size), 4096, 0)
+	n = NewExposedStorageNBDNL(prov, 1, 0, uint64(size), 4096)
 
-	go func() {
-		err := n.Handle()
-		assert.NoError(t, err)
-	}()
+	err = n.Handle()
+	assert.NoError(t, err)
 
+	fmt.Printf("WaitReady...\n")
 	n.WaitReady()
 
-	//time.Sleep(2 * time.Second)
-
-	devfile, err := os.OpenFile(fmt.Sprintf("/dev/%s", dev), os.O_RDWR, 0666)
+	devfile, err := os.OpenFile(fmt.Sprintf("/dev/nbd%d", n.DevIndex), os.O_RDWR, 0666)
 	assert.NoError(t, err)
 
 	// Try doing a read...
+	off := 12
 	buffer := make([]byte, 4096)
-	num, err := devfile.ReadAt(buffer, 10)
+	num, err := devfile.ReadAt(buffer, int64(off))
 	assert.NoError(t, err)
 	assert.Equal(t, len(buffer), num)
-
 	devfile.Close()
+
 }
