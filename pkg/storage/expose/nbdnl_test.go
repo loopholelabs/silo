@@ -32,7 +32,7 @@ func TestNBDNLDevice(t *testing.T) {
 	size := 4096 * 1024 * 1024
 	prov := sources.NewMemoryStorage(size)
 
-	n = NewExposedStorageNBDNL(prov, 8, 0, uint64(size), 4096)
+	n = NewExposedStorageNBDNL(prov, 8, 0, uint64(size), 4096, true)
 
 	err = n.Handle()
 	assert.NoError(t, err)

@@ -26,9 +26,10 @@ type ExposedStorageNBDNL struct {
 	device_file uintptr
 	prov        storage.StorageProvider
 	DevIndex    int
+	async       bool
 }
 
-func NewExposedStorageNBDNL(prov storage.StorageProvider, num_connections int, timeout uint64, size uint64, block_size uint64) *ExposedStorageNBDNL {
+func NewExposedStorageNBDNL(prov storage.StorageProvider, num_connections int, timeout uint64, size uint64, block_size uint64, async bool) *ExposedStorageNBDNL {
 	return &ExposedStorageNBDNL{
 		prov:            prov,
 		num_connections: num_connections,
@@ -36,6 +37,7 @@ func NewExposedStorageNBDNL(prov storage.StorageProvider, num_connections int, t
 		size:            size,
 		block_size:      block_size,
 		socks:           make([]io.Closer, 0),
+		async:           async,
 	}
 }
 
@@ -61,7 +63,8 @@ func (n *ExposedStorageNBDNL) Handle() error {
 		//		fmt.Printf("[%d] Socket pair %d -> %d %v %v %v\n", i, sockPair[0], sockPair[1], client, server, serverc)
 
 		d := NewDispatch(serverc, n.prov)
-
+		d.ASYNC_READS = n.async
+		d.ASYNC_WRITES = n.async
 		// Start reading commands on the socket and dispatching them to our provider
 		go d.Handle()
 

@@ -11,8 +11,8 @@ import (
 
 // TODO: Context, and handle fatal errors
 
-const READ_POOL_BUFFER_SIZE = 1 * 1024 * 1024
-const READ_POOL_SIZE = 32
+const READ_POOL_BUFFER_SIZE = 256 * 1024
+const READ_POOL_SIZE = 128
 
 type Dispatch struct {
 	ASYNC_READS      bool
@@ -202,7 +202,7 @@ func (d *Dispatch) cmdRead(cmd_handle uint64, cmd_from uint64, cmd_length uint32
 		// Couldn't get one from the pool
 		if b == nil {
 			// We'll have to alloc it
-			fmt.Printf("Alloc %d\n", length)
+			//			fmt.Printf("Alloc %d\n", length)
 			b = make([]byte, length)
 		}
 
