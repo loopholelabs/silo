@@ -25,12 +25,12 @@ func BenchmarkDevReadNL(mb *testing.B) {
 
 	cons := []int{1, 4, 16, 32}
 	sizes := []int64{4096, 65536, 1024 * 1024}
+	diskSize := 1024 * 1024 * 1024 * 4
 
 	for _, c := range cons {
 		for _, v := range sizes {
 			name := fmt.Sprintf("readsize_%d_cons_%d", v, c)
 			mb.Run(name, func(b *testing.B) {
-				diskSize := 1024 * 1024 * 1024 * 4
 
 				store := sources.NewMemoryStorage(int(diskSize))
 				driver := modules.NewMetrics(store)
@@ -55,11 +55,11 @@ func BenchmarkDevReadNL(mb *testing.B) {
 					}
 				})
 
-				driver.ResetMetrics() // Only start counting from now...
+				//				driver.ResetMetrics() // Only start counting from now...
 
 				// Here's the actual benchmark...
 
-				num_readers := 8
+				num_readers := 1
 
 				devfiles := make([]*os.File, 0)
 
@@ -79,33 +79,38 @@ func BenchmarkDevReadNL(mb *testing.B) {
 				})
 
 				var wg sync.WaitGroup
-				concurrent := make(chan bool, 100) // Do max 100 reads concurrently
-
-				// Now do some timing...
-				b.ResetTimer()
-				//				ctime := time.Now()
 
 				read_size := int64(v)
 
+				offsets := make([]int, b.N)
+				buffers := make(chan []byte, 100)
+
+				for i := 0; i < 100; i++ {
+					buffer := make([]byte, read_size)
+					buffers <- buffer
+				}
+
+				for i := 0; i < b.N; i++ {
+					offset := (rand.Intn(diskSize-int(read_size)) / 4096) * 4096
+					offsets = append(offsets, offset)
+				}
+
+				b.ResetTimer()
+
 				for i := 0; i < b.N; i++ {
 					wg.Add(1)
-					concurrent <- true
 
 					// Test read speed...
-					go func() {
-						offset := rand.Intn(diskSize - int(read_size))
-						length := read_size
-
-						buffer := make([]byte, length)
+					go func(buff []byte, off int) {
 						dfi := rand.Intn(len(devfiles))
-						_, err := devfiles[dfi].ReadAt(buffer, int64(offset))
-						if err != nil {
-							fmt.Printf("Error reading file %v\n", err)
+						n, err := devfiles[dfi].ReadAt(buff, int64(off))
+						if n != len(buff) || err != nil {
+							fmt.Printf("Error reading file %d %v\n", n, err)
 						}
 
 						wg.Done()
-						<-concurrent
-					}()
+						buffers <- buff
+					}(<-buffers, offsets[i])
 				}
 
 				b.SetBytes(int64(read_size))

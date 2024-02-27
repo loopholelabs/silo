@@ -11,6 +11,9 @@ import (
 
 // TODO: Context, and handle fatal errors
 
+const READ_POOL_BUFFER_SIZE = 1 * 1024 * 1024
+const READ_POOL_SIZE = 32
+
 type Dispatch struct {
 	ASYNC_READS      bool
 	ASYNC_WRITES     bool
@@ -22,6 +25,7 @@ type Dispatch struct {
 	pendingResponses sync.WaitGroup
 	packets_in       uint64
 	packets_out      uint64
+	read_buffers     chan []byte
 }
 
 func NewDispatch(fp io.ReadWriteCloser, prov storage.StorageProvider) *Dispatch {
@@ -33,6 +37,11 @@ func NewDispatch(fp io.ReadWriteCloser, prov storage.StorageProvider) *Dispatch 
 		fp:             fp,
 		prov:           prov,
 	}
+	d.read_buffers = make(chan []byte, READ_POOL_SIZE)
+	for i := 0; i < READ_POOL_SIZE; i++ {
+		d.read_buffers <- make([]byte, READ_POOL_BUFFER_SIZE)
+	}
+
 	binary.BigEndian.PutUint32(d.responseHeader, NBD_RESPONSE_MAGIC)
 	return d
 }
@@ -176,14 +185,40 @@ func (d *Dispatch) Handle() error {
 func (d *Dispatch) cmdRead(cmd_handle uint64, cmd_from uint64, cmd_length uint32) error {
 
 	performRead := func(handle uint64, from uint64, length uint32) error {
-		data := make([]byte, length)
+		var b []byte
+		var from_pool = false
+		if length <= READ_POOL_BUFFER_SIZE {
+			// Try to get a buffer from pool
+			select {
+			case b = <-d.read_buffers:
+				from_pool = true
+				b = b[:length]
+				break
+			default:
+				break
+			}
+		}
+
+		// Couldn't get one from the pool
+		if b == nil {
+			// We'll have to alloc it
+			fmt.Printf("Alloc %d\n", length)
+			b = make([]byte, length)
+		}
+
+		data := b // make([]byte, length)
 		_, e := d.prov.ReadAt(data, int64(from))
 		errorValue := uint32(0)
 		if e != nil {
 			errorValue = 1
 			data = make([]byte, 0) // If there was an error, don't send data
 		}
-		return d.writeResponse(errorValue, handle, data)
+		err := d.writeResponse(errorValue, handle, data)
+		// Return it to pool if need to
+		if from_pool {
+			d.read_buffers <- b[:READ_POOL_BUFFER_SIZE]
+		}
+		return err
 	}
 
 	if d.ASYNC_READS {
