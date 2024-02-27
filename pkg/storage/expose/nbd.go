@@ -75,7 +75,6 @@ type ExposedStorageNBD struct {
 	flags           uint64
 	socketPairs     [][2]int
 	device_file     uintptr
-	dispatch        *Dispatch
 	prov            storage.StorageProvider
 }
 
@@ -88,7 +87,6 @@ func NewExposedStorageNBD(prov storage.StorageProvider, dev string, num_connecti
 		size:            size,
 		block_size:      block_size,
 		flags:           flags,
-		dispatch:        NewDispatch(),
 	}
 }
 
@@ -176,11 +174,11 @@ func (n *ExposedStorageNBD) Handle() error {
 		}
 		n.socketPairs = append(n.socketPairs, sockPair)
 
+		rwc := os.NewFile(uintptr(sockPair[1]), "unix")
+		d := NewDispatch(rwc, n.prov)
+
 		// Start reading commands on the socket and dispatching them to our provider
-		go func(fd int) {
-			rwc := os.NewFile(uintptr(fd), "unix")
-			n.dispatch.Handle(rwc, n.prov)
-		}(sockPair[1])
+		go d.Handle()
 
 		if i == 0 {
 			n.setSizes(fp.Fd(), n.size, n.block_size, n.flags)

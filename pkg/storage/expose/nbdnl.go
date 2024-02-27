@@ -1,7 +1,6 @@
 package expose
 
 import (
-	"fmt"
 	"io"
 	"net"
 	"os"
@@ -25,7 +24,6 @@ type ExposedStorageNBDNL struct {
 
 	socks       []io.Closer
 	device_file uintptr
-	dispatch    *Dispatch
 	prov        storage.StorageProvider
 	DevIndex    int
 }
@@ -37,7 +35,6 @@ func NewExposedStorageNBDNL(prov storage.StorageProvider, num_connections int, t
 		timeout:         timeout,
 		size:            size,
 		block_size:      block_size,
-		dispatch:        NewDispatch(),
 		socks:           make([]io.Closer, 0),
 	}
 }
@@ -61,10 +58,12 @@ func (n *ExposedStorageNBDNL) Handle() error {
 		}
 		server.Close()
 
+		//		fmt.Printf("[%d] Socket pair %d -> %d %v %v %v\n", i, sockPair[0], sockPair[1], client, server, serverc)
+
+		d := NewDispatch(serverc, n.prov)
+
 		// Start reading commands on the socket and dispatching them to our provider
-		go func(num int, c net.Conn) {
-			n.dispatch.Handle(c, n.prov)
-		}(i, serverc)
+		go d.Handle()
 
 		n.socks = append(n.socks, serverc)
 		socks = append(socks, client)
@@ -107,7 +106,7 @@ func (n *ExposedStorageNBDNL) Shutdown() error {
 		return err
 	}
 
-	fmt.Printf("Closing sockets...\n")
+	//	fmt.Printf("Closing sockets...\n")
 	// Close all the socket pairs...
 	for _, v := range n.socks {
 		err = v.Close()

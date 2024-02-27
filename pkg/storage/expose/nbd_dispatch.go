@@ -9,6 +9,8 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage"
 )
 
+// TODO: Context, and handle fatal errors
+
 type Dispatch struct {
 	ASYNC_READS      bool
 	ASYNC_WRITES     bool
@@ -18,14 +20,18 @@ type Dispatch struct {
 	prov             storage.StorageProvider
 	fatal            chan error
 	pendingResponses sync.WaitGroup
+	packets_in       uint64
+	packets_out      uint64
 }
 
-func NewDispatch() *Dispatch {
+func NewDispatch(fp io.ReadWriteCloser, prov storage.StorageProvider) *Dispatch {
 	d := &Dispatch{
 		ASYNC_WRITES:   true,
 		ASYNC_READS:    true,
 		responseHeader: make([]byte, 16),
 		fatal:          make(chan error, 8),
+		fp:             fp,
+		prov:           prov,
 	}
 	binary.BigEndian.PutUint32(d.responseHeader, NBD_RESPONSE_MAGIC)
 	return d
@@ -59,6 +65,8 @@ func (d *Dispatch) writeResponse(respError uint32, respHandle uint64, chunk []by
 			return err
 		}
 	}
+
+	d.packets_out++
 	return nil
 }
 
@@ -66,11 +74,10 @@ func (d *Dispatch) writeResponse(respError uint32, respHandle uint64, chunk []by
  * This dispatches incoming NBD requests sequentially to the provider.
  *
  */
-func (d *Dispatch) Handle(fp io.ReadWriteCloser, prov storage.StorageProvider) error {
-	d.fp = fp
-
-	d.prov = prov
-
+func (d *Dispatch) Handle() error {
+	//	defer func() {
+	//		fmt.Printf("Handle %d in %d out\n", d.packets_in, d.packets_out)
+	//	}()
 	// Speed read and dispatch...
 
 	BUFFER_SIZE := 4 * 1024 * 1024
@@ -80,9 +87,9 @@ func (d *Dispatch) Handle(fp io.ReadWriteCloser, prov storage.StorageProvider) e
 	request := Request{}
 
 	for {
+		//		fmt.Printf("Read from [%d in, %d out] %v\n", d.packets_in, d.packets_out, d.fp)
 		n, err := d.fp.Read(buffer[wp:])
 		if err != nil {
-			fmt.Printf("Error %v\n", err)
 			return err
 		}
 		wp += n
@@ -109,13 +116,14 @@ func (d *Dispatch) Handle(fp io.ReadWriteCloser, prov storage.StorageProvider) e
 				}
 
 				if request.Type == NBD_CMD_DISCONNECT {
-					fmt.Printf(" -> CMD_DISCONNECT\n")
+					//					fmt.Printf(" -> CMD_DISCONNECT\n")
 					return nil // All done
 				} else if request.Type == NBD_CMD_FLUSH {
 					return fmt.Errorf("not supported: Flush")
 				} else if request.Type == NBD_CMD_READ {
 					//					fmt.Printf("READ %x %d\n", request.Handle, request.Length)
 					rp += 28
+					d.packets_in++
 					err := d.cmdRead(request.Handle, request.From, request.Length)
 					if err != nil {
 						return err
@@ -126,6 +134,7 @@ func (d *Dispatch) Handle(fp io.ReadWriteCloser, prov storage.StorageProvider) e
 						rp -= 28
 						break // We don't have enough data yet... Wait for next read
 					}
+					d.packets_in++
 					data := make([]byte, request.Length)
 					copy(data, buffer[rp:rp+int(request.Length)])
 					rp += int(request.Length)
@@ -182,7 +191,6 @@ func (d *Dispatch) cmdRead(cmd_handle uint64, cmd_from uint64, cmd_length uint32
 		go func() {
 			err := performRead(cmd_handle, cmd_from, cmd_length)
 			if err != nil {
-				fmt.Printf("FATAL %v\n", err)
 				d.fatal <- err
 			}
 			d.pendingResponses.Done()
@@ -212,7 +220,6 @@ func (d *Dispatch) cmdWrite(cmd_handle uint64, cmd_from uint64, cmd_length uint3
 		go func() {
 			err := performWrite(cmd_handle, cmd_from, cmd_length, cmd_data)
 			if err != nil {
-				fmt.Printf("FATAL %v\n", err)
 				d.fatal <- err
 			}
 			d.pendingResponses.Done()

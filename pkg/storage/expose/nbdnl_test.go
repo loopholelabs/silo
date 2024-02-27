@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/user"
+	"sync"
 	"testing"
 
 	"github.com/loopholelabs/silo/pkg/storage/sources"
@@ -31,7 +32,7 @@ func TestNBDNLDevice(t *testing.T) {
 	size := 4096 * 1024 * 1024
 	prov := sources.NewMemoryStorage(size)
 
-	n = NewExposedStorageNBDNL(prov, 1, 0, uint64(size), 4096)
+	n = NewExposedStorageNBDNL(prov, 8, 0, uint64(size), 4096)
 
 	err = n.Handle()
 	assert.NoError(t, err)
@@ -39,15 +40,25 @@ func TestNBDNLDevice(t *testing.T) {
 	fmt.Printf("WaitReady...\n")
 	n.WaitReady()
 
-	devfile, err := os.OpenFile(fmt.Sprintf("/dev/nbd%d", n.DevIndex), os.O_RDWR, 0666)
-	assert.NoError(t, err)
+	var wg sync.WaitGroup
 
-	// Try doing a read...
-	off := 12
-	buffer := make([]byte, 4096)
-	num, err := devfile.ReadAt(buffer, int64(off))
-	assert.NoError(t, err)
-	assert.Equal(t, len(buffer), num)
-	devfile.Close()
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			fmt.Printf("Open dev\n")
+			devfile, err := os.OpenFile(fmt.Sprintf("/dev/nbd%d", n.DevIndex), os.O_RDWR, 0666)
+			assert.NoError(t, err)
 
+			// Try doing a read...
+			off := 12
+			buffer := make([]byte, 4096)
+			num, err := devfile.ReadAt(buffer, int64(off))
+			assert.NoError(t, err)
+			assert.Equal(t, len(buffer), num)
+			devfile.Close()
+			wg.Done()
+		}()
+	}
+
+	wg.Wait()
 }
