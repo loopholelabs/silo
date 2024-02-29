@@ -284,6 +284,7 @@ func TestMigratorWithReaderWriter(t *testing.T) {
 	// This will end with migration completed, and consumer Locked.
 	eq, err := storage.Equals(sourceStorageMem, destStorage, blockSize)
 	assert.NoError(t, err)
+	// FIXME: FLAKEY TEST
 	assert.True(t, eq)
 
 	assert.True(t, sourceStorage.IsLocked())
