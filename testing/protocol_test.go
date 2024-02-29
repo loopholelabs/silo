@@ -117,7 +117,7 @@ func TestProtocolRWWriteAt(t *testing.T) {
 	destDev := make(chan uint32, 8)
 
 	prSource := protocol.NewProtocolRW(context.TODO(), r1, w2, nil)
-	prDest := protocol.NewProtocolRW(context.TODO(), r2, w1, func(dev uint32) {
+	prDest := protocol.NewProtocolRW(context.TODO(), r2, w1, func(p protocol.Protocol, dev uint32) {
 		destDev <- dev
 	})
 

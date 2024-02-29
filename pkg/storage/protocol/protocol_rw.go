@@ -27,10 +27,10 @@ type ProtocolRW struct {
 	active_devs  map[uint32]bool
 	waiters      map[uint32]Waiters
 	waiters_lock sync.Mutex
-	newdev_fn    func(uint32)
+	newdev_fn    func(Protocol, uint32)
 }
 
-func NewProtocolRW(ctx context.Context, r io.Reader, w io.Writer, newdev_fn func(uint32)) *ProtocolRW {
+func NewProtocolRW(ctx context.Context, r io.Reader, w io.Writer, newdev_fn func(Protocol, uint32)) *ProtocolRW {
 	return &ProtocolRW{
 		ctx:         ctx,
 		r:           r,
@@ -98,7 +98,7 @@ func (p *ProtocolRW) Handle() error {
 		if !ok {
 			p.active_devs[dev] = true
 			if p.newdev_fn != nil {
-				p.newdev_fn(dev)
+				p.newdev_fn(p, dev)
 			}
 		}
 
