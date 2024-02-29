@@ -140,7 +140,7 @@ func runServe(ccmd *cobra.Command, args []string) {
 			pro := protocol.NewProtocolRW(context.TODO(), c, c, nil)
 			dest := modules.NewToProtocol(uint64(serve_size), 777, pro)
 
-			dest.SendDevInfo()
+			dest.SendDevInfo("data")
 
 			go pro.Handle()
 

@@ -7,19 +7,27 @@ import (
 
 type DevInfo struct {
 	Size uint64
+	Name string
 }
 
 func EncodeDevInfo(di *DevInfo) []byte {
-	buff := make([]byte, 1+8)
+	buff := make([]byte, 1+8+2+len(di.Name))
 	buff[0] = COMMAND_DEV_INFO
 	binary.LittleEndian.PutUint64(buff[1:], di.Size)
+	binary.LittleEndian.PutUint16(buff[9:], uint16(len(di.Name)))
+	copy(buff[11:], []byte(di.Name))
 	return buff
 }
 
 func DecodeDevInfo(buff []byte) (*DevInfo, error) {
-	if buff == nil || len(buff) < 9 || buff[0] != COMMAND_DEV_INFO {
+	if buff == nil || len(buff) < 11 || buff[0] != COMMAND_DEV_INFO {
 		return nil, errors.New("Invalid packet")
 	}
 	size := binary.LittleEndian.Uint64(buff[1:])
-	return &DevInfo{Size: size}, nil
+	l := binary.LittleEndian.Uint16(buff[9:])
+	if int(l)+11 > len(buff) {
+		return nil, errors.New("Invalid packet")
+	}
+	name := string(buff[11 : 11+l])
+	return &DevInfo{Size: size, Name: name}, nil
 }

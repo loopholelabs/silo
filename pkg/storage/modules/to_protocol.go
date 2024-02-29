@@ -37,9 +37,10 @@ func (i *ToProtocol) SendEvent(e protocol.EventType) error {
 	return protocol.DecodeEventResponse(r)
 }
 
-func (i *ToProtocol) SendDevInfo() error {
+func (i *ToProtocol) SendDevInfo(name string) error {
 	di := &protocol.DevInfo{
 		Size: i.size,
+		Name: name,
 	}
 	b := protocol.EncodeDevInfo(di)
 	_, err := i.protocol.SendPacket(i.dev, protocol.ID_PICK_ANY, b)
