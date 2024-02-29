@@ -3,13 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
-	"math"
-	"math/rand"
 	"net"
-	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -20,9 +18,6 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/modules"
 	"github.com/loopholelabs/silo/pkg/storage/protocol"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/spf13/cobra"
 )
 
@@ -37,64 +32,28 @@ var (
 
 var serve_addr string
 var serve_expose_dev bool
-var serve_size int
+var serve_mount_dev bool
+
+var src_exposed []storage.ExposedStorage
 
 func init() {
 	rootCmd.AddCommand(cmdServe)
 	cmdServe.Flags().StringVarP(&serve_addr, "addr", "a", ":5170", "Address to serve from")
 	cmdServe.Flags().BoolVarP(&serve_expose_dev, "expose", "e", false, "Expose as nbd dev")
-	cmdServe.Flags().IntVarP(&serve_size, "size", "s", 1024*1024*1024, "Size")
+	cmdServe.Flags().BoolVarP(&serve_mount_dev, "mount", "m", false, "mkfs.ext4 and mount")
 }
 
-var (
-	prom_read_ops    = promauto.NewGauge(prometheus.GaugeOpts{Name: "silo_read_ops", Help: "silo_read_ops"})
-	prom_read_bytes  = promauto.NewGauge(prometheus.GaugeOpts{Name: "silo_read_bytes", Help: "silo_read_bytes"})
-	prom_read_time   = promauto.NewGauge(prometheus.GaugeOpts{Name: "silo_read_time", Help: "silo_read_time"})
-	prom_read_errors = promauto.NewGauge(prometheus.GaugeOpts{Name: "silo_read_errors", Help: "silo_read_errors"})
-
-	prom_write_ops    = promauto.NewGauge(prometheus.GaugeOpts{Name: "silo_write_ops", Help: "silo_write_ops"})
-	prom_write_bytes  = promauto.NewGauge(prometheus.GaugeOpts{Name: "silo_write_bytes", Help: "silo_write_bytes"})
-	prom_write_time   = promauto.NewGauge(prometheus.GaugeOpts{Name: "silo_write_time", Help: "silo_write_time"})
-	prom_write_errors = promauto.NewGauge(prometheus.GaugeOpts{Name: "silo_write_errors", Help: "silo_write_errors"})
-
-	prom_flush_ops    = promauto.NewGauge(prometheus.GaugeOpts{Name: "silo_flush_ops", Help: "silo_flush_ops"})
-	prom_flush_time   = promauto.NewGauge(prometheus.GaugeOpts{Name: "silo_flush_time", Help: "silo_flush_time"})
-	prom_flush_errors = promauto.NewGauge(prometheus.GaugeOpts{Name: "silo_flush_errors", Help: "silo_flush_errors"})
-)
+type storageInfo struct {
+	tracker    storage.TrackingStorageProvider
+	lockable   storage.LockableStorageProvider
+	orderer    *blocks.PriorityBlockOrder
+	num_blocks int
+	block_size int
+}
 
 func runServe(ccmd *cobra.Command, args []string) {
-	fmt.Printf("Starting silo serve %s size %d\n", serve_addr, serve_size)
-
-	// Setup some statistics output
-	http.Handle("/metrics", promhttp.Handler())
-	go http.ListenAndServe(":2112", nil)
-
-	block_size := 1024 * 64
-	num_blocks := (serve_size + block_size - 1) / block_size
-
-	var p storage.ExposedStorage
-
-	cr := func(s int) storage.StorageProvider {
-		return sources.NewMemoryStorage(s)
-	}
-	// Setup some sharded memory storage (for concurrent write speed)
-	source := modules.NewShardedStorage(serve_size, serve_size/1024, cr)
-	// Wrap it in metrics
-
-	sourceMetrics := modules.NewMetrics(source)
-	sourceDirty := modules.NewFilterReadDirtyTracker(sourceMetrics, block_size)
-	sourceMonitor := modules.NewVolatilityMonitor(sourceDirty, block_size, 10*time.Second)
-	sourceStorage := modules.NewLockable(sourceMonitor)
-
-	// Write some random stuff to the device...
-	go writeRandom(sourceStorage)
-
-	// Start monitoring blocks.
-	orderer := blocks.NewPriorityBlockOrder(num_blocks, sourceMonitor)
-
-	for i := 0; i < num_blocks; i++ {
-		orderer.Add(i)
-	}
+	src_exposed = make([]storage.ExposedStorage, 0)
+	fmt.Printf("Starting silo serve %s\n", serve_addr)
 
 	c := make(chan os.Signal)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
@@ -103,20 +62,21 @@ func runServe(ccmd *cobra.Command, args []string) {
 
 		if serve_expose_dev {
 			fmt.Printf("\nShutting down cleanly...\n")
-			shutdown(p)
+			for _, e := range src_exposed {
+				src_dev_shutdown(e)
+			}
 		}
-		sourceMetrics.ShowStats("Source")
 		os.Exit(1)
 	}()
 
-	if serve_expose_dev {
-		var err error
-		p, err = setup(sourceStorage, true)
+	sources := make([]*storageInfo, 0)
+
+	for _, s := range []int{1024 * 1024 * 1024, 10 * 1024 * 1024} {
+		sinfo, err := setupStorageDevice(s)
 		if err != nil {
-			fmt.Printf("Error during setup %v\n", err)
-			return
+			panic("Could not setup storage.")
 		}
-		fmt.Printf("Ready...\n")
+		sources = append(sources, sinfo)
 	}
 
 	// Setup listener here. When client connects, migrate data to it.
@@ -125,149 +85,180 @@ func runServe(ccmd *cobra.Command, args []string) {
 	if err != nil {
 		if serve_expose_dev {
 			fmt.Printf("\nShutting down cleanly...\n")
-			shutdown(p)
+			for _, e := range src_exposed {
+				src_dev_shutdown(e)
+			}
 		}
 		panic("Listener issue...")
 	}
 
-	go func() {
-		fmt.Printf("Waiting for connection...\n")
-		c, err := l.Accept()
-		if err == nil {
-			fmt.Printf("GOT CONNECTION\n")
-			// Now we can migrate to the client...
+	// Wait for a connection, and do a migration...
+	fmt.Printf("Waiting for connection...\n")
+	con, err := l.Accept()
+	if err == nil {
+		fmt.Printf("Received connection from %s\n", con.RemoteAddr().String())
+		// Now we can migrate to the client...
 
-			pro := protocol.NewProtocolRW(context.TODO(), c, c, nil)
-			dest := modules.NewToProtocol(uint64(serve_size), 777, pro)
+		// Wrap the connection in a protocol
+		pro := protocol.NewProtocolRW(context.TODO(), con, con, nil)
+		go pro.Handle()
 
-			dest.SendDevInfo("data", uint32(block_size))
+		// Lets go through each of the things we want to migrate...
+		var wg sync.WaitGroup
 
-			go pro.Handle()
-
-			go dest.HandleNeedAt(func(offset int64, length int32) {
-				// Prioritize blocks...
-				end := uint64(offset + int64(length))
-				if end > uint64(serve_size) {
-					end = uint64(serve_size)
-				}
-
-				b_start := int(offset / int64(block_size))
-				b_end := int((end-1)/uint64(block_size)) + 1
-				for b := b_start; b < b_end; b++ {
-					// Ask the orderer to prioritize these blocks...
-					orderer.PrioritiseBlock(b)
-				}
-			})
-
-			go dest.HandleDontNeedAt(func(offset int64, length int32) {
-				end := uint64(offset + int64(length))
-				if end > uint64(serve_size) {
-					end = uint64(serve_size)
-				}
-
-				b_start := int(offset / int64(block_size))
-				b_end := int((end-1)/uint64(block_size)) + 1
-				for b := b_start; b < b_end; b++ {
-					orderer.Remove(b)
-				}
-			})
-
-			conf := migrator.NewMigratorConfig().WithBlockSize(block_size)
-			conf.LockerHandler = func() {
-				dest.SendEvent(protocol.EventPreLock)
-				sourceStorage.Lock()
-				dest.SendEvent(protocol.EventPostLock)
-			}
-			conf.UnlockerHandler = func() {
-				dest.SendEvent(protocol.EventPreUnlock)
-				sourceStorage.Unlock()
-				dest.SendEvent(protocol.EventPostUnlock)
-			}
-			conf.ProgressHandler = func(p *migrator.MigrationProgress) {
-				fmt.Printf("Progress Moved: %d/%d %.2f%% Clean: %d/%d %.2f%% InProgress: %d\n",
-					p.MigratedBlocks, p.TotalBlocks, p.MigratedBlocksPerc,
-					p.ReadyBlocks, p.TotalBlocks, p.ReadyBlocksPerc,
-					p.ActiveBlocks)
-			}
-
-			mig, err := migrator.NewMigrator(sourceDirty,
-				dest,
-				orderer,
-				conf)
-
-			if err != nil {
-				panic(err)
-			}
-
-			// Now do the migration...
-			err = mig.Migrate(num_blocks)
-
-			err = mig.WaitForCompletion()
-			if err != nil {
-				panic(err)
-			}
-
-			for {
-				blocks := mig.GetLatestDirty()
-				if blocks == nil {
-					break
-				}
-
-				// Optional: Send the list of dirty blocks over...
-				dest.DirtyList(blocks)
-
-				err := mig.MigrateDirty(blocks)
+		for i, s := range sources {
+			wg.Add(1)
+			go func(index int, src *storageInfo) {
+				err := migrateDevice(uint32(index), fmt.Sprintf("dev_%d", index), pro, src)
 				if err != nil {
-					panic(err)
+					fmt.Printf("There was an issue migrating the storage %d %v\n", index, err)
 				}
-				fmt.Printf("DIRTY BLOCKS %d\n", len(blocks))
-			}
-
-			err = mig.WaitForCompletion()
-			if err != nil {
-				panic(err)
-			}
-
-			fmt.Printf("MIGRATION DONE %v\n", err)
-			dest.SendEvent(protocol.EventCompleted)
-
-			c.Close()
+			}(i, s)
 		}
-	}()
+		wg.Wait()
 
-	ticker := time.NewTicker(time.Second)
-
-	for {
-		select {
-		case <-ticker.C:
-			// Show some stats...
-			sourceMetrics.ShowStats("Source")
-			fmt.Printf("Volatility %d\n", sourceMonitor.GetTotalVolatility())
-
-			s := sourceMetrics.Snapshot()
-			prom_read_ops.Set(float64(s.Read_ops))
-			prom_read_bytes.Set(float64(s.Read_bytes))
-			prom_read_time.Set(float64(s.Read_time))
-			prom_read_errors.Set(float64(s.Read_errors))
-
-			prom_write_ops.Set(float64(s.Write_ops))
-			prom_write_bytes.Set(float64(s.Write_bytes))
-			prom_write_time.Set(float64(s.Write_time))
-			prom_write_errors.Set(float64(s.Write_errors))
-
-			prom_flush_ops.Set(float64(s.Flush_ops))
-			prom_flush_time.Set(float64(s.Flush_time))
-			prom_flush_errors.Set(float64(s.Flush_errors))
-
-		}
+		con.Close()
 	}
 }
 
-/**
- * Setup a disk
- *
- */
-func setup(prov storage.StorageProvider, server bool) (storage.ExposedStorage, error) {
+func setupStorageDevice(size int) (*storageInfo, error) {
+	block_size := 1024 * 64
+	num_blocks := (size + block_size - 1) / block_size
+
+	cr := func(s int) storage.StorageProvider {
+		return sources.NewMemoryStorage(s)
+	}
+	// Setup some sharded memory storage (for concurrent write speed)
+	source := modules.NewShardedStorage(size, size/1024, cr)
+	sourceMetrics := modules.NewMetrics(source)
+	sourceDirty := modules.NewFilterReadDirtyTracker(sourceMetrics, block_size)
+	sourceMonitor := modules.NewVolatilityMonitor(sourceDirty, block_size, 10*time.Second)
+	sourceStorage := modules.NewLockable(sourceMonitor)
+
+	// Start monitoring blocks.
+	orderer := blocks.NewPriorityBlockOrder(num_blocks, sourceMonitor)
+	orderer.AddAll()
+
+	if serve_expose_dev {
+		p, err := src_dev_setup(sourceStorage)
+		if err != nil {
+			return nil, err
+		}
+		src_exposed = append(src_exposed, p)
+	}
+	return &storageInfo{
+		tracker:    sourceDirty,
+		lockable:   sourceStorage,
+		orderer:    orderer,
+		block_size: block_size,
+		num_blocks: num_blocks,
+	}, nil
+}
+
+// Migrate a device
+func migrateDevice(dev_id uint32, name string,
+	pro protocol.Protocol,
+	sinfo *storageInfo) error {
+	size := sinfo.lockable.Size()
+	dest := modules.NewToProtocol(uint64(size), dev_id, pro)
+
+	dest.SendDevInfo(name, uint32(sinfo.block_size))
+
+	go dest.HandleNeedAt(func(offset int64, length int32) {
+		// Prioritize blocks...
+		end := uint64(offset + int64(length))
+		if end > uint64(size) {
+			end = uint64(size)
+		}
+
+		b_start := int(offset / int64(sinfo.block_size))
+		b_end := int((end-1)/uint64(sinfo.block_size)) + 1
+		for b := b_start; b < b_end; b++ {
+			// Ask the orderer to prioritize these blocks...
+			sinfo.orderer.PrioritiseBlock(b)
+		}
+	})
+
+	go dest.HandleDontNeedAt(func(offset int64, length int32) {
+		end := uint64(offset + int64(length))
+		if end > uint64(size) {
+			end = uint64(size)
+		}
+
+		b_start := int(offset / int64(sinfo.block_size))
+		b_end := int((end-1)/uint64(sinfo.block_size)) + 1
+		for b := b_start; b < b_end; b++ {
+			sinfo.orderer.Remove(b)
+		}
+	})
+
+	conf := migrator.NewMigratorConfig().WithBlockSize(sinfo.block_size)
+	conf.LockerHandler = func() {
+		dest.SendEvent(protocol.EventPreLock)
+		sinfo.lockable.Lock()
+		dest.SendEvent(protocol.EventPostLock)
+	}
+	conf.UnlockerHandler = func() {
+		dest.SendEvent(protocol.EventPreUnlock)
+		sinfo.lockable.Unlock()
+		dest.SendEvent(protocol.EventPostUnlock)
+	}
+	conf.ProgressHandler = func(p *migrator.MigrationProgress) {
+		fmt.Printf("[%s] Progress Moved: %d/%d %.2f%% Clean: %d/%d %.2f%% InProgress: %d\n",
+			name, p.MigratedBlocks, p.TotalBlocks, p.MigratedBlocksPerc,
+			p.ReadyBlocks, p.TotalBlocks, p.ReadyBlocksPerc,
+			p.ActiveBlocks)
+	}
+
+	mig, err := migrator.NewMigrator(sinfo.tracker, dest, sinfo.orderer, conf)
+
+	if err != nil {
+		return err
+	}
+
+	// Now do the migration...
+	err = mig.Migrate(sinfo.num_blocks)
+	if err != nil {
+		return err
+	}
+
+	// Wait for completion.
+	err = mig.WaitForCompletion()
+	if err != nil {
+		return err
+	}
+
+	// Optional: Enter a loop looking for more dirty blocks to migrate...
+	for {
+		blocks := mig.GetLatestDirty()
+		if blocks == nil {
+			break
+		}
+
+		// Optional: Send the list of dirty blocks over...
+		dest.DirtyList(blocks)
+
+		fmt.Printf("[%s] Migrating dirty blocks %d\n", name, len(blocks))
+		err := mig.MigrateDirty(blocks)
+		if err != nil {
+			return err
+		}
+	}
+
+	err = mig.WaitForCompletion()
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("[%s] Migration completed\n", name)
+	err = dest.SendEvent(protocol.EventCompleted)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func src_dev_setup(prov storage.StorageProvider) (storage.ExposedStorage, error) {
 	p := expose.NewExposedStorageNBDNL(prov, 1, 0, prov.Size(), 4096, true)
 
 	err := p.Handle()
@@ -280,12 +271,12 @@ func setup(prov storage.StorageProvider, server bool) (storage.ExposedStorage, e
 	device := p.Device()
 	fmt.Printf("* Device ready on /dev/%s\n", device)
 
-	err = os.Mkdir(fmt.Sprintf("/mnt/mount%s", device), 0600)
-	if err != nil {
-		return nil, fmt.Errorf("Error mkdir %v", err)
-	}
+	if serve_mount_dev {
+		err = os.Mkdir(fmt.Sprintf("/mnt/mount%s", device), 0600)
+		if err != nil {
+			return nil, fmt.Errorf("Error mkdir %v", err)
+		}
 
-	if server {
 		cmd := exec.Command("mkfs.ext4", fmt.Sprintf("/dev/%s", device))
 		err = cmd.Run()
 		if err != nil {
@@ -297,68 +288,29 @@ func setup(prov storage.StorageProvider, server bool) (storage.ExposedStorage, e
 		if err != nil {
 			return nil, fmt.Errorf("Error mount %v", err)
 		}
-	} else {
-		go func() {
-			fmt.Printf("Mounting device...")
-			cmd := exec.Command("mount", "-r", fmt.Sprintf("/dev/%s", device), fmt.Sprintf("/mnt/mount%s", device))
-			err = cmd.Run()
-			if err != nil {
-				fmt.Printf("Could not mount device %v\n", err)
-				return
-			}
-			fmt.Printf("* Device is mounted at /mnt/mount%s\n", device)
-		}()
 	}
-
 	return p, nil
 }
 
-func shutdown(p storage.ExposedStorage) error {
+func src_dev_shutdown(p storage.ExposedStorage) error {
 	device := p.Device()
 
 	fmt.Printf("shutdown %s\n", device)
-	cmd := exec.Command("umount", fmt.Sprintf("/dev/%s", device))
-	err := cmd.Run()
-	if err != nil {
-		return err
-	}
-	err = os.Remove(fmt.Sprintf("/mnt/mount%s", device))
-	if err != nil {
-		return err
-	}
+	if serve_mount_dev {
 
-	err = p.Shutdown()
+		cmd := exec.Command("umount", fmt.Sprintf("/dev/%s", device))
+		err := cmd.Run()
+		if err != nil {
+			return err
+		}
+		err = os.Remove(fmt.Sprintf("/mnt/mount%s", device))
+		if err != nil {
+			return err
+		}
+	}
+	err := p.Shutdown()
 	if err != nil {
 		return err
 	}
 	return nil
-}
-
-func writeRandom(s storage.StorageProvider) {
-	size := int(s.Size())
-
-	for {
-		mid := size / 2
-		quarter := size / 4
-
-		var o int
-		area := rand.Intn(4)
-		if area == 0 {
-			// random in upper half
-			o = mid + rand.Intn(mid)
-		} else {
-			// random in the lower quarter
-			v := rand.Float64() * math.Pow(float64(quarter), 8)
-			o = quarter + int(math.Sqrt(math.Sqrt(math.Sqrt(v))))
-		}
-
-		v := rand.Intn(256)
-		b := make([]byte, 1)
-		b[0] = byte(v)
-		s.WriteAt(b, int64(o))
-
-		w := rand.Intn(100)
-		time.Sleep(time.Duration(w) * time.Millisecond)
-	}
-
 }

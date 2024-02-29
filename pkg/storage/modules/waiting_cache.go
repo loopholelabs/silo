@@ -38,6 +38,11 @@ func (wcl *WaitingCacheLocal) WriteAt(buffer []byte, offset int64) (int, error) 
 	return wcl.wc.localWriteAt(buffer, offset, wcl.DontNeedAt)
 }
 
+func (wcl *WaitingCacheLocal) Availability() (int, int) {
+	num_blocks := (int(wcl.wc.prov.Size()) + wcl.wc.block_size - 1) / wcl.wc.block_size
+	return wcl.wc.available.Count(0, uint(num_blocks)), num_blocks
+}
+
 func (wcl *WaitingCacheLocal) Flush() error {
 	return wcl.wc.localFlush()
 }

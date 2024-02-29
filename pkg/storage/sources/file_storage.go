@@ -12,6 +12,17 @@ type FileStorage struct {
 }
 
 func NewFileStorage(f string, size int64) (*FileStorage, error) {
+	fp, err := os.OpenFile(f, os.O_RDWR, 0666)
+	if err != nil {
+		return nil, err
+	}
+	return &FileStorage{
+		fp:   fp,
+		size: size,
+	}, nil
+}
+
+func NewFileStorageCreate(f string, size int64) (*FileStorage, error) {
 	fp, err := os.OpenFile(f, os.O_RDWR|os.O_CREATE, 0666)
 	if err != nil {
 		return nil, err
