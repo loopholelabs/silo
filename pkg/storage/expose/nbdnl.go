@@ -1,6 +1,7 @@
 package expose
 
 import (
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -39,6 +40,10 @@ func NewExposedStorageNBDNL(prov storage.StorageProvider, num_connections int, t
 		socks:           make([]io.Closer, 0),
 		async:           async,
 	}
+}
+
+func (n *ExposedStorageNBDNL) Device() string {
+	return fmt.Sprintf("nbd%d", n.DevIndex)
 }
 
 func (n *ExposedStorageNBDNL) Handle() error {
@@ -88,7 +93,7 @@ func (n *ExposedStorageNBDNL) Handle() error {
 	return nil
 }
 
-// Wait until it's connected...
+// Wait until it's connected... (Handle must have been called already)
 func (n *ExposedStorageNBDNL) WaitReady() error {
 	for {
 		s, err := nbdnl.Status(uint32(n.DevIndex))

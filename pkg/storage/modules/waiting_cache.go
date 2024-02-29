@@ -46,6 +46,12 @@ func (wcl *WaitingCacheLocal) Size() uint64 {
 	return wcl.wc.localSize()
 }
 
+func (wcl *WaitingCacheLocal) DirtyBlocks(blocks []uint) {
+	for _, v := range blocks {
+		wcl.wc.haveNotBlock(v)
+	}
+}
+
 type WaitingCacheRemote struct {
 	wc *WaitingCache
 }
@@ -205,12 +211,6 @@ func (i *WaitingCache) remoteWriteAt(buffer []byte, offset int64) (int, error) {
 	i.lock_write.Unlock()
 
 	return n, err
-}
-
-func (i *WaitingCache) DirtyBlocks(blocks []uint) {
-	for _, v := range blocks {
-		i.haveNotBlock(v)
-	}
 }
 
 func (i *WaitingCache) localFlush() error {

@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"crypto/rand"
+	"fmt"
 	"io"
 	"testing"
 
@@ -103,6 +104,7 @@ func TestProtocolReadAt(t *testing.T) {
 }
 
 func TestProtocolRWWriteAt(t *testing.T) {
+	fmt.Printf("TestProtocolRWWriteAt\n")
 	size := 1024 * 1024
 	var store storage.StorageProvider
 
@@ -112,8 +114,12 @@ func TestProtocolRWWriteAt(t *testing.T) {
 	r1, w1 := io.Pipe()
 	r2, w2 := io.Pipe()
 
-	prSource := protocol.NewProtocolRW(context.TODO(), r1, w2)
-	prDest := protocol.NewProtocolRW(context.TODO(), r2, w1)
+	destDev := make(chan uint32, 8)
+
+	prSource := protocol.NewProtocolRW(context.TODO(), r1, w2, nil)
+	prDest := protocol.NewProtocolRW(context.TODO(), r2, w1, func(dev uint32) {
+		destDev <- dev
+	})
 
 	sourceToProtocol := modules.NewToProtocol(uint64(size), 1, prSource)
 
@@ -137,6 +143,10 @@ func TestProtocolRWWriteAt(t *testing.T) {
 	go destFromProtocol.HandleWriteAt()
 
 	sourceToProtocol.SendDevInfo()
+
+	// Should know the dev now...
+	assert.Equal(t, uint32(1), <-destDev)
+	assert.Equal(t, 0, len(destDev))
 
 	buff := make([]byte, 4096)
 	rand.Read(buff)
@@ -167,8 +177,8 @@ func TestProtocolRWReadAt(t *testing.T) {
 	r1, w1 := io.Pipe()
 	r2, w2 := io.Pipe()
 
-	prSource := protocol.NewProtocolRW(context.TODO(), r1, w2)
-	prDest := protocol.NewProtocolRW(context.TODO(), r2, w1)
+	prSource := protocol.NewProtocolRW(context.TODO(), r1, w2, nil)
+	prDest := protocol.NewProtocolRW(context.TODO(), r2, w1, nil)
 
 	sourceToProtocol := modules.NewToProtocol(uint64(size), 1, prSource)
 

@@ -230,6 +230,10 @@ func (n *ExposedStorageNBD) WaitReady() error {
 	return nil
 }
 
+func (n *ExposedStorageNBD) Device() string {
+	return n.dev
+}
+
 func (n *ExposedStorageNBD) Shutdown() error {
 
 	/*

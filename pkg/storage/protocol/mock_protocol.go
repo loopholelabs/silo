@@ -5,16 +5,6 @@ import (
 	"sync/atomic"
 )
 
-type packetinfo struct {
-	id   uint32
-	data []byte
-}
-
-type Waiters struct {
-	by_cmd map[byte]chan packetinfo
-	by_id  map[uint32]chan packetinfo
-}
-
 type MockProtocol struct {
 	waiters      map[uint32]Waiters
 	waiters_lock sync.Mutex

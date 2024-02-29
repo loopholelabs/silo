@@ -8,22 +8,36 @@ import (
 	"sync/atomic"
 )
 
+type packetinfo struct {
+	id   uint32
+	data []byte
+}
+
+type Waiters struct {
+	by_cmd map[byte]chan packetinfo
+	by_id  map[uint32]chan packetinfo
+}
+
 type ProtocolRW struct {
 	ctx          context.Context
 	r            io.Reader
 	w            io.Writer
 	w_lock       sync.Mutex
 	tx_id        uint32
+	active_devs  map[uint32]bool
 	waiters      map[uint32]Waiters
 	waiters_lock sync.Mutex
+	newdev_fn    func(uint32)
 }
 
-func NewProtocolRW(ctx context.Context, r io.Reader, w io.Writer) *ProtocolRW {
+func NewProtocolRW(ctx context.Context, r io.Reader, w io.Writer, newdev_fn func(uint32)) *ProtocolRW {
 	return &ProtocolRW{
-		ctx:     ctx,
-		r:       r,
-		w:       w,
-		waiters: make(map[uint32]Waiters),
+		ctx:         ctx,
+		r:           r,
+		w:           w,
+		waiters:     make(map[uint32]Waiters),
+		newdev_fn:   newdev_fn,
+		active_devs: make(map[uint32]bool),
 	}
 }
 
@@ -79,6 +93,14 @@ func (p *ProtocolRW) Handle() error {
 			return err
 		}
 		// Now queue it up in a channel
+
+		_, ok := p.active_devs[dev]
+		if !ok {
+			p.active_devs[dev] = true
+			if p.newdev_fn != nil {
+				p.newdev_fn(dev)
+			}
+		}
 
 		cmd := data[0]
 

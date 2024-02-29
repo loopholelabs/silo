@@ -36,13 +36,13 @@ var (
 )
 
 var serve_addr string
-var serve_dev string
+var serve_expose_dev bool
 var serve_size int
 
 func init() {
 	rootCmd.AddCommand(cmdServe)
 	cmdServe.Flags().StringVarP(&serve_addr, "addr", "a", ":5170", "Address to serve from")
-	cmdServe.Flags().StringVarP(&serve_dev, "dev", "d", "", "Device eg nbd1")
+	cmdServe.Flags().BoolVarP(&serve_expose_dev, "expose", "e", false, "Expose as nbd dev")
 	cmdServe.Flags().IntVarP(&serve_size, "size", "s", 1024*1024*1024, "Size")
 }
 
@@ -63,7 +63,7 @@ var (
 )
 
 func runServe(ccmd *cobra.Command, args []string) {
-	fmt.Printf("Starting silo serve %s at %s size %d\n", serve_dev, serve_addr, serve_size)
+	fmt.Printf("Starting silo serve %s size %d\n", serve_addr, serve_size)
 
 	// Setup some statistics output
 	http.Handle("/metrics", promhttp.Handler())
@@ -101,17 +101,17 @@ func runServe(ccmd *cobra.Command, args []string) {
 	go func() {
 		<-c
 
-		if serve_dev != "" {
+		if serve_expose_dev {
 			fmt.Printf("\nShutting down cleanly...\n")
-			shutdown(serve_dev, p)
+			shutdown(p)
 		}
 		sourceMetrics.ShowStats("Source")
 		os.Exit(1)
 	}()
 
-	if serve_dev != "" {
+	if serve_expose_dev {
 		var err error
-		p, err = setup(serve_dev, sourceStorage, true)
+		p, err = setup(sourceStorage, true)
 		if err != nil {
 			fmt.Printf("Error during setup %v\n", err)
 			return
@@ -123,9 +123,9 @@ func runServe(ccmd *cobra.Command, args []string) {
 
 	l, err := net.Listen("tcp", serve_addr)
 	if err != nil {
-		if serve_dev != "" {
+		if serve_expose_dev {
 			fmt.Printf("\nShutting down cleanly...\n")
-			shutdown(serve_dev, p)
+			shutdown(p)
 		}
 		panic("Listener issue...")
 	}
@@ -137,7 +137,7 @@ func runServe(ccmd *cobra.Command, args []string) {
 			fmt.Printf("GOT CONNECTION\n")
 			// Now we can migrate to the client...
 
-			pro := protocol.NewProtocolRW(context.TODO(), c, c)
+			pro := protocol.NewProtocolRW(context.TODO(), c, c, nil)
 			dest := modules.NewToProtocol(uint64(serve_size), 777, pro)
 
 			dest.SendDevInfo()
@@ -267,19 +267,20 @@ func runServe(ccmd *cobra.Command, args []string) {
  * Setup a disk
  *
  */
-func setup(device string, prov storage.StorageProvider, server bool) (storage.ExposedStorage, error) {
-	p := expose.NewExposedStorageNBD(prov, device, 1, 0, prov.Size(), 4096, 0)
+func setup(prov storage.StorageProvider, server bool) (storage.ExposedStorage, error) {
+	p := expose.NewExposedStorageNBDNL(prov, 1, 0, prov.Size(), 4096, true)
 
-	go func() {
-		err := p.Handle()
-		if err != nil {
-			fmt.Printf("p.Handle returned %v\n", err)
-		}
-	}()
+	err := p.Handle()
+	if err != nil {
+		fmt.Printf("p.Handle returned %v\n", err)
+	}
 
 	p.WaitReady()
 
-	err := os.Mkdir(fmt.Sprintf("/mnt/mount%s", device), 0600)
+	device := p.Device()
+	fmt.Printf("* Device ready on /dev/%s\n", device)
+
+	err = os.Mkdir(fmt.Sprintf("/mnt/mount%s", device), 0600)
 	if err != nil {
 		return nil, fmt.Errorf("Error mkdir %v", err)
 	}
@@ -297,17 +298,24 @@ func setup(device string, prov storage.StorageProvider, server bool) (storage.Ex
 			return nil, fmt.Errorf("Error mount %v", err)
 		}
 	} else {
-		cmd := exec.Command("mount", "-r", fmt.Sprintf("/dev/%s", device), fmt.Sprintf("/mnt/mount%s", device))
-		err = cmd.Run()
-		if err != nil {
-			return nil, fmt.Errorf("Error mount %v", err)
-		}
+		go func() {
+			fmt.Printf("Mounting device...")
+			cmd := exec.Command("mount", "-r", fmt.Sprintf("/dev/%s", device), fmt.Sprintf("/mnt/mount%s", device))
+			err = cmd.Run()
+			if err != nil {
+				fmt.Printf("Could not mount device %v\n", err)
+				return
+			}
+			fmt.Printf("* Device is mounted at /mnt/mount%s\n", device)
+		}()
 	}
 
 	return p, nil
 }
 
-func shutdown(device string, p storage.ExposedStorage) error {
+func shutdown(p storage.ExposedStorage) error {
+	device := p.Device()
+
 	fmt.Printf("shutdown %s\n", device)
 	cmd := exec.Command("umount", fmt.Sprintf("/dev/%s", device))
 	err := cmd.Run()

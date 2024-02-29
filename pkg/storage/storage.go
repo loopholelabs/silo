@@ -28,6 +28,7 @@ type ExposedStorage interface {
 	Handle() error
 	WaitReady() error
 	Shutdown() error
+	Device() string
 }
 
 type BlockOrder interface {
