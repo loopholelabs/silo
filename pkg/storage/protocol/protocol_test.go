@@ -173,11 +173,12 @@ func TestDirtyList(t *testing.T) {
 }
 
 func TestDevInfo(t *testing.T) {
-	b := EncodeDevInfo(&DevInfo{Size: 12345, Name: "hello"})
+	b := EncodeDevInfo(&DevInfo{Size: 12345, BlockSize: 55, Name: "hello"})
 
 	di, err := DecodeDevInfo(b)
 	assert.NoError(t, err)
 	assert.Equal(t, uint64(12345), di.Size)
+	assert.Equal(t, uint32(55), di.BlockSize)
 	assert.Equal(t, "hello", di.Name)
 
 	// Make sure we can't decode silly things

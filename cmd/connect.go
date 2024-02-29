@@ -70,23 +70,21 @@ func runConnect(ccmd *cobra.Command, args []string) {
 
 // Handle a new incoming device
 func handleIncomingDevice(pro protocol.Protocol, dev uint32) {
-	// Size of migration blocks
-	// TODO: Configurable
-	block_size := 1024 * 64
-
 	var destStorage storage.StorageProvider
 	var destWaitingLocal *modules.WaitingCacheLocal
 	var destWaitingRemote *modules.WaitingCacheRemote
 	var dest *modules.FromProtocol
 
 	destWaitingRemoteFactory := func(di *protocol.DevInfo) storage.StorageProvider {
-		fmt.Printf("Received DevInfo name=%s size=%d\n", di.Name, di.Size)
+		fmt.Printf("= %d = Received DevInfo name=%s size=%d blocksize=%d\n", dev, di.Name, di.Size, di.BlockSize)
+
 		cr := func(s int) storage.StorageProvider {
 			return sources.NewMemoryStorage(s)
 		}
 		// Setup some sharded memory storage (for concurrent write speed)
 		destStorage = modules.NewShardedStorage(int(di.Size), int(di.Size/1024), cr)
-		destWaitingLocal, destWaitingRemote = modules.NewWaitingCache(destStorage, block_size)
+
+		destWaitingLocal, destWaitingRemote = modules.NewWaitingCache(destStorage, int(di.BlockSize))
 
 		// Connect the waitingCache to the FromProtocol
 		destWaitingLocal.NeedAt = func(offset int64, length int32) {

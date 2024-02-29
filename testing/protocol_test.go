@@ -40,7 +40,7 @@ func TestProtocolWriteAt(t *testing.T) {
 	go destFromProtocol.HandleWriteAt()
 
 	// Send devInfo
-	sourceToProtocol.SendDevInfo("test")
+	sourceToProtocol.SendDevInfo("test", 4096)
 
 	buff := make([]byte, 4096)
 	rand.Read(buff)
@@ -92,7 +92,7 @@ func TestProtocolReadAt(t *testing.T) {
 	go destFromProtocol.HandleReadAt()
 	go destFromProtocol.HandleWriteAt()
 
-	sourceToProtocol.SendDevInfo("test")
+	sourceToProtocol.SendDevInfo("test", 4096)
 
 	// Now check it was written to the source
 	buff2 := make([]byte, 4096)
@@ -142,7 +142,7 @@ func TestProtocolRWWriteAt(t *testing.T) {
 	go destFromProtocol.HandleReadAt()
 	go destFromProtocol.HandleWriteAt()
 
-	sourceToProtocol.SendDevInfo("test")
+	sourceToProtocol.SendDevInfo("test", 4096)
 
 	// Should know the dev now...
 	assert.Equal(t, uint32(1), <-destDev)
@@ -206,7 +206,7 @@ func TestProtocolRWReadAt(t *testing.T) {
 	go destFromProtocol.HandleReadAt()
 	go destFromProtocol.HandleWriteAt()
 
-	sourceToProtocol.SendDevInfo("test")
+	sourceToProtocol.SendDevInfo("test", 4096)
 
 	// Now check it was written to the source
 	buff2 := make([]byte, 4096)
@@ -242,7 +242,7 @@ func TestProtocolEvents(t *testing.T) {
 	go destFromProtocol.HandleSend(context.TODO())
 
 	// Send devInfo
-	sourceToProtocol.SendDevInfo("test")
+	sourceToProtocol.SendDevInfo("test", 4096)
 
 	// Send some events and make sure they happen at the other end...
 

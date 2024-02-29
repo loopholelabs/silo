@@ -125,7 +125,7 @@ func TestMigratorSimplePipe(t *testing.T) {
 	go destFrom.HandleWriteAt()
 	go destFrom.HandleDevInfo()
 
-	destination.SendDevInfo("test")
+	destination.SendDevInfo("test", uint32(blockSize))
 
 	conf := NewMigratorConfig().WithBlockSize(blockSize)
 	conf.LockerHandler = sourceStorage.Lock
