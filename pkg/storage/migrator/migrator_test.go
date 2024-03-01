@@ -2,7 +2,6 @@ package migrator
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"math"
 	"math/rand"
@@ -249,7 +248,7 @@ func TestMigratorWithReaderWriter(t *testing.T) {
 			assert.NoError(t, err)
 			assert.Equal(t, 1, n)
 
-			time.Sleep(time.Duration(rand.Intn(100)) * time.Millisecond)
+			time.Sleep(time.Duration(rand.Intn(20)) * time.Millisecond)
 		}
 	}()
 
@@ -325,7 +324,8 @@ func TestMigratorWithReaderWriter(t *testing.T) {
 		if blocks == nil {
 			break
 		}
-		fmt.Printf("Got %d dirty blocks to move...\n", len(blocks))
+		destWaitingLocal.DirtyBlocks(blocks)
+
 		err := mig.MigrateDirty(blocks)
 		assert.NoError(t, err)
 	}
@@ -336,7 +336,6 @@ func TestMigratorWithReaderWriter(t *testing.T) {
 	// This will end with migration completed, and consumer Locked.
 	eq, err := storage.Equals(sourceStorageMem, destStorage, blockSize)
 	assert.NoError(t, err)
-	// FIXME: FLAKEY TEST
 	assert.True(t, eq)
 
 	assert.True(t, sourceStorage.IsLocked())

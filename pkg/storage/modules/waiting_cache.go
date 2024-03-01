@@ -187,6 +187,8 @@ func (i *WaitingCache) remoteWriteAt(buffer []byte, offset int64) (int, error) {
 		}
 	}
 
+	// TODO: We should distinguish between local and remote data here. FIX
+
 	i.lockers_lock.Lock()
 	avail := i.available.Collect(uint(b_start), uint(b_end))
 	i.lockers_lock.Unlock()

@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"fmt"
 	"io"
 
 	"github.com/loopholelabs/silo/pkg/storage/util"
@@ -82,6 +83,7 @@ func Equals(sp1 StorageProvider, sp2 StorageProvider, block_size int) (bool, err
 		}
 		for j := 0; j < n; j++ {
 			if sourceBuff[j] != destBuff[j] {
+				fmt.Printf("Equals: Block %d differs\n", i/block_size)
 				return false, nil
 			}
 		}
