@@ -113,6 +113,7 @@ func runServe(ccmd *cobra.Command, args []string) {
 				if err != nil {
 					fmt.Printf("There was an issue migrating the storage %d %v\n", index, err)
 				}
+				wg.Done()
 			}(i, s)
 		}
 		wg.Wait()
