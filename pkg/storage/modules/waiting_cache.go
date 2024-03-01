@@ -180,9 +180,11 @@ func (i *WaitingCache) remoteWriteAt(buffer []byte, offset int64) (int, error) {
 		b_start++
 		align = int(offset - (int64(b_start) * int64(i.block_size)))
 	}
-	// If the last block is incomplete, we won't mark it.
+	// If the last block is incomplete, we won't mark it. *UNLESS* It's the last block in the storage
 	if (end % uint64(i.block_size)) > 0 {
-		b_end--
+		if uint64(offset)+uint64(len(buffer)) < i.size {
+			b_end--
+		}
 	}
 
 	i.lockers_lock.Lock()

@@ -1,14 +1,20 @@
 package sources
 
 import (
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
 
-func TestMemoryStorage(t *testing.T) {
+func TestFileStorage(t *testing.T) {
 
-	source := NewMemoryStorage(1024 * 1024)
+	source, err := NewFileStorageCreate("test_data", 1024*1024)
+	assert.NoError(t, err)
+
+	t.Cleanup(func() {
+		os.Remove("test_data")
+	})
 
 	data := []byte("Hello world")
 
@@ -26,11 +32,16 @@ func TestMemoryStorage(t *testing.T) {
 	assert.Equal(t, string(data), string(buffer))
 }
 
-func TestMemoryStorageOverrun(t *testing.T) {
+func TestFileStorageOverrun(t *testing.T) {
 	size := 100
 	offset := 90
 
-	source := NewMemoryStorage(size)
+	source, err := NewFileStorageCreate("test_data", int64(size))
+	assert.NoError(t, err)
+
+	t.Cleanup(func() {
+		os.Remove("test_data")
+	})
 
 	data := []byte("Hello world this is a test")
 

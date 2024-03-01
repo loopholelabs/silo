@@ -230,13 +230,16 @@ func (m *Migrator) migrateBlock(block int) error {
 	offset := int(block) * m.block_size
 	// Read from source
 	n, err := m.src_track.ReadAt(buff, int64(offset))
-	if n != m.block_size || err != nil {
+	if err != nil {
 		return err
 	}
 
+	// If it was a partial read, truncate
+	buff = buff[:n]
+
 	// Now write it to destStorage
 	n, err = m.dest.WriteAt(buff, int64(offset))
-	if n != m.block_size || err != nil {
+	if n != len(buff) || err != nil {
 		return err
 	}
 

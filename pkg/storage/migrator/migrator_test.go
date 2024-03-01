@@ -70,6 +70,58 @@ func TestMigratorSimple(t *testing.T) {
 }
 
 /**
+ * Test a simple migration, but with a partial block at the end
+ *
+ */
+func TestMigratorPartial(t *testing.T) {
+	size := 5000
+	blockSize := 4096
+	num_blocks := (size + blockSize - 1) / blockSize
+
+	sourceStorageMem := sources.NewMemoryStorage(size)
+	sourceDirty := modules.NewFilterReadDirtyTracker(sourceStorageMem, blockSize)
+	sourceStorage := modules.NewLockable(sourceDirty)
+
+	// Set up some data here.
+	buffer := make([]byte, size)
+	for i := 0; i < size; i++ {
+		buffer[i] = 9
+	}
+
+	n, err := sourceStorage.WriteAt(buffer, 0)
+	assert.NoError(t, err)
+	assert.Equal(t, len(buffer), n)
+
+	orderer := blocks.NewAnyBlockOrder(num_blocks, nil)
+	orderer.AddAll()
+
+	// START moving data from sourceStorage to destStorage
+
+	destStorage := sources.NewMemoryStorage(size)
+
+	conf := NewMigratorConfig().WithBlockSize(blockSize)
+	conf.LockerHandler = sourceStorage.Lock
+	conf.UnlockerHandler = sourceStorage.Unlock
+
+	mig, err := NewMigrator(sourceDirty,
+		destStorage,
+		orderer,
+		conf)
+
+	assert.NoError(t, err)
+
+	mig.Migrate(num_blocks)
+
+	err = mig.WaitForCompletion()
+	assert.NoError(t, err)
+
+	// This will end with migration completed, and consumer Locked.
+	eq, err := storage.Equals(sourceStorageMem, destStorage, blockSize)
+	assert.NoError(t, err)
+	assert.True(t, eq)
+}
+
+/**
  * Test a simple migration through a pipe. No writer no reader.
  *
  */

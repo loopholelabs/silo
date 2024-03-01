@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestBlockStorage(t *testing.T) {
+func TestShardedStorage(t *testing.T) {
 	cr := func(s int) storage.StorageProvider {
 		return sources.NewMemoryStorage(s)
 	}
@@ -30,4 +30,27 @@ func TestBlockStorage(t *testing.T) {
 	assert.Equal(t, len(buffer), n)
 
 	assert.Equal(t, string(data), string(buffer))
+}
+
+func TestShardedStoragePartial(t *testing.T) {
+	cr := func(s int) storage.StorageProvider {
+		return sources.NewMemoryStorage(s)
+	}
+
+	// Create a new block storage, backed by memory storage
+	source := NewShardedStorage(6000, 4096, cr)
+
+	data := make([]byte, 6000)
+
+	n, err := source.WriteAt(data, 0)
+	assert.NoError(t, err)
+	assert.Equal(t, len(data), n)
+
+	// Try reading it back...
+
+	buffer := make([]byte, len(data))
+	n, err = source.ReadAt(buffer, 0)
+	assert.NoError(t, err)
+	assert.Equal(t, len(buffer), n)
+
 }

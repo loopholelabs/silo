@@ -1,6 +1,9 @@
 package sources
 
-import "os"
+import (
+	"io"
+	"os"
+)
 
 /**
  * Simple fixed size file storage provider
@@ -39,11 +42,23 @@ func (i *FileStorage) Close() error {
 }
 
 func (i *FileStorage) ReadAt(buffer []byte, offset int64) (int, error) {
-	return i.fp.ReadAt(buffer, offset)
+	// We don't want to return EOF
+	n, err := i.fp.ReadAt(buffer, offset)
+	if n < len(buffer) && err == io.EOF {
+		err = nil
+	}
+	return n, err
 }
 
 func (i *FileStorage) WriteAt(buffer []byte, offset int64) (int, error) {
-	return i.fp.WriteAt(buffer, offset)
+	data := buffer
+	if offset > i.size {
+		return 0, io.EOF
+	}
+	if offset+int64(len(data)) > i.size {
+		data = data[:(i.size - offset)]
+	}
+	return i.fp.WriteAt(data, offset)
 }
 
 func (i *FileStorage) Flush() error {

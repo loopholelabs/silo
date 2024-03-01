@@ -64,15 +64,23 @@ func Equals(sp1 StorageProvider, sp2 StorageProvider, block_size int) (bool, err
 	sourceBuff := make([]byte, block_size)
 	destBuff := make([]byte, block_size)
 	for i := 0; i < size; i += block_size {
+		sourceBuff = sourceBuff[:cap(sourceBuff)]
+		destBuff = destBuff[:cap(destBuff)]
+
 		n, err := sp1.ReadAt(sourceBuff, int64(i))
-		if n != block_size || err != nil {
+		if err != nil {
 			return false, err
 		}
+		sourceBuff = sourceBuff[:n]
 		n, err = sp2.ReadAt(destBuff, int64(i))
-		if n != block_size || err != nil {
+		if err != nil {
 			return false, err
 		}
-		for j := 0; j < block_size; j++ {
+		destBuff = destBuff[:n]
+		if len(sourceBuff) != len(destBuff) {
+			return false, nil
+		}
+		for j := 0; j < n; j++ {
 			if sourceBuff[j] != destBuff[j] {
 				return false, nil
 			}
