@@ -16,7 +16,6 @@ import (
  * Exposes a storage provider as an nbd device using netlink
  *
  */
-
 type ExposedStorageNBDNL struct {
 	numConnections int
 	timeout        uint64
@@ -30,13 +29,13 @@ type ExposedStorageNBDNL struct {
 	async      bool
 }
 
-func NewExposedStorageNBDNL(prov storage.StorageProvider, num_connections int, timeout uint64, size uint64, block_size uint64, async bool) *ExposedStorageNBDNL {
+func NewExposedStorageNBDNL(prov storage.StorageProvider, numConnections int, timeout uint64, size uint64, blockSize uint64, async bool) *ExposedStorageNBDNL {
 	return &ExposedStorageNBDNL{
 		prov:           prov,
-		numConnections: num_connections,
+		numConnections: numConnections,
 		timeout:        timeout,
 		size:           size,
-		blockSize:      block_size,
+		blockSize:      blockSize,
 		socks:          make([]io.Closer, 0),
 		async:          async,
 	}
@@ -46,7 +45,7 @@ func (n *ExposedStorageNBDNL) Device() string {
 	return fmt.Sprintf("nbd%d", n.devIndex)
 }
 
-func (n *ExposedStorageNBDNL) Handle() error {
+func (n *ExposedStorageNBDNL) Init() error {
 
 	socks := make([]*os.File, 0)
 
@@ -89,19 +88,16 @@ func (n *ExposedStorageNBDNL) Handle() error {
 	}
 
 	n.devIndex = int(idx)
-	return nil
-}
 
-// Wait until it's connected... (Handle must have been called already)
-func (n *ExposedStorageNBDNL) WaitReady() error {
+	// Wait until it's connected...
 	for {
 		s, err := nbdnl.Status(uint32(n.devIndex))
 		if err == nil && s.Connected {
-			//			fmt.Printf("NBD %d connected\n", n.DevIndex)
 			break
 		}
 		time.Sleep(100 * time.Nanosecond)
 	}
+
 	return nil
 }
 
@@ -120,6 +116,15 @@ func (n *ExposedStorageNBDNL) Shutdown() error {
 		if err != nil {
 			return err
 		}
+	}
+
+	// Wait until it's disconnected...
+	for {
+		s, err := nbdnl.Status(uint32(n.devIndex))
+		if err == nil && !s.Connected {
+			break
+		}
+		time.Sleep(100 * time.Nanosecond)
 	}
 
 	return nil

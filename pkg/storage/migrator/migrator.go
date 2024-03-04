@@ -59,9 +59,10 @@ type Migrator struct {
 	blockSize         int
 	numBlocks         int
 	metricBlocksMoved int64
-	moving_blocks     *util.Bitfield
-	migrated_blocks   *util.Bitfield
-	clean_blocks      *util.Bitfield
+	blockLocks        []sync.Mutex
+	movingBlocks      *util.Bitfield
+	migratedBlocks    *util.Bitfield
+	cleanBlocks       *util.Bitfield
 	blockOrder        storage.BlockOrder
 	ctime             time.Time
 	concurrency       map[int]chan bool
@@ -85,9 +86,10 @@ func NewMigrator(source storage.TrackingStorageProvider,
 		numBlocks:         num_blocks,
 		metricBlocksMoved: 0,
 		blockOrder:        block_order,
-		moving_blocks:     util.NewBitfield(num_blocks),
-		migrated_blocks:   util.NewBitfield(num_blocks),
-		clean_blocks:      util.NewBitfield(num_blocks),
+		movingBlocks:      util.NewBitfield(num_blocks),
+		migratedBlocks:    util.NewBitfield(num_blocks),
+		cleanBlocks:       util.NewBitfield(num_blocks),
+		blockLocks:        make([]sync.Mutex, num_blocks),
 		concurrency:       make(map[int]chan bool),
 	}
 
@@ -122,10 +124,8 @@ func (m *Migrator) Migrate(num_blocks int) error {
 
 		m.wg.Add(1)
 
-		m.moving_blocks.SetBit(i.Block)
 		go func(block_no *storage.BlockInfo) {
 			err := m.migrateBlock(block_no.Block)
-			m.moving_blocks.ClearBit(i.Block)
 			if err != nil {
 				m.errorFN(block_no, err)
 			}
@@ -178,10 +178,8 @@ func (m *Migrator) MigrateDirty(blocks []uint) error {
 
 		// TODO: If there's already an in flight migration here for this block, we need to wait for it to complete...
 
-		m.moving_blocks.SetBit(i.Block)
 		go func(block_no *storage.BlockInfo) {
 			err := m.migrateBlock(block_no.Block)
-			m.moving_blocks.ClearBit(i.Block)
 			if err != nil {
 				m.errorFN(block_no, err)
 			}
@@ -194,7 +192,7 @@ func (m *Migrator) MigrateDirty(blocks []uint) error {
 			<-cc
 		}(i)
 
-		m.clean_blocks.ClearBit(int(pos))
+		m.cleanBlocks.ClearBit(int(pos))
 	}
 	m.reportProgress()
 	return nil
@@ -206,10 +204,10 @@ func (m *Migrator) WaitForCompletion() error {
 }
 
 func (m *Migrator) reportProgress() {
-	migrated := m.migrated_blocks.Count(0, uint(m.numBlocks))
+	migrated := m.migratedBlocks.Count(0, uint(m.numBlocks))
 	perc_mig := float64(migrated*100) / float64(m.numBlocks)
 
-	completed := m.clean_blocks.Count(0, uint(m.numBlocks))
+	completed := m.cleanBlocks.Count(0, uint(m.numBlocks))
 	perc_complete := float64(completed*100) / float64(m.numBlocks)
 
 	// Callback
@@ -219,7 +217,7 @@ func (m *Migrator) reportProgress() {
 		MigratedBlocksPerc: perc_mig,
 		ReadyBlocks:        completed,
 		ReadyBlocksPerc:    perc_complete,
-		ActiveBlocks:       m.moving_blocks.Count(0, uint(m.numBlocks)),
+		ActiveBlocks:       m.movingBlocks.Count(0, uint(m.numBlocks)),
 	})
 }
 
@@ -228,6 +226,13 @@ func (m *Migrator) reportProgress() {
  *
  */
 func (m *Migrator) migrateBlock(block int) error {
+	m.blockLocks[block].Lock()
+	defer m.blockLocks[block].Unlock()
+
+	m.movingBlocks.SetBit(block)
+	defer m.movingBlocks.ClearBit(block)
+
+	// TODO: Pool these somewhere...
 	buff := make([]byte, m.blockSize)
 	offset := int(block) * m.blockSize
 	// Read from source
@@ -247,8 +252,8 @@ func (m *Migrator) migrateBlock(block int) error {
 
 	atomic.AddInt64(&m.metricBlocksMoved, 1)
 	// Mark it as done
-	m.migrated_blocks.SetBit(block)
-	m.clean_blocks.SetBit(block)
+	m.migratedBlocks.SetBit(block)
+	m.cleanBlocks.SetBit(block)
 
 	m.reportProgress()
 	return nil

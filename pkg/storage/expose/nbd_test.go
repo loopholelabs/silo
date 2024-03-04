@@ -23,10 +23,8 @@ func TestNBDNLDevice(t *testing.T) {
 
 	var n *ExposedStorageNBDNL
 	defer func() {
-		fmt.Printf("Shutting down properly...\n")
 		err := n.Shutdown()
 		assert.NoError(t, err)
-		fmt.Printf("Shutdown complete\n")
 	}()
 
 	size := 4096 * 1024 * 1024
@@ -34,18 +32,14 @@ func TestNBDNLDevice(t *testing.T) {
 
 	n = NewExposedStorageNBDNL(prov, 8, 0, uint64(size), 4096, true)
 
-	err = n.Handle()
+	err = n.Init()
 	assert.NoError(t, err)
-
-	fmt.Printf("WaitReady...\n")
-	n.WaitReady()
 
 	var wg sync.WaitGroup
 
 	for i := 0; i < 10; i++ {
 		wg.Add(1)
 		go func() {
-			fmt.Printf("Open dev\n")
 			devfile, err := os.OpenFile(fmt.Sprintf("/dev/nbd%d", n.devIndex), os.O_RDWR, 0666)
 			assert.NoError(t, err)
 

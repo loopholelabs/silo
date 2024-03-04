@@ -101,16 +101,12 @@ func main() {
 func setup(prov storage.StorageProvider) (storage.ExposedStorage, error) {
 	p := expose.NewExposedStorageNBDNL(prov, 1, 0, prov.Size(), 4096, true)
 
-	go func() {
-		err := p.Handle()
-		if err != nil {
-			fmt.Printf("p.Start returned %v\n", err)
-		}
-	}()
+	err := p.Init()
+	if err != nil {
+		fmt.Printf("p.Start returned %v\n", err)
+	}
 
-	p.WaitReady()
-
-	err := os.Mkdir(mountpoint, 0600)
+	err = os.Mkdir(mountpoint, 0600)
 	if err != nil {
 		return nil, fmt.Errorf("Error mkdir %v", err)
 	}

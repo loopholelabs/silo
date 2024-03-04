@@ -275,12 +275,11 @@ func migrateDevice(dev_id uint32, name string,
 func src_dev_setup(prov storage.StorageProvider) (storage.ExposedStorage, error) {
 	p := expose.NewExposedStorageNBDNL(prov, 1, 0, prov.Size(), 4096, true)
 
-	err := p.Handle()
+	err := p.Init()
 	if err != nil {
-		fmt.Printf("p.Handle returned %v\n", err)
+		fmt.Printf("p.Init returned %v\n", err)
+		return nil, err
 	}
-
-	p.WaitReady()
 
 	device := p.Device()
 	fmt.Printf("* Device ready on /dev/%s\n", device)

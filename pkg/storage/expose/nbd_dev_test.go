@@ -37,12 +37,10 @@ func BenchmarkDevReadNL(mb *testing.B) {
 
 				n := NewExposedStorageNBDNL(driver, c, 0, uint64(driver.Size()), 4096, true)
 
-				err := n.Handle()
+				err := n.Init()
 				if err != nil {
 					panic(err)
 				}
-
-				n.WaitReady()
 
 				/**
 				* Cleanup everything
@@ -165,12 +163,10 @@ func BenchmarkDevReadNLLatency(mb *testing.B) {
 
 					n := NewExposedStorageNBDNL(driver, cns, 0, uint64(driver.Size()), 4096, asy)
 
-					err := n.Handle()
+					err := n.Init()
 					if err != nil {
 						panic(err)
 					}
-
-					n.WaitReady()
 
 					/**
 					* Cleanup everything
@@ -271,14 +267,10 @@ func BenchmarkDevWriteNL(b *testing.B) {
 
 	n := NewExposedStorageNBDNL(driver, 1, 0, uint64(driver.Size()), 4096, true)
 
-	go func() {
-		err := n.Handle()
-		if err != nil {
-			panic(err)
-		}
-	}()
-
-	n.WaitReady()
+	err = n.Init()
+	if err != nil {
+		panic(err)
+	}
 
 	/**
 	* Cleanup everything
