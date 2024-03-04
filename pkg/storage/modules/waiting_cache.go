@@ -15,13 +15,14 @@ import (
  *
  */
 type WaitingCache struct {
-	prov         storage.StorageProvider
-	lock_write   sync.Mutex
-	available    util.Bitfield
-	block_size   int
-	size         uint64
-	lockers      map[uint]*sync.RWMutex
-	lockers_lock sync.Mutex
+	prov             storage.StorageProvider
+	lock_write       sync.Mutex
+	available_local  util.Bitfield
+	available_remote util.Bitfield
+	block_size       int
+	size             uint64
+	lockers          map[uint]*sync.RWMutex
+	lockers_lock     sync.Mutex
 }
 
 type WaitingCacheLocal struct {
@@ -40,7 +41,7 @@ func (wcl *WaitingCacheLocal) WriteAt(buffer []byte, offset int64) (int, error) 
 
 func (wcl *WaitingCacheLocal) Availability() (int, int) {
 	num_blocks := (int(wcl.wc.prov.Size()) + wcl.wc.block_size - 1) / wcl.wc.block_size
-	return wcl.wc.available.Count(0, uint(num_blocks)), num_blocks
+	return wcl.wc.available_remote.Count(0, uint(num_blocks)), num_blocks
 }
 
 func (wcl *WaitingCacheLocal) Flush() error {
@@ -53,7 +54,7 @@ func (wcl *WaitingCacheLocal) Size() uint64 {
 
 func (wcl *WaitingCacheLocal) DirtyBlocks(blocks []uint) {
 	for _, v := range blocks {
-		wcl.wc.haveNotBlock(v)
+		wcl.wc.haveNotBlock_remote(v)
 	}
 }
 
@@ -80,11 +81,12 @@ func (wcl *WaitingCacheRemote) Size() uint64 {
 func NewWaitingCache(prov storage.StorageProvider, block_size int) (*WaitingCacheLocal, *WaitingCacheRemote) {
 	num_blocks := (int(prov.Size()) + block_size - 1) / block_size
 	wc := &WaitingCache{
-		prov:       prov,
-		available:  *util.NewBitfield(num_blocks),
-		block_size: block_size,
-		size:       prov.Size(),
-		lockers:    make(map[uint]*sync.RWMutex),
+		prov:             prov,
+		available_local:  *util.NewBitfield(num_blocks),
+		available_remote: *util.NewBitfield(num_blocks),
+		block_size:       block_size,
+		size:             prov.Size(),
+		lockers:          make(map[uint]*sync.RWMutex),
 	}
 	return &WaitingCacheLocal{
 		wc:         wc,
@@ -104,7 +106,7 @@ func (i *WaitingCache) localReadAt(buffer []byte, offset int64, needAt func(offs
 
 	// Check if we have all the data required
 	i.lockers_lock.Lock()
-	avail := i.available.BitsSet(uint(b_start), uint(b_end))
+	avail := i.available_remote.BitsSet(uint(b_start), uint(b_end))
 	i.lockers_lock.Unlock()
 
 	if !avail {
@@ -151,7 +153,7 @@ func (i *WaitingCache) localWriteAt(buffer []byte, offset int64, dontNeedAt func
 		if b_end > b_start {
 			num := int32(0)
 			for b := b_start; b < b_end; b++ {
-				i.haveBlock(b)
+				i.haveBlock_local(b)
 				num += int32(i.block_size)
 			}
 			dontNeedAt(int64(b_start)*int64(i.block_size), num)
@@ -187,10 +189,8 @@ func (i *WaitingCache) remoteWriteAt(buffer []byte, offset int64) (int, error) {
 		}
 	}
 
-	// TODO: We should distinguish between local and remote data here. FIX
-
 	i.lockers_lock.Lock()
-	avail := i.available.Collect(uint(b_start), uint(b_end))
+	avail := i.available_local.Collect(uint(b_start), uint(b_end))
 	i.lockers_lock.Unlock()
 
 	if len(avail) != 0 {
@@ -213,7 +213,7 @@ func (i *WaitingCache) remoteWriteAt(buffer []byte, offset int64) (int, error) {
 	if err == nil {
 		if b_end > b_start {
 			for b := b_start; b < b_end; b++ {
-				i.haveBlock(b)
+				i.haveBlock_remote(b)
 			}
 		}
 	}
@@ -238,12 +238,12 @@ func (i *WaitingCache) remoteSize() uint64 {
 	return i.prov.Size()
 }
 
-func (i *WaitingCache) haveBlock(b uint) {
+func (i *WaitingCache) haveBlock_local(b uint) {
 	i.lockers_lock.Lock()
-	avail := i.available.BitSet(int(b))
+	avail := i.available_local.BitSet(int(b))
 	rwl, ok := i.lockers[b]
 	if !avail {
-		i.available.SetBit(int(b))
+		i.available_local.SetBit(int(b))
 	}
 	i.lockers_lock.Unlock()
 
@@ -257,18 +257,37 @@ func (i *WaitingCache) haveBlock(b uint) {
 	i.lockers_lock.Unlock()
 }
 
-func (i *WaitingCache) haveNotBlock(b uint) {
+func (i *WaitingCache) haveBlock_remote(b uint) {
 	i.lockers_lock.Lock()
-	avail := i.available.BitSet(int(b))
+	avail := i.available_remote.BitSet(int(b))
+	rwl, ok := i.lockers[b]
+	if !avail {
+		i.available_remote.SetBit(int(b))
+	}
+	i.lockers_lock.Unlock()
+
+	if !avail && ok {
+		rwl.Unlock()
+	}
+
+	// Now we can get rid of the lock...
+	i.lockers_lock.Lock()
+	delete(i.lockers, b)
+	i.lockers_lock.Unlock()
+}
+
+func (i *WaitingCache) haveNotBlock_remote(b uint) {
+	i.lockers_lock.Lock()
+	avail := i.available_remote.BitSet(int(b))
 	if avail {
-		i.available.ClearBit(int(b))
+		i.available_remote.ClearBit(int(b))
 	}
 	i.lockers_lock.Unlock()
 }
 
 func (i *WaitingCache) waitForBlock(b uint) {
 	i.lockers_lock.Lock()
-	avail := i.available.BitSet(int(b))
+	avail := i.available_remote.BitSet(int(b))
 	if avail {
 		i.lockers_lock.Unlock()
 		return

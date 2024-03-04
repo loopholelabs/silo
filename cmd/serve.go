@@ -35,6 +35,7 @@ var serve_expose_dev bool
 var serve_mount_dev bool
 
 var src_exposed []storage.ExposedStorage
+var src_storage []*storageInfo
 
 func init() {
 	rootCmd.AddCommand(cmdServe)
@@ -53,42 +54,30 @@ type storageInfo struct {
 
 func runServe(ccmd *cobra.Command, args []string) {
 	src_exposed = make([]storage.ExposedStorage, 0)
+	src_storage = make([]*storageInfo, 0)
 	fmt.Printf("Starting silo serve %s\n", serve_addr)
 
 	c := make(chan os.Signal)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-c
-
-		if serve_expose_dev {
-			fmt.Printf("\nShutting down cleanly...\n")
-			for _, e := range src_exposed {
-				src_dev_shutdown(e)
-			}
-		}
+		shutdown_everything()
 		os.Exit(1)
 	}()
 
-	sources := make([]*storageInfo, 0)
-
-	for _, s := range []int{1024 * 1024 * 1024, 10 * 1024 * 1024} {
+	for _, s := range []int{1024 * 1024 * 1024, 100 * 1024 * 1024} {
 		sinfo, err := setupStorageDevice(s)
 		if err != nil {
 			panic("Could not setup storage.")
 		}
-		sources = append(sources, sinfo)
+		src_storage = append(src_storage, sinfo)
 	}
 
 	// Setup listener here. When client connects, migrate data to it.
 
 	l, err := net.Listen("tcp", serve_addr)
 	if err != nil {
-		if serve_expose_dev {
-			fmt.Printf("\nShutting down cleanly...\n")
-			for _, e := range src_exposed {
-				src_dev_shutdown(e)
-			}
-		}
+		shutdown_everything()
 		panic("Listener issue...")
 	}
 
@@ -106,7 +95,7 @@ func runServe(ccmd *cobra.Command, args []string) {
 		// Lets go through each of the things we want to migrate...
 		var wg sync.WaitGroup
 
-		for i, s := range sources {
+		for i, s := range src_storage {
 			wg.Add(1)
 			go func(index int, src *storageInfo) {
 				err := migrateDevice(uint32(index), fmt.Sprintf("dev_%d", index), pro, src)
@@ -119,6 +108,23 @@ func runServe(ccmd *cobra.Command, args []string) {
 		wg.Wait()
 
 		con.Close()
+	}
+
+	shutdown_everything()
+}
+
+func shutdown_everything() {
+	// first unlock everything
+	fmt.Printf("Unlocking devices...\n")
+	for _, i := range src_storage {
+		i.lockable.Unlock()
+	}
+
+	if serve_expose_dev {
+		fmt.Printf("Shutting down devices cleanly...\n")
+		for _, e := range src_exposed {
+			src_dev_shutdown(e)
+		}
 	}
 }
 
@@ -230,8 +236,15 @@ func migrateDevice(dev_id uint32, name string,
 	}
 
 	// Optional: Enter a loop looking for more dirty blocks to migrate...
+
+	// FIXME:
+	// * If several writes to the SAME block AND its in middle of the migration ReadAt/WriteAt
+	// * It could execute in wrong order
+
+	// * Rate limit blocks
+
 	for {
-		blocks := mig.GetLatestDirty()
+		blocks := mig.GetLatestDirty() //
 		if blocks == nil {
 			break
 		}
@@ -296,22 +309,28 @@ func src_dev_setup(prov storage.StorageProvider) (storage.ExposedStorage, error)
 func src_dev_shutdown(p storage.ExposedStorage) error {
 	device := p.Device()
 
-	fmt.Printf("shutdown %s\n", device)
 	if serve_mount_dev {
 
 		cmd := exec.Command("umount", fmt.Sprintf("/dev/%s", device))
 		err := cmd.Run()
 		if err != nil {
-			return err
+			fmt.Printf("Could not umount device %s %v\n", device, err)
+			//		return err
 		}
+
 		err = os.Remove(fmt.Sprintf("/mnt/mount%s", device))
+
+		if err != nil {
+			fmt.Printf("Count not remove /mnt/mount%s %v\n", device, err)
+			//		return err
+		}
+
+		fmt.Printf("Shutdown nbd device %s\n", device)
+		err = p.Shutdown()
 		if err != nil {
 			return err
 		}
-	}
-	err := p.Shutdown()
-	if err != nil {
-		return err
+
 	}
 	return nil
 }

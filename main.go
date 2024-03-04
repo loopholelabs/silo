@@ -99,7 +99,7 @@ func main() {
  *
  */
 func setup(prov storage.StorageProvider) (storage.ExposedStorage, error) {
-	p := expose.NewExposedStorageNBD(prov, device, 1, 0, prov.Size(), 4096, 0)
+	p := expose.NewExposedStorageNBDNL(prov, 1, 0, prov.Size(), 4096, true)
 
 	go func() {
 		err := p.Handle()

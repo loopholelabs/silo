@@ -46,7 +46,7 @@ func TestNBDNLDevice(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			fmt.Printf("Open dev\n")
-			devfile, err := os.OpenFile(fmt.Sprintf("/dev/nbd%d", n.DevIndex), os.O_RDWR, 0666)
+			devfile, err := os.OpenFile(fmt.Sprintf("/dev/nbd%d", n.devIndex), os.O_RDWR, 0666)
 			assert.NoError(t, err)
 
 			// Try doing a read...

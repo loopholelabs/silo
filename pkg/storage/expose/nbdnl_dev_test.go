@@ -64,7 +64,7 @@ func BenchmarkDevReadNL(mb *testing.B) {
 				devfiles := make([]*os.File, 0)
 
 				for i := 0; i < num_readers; i++ {
-					df, err := os.OpenFile(fmt.Sprintf("/dev/nbd%d", n.DevIndex), os.O_RDWR, 0666)
+					df, err := os.OpenFile(fmt.Sprintf("/dev/nbd%d", n.devIndex), os.O_RDWR, 0666)
 					if err != nil {
 						panic("Error opening dev file\n")
 					}
@@ -193,7 +193,7 @@ func BenchmarkDevReadNLLatency(mb *testing.B) {
 					devfiles := make([]*os.File, 0)
 
 					for i := 0; i < num_readers; i++ {
-						df, err := os.OpenFile(fmt.Sprintf("/dev/nbd%d", n.DevIndex), os.O_RDWR, 0666)
+						df, err := os.OpenFile(fmt.Sprintf("/dev/nbd%d", n.devIndex), os.O_RDWR, 0666)
 						if err != nil {
 							panic("Error opening dev file\n")
 						}
@@ -295,7 +295,7 @@ func BenchmarkDevWriteNL(b *testing.B) {
 
 	// Here's the actual benchmark...
 
-	devfile, err := os.OpenFile(fmt.Sprintf("/dev/nbd%d", n.DevIndex), os.O_RDWR, 0666)
+	devfile, err := os.OpenFile(fmt.Sprintf("/dev/nbd%d", n.devIndex), os.O_RDWR, 0666)
 	if err != nil {
 		panic("Error opening dev file\n")
 	}

@@ -3,7 +3,6 @@ package storage
 import (
 	"context"
 	"crypto/rand"
-	"fmt"
 	"io"
 	"testing"
 
@@ -104,7 +103,6 @@ func TestProtocolReadAt(t *testing.T) {
 }
 
 func TestProtocolRWWriteAt(t *testing.T) {
-	fmt.Printf("TestProtocolRWWriteAt\n")
 	size := 1024 * 1024
 	var store storage.StorageProvider
 

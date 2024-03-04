@@ -9,11 +9,11 @@ import (
 )
 
 type PriorityBlockOrder struct {
-	lock            sync.Mutex
-	priority_blocks map[uint]time.Time
-	num_blocks      int
-	available       util.Bitfield
-	next            storage.BlockOrder
+	lock           sync.Mutex
+	priorityBlocks map[uint]time.Time
+	numBlocks      int
+	available      util.Bitfield
+	next           storage.BlockOrder
 }
 
 type PriorityBlockInfo struct {
@@ -23,17 +23,17 @@ type PriorityBlockInfo struct {
 
 func NewPriorityBlockOrder(num_blocks int, next storage.BlockOrder) *PriorityBlockOrder {
 	return &PriorityBlockOrder{
-		num_blocks:      num_blocks,
-		available:       *util.NewBitfield(num_blocks),
-		next:            next,
-		priority_blocks: make(map[uint]time.Time),
+		numBlocks:      num_blocks,
+		available:      *util.NewBitfield(num_blocks),
+		next:           next,
+		priorityBlocks: make(map[uint]time.Time),
 	}
 }
 
 func (bo *PriorityBlockOrder) AddAll() {
 	bo.lock.Lock()
 	defer bo.lock.Unlock()
-	bo.available.SetBits(0, uint(bo.num_blocks))
+	bo.available.SetBits(0, uint(bo.numBlocks))
 	if bo.next != nil {
 		bo.next.AddAll()
 	}
@@ -63,9 +63,9 @@ func (bo *PriorityBlockOrder) PrioritiseBlock(block int) bool {
 
 	if bo.available.BitSet(block) {
 		// Update
-		_, ok := bo.priority_blocks[uint(block)]
+		_, ok := bo.priorityBlocks[uint(block)]
 		if !ok {
-			bo.priority_blocks[uint(block)] = time.Now()
+			bo.priorityBlocks[uint(block)] = time.Now()
 		}
 		// If we already have it as a priority, ignore the request
 		return true
@@ -80,25 +80,25 @@ func (bo *PriorityBlockOrder) GetNext() *storage.BlockInfo {
 	// If we have any priority blocks, return them in order
 	//
 	earliest := time.Now()
-	earliest_block := -1
-	for b, t := range bo.priority_blocks {
+	earliestBlock := -1
+	for b, t := range bo.priorityBlocks {
 		if bo.available.BitSet(int(b)) {
 			if t.Before(earliest) {
 				earliest = t
-				earliest_block = int(b)
+				earliestBlock = int(b)
 			}
 		}
 	}
 
 	// If we found something, remove, and return it...
-	if earliest_block != -1 {
-		delete(bo.priority_blocks, uint(earliest_block))
-		bo.available.ClearBit(earliest_block)
+	if earliestBlock != -1 {
+		delete(bo.priorityBlocks, uint(earliestBlock))
+		bo.available.ClearBit(earliestBlock)
 		// Remove it downstream as well.
 		if bo.next != nil {
-			bo.next.Remove(earliest_block)
+			bo.next.Remove(earliestBlock)
 		}
-		return &storage.BlockInfo{Block: earliest_block, Type: storage.BlockTypePriority}
+		return &storage.BlockInfo{Block: earliestBlock, Type: storage.BlockTypePriority}
 	}
 
 	if bo.next == nil {
@@ -107,7 +107,7 @@ func (bo *PriorityBlockOrder) GetNext() *storage.BlockInfo {
 	v := bo.next.GetNext()
 	if v != storage.BlockInfoFinish {
 		// Remove it from our own set
-		delete(bo.priority_blocks, uint(v.Block))
+		delete(bo.priorityBlocks, uint(v.Block))
 		bo.available.ClearBit(v.Block)
 	}
 	return v

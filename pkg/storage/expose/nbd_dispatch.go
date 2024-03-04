@@ -14,6 +14,55 @@ import (
 const READ_POOL_BUFFER_SIZE = 256 * 1024
 const READ_POOL_SIZE = 128
 
+/**
+ * Exposes a storage provider as an nbd device
+ *
+ */
+const NBD_COMMAND = 0xab00
+const NBD_SET_SOCK = 0 | NBD_COMMAND
+const NBD_SET_BLKSIZE = 1 | NBD_COMMAND
+const NBD_SET_SIZE = 2 | NBD_COMMAND
+const NBD_DO_IT = 3 | NBD_COMMAND
+const NBD_CLEAR_SOCK = 4 | NBD_COMMAND
+const NBD_CLEAR_QUE = 5 | NBD_COMMAND
+const NBD_PRINT_DEBUG = 6 | NBD_COMMAND
+const NBD_SET_SIZE_BLOCKS = 7 | NBD_COMMAND
+const NBD_DISCONNECT = 8 | NBD_COMMAND
+const NBD_SET_TIMEOUT = 9 | NBD_COMMAND
+const NBD_SET_FLAGS = 10 | NBD_COMMAND
+
+// NBD Commands
+const NBD_CMD_READ = 0
+const NBD_CMD_WRITE = 1
+const NBD_CMD_DISCONNECT = 2
+const NBD_CMD_FLUSH = 3
+const NBD_CMD_TRIM = 4
+
+// NBD Flags
+const NBD_FLAG_HAS_FLAGS = (1 << 0)
+const NBD_FLAG_READ_ONLY = (1 << 1)
+const NBD_FLAG_SEND_FLUSH = (1 << 2)
+const NBD_FLAG_SEND_TRIM = (1 << 5)
+
+const NBD_REQUEST_MAGIC = 0x25609513
+const NBD_RESPONSE_MAGIC = 0x67446698
+
+// NBD Request packet
+type Request struct {
+	Magic  uint32
+	Type   uint32
+	Handle uint64
+	From   uint64
+	Length uint32
+}
+
+// NBD Response packet
+type Response struct {
+	Magic  uint32
+	Error  uint32
+	Handle uint64
+}
+
 type Dispatch struct {
 	ASYNC_READS      bool
 	ASYNC_WRITES     bool
@@ -23,9 +72,9 @@ type Dispatch struct {
 	prov             storage.StorageProvider
 	fatal            chan error
 	pendingResponses sync.WaitGroup
-	packets_in       uint64
-	packets_out      uint64
-	read_buffers     chan []byte
+	metricPacketsIn  uint64
+	metricPacketsOut uint64
+	readBuffers      chan []byte
 }
 
 func NewDispatch(fp io.ReadWriteCloser, prov storage.StorageProvider) *Dispatch {
@@ -37,9 +86,9 @@ func NewDispatch(fp io.ReadWriteCloser, prov storage.StorageProvider) *Dispatch 
 		fp:             fp,
 		prov:           prov,
 	}
-	d.read_buffers = make(chan []byte, READ_POOL_SIZE)
+	d.readBuffers = make(chan []byte, READ_POOL_SIZE)
 	for i := 0; i < READ_POOL_SIZE; i++ {
-		d.read_buffers <- make([]byte, READ_POOL_BUFFER_SIZE)
+		d.readBuffers <- make([]byte, READ_POOL_BUFFER_SIZE)
 	}
 
 	binary.BigEndian.PutUint32(d.responseHeader, NBD_RESPONSE_MAGIC)
@@ -75,7 +124,7 @@ func (d *Dispatch) writeResponse(respError uint32, respHandle uint64, chunk []by
 		}
 	}
 
-	d.packets_out++
+	d.metricPacketsOut++
 	return nil
 }
 
@@ -132,7 +181,7 @@ func (d *Dispatch) Handle() error {
 				} else if request.Type == NBD_CMD_READ {
 					//					fmt.Printf("READ %x %d\n", request.Handle, request.Length)
 					rp += 28
-					d.packets_in++
+					d.metricPacketsIn++
 					err := d.cmdRead(request.Handle, request.From, request.Length)
 					if err != nil {
 						return err
@@ -143,7 +192,7 @@ func (d *Dispatch) Handle() error {
 						rp -= 28
 						break // We don't have enough data yet... Wait for next read
 					}
-					d.packets_in++
+					d.metricPacketsIn++
 					data := make([]byte, request.Length)
 					copy(data, buffer[rp:rp+int(request.Length)])
 					rp += int(request.Length)
@@ -190,7 +239,7 @@ func (d *Dispatch) cmdRead(cmd_handle uint64, cmd_from uint64, cmd_length uint32
 		if length <= READ_POOL_BUFFER_SIZE {
 			// Try to get a buffer from pool
 			select {
-			case b = <-d.read_buffers:
+			case b = <-d.readBuffers:
 				from_pool = true
 				b = b[:length]
 				break
@@ -216,7 +265,7 @@ func (d *Dispatch) cmdRead(cmd_handle uint64, cmd_from uint64, cmd_length uint32
 		err := d.writeResponse(errorValue, handle, data)
 		// Return it to pool if need to
 		if from_pool {
-			d.read_buffers <- b[:READ_POOL_BUFFER_SIZE]
+			d.readBuffers <- b[:READ_POOL_BUFFER_SIZE]
 		}
 		return err
 	}

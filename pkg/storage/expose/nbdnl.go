@@ -18,32 +18,32 @@ import (
  */
 
 type ExposedStorageNBDNL struct {
-	num_connections int
-	timeout         uint64
-	size            uint64
-	block_size      uint64
+	numConnections int
+	timeout        uint64
+	size           uint64
+	blockSize      uint64
 
-	socks       []io.Closer
-	device_file uintptr
-	prov        storage.StorageProvider
-	DevIndex    int
-	async       bool
+	socks      []io.Closer
+	deviceFile uintptr
+	prov       storage.StorageProvider
+	devIndex   int
+	async      bool
 }
 
 func NewExposedStorageNBDNL(prov storage.StorageProvider, num_connections int, timeout uint64, size uint64, block_size uint64, async bool) *ExposedStorageNBDNL {
 	return &ExposedStorageNBDNL{
-		prov:            prov,
-		num_connections: num_connections,
-		timeout:         timeout,
-		size:            size,
-		block_size:      block_size,
-		socks:           make([]io.Closer, 0),
-		async:           async,
+		prov:           prov,
+		numConnections: num_connections,
+		timeout:        timeout,
+		size:           size,
+		blockSize:      block_size,
+		socks:          make([]io.Closer, 0),
+		async:          async,
 	}
 }
 
 func (n *ExposedStorageNBDNL) Device() string {
-	return fmt.Sprintf("nbd%d", n.DevIndex)
+	return fmt.Sprintf("nbd%d", n.devIndex)
 }
 
 func (n *ExposedStorageNBDNL) Handle() error {
@@ -51,7 +51,7 @@ func (n *ExposedStorageNBDNL) Handle() error {
 	socks := make([]*os.File, 0)
 
 	// Create the socket pairs
-	for i := 0; i < n.num_connections; i++ {
+	for i := 0; i < n.numConnections; i++ {
 		sockPair, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_STREAM, 0)
 		if err != nil {
 			return err
@@ -72,12 +72,11 @@ func (n *ExposedStorageNBDNL) Handle() error {
 		d.ASYNC_WRITES = n.async
 		// Start reading commands on the socket and dispatching them to our provider
 		go d.Handle()
-
 		n.socks = append(n.socks, serverc)
 		socks = append(socks, client)
 	}
 	var opts []nbdnl.ConnectOption
-	opts = append(opts, nbdnl.WithBlockSize(uint64(n.block_size)))
+	opts = append(opts, nbdnl.WithBlockSize(uint64(n.blockSize)))
 	opts = append(opts, nbdnl.WithTimeout(100*time.Millisecond))
 	opts = append(opts, nbdnl.WithDeadconnTimeout(100*time.Millisecond))
 
@@ -89,14 +88,14 @@ func (n *ExposedStorageNBDNL) Handle() error {
 		return err
 	}
 
-	n.DevIndex = int(idx)
+	n.devIndex = int(idx)
 	return nil
 }
 
 // Wait until it's connected... (Handle must have been called already)
 func (n *ExposedStorageNBDNL) WaitReady() error {
 	for {
-		s, err := nbdnl.Status(uint32(n.DevIndex))
+		s, err := nbdnl.Status(uint32(n.devIndex))
 		if err == nil && s.Connected {
 			//			fmt.Printf("NBD %d connected\n", n.DevIndex)
 			break
@@ -109,7 +108,7 @@ func (n *ExposedStorageNBDNL) WaitReady() error {
 func (n *ExposedStorageNBDNL) Shutdown() error {
 
 	// Ask to disconnect
-	err := nbdnl.Disconnect(uint32(n.DevIndex))
+	err := nbdnl.Disconnect(uint32(n.devIndex))
 	if err != nil {
 		return err
 	}

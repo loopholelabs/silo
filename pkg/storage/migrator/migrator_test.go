@@ -483,5 +483,5 @@ func TestMigratorWithReaderWriterWrite(t *testing.T) {
 	err = mig.WaitForCompletion()
 	assert.NoError(t, err)
 
-	assert.Equal(t, int64(num_blocks-num_local_blocks), mig.metric_moved_blocks)
+	assert.Equal(t, int64(num_blocks-num_local_blocks), mig.metricBlocksMoved)
 }

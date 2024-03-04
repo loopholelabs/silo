@@ -50,22 +50,22 @@ type MigrationProgress struct {
 }
 
 type Migrator struct {
-	src_track           storage.TrackingStorageProvider // Tracks writes so we know which are dirty
-	dest                storage.StorageProvider
-	src_lock_fn         func()
-	src_unlock_fn       func()
-	error_fn            func(block *storage.BlockInfo, err error)
-	progress_fn         func(*MigrationProgress)
-	block_size          int
-	num_blocks          int
-	metric_moved_blocks int64
-	moving_blocks       *util.Bitfield
-	migrated_blocks     *util.Bitfield
-	clean_blocks        *util.Bitfield
-	block_order         storage.BlockOrder
-	ctime               time.Time
-	concurrency         map[int]chan bool
-	wg                  sync.WaitGroup
+	srcTrack          storage.TrackingStorageProvider // Tracks writes so we know which are dirty
+	dest              storage.StorageProvider
+	srcLockFN         func()
+	srcUnlockFN       func()
+	errorFN           func(block *storage.BlockInfo, err error)
+	progressFN        func(*MigrationProgress)
+	blockSize         int
+	numBlocks         int
+	metricBlocksMoved int64
+	moving_blocks     *util.Bitfield
+	migrated_blocks   *util.Bitfield
+	clean_blocks      *util.Bitfield
+	blockOrder        storage.BlockOrder
+	ctime             time.Time
+	concurrency       map[int]chan bool
+	wg                sync.WaitGroup
 }
 
 func NewMigrator(source storage.TrackingStorageProvider,
@@ -75,23 +75,23 @@ func NewMigrator(source storage.TrackingStorageProvider,
 
 	num_blocks := (int(source.Size()) + config.BlockSize - 1) / config.BlockSize
 	m := &Migrator{
-		dest:                dest,
-		src_track:           source,
-		src_lock_fn:         config.LockerHandler,
-		src_unlock_fn:       config.UnlockerHandler,
-		error_fn:            config.ErrorHandler,
-		progress_fn:         config.ProgressHandler,
-		block_size:          config.BlockSize,
-		num_blocks:          num_blocks,
-		metric_moved_blocks: 0,
-		block_order:         block_order,
-		moving_blocks:       util.NewBitfield(num_blocks),
-		migrated_blocks:     util.NewBitfield(num_blocks),
-		clean_blocks:        util.NewBitfield(num_blocks),
-		concurrency:         make(map[int]chan bool),
+		dest:              dest,
+		srcTrack:          source,
+		srcLockFN:         config.LockerHandler,
+		srcUnlockFN:       config.UnlockerHandler,
+		errorFN:           config.ErrorHandler,
+		progressFN:        config.ProgressHandler,
+		blockSize:         config.BlockSize,
+		numBlocks:         num_blocks,
+		metricBlocksMoved: 0,
+		blockOrder:        block_order,
+		moving_blocks:     util.NewBitfield(num_blocks),
+		migrated_blocks:   util.NewBitfield(num_blocks),
+		clean_blocks:      util.NewBitfield(num_blocks),
+		concurrency:       make(map[int]chan bool),
 	}
 
-	if m.dest.Size() != m.src_track.Size() {
+	if m.dest.Size() != m.srcTrack.Size() {
 		return nil, errors.New("source and destination sizes must be equal for migration.")
 	}
 
@@ -109,7 +109,7 @@ func (m *Migrator) Migrate(num_blocks int) error {
 	m.ctime = time.Now()
 
 	for b := 0; b < num_blocks; b++ {
-		i := m.block_order.GetNext()
+		i := m.blockOrder.GetNext()
 		if i == storage.BlockInfoFinish {
 			break
 		}
@@ -127,7 +127,7 @@ func (m *Migrator) Migrate(num_blocks int) error {
 			err := m.migrateBlock(block_no.Block)
 			m.moving_blocks.ClearBit(i.Block)
 			if err != nil {
-				m.error_fn(block_no, err)
+				m.errorFN(block_no, err)
 			}
 
 			m.wg.Done()
@@ -147,13 +147,13 @@ func (m *Migrator) Migrate(num_blocks int) error {
  */
 func (m *Migrator) GetLatestDirty() []uint {
 	// Queue up some dirty blocks
-	m.src_lock_fn()
+	m.srcLockFN()
 
 	// Check for any dirty blocks to be added on
-	blocks := m.src_track.Sync()
+	blocks := m.srcTrack.Sync()
 	changed := blocks.Count(0, blocks.Length())
 	if changed != 0 {
-		m.src_unlock_fn()
+		m.srcUnlockFN()
 
 		block_nos := blocks.Collect(0, blocks.Length())
 		return block_nos
@@ -176,12 +176,14 @@ func (m *Migrator) MigrateDirty(blocks []uint) error {
 
 		m.wg.Add(1)
 
+		// TODO: If there's already an in flight migration here for this block, we need to wait for it to complete...
+
 		m.moving_blocks.SetBit(i.Block)
 		go func(block_no *storage.BlockInfo) {
 			err := m.migrateBlock(block_no.Block)
 			m.moving_blocks.ClearBit(i.Block)
 			if err != nil {
-				m.error_fn(block_no, err)
+				m.errorFN(block_no, err)
 			}
 
 			m.wg.Done()
@@ -204,20 +206,20 @@ func (m *Migrator) WaitForCompletion() error {
 }
 
 func (m *Migrator) reportProgress() {
-	migrated := m.migrated_blocks.Count(0, uint(m.num_blocks))
-	perc_mig := float64(migrated*100) / float64(m.num_blocks)
+	migrated := m.migrated_blocks.Count(0, uint(m.numBlocks))
+	perc_mig := float64(migrated*100) / float64(m.numBlocks)
 
-	completed := m.clean_blocks.Count(0, uint(m.num_blocks))
-	perc_complete := float64(completed*100) / float64(m.num_blocks)
+	completed := m.clean_blocks.Count(0, uint(m.numBlocks))
+	perc_complete := float64(completed*100) / float64(m.numBlocks)
 
 	// Callback
-	m.progress_fn(&MigrationProgress{
-		TotalBlocks:        m.num_blocks,
+	m.progressFN(&MigrationProgress{
+		TotalBlocks:        m.numBlocks,
 		MigratedBlocks:     migrated,
 		MigratedBlocksPerc: perc_mig,
 		ReadyBlocks:        completed,
 		ReadyBlocksPerc:    perc_complete,
-		ActiveBlocks:       m.moving_blocks.Count(0, uint(m.num_blocks)),
+		ActiveBlocks:       m.moving_blocks.Count(0, uint(m.numBlocks)),
 	})
 }
 
@@ -226,10 +228,10 @@ func (m *Migrator) reportProgress() {
  *
  */
 func (m *Migrator) migrateBlock(block int) error {
-	buff := make([]byte, m.block_size)
-	offset := int(block) * m.block_size
+	buff := make([]byte, m.blockSize)
+	offset := int(block) * m.blockSize
 	// Read from source
-	n, err := m.src_track.ReadAt(buff, int64(offset))
+	n, err := m.srcTrack.ReadAt(buff, int64(offset))
 	if err != nil {
 		return err
 	}
@@ -243,7 +245,7 @@ func (m *Migrator) migrateBlock(block int) error {
 		return err
 	}
 
-	atomic.AddInt64(&m.metric_moved_blocks, 1)
+	atomic.AddInt64(&m.metricBlocksMoved, 1)
 	// Mark it as done
 	m.migrated_blocks.SetBit(block)
 	m.clean_blocks.SetBit(block)
