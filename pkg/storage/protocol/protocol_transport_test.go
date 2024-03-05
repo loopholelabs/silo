@@ -1,4 +1,4 @@
-package storage
+package protocol
 
 import (
 	"context"
@@ -7,8 +7,6 @@ import (
 	"testing"
 
 	"github.com/loopholelabs/silo/pkg/storage"
-	"github.com/loopholelabs/silo/pkg/storage/modules"
-	"github.com/loopholelabs/silo/pkg/storage/protocol"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
 	"github.com/stretchr/testify/assert"
 )
@@ -19,16 +17,16 @@ func TestProtocolWriteAt(t *testing.T) {
 
 	// Setup a protocol in the middle, and make sure our reads/writes get through ok
 
-	pr := protocol.NewMockProtocol()
+	pr := NewMockProtocol()
 
-	sourceToProtocol := modules.NewToProtocol(uint64(size), 1, pr)
+	sourceToProtocol := NewToProtocol(uint64(size), 1, pr)
 
-	storeFactory := func(di *protocol.DevInfo) storage.StorageProvider {
+	storeFactory := func(di *DevInfo) storage.StorageProvider {
 		store = sources.NewMemoryStorage(int(di.Size))
 		return store
 	}
 
-	destFromProtocol := modules.NewFromProtocol(1, storeFactory, pr)
+	destFromProtocol := NewFromProtocol(1, storeFactory, pr)
 
 	// Now do some things and make sure they happen...
 
@@ -66,11 +64,11 @@ func TestProtocolReadAt(t *testing.T) {
 	buff := make([]byte, 4096)
 	rand.Read(buff)
 
-	pr := protocol.NewMockProtocol()
+	pr := NewMockProtocol()
 
-	sourceToProtocol := modules.NewToProtocol(uint64(size), 1, pr)
+	sourceToProtocol := NewToProtocol(uint64(size), 1, pr)
 
-	storeFactory := func(di *protocol.DevInfo) storage.StorageProvider {
+	storeFactory := func(di *DevInfo) storage.StorageProvider {
 		store = sources.NewMemoryStorage(int(di.Size))
 
 		n, err := store.WriteAt(buff, 12)
@@ -81,7 +79,7 @@ func TestProtocolReadAt(t *testing.T) {
 		return store
 	}
 
-	destFromProtocol := modules.NewFromProtocol(1, storeFactory, pr)
+	destFromProtocol := NewFromProtocol(1, storeFactory, pr)
 
 	// Now do some things and make sure they happen...
 
@@ -114,19 +112,19 @@ func TestProtocolRWWriteAt(t *testing.T) {
 
 	destDev := make(chan uint32, 8)
 
-	prSource := protocol.NewProtocolRW(context.TODO(), r1, w2, nil)
-	prDest := protocol.NewProtocolRW(context.TODO(), r2, w1, func(p protocol.Protocol, dev uint32) {
+	prSource := NewProtocolRW(context.TODO(), r1, w2, nil)
+	prDest := NewProtocolRW(context.TODO(), r2, w1, func(p Protocol, dev uint32) {
 		destDev <- dev
 	})
 
-	sourceToProtocol := modules.NewToProtocol(uint64(size), 1, prSource)
+	sourceToProtocol := NewToProtocol(uint64(size), 1, prSource)
 
-	storeFactory := func(di *protocol.DevInfo) storage.StorageProvider {
+	storeFactory := func(di *DevInfo) storage.StorageProvider {
 		store = sources.NewMemoryStorage(int(di.Size))
 		return store
 	}
 
-	destFromProtocol := modules.NewFromProtocol(1, storeFactory, prDest)
+	destFromProtocol := NewFromProtocol(1, storeFactory, prDest)
 
 	// TODO: Cleanup
 	go prSource.Handle()
@@ -175,12 +173,12 @@ func TestProtocolRWReadAt(t *testing.T) {
 	r1, w1 := io.Pipe()
 	r2, w2 := io.Pipe()
 
-	prSource := protocol.NewProtocolRW(context.TODO(), r1, w2, nil)
-	prDest := protocol.NewProtocolRW(context.TODO(), r2, w1, nil)
+	prSource := NewProtocolRW(context.TODO(), r1, w2, nil)
+	prDest := NewProtocolRW(context.TODO(), r2, w1, nil)
 
-	sourceToProtocol := modules.NewToProtocol(uint64(size), 1, prSource)
+	sourceToProtocol := NewToProtocol(uint64(size), 1, prSource)
 
-	storeFactory := func(di *protocol.DevInfo) storage.StorageProvider {
+	storeFactory := func(di *DevInfo) storage.StorageProvider {
 		store = sources.NewMemoryStorage(int(di.Size))
 		n, err := store.WriteAt(buff, 12)
 
@@ -190,7 +188,7 @@ func TestProtocolRWReadAt(t *testing.T) {
 		return store
 	}
 
-	destFromProtocol := modules.NewFromProtocol(1, storeFactory, prDest)
+	destFromProtocol := NewFromProtocol(1, storeFactory, prDest)
 
 	// TODO: Cleanup
 	go prSource.Handle()
@@ -219,22 +217,22 @@ func TestProtocolEvents(t *testing.T) {
 	size := 1024 * 1024
 	var store storage.StorageProvider
 
-	pr := protocol.NewMockProtocol()
+	pr := NewMockProtocol()
 
-	sourceToProtocol := modules.NewToProtocol(uint64(size), 1, pr)
+	sourceToProtocol := NewToProtocol(uint64(size), 1, pr)
 
-	storeFactory := func(di *protocol.DevInfo) storage.StorageProvider {
+	storeFactory := func(di *DevInfo) storage.StorageProvider {
 		store = sources.NewMemoryStorage(int(di.Size))
 		return store
 	}
 
-	destFromProtocol := modules.NewFromProtocol(1, storeFactory, pr)
+	destFromProtocol := NewFromProtocol(1, storeFactory, pr)
 
-	events := make(chan protocol.EventType, 10)
+	events := make(chan EventType, 10)
 
 	// Now do some things and make sure they happen...
 	go destFromProtocol.HandleDevInfo()
-	go destFromProtocol.HandleEvent(func(e protocol.EventType) {
+	go destFromProtocol.HandleEvent(func(e EventType) {
 		events <- e
 	})
 	go destFromProtocol.HandleSend(context.TODO())
@@ -244,22 +242,22 @@ func TestProtocolEvents(t *testing.T) {
 
 	// Send some events and make sure they happen at the other end...
 
-	sourceToProtocol.SendEvent(protocol.EventPreLock)
+	sourceToProtocol.SendEvent(EventPreLock)
 	// There should be the event waiting for us already.
 	assert.Equal(t, 1, len(events))
 	e := <-events
-	assert.Equal(t, protocol.EventPreLock, e)
-	sourceToProtocol.SendEvent(protocol.EventPostLock)
-	sourceToProtocol.SendEvent(protocol.EventPreUnlock)
-	sourceToProtocol.SendEvent(protocol.EventPostUnlock)
-	sourceToProtocol.SendEvent(protocol.EventCompleted)
+	assert.Equal(t, EventPreLock, e)
+	sourceToProtocol.SendEvent(EventPostLock)
+	sourceToProtocol.SendEvent(EventPreUnlock)
+	sourceToProtocol.SendEvent(EventPostUnlock)
+	sourceToProtocol.SendEvent(EventCompleted)
 	e = <-events
-	assert.Equal(t, protocol.EventPostLock, e)
+	assert.Equal(t, EventPostLock, e)
 	e = <-events
-	assert.Equal(t, protocol.EventPreUnlock, e)
+	assert.Equal(t, EventPreUnlock, e)
 	e = <-events
-	assert.Equal(t, protocol.EventPostUnlock, e)
+	assert.Equal(t, EventPostUnlock, e)
 	e = <-events
-	assert.Equal(t, protocol.EventCompleted, e)
+	assert.Equal(t, EventCompleted, e)
 
 }

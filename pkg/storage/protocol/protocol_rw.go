@@ -14,30 +14,30 @@ type packetinfo struct {
 }
 
 type Waiters struct {
-	by_cmd map[byte]chan packetinfo
-	by_id  map[uint32]chan packetinfo
+	byCmd map[byte]chan packetinfo
+	byID  map[uint32]chan packetinfo
 }
 
 type ProtocolRW struct {
-	ctx          context.Context
-	r            io.Reader
-	w            io.Writer
-	w_lock       sync.Mutex
-	tx_id        uint32
-	active_devs  map[uint32]bool
-	waiters      map[uint32]Waiters
-	waiters_lock sync.Mutex
-	newdev_fn    func(Protocol, uint32)
+	ctx         context.Context
+	r           io.Reader
+	w           io.Writer
+	wLock       sync.Mutex
+	txID        uint32
+	activeDevs  map[uint32]bool
+	waiters     map[uint32]Waiters
+	waitersLock sync.Mutex
+	newdevFN    func(Protocol, uint32)
 }
 
-func NewProtocolRW(ctx context.Context, r io.Reader, w io.Writer, newdev_fn func(Protocol, uint32)) *ProtocolRW {
+func NewProtocolRW(ctx context.Context, r io.Reader, w io.Writer, newdevFN func(Protocol, uint32)) *ProtocolRW {
 	return &ProtocolRW{
-		ctx:         ctx,
-		r:           r,
-		w:           w,
-		waiters:     make(map[uint32]Waiters),
-		newdev_fn:   newdev_fn,
-		active_devs: make(map[uint32]bool),
+		ctx:        ctx,
+		r:          r,
+		w:          w,
+		waiters:    make(map[uint32]Waiters),
+		newdevFN:   newdevFN,
+		activeDevs: make(map[uint32]bool),
 	}
 }
 
@@ -45,15 +45,15 @@ func NewProtocolRW(ctx context.Context, r io.Reader, w io.Writer, newdev_fn func
 func (p *ProtocolRW) SendPacket(dev uint32, id uint32, data []byte) (uint32, error) {
 	// Encode and send it down the writer...
 	if id == ID_PICK_ANY {
-		id = atomic.AddUint32(&p.tx_id, 1)
+		id = atomic.AddUint32(&p.txID, 1)
 	}
 
 	buffer := make([]byte, 4+4+4)
 	binary.LittleEndian.PutUint32(buffer, dev)
 	binary.LittleEndian.PutUint32(buffer[4:], id)
 	binary.LittleEndian.PutUint32(buffer[8:], uint32(len(data)))
-	p.w_lock.Lock()
-	defer p.w_lock.Unlock()
+	p.wLock.Lock()
+	defer p.wLock.Unlock()
 
 	_, err := p.w.Write(buffer)
 
@@ -94,39 +94,39 @@ func (p *ProtocolRW) Handle() error {
 		}
 		// Now queue it up in a channel
 
-		_, ok := p.active_devs[dev]
+		_, ok := p.activeDevs[dev]
 		if !ok {
-			p.active_devs[dev] = true
-			if p.newdev_fn != nil {
-				p.newdev_fn(p, dev)
+			p.activeDevs[dev] = true
+			if p.newdevFN != nil {
+				p.newdevFN(p, dev)
 			}
 		}
 
 		cmd := data[0]
 
-		p.waiters_lock.Lock()
+		p.waitersLock.Lock()
 		w, ok := p.waiters[dev]
 		if !ok {
 			w = Waiters{
-				by_cmd: make(map[byte]chan packetinfo),
-				by_id:  make(map[uint32]chan packetinfo),
+				byCmd: make(map[byte]chan packetinfo),
+				byID:  make(map[uint32]chan packetinfo),
 			}
 			p.waiters[dev] = w
 		}
 
-		wq_id, okk := w.by_id[id]
+		wq_id, okk := w.byID[id]
 		if !okk {
 			wq_id = make(chan packetinfo, 8) // Some buffer here...
-			w.by_id[id] = wq_id
+			w.byID[id] = wq_id
 		}
 
-		wq_cmd, okk := w.by_cmd[cmd]
+		wq_cmd, okk := w.byCmd[cmd]
 		if !okk {
 			wq_cmd = make(chan packetinfo, 8) // Some buffer here...
-			w.by_cmd[cmd] = wq_cmd
+			w.byCmd[cmd] = wq_cmd
 		}
 
-		p.waiters_lock.Unlock()
+		p.waitersLock.Unlock()
 
 		if IsResponse(cmd) {
 			wq_id <- packetinfo{
@@ -143,21 +143,21 @@ func (p *ProtocolRW) Handle() error {
 }
 
 func (mp *ProtocolRW) WaitForPacket(dev uint32, id uint32) ([]byte, error) {
-	mp.waiters_lock.Lock()
+	mp.waitersLock.Lock()
 	w, ok := mp.waiters[dev]
 	if !ok {
 		w = Waiters{
-			by_cmd: make(map[byte]chan packetinfo),
-			by_id:  make(map[uint32]chan packetinfo),
+			byCmd: make(map[byte]chan packetinfo),
+			byID:  make(map[uint32]chan packetinfo),
 		}
 		mp.waiters[dev] = w
 	}
-	wq, okk := w.by_id[id]
+	wq, okk := w.byID[id]
 	if !okk {
 		wq = make(chan packetinfo, 8) // Some buffer here...
-		w.by_id[id] = wq
+		w.byID[id] = wq
 	}
-	mp.waiters_lock.Unlock()
+	mp.waitersLock.Unlock()
 
 	select {
 	case p := <-wq:
@@ -169,21 +169,21 @@ func (mp *ProtocolRW) WaitForPacket(dev uint32, id uint32) ([]byte, error) {
 }
 
 func (mp *ProtocolRW) WaitForCommand(dev uint32, cmd byte) (uint32, []byte, error) {
-	mp.waiters_lock.Lock()
+	mp.waitersLock.Lock()
 	w, ok := mp.waiters[dev]
 	if !ok {
 		w = Waiters{
-			by_cmd: make(map[byte]chan packetinfo),
-			by_id:  make(map[uint32]chan packetinfo),
+			byCmd: make(map[byte]chan packetinfo),
+			byID:  make(map[uint32]chan packetinfo),
 		}
 		mp.waiters[dev] = w
 	}
-	wq, okk := w.by_cmd[cmd]
+	wq, okk := w.byCmd[cmd]
 	if !okk {
 		wq = make(chan packetinfo, 8) // Some buffer here...
-		w.by_cmd[cmd] = wq
+		w.byCmd[cmd] = wq
 	}
-	mp.waiters_lock.Unlock()
+	mp.waitersLock.Unlock()
 
 	select {
 	case p := <-wq:

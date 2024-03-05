@@ -161,7 +161,7 @@ func TestMigratorSimplePipe(t *testing.T) {
 	go prDest.Handle()
 
 	// Pipe a destination to the protocol
-	destination := modules.NewToProtocol(sourceDirty.Size(), 17, prSource)
+	destination := protocol.NewToProtocol(sourceDirty.Size(), 17, prSource)
 
 	destStorageFactory := func(di *protocol.DevInfo) storage.StorageProvider {
 		destStorage = sources.NewMemoryStorage(int(di.Size))
@@ -169,7 +169,7 @@ func TestMigratorSimplePipe(t *testing.T) {
 	}
 
 	// Pipe from the protocol to destWaiting
-	destFrom := modules.NewFromProtocol(17, destStorageFactory, prDest)
+	destFrom := protocol.NewFromProtocol(17, destStorageFactory, prDest)
 	ctx := context.TODO()
 	go destFrom.HandleSend(ctx)
 	go destFrom.HandleReadAt()

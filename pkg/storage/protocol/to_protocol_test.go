@@ -1,11 +1,10 @@
-package modules
+package protocol
 
 import (
 	"crypto/rand"
 	"errors"
 	"testing"
 
-	"github.com/loopholelabs/silo/pkg/storage/protocol"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -53,7 +52,7 @@ func TestToProtocolWriteAt(t *testing.T) {
 	toproto := NewToProtocol(1024*1024, 123, pro)
 
 	// Setup a mock response
-	pro.waitPackets <- protocol.EncodeWriteAtResponse(&protocol.WriteAtResponse{
+	pro.waitPackets <- EncodeWriteAtResponse(&WriteAtResponse{
 		Bytes: 1024,
 		Error: nil,
 	})
@@ -68,7 +67,7 @@ func TestToProtocolWriteAt(t *testing.T) {
 
 	assert.Equal(t, uint32(123), pack.dev)
 	assert.Equal(t, uint32(999), pack.id)
-	offset, data2, err := protocol.DecodeWriteAt(pack.data)
+	offset, data2, err := DecodeWriteAt(pack.data)
 	assert.NoError(t, err)
 	assert.Equal(t, int64(17), offset)
 	assert.Equal(t, data, data2)
@@ -80,7 +79,7 @@ func TestToProtocolWriteAtError(t *testing.T) {
 	toproto := NewToProtocol(1024*1024, 123, pro)
 
 	// Setup a mock response
-	pro.waitPackets <- protocol.EncodeWriteAtResponse(&protocol.WriteAtResponse{
+	pro.waitPackets <- EncodeWriteAtResponse(&WriteAtResponse{
 		Bytes: 0,
 		Error: errors.New("Something"),
 	})
@@ -99,7 +98,7 @@ func TestToProtocolReadAt(t *testing.T) {
 	rand.Read(data)
 
 	// Setup a mock response
-	pro.waitPackets <- protocol.EncodeReadAtResponse(&protocol.ReadAtResponse{
+	pro.waitPackets <- EncodeReadAtResponse(&ReadAtResponse{
 		Bytes: 1024,
 		Error: nil,
 		Data:  data,
@@ -115,7 +114,7 @@ func TestToProtocolReadAt(t *testing.T) {
 
 	assert.Equal(t, uint32(123), pack.dev)
 	assert.Equal(t, uint32(999), pack.id)
-	offset, length, err := protocol.DecodeReadAt(pack.data)
+	offset, length, err := DecodeReadAt(pack.data)
 	assert.NoError(t, err)
 	assert.Equal(t, int64(17), offset)
 	assert.Equal(t, int32(1024), length)
@@ -127,7 +126,7 @@ func TestToProtocolReadAtError(t *testing.T) {
 	toproto := NewToProtocol(1024*1024, 123, pro)
 
 	// Setup a mock response
-	pro.waitPackets <- protocol.EncodeReadAtResponse(&protocol.ReadAtResponse{
+	pro.waitPackets <- EncodeReadAtResponse(&ReadAtResponse{
 		Bytes: 0,
 		Error: errors.New("Something"),
 		Data:  nil,

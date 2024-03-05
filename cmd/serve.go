@@ -167,7 +167,7 @@ func migrateDevice(dev_id uint32, name string,
 	pro protocol.Protocol,
 	sinfo *storageInfo) error {
 	size := sinfo.lockable.Size()
-	dest := modules.NewToProtocol(uint64(size), dev_id, pro)
+	dest := protocol.NewToProtocol(uint64(size), dev_id, pro)
 
 	dest.SendDevInfo(name, uint32(sinfo.block_size))
 

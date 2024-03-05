@@ -1,16 +1,12 @@
-package modules
-
-import (
-	"github.com/loopholelabs/silo/pkg/storage/protocol"
-)
+package protocol
 
 type ToProtocol struct {
 	size     uint64
 	dev      uint32
-	protocol protocol.Protocol
+	protocol Protocol
 }
 
-func NewToProtocol(size uint64, deviceID uint32, p protocol.Protocol) *ToProtocol {
+func NewToProtocol(size uint64, deviceID uint32, p Protocol) *ToProtocol {
 	return &ToProtocol{
 		size:     size,
 		dev:      deviceID,
@@ -18,12 +14,12 @@ func NewToProtocol(size uint64, deviceID uint32, p protocol.Protocol) *ToProtoco
 	}
 }
 
-func (i *ToProtocol) SendEvent(e protocol.EventType) error {
-	ev := &protocol.Event{
+func (i *ToProtocol) SendEvent(e EventType) error {
+	ev := &Event{
 		Type: e,
 	}
-	b := protocol.EncodeEvent(ev)
-	id, err := i.protocol.SendPacket(i.dev, protocol.ID_PICK_ANY, b)
+	b := EncodeEvent(ev)
+	id, err := i.protocol.SendPacket(i.dev, ID_PICK_ANY, b)
 	if err != nil {
 		return err
 	}
@@ -34,29 +30,29 @@ func (i *ToProtocol) SendEvent(e protocol.EventType) error {
 		return err
 	}
 
-	return protocol.DecodeEventResponse(r)
+	return DecodeEventResponse(r)
 }
 
 func (i *ToProtocol) SendDevInfo(name string, block_size uint32) error {
-	di := &protocol.DevInfo{
+	di := &DevInfo{
 		Size:      i.size,
 		BlockSize: block_size,
 		Name:      name,
 	}
-	b := protocol.EncodeDevInfo(di)
-	_, err := i.protocol.SendPacket(i.dev, protocol.ID_PICK_ANY, b)
+	b := EncodeDevInfo(di)
+	_, err := i.protocol.SendPacket(i.dev, ID_PICK_ANY, b)
 	return err
 }
 
 func (i *ToProtocol) DirtyList(blocks []uint) error {
-	b := protocol.EncodeDirtyList(blocks)
-	_, err := i.protocol.SendPacket(i.dev, protocol.ID_PICK_ANY, b)
+	b := EncodeDirtyList(blocks)
+	_, err := i.protocol.SendPacket(i.dev, ID_PICK_ANY, b)
 	return err
 }
 
 func (i *ToProtocol) ReadAt(buffer []byte, offset int64) (int, error) {
-	b := protocol.EncodeReadAt(offset, int32(len(buffer)))
-	id, err := i.protocol.SendPacket(i.dev, protocol.ID_PICK_ANY, b)
+	b := EncodeReadAt(offset, int32(len(buffer)))
+	id, err := i.protocol.SendPacket(i.dev, ID_PICK_ANY, b)
 	if err != nil {
 		return 0, err
 	}
@@ -67,7 +63,7 @@ func (i *ToProtocol) ReadAt(buffer []byte, offset int64) (int, error) {
 	}
 
 	// Decode the response and use it...
-	rp, err := protocol.DecodeReadAtResponse(r)
+	rp, err := DecodeReadAtResponse(r)
 	if err != nil {
 		return 0, err
 	}
@@ -78,8 +74,8 @@ func (i *ToProtocol) ReadAt(buffer []byte, offset int64) (int, error) {
 }
 
 func (i *ToProtocol) WriteAt(buffer []byte, offset int64) (int, error) {
-	b := protocol.EncodeWriteAt(offset, buffer)
-	id, err := i.protocol.SendPacket(i.dev, protocol.ID_PICK_ANY, b)
+	b := EncodeWriteAt(offset, buffer)
+	id, err := i.protocol.SendPacket(i.dev, ID_PICK_ANY, b)
 	if err != nil {
 		return 0, err
 	}
@@ -89,7 +85,7 @@ func (i *ToProtocol) WriteAt(buffer []byte, offset int64) (int, error) {
 		return 0, err
 	}
 
-	rp, err := protocol.DecodeWriteAtResponse(r)
+	rp, err := DecodeWriteAtResponse(r)
 	if err != nil {
 		return 0, err
 	}
@@ -109,11 +105,11 @@ func (i *ToProtocol) Size() uint64 {
 // Handle any NeedAt commands, and send to an orderer...
 func (i *ToProtocol) HandleNeedAt(cb func(offset int64, length int32)) error {
 	for {
-		_, data, err := i.protocol.WaitForCommand(i.dev, protocol.COMMAND_NEED_AT)
+		_, data, err := i.protocol.WaitForCommand(i.dev, COMMAND_NEED_AT)
 		if err != nil {
 			return err
 		}
-		offset, length, err := protocol.DecodeNeedAt(data)
+		offset, length, err := DecodeNeedAt(data)
 		if err != nil {
 			return err
 		}
@@ -126,11 +122,11 @@ func (i *ToProtocol) HandleNeedAt(cb func(offset int64, length int32)) error {
 // Handle any DontNeedAt commands, and send to an orderer...
 func (i *ToProtocol) HandleDontNeedAt(cb func(offset int64, length int32)) error {
 	for {
-		_, data, err := i.protocol.WaitForCommand(i.dev, protocol.COMMAND_DONT_NEED_AT)
+		_, data, err := i.protocol.WaitForCommand(i.dev, COMMAND_DONT_NEED_AT)
 		if err != nil {
 			return err
 		}
-		offset, length, err := protocol.DecodeDontNeedAt(data)
+		offset, length, err := DecodeDontNeedAt(data)
 		if err != nil {
 			return err
 		}

@@ -6,9 +6,9 @@ import (
 )
 
 type MockProtocol struct {
-	waiters      map[uint32]Waiters
-	waiters_lock sync.Mutex
-	tid          uint32
+	waiters     map[uint32]Waiters
+	waitersLock sync.Mutex
+	tid         uint32
 }
 
 func NewMockProtocol() *MockProtocol {
@@ -27,29 +27,29 @@ func (mp *MockProtocol) SendPacket(dev uint32, id uint32, data []byte) (uint32, 
 		// TODO. If id wraps around and becomes ID_PICK_ANY etc
 	}
 
-	mp.waiters_lock.Lock()
+	mp.waitersLock.Lock()
 	w, ok := mp.waiters[dev]
 	if !ok {
 		w = Waiters{
-			by_cmd: make(map[byte]chan packetinfo),
-			by_id:  make(map[uint32]chan packetinfo),
+			byCmd: make(map[byte]chan packetinfo),
+			byID:  make(map[uint32]chan packetinfo),
 		}
 		mp.waiters[dev] = w
 	}
 
-	wq_id, okk := w.by_id[id]
+	wq_id, okk := w.byID[id]
 	if !okk {
 		wq_id = make(chan packetinfo, 8) // Some buffer here...
-		w.by_id[id] = wq_id
+		w.byID[id] = wq_id
 	}
 
-	wq_cmd, okk := w.by_cmd[cmd]
+	wq_cmd, okk := w.byCmd[cmd]
 	if !okk {
 		wq_cmd = make(chan packetinfo, 8) // Some buffer here...
-		w.by_cmd[cmd] = wq_cmd
+		w.byCmd[cmd] = wq_cmd
 	}
 
-	mp.waiters_lock.Unlock()
+	mp.waitersLock.Unlock()
 
 	// Send it to any listeners
 	// If this matches something being waited for, route it there.
@@ -71,21 +71,21 @@ func (mp *MockProtocol) SendPacket(dev uint32, id uint32, data []byte) (uint32, 
 }
 
 func (mp *MockProtocol) WaitForPacket(dev uint32, id uint32) ([]byte, error) {
-	mp.waiters_lock.Lock()
+	mp.waitersLock.Lock()
 	w, ok := mp.waiters[dev]
 	if !ok {
 		w = Waiters{
-			by_cmd: make(map[byte]chan packetinfo),
-			by_id:  make(map[uint32]chan packetinfo),
+			byCmd: make(map[byte]chan packetinfo),
+			byID:  make(map[uint32]chan packetinfo),
 		}
 		mp.waiters[dev] = w
 	}
-	wq, okk := w.by_id[id]
+	wq, okk := w.byID[id]
 	if !okk {
 		wq = make(chan packetinfo, 8) // Some buffer here...
-		w.by_id[id] = wq
+		w.byID[id] = wq
 	}
-	mp.waiters_lock.Unlock()
+	mp.waitersLock.Unlock()
 
 	// Wait for the packet to appear on the channel
 	p := <-wq
@@ -96,21 +96,21 @@ func (mp *MockProtocol) WaitForPacket(dev uint32, id uint32) ([]byte, error) {
 }
 
 func (mp *MockProtocol) WaitForCommand(dev uint32, cmd byte) (uint32, []byte, error) {
-	mp.waiters_lock.Lock()
+	mp.waitersLock.Lock()
 	w, ok := mp.waiters[dev]
 	if !ok {
 		w = Waiters{
-			by_cmd: make(map[byte]chan packetinfo),
-			by_id:  make(map[uint32]chan packetinfo),
+			byCmd: make(map[byte]chan packetinfo),
+			byID:  make(map[uint32]chan packetinfo),
 		}
 		mp.waiters[dev] = w
 	}
-	wq, okk := w.by_cmd[cmd]
+	wq, okk := w.byCmd[cmd]
 	if !okk {
 		wq = make(chan packetinfo, 8) // Some buffer here...
-		w.by_cmd[cmd] = wq
+		w.byCmd[cmd] = wq
 	}
-	mp.waiters_lock.Unlock()
+	mp.waitersLock.Unlock()
 
 	// Wait for the packet to appear on the channel
 	p := <-wq

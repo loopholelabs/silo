@@ -100,7 +100,7 @@ func handleIncomingDevice(pro protocol.Protocol, dev uint32) {
 	var destStorage storage.StorageProvider
 	var destWaitingLocal *modules.WaitingCacheLocal
 	var destWaitingRemote *modules.WaitingCacheRemote
-	var dest *modules.FromProtocol
+	var dest *protocol.FromProtocol
 
 	// This is a storage factory which will be called when we recive DevInfo.
 	storageFactory := func(di *protocol.DevInfo) storage.StorageProvider {
@@ -138,7 +138,7 @@ func handleIncomingDevice(pro protocol.Protocol, dev uint32) {
 		return destWaitingRemote
 	}
 
-	dest = modules.NewFromProtocol(dev, storageFactory, pro)
+	dest = protocol.NewFromProtocol(dev, storageFactory, pro)
 
 	// Handle sending
 	go dest.HandleSend(context.TODO())

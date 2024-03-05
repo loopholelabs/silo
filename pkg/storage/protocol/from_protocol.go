@@ -1,11 +1,10 @@
-package modules
+package protocol
 
 import (
 	"context"
 	"sync"
 
 	"github.com/loopholelabs/silo/pkg/storage"
-	"github.com/loopholelabs/silo/pkg/storage/protocol"
 )
 
 type sendData struct {
@@ -16,13 +15,13 @@ type sendData struct {
 type FromProtocol struct {
 	dev         uint32
 	prov        storage.StorageProvider
-	provFactory func(*protocol.DevInfo) storage.StorageProvider
-	protocol    protocol.Protocol
+	provFactory func(*DevInfo) storage.StorageProvider
+	protocol    Protocol
 	send_queue  chan sendData
 	init        sync.WaitGroup
 }
 
-func NewFromProtocol(dev uint32, provFactory func(*protocol.DevInfo) storage.StorageProvider, protocol protocol.Protocol) *FromProtocol {
+func NewFromProtocol(dev uint32, provFactory func(*DevInfo) storage.StorageProvider, protocol Protocol) *FromProtocol {
 	fp := &FromProtocol{
 		dev:         dev,
 		provFactory: provFactory,
@@ -35,15 +34,15 @@ func NewFromProtocol(dev uint32, provFactory func(*protocol.DevInfo) storage.Sto
 }
 
 // Handle any Events
-func (fp *FromProtocol) HandleEvent(cb func(protocol.EventType)) error {
+func (fp *FromProtocol) HandleEvent(cb func(EventType)) error {
 	fp.init.Wait()
 
 	for {
-		id, data, err := fp.protocol.WaitForCommand(fp.dev, protocol.COMMAND_EVENT)
+		id, data, err := fp.protocol.WaitForCommand(fp.dev, COMMAND_EVENT)
 		if err != nil {
 			return err
 		}
-		ev, err := protocol.DecodeEvent(data)
+		ev, err := DecodeEvent(data)
 		if err != nil {
 			return err
 		}
@@ -53,18 +52,18 @@ func (fp *FromProtocol) HandleEvent(cb func(protocol.EventType)) error {
 
 		fp.send_queue <- sendData{
 			id:   id,
-			data: protocol.EncodeEventResponse(),
+			data: EncodeEventResponse(),
 		}
 	}
 }
 
 // Handle a DevInfo, and create the storage
 func (fp *FromProtocol) HandleDevInfo() error {
-	_, data, err := fp.protocol.WaitForCommand(fp.dev, protocol.COMMAND_DEV_INFO)
+	_, data, err := fp.protocol.WaitForCommand(fp.dev, COMMAND_DEV_INFO)
 	if err != nil {
 		return err
 	}
-	di, err := protocol.DecodeDevInfo(data)
+	di, err := DecodeDevInfo(data)
 	if err != nil {
 		return err
 	}
@@ -95,11 +94,11 @@ func (fp *FromProtocol) HandleReadAt() error {
 	fp.init.Wait()
 
 	for {
-		id, data, err := fp.protocol.WaitForCommand(fp.dev, protocol.COMMAND_READ_AT)
+		id, data, err := fp.protocol.WaitForCommand(fp.dev, COMMAND_READ_AT)
 		if err != nil {
 			return err
 		}
-		offset, length, err := protocol.DecodeReadAt(data)
+		offset, length, err := DecodeReadAt(data)
 		if err != nil {
 			return err
 		}
@@ -108,14 +107,14 @@ func (fp *FromProtocol) HandleReadAt() error {
 		go func(goffset int64, glength int32, gid uint32) {
 			buff := make([]byte, glength)
 			n, err := fp.prov.ReadAt(buff, goffset)
-			rar := &protocol.ReadAtResponse{
+			rar := &ReadAtResponse{
 				Bytes: n,
 				Error: err,
 				Data:  buff,
 			}
 			fp.send_queue <- sendData{
 				id:   gid,
-				data: protocol.EncodeReadAtResponse(rar),
+				data: EncodeReadAtResponse(rar),
 			}
 		}(offset, length, id)
 	}
@@ -126,12 +125,12 @@ func (fp *FromProtocol) HandleWriteAt() error {
 	fp.init.Wait()
 
 	for {
-		id, data, err := fp.protocol.WaitForCommand(fp.dev, protocol.COMMAND_WRITE_AT)
+		id, data, err := fp.protocol.WaitForCommand(fp.dev, COMMAND_WRITE_AT)
 		if err != nil {
 			return err
 		}
 
-		offset, write_data, err := protocol.DecodeWriteAt(data)
+		offset, write_data, err := DecodeWriteAt(data)
 		if err != nil {
 			return err
 		}
@@ -139,13 +138,13 @@ func (fp *FromProtocol) HandleWriteAt() error {
 		// Handle in a goroutine
 		go func(goffset int64, gdata []byte, gid uint32) {
 			n, err := fp.prov.WriteAt(gdata, goffset)
-			war := &protocol.WriteAtResponse{
+			war := &WriteAtResponse{
 				Bytes: n,
 				Error: err,
 			}
 			fp.send_queue <- sendData{
 				id:   gid,
-				data: protocol.EncodeWriteAtResponse(war),
+				data: EncodeWriteAtResponse(war),
 			}
 		}(offset, write_data, id)
 	}
@@ -154,11 +153,11 @@ func (fp *FromProtocol) HandleWriteAt() error {
 // Handle any DirtyList commands
 func (fp *FromProtocol) HandleDirtyList(cb func(blocks []uint)) error {
 	for {
-		_, data, err := fp.protocol.WaitForCommand(fp.dev, protocol.COMMAND_DIRTY_LIST)
+		_, data, err := fp.protocol.WaitForCommand(fp.dev, COMMAND_DIRTY_LIST)
 		if err != nil {
 			return err
 		}
-		blocks, err := protocol.DecodeDirtyList(data)
+		blocks, err := DecodeDirtyList(data)
 		if err != nil {
 			return err
 		}
@@ -168,13 +167,13 @@ func (fp *FromProtocol) HandleDirtyList(cb func(blocks []uint)) error {
 }
 
 func (i *FromProtocol) NeedAt(offset int64, length int32) error {
-	b := protocol.EncodeNeedAt(offset, length)
-	_, err := i.protocol.SendPacket(i.dev, protocol.ID_PICK_ANY, b)
+	b := EncodeNeedAt(offset, length)
+	_, err := i.protocol.SendPacket(i.dev, ID_PICK_ANY, b)
 	return err
 }
 
 func (i *FromProtocol) DontNeedAt(offset int64, length int32) error {
-	b := protocol.EncodeDontNeedAt(offset, length)
-	_, err := i.protocol.SendPacket(i.dev, protocol.ID_PICK_ANY, b)
+	b := EncodeDontNeedAt(offset, length)
+	_, err := i.protocol.SendPacket(i.dev, ID_PICK_ANY, b)
 	return err
 }
