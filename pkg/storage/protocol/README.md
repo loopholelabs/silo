@@ -1,9 +1,52 @@
 # Silo protocol
 
+## Usage
+
+To use Silo connections, you must first use `ToProtocol` and `FromProtocol` to serialize and deserialize storage requests to the protocol.
+Both of these take a `Protocol` argument. One such implementation of `Protocol` is `ProtocolRW` which can use any `Reader` and `Writer` to communicate.
+
+So you can easily use a TCP connection, pipe, QUIC connection etc etc.
+
+The protocol itself is a bidirectional packet based protocol.
+
 There is a source (src), and a destination (dst) in a Silo connection for migration.
 
 All packets contain a DeviceID, and a transactionID.
 Several Devices can be multiplexed down a single connection, and several operations for example WriteAt can operate concurrently.
+
+## Simple example
+
+    r1, w1 := io.Pipe()
+  	r2, w2 := io.Pipe()
+
+    destDev := make(chan uint32, 8)
+
+    prSource := NewProtocolRW(context.TODO(), r1, w2, nil)
+    prDest := NewProtocolRW(context.TODO(), r2, w1, func(p Protocol, dev uint32) {
+      destDev <- dev
+    })
+
+    sourceToProtocol := NewToProtocol(uint64(size), 1, prSource)
+
+    storeFactory := func(di *DevInfo) storage.StorageProvider {
+      store = sources.NewMemoryStorage(int(di.Size))
+      return store
+    }
+
+    destFromProtocol := NewFromProtocol(1, storeFactory, prDest)
+
+There's a lot going on here, so lets go through what is happening.
+First we setup a couple of `io.Pipe()` to simulate some transport.
+We then wrap these pipes in `NewProtocolRW()`. The last argument here is a callback when a new device is detected (Any packet is received on a device not seen before). This callback can be used to start processing requests for that device for example. (In the example we just write to a channel).
+
+Next up, we create a `NewToProtocol()`. This implements `storage.StorageProvider` and can be used as storage within silo. Any storage requests are then serialized and sent through the protocol.
+
+Finally, we have a `NewFromProtocol()`, which deserializes storage requests.
+When a `DevInfo` is received, the storeFactory callback is called to initialize some `storage.StorageProvider` to handle subsequent storage requests.
+
+
+
+## Low level protocol
 
 The first packet for a device should always be a DevInfo packet.
 
