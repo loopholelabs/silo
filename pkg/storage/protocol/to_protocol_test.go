@@ -1,8 +1,10 @@
 package protocol
 
 import (
+	"bytes"
 	"crypto/rand"
 	"errors"
+	"io"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -26,6 +28,21 @@ type sendPacketInfo struct {
 	dev  uint32
 	id   uint32
 	data []byte
+}
+
+func (p *MockPro) SendPacketWriter(dev uint32, id uint32, length uint32, data func(w io.Writer) error) (uint32, error) {
+	var buff bytes.Buffer
+	err := data(&buff)
+	if err != nil {
+		return 0, err
+	}
+	mock_id := uint32(999)
+	p.sendPackets <- &sendPacketInfo{
+		dev:  dev,
+		id:   mock_id,
+		data: buff.Bytes(),
+	}
+	return id, nil
 }
 
 func (p *MockPro) SendPacket(dev uint32, id uint32, data []byte) (uint32, error) {

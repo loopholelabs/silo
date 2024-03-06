@@ -46,10 +46,11 @@ func NewFilterReadDirtyTracker(prov storage.StorageProvider, block_size int) *Fi
 
 func (i *FilterReadDirtyTracker) Sync() *util.Bitfield {
 	info := i.dirty_log.Clone()
-	i.dirty_log.Clear()
 
-	// Remove these blocks from tracking...
+	// Remove these blocks from tracking... (They will get added again when a Read is performed)
 	i.tracking.ClearBitsIf(info, 0, uint(i.num_blocks))
+
+	i.dirty_log.Clear()
 	return info
 }
 

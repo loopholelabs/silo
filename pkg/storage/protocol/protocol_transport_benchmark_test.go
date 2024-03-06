@@ -8,11 +8,13 @@ import (
 	"testing"
 
 	"github.com/loopholelabs/silo/pkg/storage"
+	"github.com/loopholelabs/silo/pkg/storage/modules"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
 )
 
+const size = 1024 * 1024
+
 func setup() *ToProtocol {
-	size := 1024 * 1024
 	var store storage.StorageProvider
 
 	r1, w1 := io.Pipe()
@@ -24,7 +26,10 @@ func setup() *ToProtocol {
 	sourceToProtocol := NewToProtocol(uint64(size), 1, prSource)
 
 	storeFactory := func(di *DevInfo) storage.StorageProvider {
-		store = sources.NewMemoryStorage(int(di.Size))
+		cr := func(size int) storage.StorageProvider {
+			return sources.NewMemoryStorage(int(di.Size))
+		}
+		store = modules.NewShardedStorage(int(di.Size), 1024, cr)
 		return store
 	}
 
@@ -53,10 +58,16 @@ func BenchmarkWriteAt(mb *testing.B) {
 	mb.SetBytes(int64(len(buff)))
 	mb.ResetTimer()
 
+	p := 0
+
 	for i := 0; i < mb.N; i++ {
-		n, err := sourceToProtocol.WriteAt(buff, 0)
+		n, err := sourceToProtocol.WriteAt(buff, int64(p))
 		if err != nil || n != len(buff) {
 			panic(err)
+		}
+		p += 1024
+		if p+len(buff) > size {
+			p = 0
 		}
 	}
 }
@@ -75,17 +86,23 @@ func BenchmarkWriteAtConcurrent(mb *testing.B) {
 	var wg sync.WaitGroup
 	concurrency := make(chan bool, 100)
 
+	p := 0
+
 	for i := 0; i < mb.N; i++ {
 		concurrency <- true
 		wg.Add(1)
-		go func() {
-			n, err := sourceToProtocol.WriteAt(buff, 0)
+		go func(ptr int64) {
+			n, err := sourceToProtocol.WriteAt(buff, ptr)
 			if err != nil || n != len(buff) {
 				panic(err)
 			}
 			wg.Done()
 			<-concurrency
-		}()
+		}(int64(p))
+		p += 1024
+		if p+len(buff) > size {
+			p = 0
+		}
 	}
 
 	wg.Wait()

@@ -1,5 +1,13 @@
 package protocol
 
+import (
+	"encoding/binary"
+	"errors"
+)
+
+var ErrInvalidPacket = errors.New("invalid packet")
+var ErrRemoteWriteError = errors.New("remote write error")
+
 type ToProtocol struct {
 	size     uint64
 	dev      uint32
@@ -74,8 +82,8 @@ func (i *ToProtocol) ReadAt(buffer []byte, offset int64) (int, error) {
 }
 
 func (i *ToProtocol) WriteAt(buffer []byte, offset int64) (int, error) {
-	b := EncodeWriteAt(offset, buffer)
-	id, err := i.protocol.SendPacket(i.dev, ID_PICK_ANY, b)
+	l, f := EncodeWriterWriteAt(offset, buffer)
+	id, err := i.protocol.SendPacketWriter(i.dev, ID_PICK_ANY, l, f)
 	if err != nil {
 		return 0, err
 	}
@@ -85,12 +93,19 @@ func (i *ToProtocol) WriteAt(buffer []byte, offset int64) (int, error) {
 		return 0, err
 	}
 
-	rp, err := DecodeWriteAtResponse(r)
-	if err != nil {
-		return 0, err
+	// Decode the response...
+	if r == nil || len(r) < 1 {
+		return 0, ErrInvalidPacket
 	}
-
-	return rp.Bytes, rp.Error
+	if r[0] == COMMAND_WRITE_AT_RESPONSE_ERR {
+		return 0, ErrRemoteWriteError
+	} else if r[0] == COMMAND_WRITE_AT_RESPONSE {
+		if len(r) < 5 {
+			return 0, ErrInvalidPacket
+		}
+		return int(binary.LittleEndian.Uint32(r[1:])), nil
+	}
+	return 0, ErrInvalidPacket
 }
 
 func (i *ToProtocol) Flush() error {

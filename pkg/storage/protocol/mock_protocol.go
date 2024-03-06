@@ -1,6 +1,8 @@
 package protocol
 
 import (
+	"bytes"
+	"io"
 	"sync"
 	"sync/atomic"
 )
@@ -16,6 +18,16 @@ func NewMockProtocol() *MockProtocol {
 		waiters: make(map[uint32]Waiters),
 		tid:     0,
 	}
+}
+
+func (mp *MockProtocol) SendPacketWriter(dev uint32, id uint32, length uint32, data func(io.Writer) error) (uint32, error) {
+	var buff bytes.Buffer
+	err := data(&buff)
+	if err != nil {
+		return 0, err
+	}
+
+	return mp.SendPacket(dev, id, buff.Bytes())
 }
 
 func (mp *MockProtocol) SendPacket(dev uint32, id uint32, data []byte) (uint32, error) {

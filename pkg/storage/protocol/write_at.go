@@ -3,6 +3,7 @@ package protocol
 import (
 	"encoding/binary"
 	"errors"
+	"io"
 )
 
 func EncodeWriteAt(offset int64, data []byte) []byte {
@@ -11,6 +12,20 @@ func EncodeWriteAt(offset int64, data []byte) []byte {
 	binary.LittleEndian.PutUint64(buff[1:], uint64(offset))
 	copy(buff[9:], data)
 	return buff
+}
+
+func EncodeWriterWriteAt(offset int64, data []byte) (uint32, func(w io.Writer) error) {
+	return uint32(9 + len(data)), func(w io.Writer) error {
+		header := make([]byte, 1+8)
+		header[0] = COMMAND_WRITE_AT
+		binary.LittleEndian.PutUint64(header[1:], uint64(offset))
+		_, err := w.Write(header)
+		if err != nil {
+			return err
+		}
+		_, err = w.Write(data)
+		return err
+	}
 }
 
 func DecodeWriteAt(buff []byte) (offset int64, data []byte, err error) {
@@ -51,7 +66,6 @@ func DecodeWriteAtResponse(buff []byte) (*WriteAtResponse, error) {
 	} else if buff[0] == COMMAND_WRITE_AT_RESPONSE {
 		if len(buff) < 5 {
 			return nil, errors.New("Invalid packet")
-
 		}
 		return &WriteAtResponse{
 			Error: nil,

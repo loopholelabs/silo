@@ -45,6 +45,26 @@ func NewProtocolRW(ctx context.Context, r io.Reader, w io.Writer, newdevFN func(
 	}
 }
 
+func (p *ProtocolRW) SendPacketWriter(dev uint32, id uint32, length uint32, data func(w io.Writer) error) (uint32, error) {
+	// Encode and send it down the writer...
+	if id == ID_PICK_ANY {
+		id = atomic.AddUint32(&p.txID, 1)
+	}
+
+	p.wLock.Lock()
+	defer p.wLock.Unlock()
+
+	binary.LittleEndian.PutUint32(p.wHeader, dev)
+	binary.LittleEndian.PutUint32(p.wHeader[4:], id)
+	binary.LittleEndian.PutUint32(p.wHeader[8:], length)
+	_, err := p.w.Write(p.wHeader)
+
+	if err != nil {
+		return 0, err
+	}
+	return id, data(p.w)
+}
+
 // Send a packet
 func (p *ProtocolRW) SendPacket(dev uint32, id uint32, data []byte) (uint32, error) {
 	// Encode and send it down the writer...
@@ -67,21 +87,16 @@ func (p *ProtocolRW) SendPacket(dev uint32, id uint32, data []byte) (uint32, err
 	return id, err
 }
 
-func (p *ProtocolRW) readHeader() (uint32, uint32, uint32, error) {
+// Read a packet
+func (p *ProtocolRW) readPacket() (uint32, uint32, []byte, error) {
 	_, err := io.ReadFull(p.r, p.rHeader)
 	if err != nil {
-		return 0, 0, 0, err
+		return 0, 0, nil, err
 	}
 	dev := binary.LittleEndian.Uint32(p.rHeader)
 	id := binary.LittleEndian.Uint32(p.rHeader[4:])
 	length := binary.LittleEndian.Uint32(p.rHeader[8:])
 
-	return dev, id, length, nil
-}
-
-// Read a packet
-func (p *ProtocolRW) readPacket() (uint32, uint32, []byte, error) {
-	dev, id, length, err := p.readHeader()
 	if err != nil {
 		return 0, 0, nil, err
 	}
