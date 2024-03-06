@@ -23,6 +23,7 @@ type ProtocolRW struct {
 	r           io.Reader
 	w           io.Writer
 	wLock       sync.Mutex
+	rHeader     []byte
 	wHeader     []byte
 	txID        uint32
 	activeDevs  map[uint32]bool
@@ -39,6 +40,7 @@ func NewProtocolRW(ctx context.Context, r io.Reader, w io.Writer, newdevFN func(
 		waiters:    make(map[uint32]Waiters),
 		newdevFN:   newdevFN,
 		activeDevs: make(map[uint32]bool),
+		rHeader:    make([]byte, 12),
 		wHeader:    make([]byte, 12),
 	}
 }
@@ -65,17 +67,24 @@ func (p *ProtocolRW) SendPacket(dev uint32, id uint32, data []byte) (uint32, err
 	return id, err
 }
 
+func (p *ProtocolRW) readHeader() (uint32, uint32, uint32, error) {
+	_, err := io.ReadFull(p.r, p.rHeader)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	dev := binary.LittleEndian.Uint32(p.rHeader)
+	id := binary.LittleEndian.Uint32(p.rHeader[4:])
+	length := binary.LittleEndian.Uint32(p.rHeader[8:])
+
+	return dev, id, length, nil
+}
+
 // Read a packet
 func (p *ProtocolRW) readPacket() (uint32, uint32, []byte, error) {
-	buffer := make([]byte, 4+4+4)
-
-	_, err := io.ReadFull(p.r, buffer)
+	dev, id, length, err := p.readHeader()
 	if err != nil {
 		return 0, 0, nil, err
 	}
-	dev := binary.LittleEndian.Uint32(buffer)
-	id := binary.LittleEndian.Uint32(buffer[4:])
-	length := binary.LittleEndian.Uint32(buffer[8:])
 
 	data := make([]byte, length)
 
