@@ -59,5 +59,4 @@ func DecodeWriteAtResponse(buff []byte) (*WriteAtResponse, error) {
 		}, nil
 	}
 	return nil, errors.New("Unknown packet")
-
 }

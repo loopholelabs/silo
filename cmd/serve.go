@@ -237,12 +237,6 @@ func migrateDevice(dev_id uint32, name string,
 
 	// Optional: Enter a loop looking for more dirty blocks to migrate...
 
-	// FIXME:
-	// * If several writes to the SAME block AND its in middle of the migration ReadAt/WriteAt
-	// * It could execute in wrong order
-
-	// * Rate limit blocks
-
 	for {
 		blocks := mig.GetLatestDirty() //
 		if blocks == nil {

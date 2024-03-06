@@ -23,6 +23,7 @@ type ProtocolRW struct {
 	r           io.Reader
 	w           io.Writer
 	wLock       sync.Mutex
+	wHeader     []byte
 	txID        uint32
 	activeDevs  map[uint32]bool
 	waiters     map[uint32]Waiters
@@ -38,6 +39,7 @@ func NewProtocolRW(ctx context.Context, r io.Reader, w io.Writer, newdevFN func(
 		waiters:    make(map[uint32]Waiters),
 		newdevFN:   newdevFN,
 		activeDevs: make(map[uint32]bool),
+		wHeader:    make([]byte, 12),
 	}
 }
 
@@ -48,14 +50,13 @@ func (p *ProtocolRW) SendPacket(dev uint32, id uint32, data []byte) (uint32, err
 		id = atomic.AddUint32(&p.txID, 1)
 	}
 
-	buffer := make([]byte, 4+4+4)
-	binary.LittleEndian.PutUint32(buffer, dev)
-	binary.LittleEndian.PutUint32(buffer[4:], id)
-	binary.LittleEndian.PutUint32(buffer[8:], uint32(len(data)))
 	p.wLock.Lock()
 	defer p.wLock.Unlock()
 
-	_, err := p.w.Write(buffer)
+	binary.LittleEndian.PutUint32(p.wHeader, dev)
+	binary.LittleEndian.PutUint32(p.wHeader[4:], id)
+	binary.LittleEndian.PutUint32(p.wHeader[8:], uint32(len(data)))
+	_, err := p.w.Write(p.wHeader)
 
 	if err != nil {
 		return 0, err
