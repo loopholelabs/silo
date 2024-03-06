@@ -140,8 +140,8 @@ func setupStorageDevice(size int) (*storageInfo, error) {
 	// Setup some sharded memory storage (for concurrent write speed)
 	source := modules.NewShardedStorage(size, size/1024, cr)
 	sourceMetrics := modules.NewMetrics(source)
-	sourceDirty := dirtytracker.NewFilterReadDirtyTracker(sourceMetrics, block_size)
-	sourceMonitor := volatilitymonitor.NewVolatilityMonitor(sourceDirty, block_size, 10*time.Second)
+	sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(sourceMetrics, block_size)
+	sourceMonitor := volatilitymonitor.NewVolatilityMonitor(sourceDirtyLocal, block_size, 10*time.Second)
 	sourceStorage := modules.NewLockable(sourceMonitor)
 
 	// Start monitoring blocks.
@@ -156,7 +156,7 @@ func setupStorageDevice(size int) (*storageInfo, error) {
 		src_exposed = append(src_exposed, p)
 	}
 	return &storageInfo{
-		tracker:    sourceDirty,
+		tracker:    sourceDirtyRemote,
 		lockable:   sourceStorage,
 		orderer:    orderer,
 		block_size: block_size,
