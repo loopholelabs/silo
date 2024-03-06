@@ -137,6 +137,7 @@ func (i *DirtyTracker) remoteReadAt(buffer []byte, offset int64) (int, error) {
 	i.tracking.SetBits(b_start, b_end)
 	// NB: A WriteAt could occur here, which would result in an incorrect dirty marking.
 	// TODO: Do something to mitigate this without affecting performance.
+	// Note though, that this is still preferable to tracking everything before it's been read for migration.
 	n, err := i.prov.ReadAt(buffer, offset)
 
 	return n, err
