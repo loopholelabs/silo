@@ -1,8 +1,9 @@
-package modules
+package dirtytracker
 
 import (
 	"testing"
 
+	"github.com/loopholelabs/silo/pkg/storage/modules"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
 	"github.com/stretchr/testify/assert"
 )
@@ -12,7 +13,7 @@ func TestReadDirtyTracker(t *testing.T) {
 	// Create a new block storage, backed by memory storage
 	size := 1024 * 1024 * 32
 	mem := sources.NewMemoryStorage(size)
-	metrics := NewMetrics(mem)
+	metrics := modules.NewMetrics(mem)
 	tracker := NewFilterReadDirtyTracker(metrics, 4096)
 
 	b := tracker.Sync()

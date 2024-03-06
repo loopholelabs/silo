@@ -10,9 +10,12 @@ import (
 
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/blocks"
+	"github.com/loopholelabs/silo/pkg/storage/dirtytracker"
 	"github.com/loopholelabs/silo/pkg/storage/modules"
 	"github.com/loopholelabs/silo/pkg/storage/protocol"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
+	"github.com/loopholelabs/silo/pkg/storage/volatilitymonitor"
+	"github.com/loopholelabs/silo/pkg/storage/waitingcache"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -26,7 +29,7 @@ func TestMigratorSimple(t *testing.T) {
 	num_blocks := (size + blockSize - 1) / blockSize
 
 	sourceStorageMem := sources.NewMemoryStorage(size)
-	sourceDirty := modules.NewFilterReadDirtyTracker(sourceStorageMem, blockSize)
+	sourceDirty := dirtytracker.NewFilterReadDirtyTracker(sourceStorageMem, blockSize)
 	sourceStorage := modules.NewLockable(sourceDirty)
 
 	// Set up some data here.
@@ -78,7 +81,7 @@ func TestMigratorPartial(t *testing.T) {
 	num_blocks := (size + blockSize - 1) / blockSize
 
 	sourceStorageMem := sources.NewMemoryStorage(size)
-	sourceDirty := modules.NewFilterReadDirtyTracker(sourceStorageMem, blockSize)
+	sourceDirty := dirtytracker.NewFilterReadDirtyTracker(sourceStorageMem, blockSize)
 	sourceStorage := modules.NewLockable(sourceDirty)
 
 	// Set up some data here.
@@ -130,7 +133,7 @@ func TestMigratorSimplePipe(t *testing.T) {
 	num_blocks := (size + blockSize - 1) / blockSize
 
 	sourceStorageMem := sources.NewMemoryStorage(size)
-	sourceDirty := modules.NewFilterReadDirtyTracker(sourceStorageMem, blockSize)
+	sourceDirty := dirtytracker.NewFilterReadDirtyTracker(sourceStorageMem, blockSize)
 	sourceStorage := modules.NewLockable(sourceDirty)
 
 	// Set up some data here.
@@ -210,8 +213,8 @@ func TestMigratorWithReaderWriter(t *testing.T) {
 	num_blocks := (size + blockSize - 1) / blockSize
 
 	sourceStorageMem := sources.NewMemoryStorage(size)
-	sourceDirty := modules.NewFilterReadDirtyTracker(sourceStorageMem, blockSize)
-	sourceMonitor := modules.NewVolatilityMonitor(sourceDirty, blockSize, 2*time.Second)
+	sourceDirty := dirtytracker.NewFilterReadDirtyTracker(sourceStorageMem, blockSize)
+	sourceMonitor := volatilitymonitor.NewVolatilityMonitor(sourceDirty, blockSize, 2*time.Second)
 	sourceStorage := modules.NewLockable(sourceMonitor)
 
 	// Set up some data here.
@@ -261,7 +264,7 @@ func TestMigratorWithReaderWriter(t *testing.T) {
 	// START moving data from sourceStorage to destStorage
 
 	destStorage := sources.NewMemoryStorage(size)
-	destWaitingLocal, destWaitingRemote := modules.NewWaitingCache(destStorage, blockSize)
+	destWaitingLocal, destWaitingRemote := waitingcache.NewWaitingCache(destStorage, blockSize)
 
 	conf := NewMigratorConfig().WithBlockSize(blockSize)
 	conf.LockerHandler = sourceStorage.Lock
@@ -348,7 +351,7 @@ func TestMigratorWithReaderWriterWrite(t *testing.T) {
 	num_blocks := (size + blockSize - 1) / blockSize
 
 	sourceStorageMem := sources.NewMemoryStorage(size)
-	sourceDirty := modules.NewFilterReadDirtyTracker(sourceStorageMem, blockSize)
+	sourceDirty := dirtytracker.NewFilterReadDirtyTracker(sourceStorageMem, blockSize)
 	sourceStorage := modules.NewLockable(sourceDirty)
 
 	// Set up some data here.
@@ -401,7 +404,7 @@ func TestMigratorWithReaderWriterWrite(t *testing.T) {
 	// START moving data from sourceStorage to destStorage
 
 	destStorage := sources.NewMemoryStorage(size)
-	destWaitingLocal, destWaitingRemote := modules.NewWaitingCache(destStorage, blockSize)
+	destWaitingLocal, destWaitingRemote := waitingcache.NewWaitingCache(destStorage, blockSize)
 
 	conf := NewMigratorConfig().WithBlockSize(blockSize)
 	conf.LockerHandler = sourceStorage.Lock

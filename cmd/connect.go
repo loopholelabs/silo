@@ -16,6 +16,7 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/modules"
 	"github.com/loopholelabs/silo/pkg/storage/protocol"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
+	"github.com/loopholelabs/silo/pkg/storage/waitingcache"
 	"github.com/spf13/cobra"
 )
 
@@ -98,8 +99,8 @@ func runConnect(ccmd *cobra.Command, args []string) {
 // Handle a new incoming device. This is called when a packet is received for a device we haven't heard about before.
 func handleIncomingDevice(pro protocol.Protocol, dev uint32) {
 	var destStorage storage.StorageProvider
-	var destWaitingLocal *modules.WaitingCacheLocal
-	var destWaitingRemote *modules.WaitingCacheRemote
+	var destWaitingLocal *waitingcache.WaitingCacheLocal
+	var destWaitingRemote *waitingcache.WaitingCacheRemote
 	var dest *protocol.FromProtocol
 
 	// This is a storage factory which will be called when we recive DevInfo.
@@ -115,7 +116,7 @@ func handleIncomingDevice(pro protocol.Protocol, dev uint32) {
 
 		// Use a WaitingCache which will wait for migration blocks, send priorities etc
 		// A WaitingCache has two ends - local and remote.
-		destWaitingLocal, destWaitingRemote = modules.NewWaitingCache(destStorage, int(di.BlockSize))
+		destWaitingLocal, destWaitingRemote = waitingcache.NewWaitingCache(destStorage, int(di.BlockSize))
 
 		// Connect the waitingCache to the FromProtocol.
 		// Note that since these are hints, errors don't matter too much.

@@ -30,7 +30,7 @@ func (bf *Bitfield) Clone() *Bitfield {
 		v := atomic.LoadUint64(&bf.data[i])
 		data2[i] = v
 	}
-	//copy(data2, bf.data)		// Can't use, not atomic
+	// copy(data2, bf.data)		// Can't use, not atomic
 	return &Bitfield{
 		size: bf.size,
 		data: data2,

@@ -13,11 +13,13 @@ import (
 
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/blocks"
+	"github.com/loopholelabs/silo/pkg/storage/dirtytracker"
 	"github.com/loopholelabs/silo/pkg/storage/expose"
 	"github.com/loopholelabs/silo/pkg/storage/migrator"
 	"github.com/loopholelabs/silo/pkg/storage/modules"
 	"github.com/loopholelabs/silo/pkg/storage/protocol"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
+	"github.com/loopholelabs/silo/pkg/storage/volatilitymonitor"
 	"github.com/spf13/cobra"
 )
 
@@ -138,8 +140,8 @@ func setupStorageDevice(size int) (*storageInfo, error) {
 	// Setup some sharded memory storage (for concurrent write speed)
 	source := modules.NewShardedStorage(size, size/1024, cr)
 	sourceMetrics := modules.NewMetrics(source)
-	sourceDirty := modules.NewFilterReadDirtyTracker(sourceMetrics, block_size)
-	sourceMonitor := modules.NewVolatilityMonitor(sourceDirty, block_size, 10*time.Second)
+	sourceDirty := dirtytracker.NewFilterReadDirtyTracker(sourceMetrics, block_size)
+	sourceMonitor := volatilitymonitor.NewVolatilityMonitor(sourceDirty, block_size, 10*time.Second)
 	sourceStorage := modules.NewLockable(sourceMonitor)
 
 	// Start monitoring blocks.
