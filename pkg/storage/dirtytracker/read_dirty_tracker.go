@@ -20,7 +20,7 @@ type DirtyTracker struct {
 	numBlocks int
 	dirtyLog  *util.Bitfield
 	tracking  *util.Bitfield
-	writeLock sync.Mutex
+	writeLock sync.RWMutex
 }
 
 type DirtyTrackerLocal struct {
@@ -78,6 +78,7 @@ func NewDirtyTracker(prov storage.StorageProvider, blockSize int) (*DirtyTracker
 }
 
 func (i *DirtyTrackerRemote) Sync() *util.Bitfield {
+	// Prevent any writes while we do the Sync()
 	i.dt.writeLock.Lock()
 	defer i.dt.writeLock.Unlock()
 
@@ -96,8 +97,8 @@ func (i *DirtyTracker) localReadAt(buffer []byte, offset int64) (int, error) {
 }
 
 func (i *DirtyTracker) localWriteAt(buffer []byte, offset int64) (int, error) {
-	i.writeLock.Lock()
-	defer i.writeLock.Unlock()
+	i.writeLock.RLock()
+	defer i.writeLock.RUnlock()
 
 	n, err := i.prov.WriteAt(buffer, offset)
 
@@ -132,14 +133,12 @@ func (i *DirtyTracker) remoteReadAt(buffer []byte, offset int64) (int, error) {
 	b_start := uint(offset / int64(i.blockSize))
 	b_end := uint((end-1)/uint64(i.blockSize)) + 1
 
-	// FIXME: At the moment we lock the entire region. We could do better with range locking.
-	i.writeLock.Lock()
-
 	// Enable tracking for this area
 	i.tracking.SetBits(b_start, b_end)
+	// NB: A WriteAt could occur here, which would result in an incorrect dirty marking.
+	// TODO: Do something to mitigate this without affecting performance.
 	n, err := i.prov.ReadAt(buffer, offset)
 
-	i.writeLock.Unlock()
 	return n, err
 }
 
