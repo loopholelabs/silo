@@ -77,7 +77,7 @@ func runConnect(ccmd *cobra.Command, args []string) {
 	}
 
 	// Wrap the connection in a protocol, and handle incoming devices
-	pro := protocol.NewProtocolRW(context.TODO(), con, con, handleIncomingDevice)
+	pro := protocol.NewProtocolRW(context.TODO(), con, []io.Writer{con}, handleIncomingDevice)
 
 	// Let the protocol do its thing.
 	err = pro.Handle()

@@ -20,8 +20,8 @@ func setup() *ToProtocol {
 	r1, w1 := io.Pipe()
 	r2, w2 := io.Pipe()
 
-	prSource := NewProtocolRW(context.TODO(), r1, w2, nil)
-	prDest := NewProtocolRW(context.TODO(), r2, w1, func(p Protocol, dev uint32) {})
+	prSource := NewProtocolRW(context.TODO(), r1, []io.Writer{w2}, nil)
+	prDest := NewProtocolRW(context.TODO(), r2, []io.Writer{w1}, func(p Protocol, dev uint32) {})
 
 	sourceToProtocol := NewToProtocol(uint64(size), 1, prSource)
 

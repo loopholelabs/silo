@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"io"
+	"math/rand"
 	"sync"
 	"sync/atomic"
 )
@@ -19,30 +20,36 @@ type Waiters struct {
 }
 
 type ProtocolRW struct {
-	ctx         context.Context
-	r           io.Reader
-	w           io.Writer
-	wLock       sync.Mutex
-	rHeader     []byte
-	wHeader     []byte
-	txID        uint32
-	activeDevs  map[uint32]bool
-	waiters     map[uint32]Waiters
-	waitersLock sync.Mutex
-	newdevFN    func(Protocol, uint32)
+	ctx           context.Context
+	r             io.Reader
+	writers       []io.Writer
+	writerHeaders [][]byte
+	writerLocks   []sync.Mutex
+	rHeader       []byte
+	txID          uint32
+	activeDevs    map[uint32]bool
+	waiters       map[uint32]Waiters
+	waitersLock   sync.Mutex
+	newdevFN      func(Protocol, uint32)
 }
 
-func NewProtocolRW(ctx context.Context, r io.Reader, w io.Writer, newdevFN func(Protocol, uint32)) *ProtocolRW {
-	return &ProtocolRW{
+func NewProtocolRW(ctx context.Context, r io.Reader, writers []io.Writer, newdevFN func(Protocol, uint32)) *ProtocolRW {
+	prw := &ProtocolRW{
 		ctx:        ctx,
 		r:          r,
-		w:          w,
 		waiters:    make(map[uint32]Waiters),
 		newdevFN:   newdevFN,
 		activeDevs: make(map[uint32]bool),
 		rHeader:    make([]byte, 12),
-		wHeader:    make([]byte, 12),
 	}
+
+	prw.writers = writers
+	prw.writerLocks = make([]sync.Mutex, len(writers))
+	prw.writerHeaders = make([][]byte, len(writers))
+	for i := 0; i < len(writers); i++ {
+		prw.writerHeaders[i] = make([]byte, 4+4+4)
+	}
+	return prw
 }
 
 func (p *ProtocolRW) SendPacketWriter(dev uint32, id uint32, length uint32, data func(w io.Writer) error) (uint32, error) {
@@ -51,18 +58,21 @@ func (p *ProtocolRW) SendPacketWriter(dev uint32, id uint32, length uint32, data
 		id = atomic.AddUint32(&p.txID, 1)
 	}
 
-	p.wLock.Lock()
-	defer p.wLock.Unlock()
+	i := rand.Intn(len(p.writers))
 
-	binary.LittleEndian.PutUint32(p.wHeader, dev)
-	binary.LittleEndian.PutUint32(p.wHeader[4:], id)
-	binary.LittleEndian.PutUint32(p.wHeader[8:], length)
-	_, err := p.w.Write(p.wHeader)
+	p.writerLocks[i].Lock()
+	defer p.writerLocks[i].Unlock()
+
+	binary.LittleEndian.PutUint32(p.writerHeaders[i], dev)
+	binary.LittleEndian.PutUint32(p.writerHeaders[i][4:], id)
+	binary.LittleEndian.PutUint32(p.writerHeaders[i][8:], length)
+
+	_, err := p.writers[i].Write(p.writerHeaders[i])
 
 	if err != nil {
 		return 0, err
 	}
-	return id, data(p.w)
+	return id, data(p.writers[i])
 }
 
 // Send a packet
@@ -72,18 +82,21 @@ func (p *ProtocolRW) SendPacket(dev uint32, id uint32, data []byte) (uint32, err
 		id = atomic.AddUint32(&p.txID, 1)
 	}
 
-	p.wLock.Lock()
-	defer p.wLock.Unlock()
+	i := rand.Intn(len(p.writers))
 
-	binary.LittleEndian.PutUint32(p.wHeader, dev)
-	binary.LittleEndian.PutUint32(p.wHeader[4:], id)
-	binary.LittleEndian.PutUint32(p.wHeader[8:], uint32(len(data)))
-	_, err := p.w.Write(p.wHeader)
+	p.writerLocks[i].Lock()
+	defer p.writerLocks[i].Unlock()
+
+	binary.LittleEndian.PutUint32(p.writerHeaders[i], dev)
+	binary.LittleEndian.PutUint32(p.writerHeaders[i][4:], id)
+	binary.LittleEndian.PutUint32(p.writerHeaders[i][8:], uint32(len(data)))
+
+	_, err := p.writers[i].Write(p.writerHeaders[i])
 
 	if err != nil {
 		return 0, err
 	}
-	_, err = p.w.Write(data)
+	_, err = p.writers[i].Write(data)
 	return id, err
 }
 

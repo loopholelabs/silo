@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -91,7 +92,7 @@ func runServe(ccmd *cobra.Command, args []string) {
 		// Now we can migrate to the client...
 
 		// Wrap the connection in a protocol
-		pro := protocol.NewProtocolRW(context.TODO(), con, con, nil)
+		pro := protocol.NewProtocolRW(context.TODO(), con, []io.Writer{con}, nil)
 		go pro.Handle()
 
 		// Lets go through each of the things we want to migrate...
