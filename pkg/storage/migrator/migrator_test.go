@@ -157,8 +157,8 @@ func TestMigratorSimplePipe(t *testing.T) {
 	r1, w1 := io.Pipe()
 	r2, w2 := io.Pipe()
 
-	prSource := protocol.NewProtocolRW(context.TODO(), r1, []io.Writer{w2}, nil)
-	prDest := protocol.NewProtocolRW(context.TODO(), r2, []io.Writer{w1}, nil)
+	prSource := protocol.NewProtocolRW(context.TODO(), []io.Reader{r1}, []io.Writer{w2}, nil)
+	prDest := protocol.NewProtocolRW(context.TODO(), []io.Reader{r2}, []io.Writer{w1}, nil)
 
 	go prSource.Handle()
 	go prDest.Handle()

@@ -3,6 +3,7 @@ package protocol
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"io"
 	"math/rand"
 	"sync"
@@ -33,7 +34,7 @@ type ProtocolRW struct {
 	newdevFN       func(Protocol, uint32)
 }
 
-func NewProtocolRW(ctx context.Context, r io.Reader, writers []io.Writer, newdevFN func(Protocol, uint32)) *ProtocolRW {
+func NewProtocolRW(ctx context.Context, readers []io.Reader, writers []io.Writer, newdevFN func(Protocol, uint32)) *ProtocolRW {
 	prw := &ProtocolRW{
 		ctx:        ctx,
 		waiters:    make(map[uint32]Waiters),
@@ -41,7 +42,7 @@ func NewProtocolRW(ctx context.Context, r io.Reader, writers []io.Writer, newdev
 		activeDevs: make(map[uint32]bool),
 	}
 
-	prw.readers = []io.Reader{r}
+	prw.readers = readers
 
 	prw.writers = writers
 	prw.writerLocks = make([]sync.Mutex, len(writers))
@@ -101,30 +102,50 @@ func (p *ProtocolRW) SendPacket(dev uint32, id uint32, data []byte) (uint32, err
 }
 
 func (p *ProtocolRW) Handle() error {
-	r := p.readers[0]
-	header := make([]byte, 4+4+4)
-	for {
-		_, err := io.ReadFull(r, header)
-		if err != nil {
-			return err
-		}
-		dev := binary.LittleEndian.Uint32(header)
-		id := binary.LittleEndian.Uint32(header[4:])
-		length := binary.LittleEndian.Uint32(header[8:])
+	var wg sync.WaitGroup
+	errs := make(chan error, len(p.readers))
 
-		data := make([]byte, length)
-		_, err = io.ReadFull(r, data)
+	for _, r := range p.readers {
+		wg.Add(1)
+		go func(reader io.Reader) {
+			defer wg.Done()
+			header := make([]byte, 4+4+4)
+			for {
+				_, err := io.ReadFull(reader, header)
+				if err != nil {
+					errs <- err
+					return
+				}
+				dev := binary.LittleEndian.Uint32(header)
+				id := binary.LittleEndian.Uint32(header[4:])
+				length := binary.LittleEndian.Uint32(header[8:])
 
-		if err != nil {
-			return err
-		}
+				data := make([]byte, length)
+				_, err = io.ReadFull(reader, data)
 
-		// Handle the packet
-		p.handlePacket(dev, id, data)
+				if err != nil {
+					errs <- err
+					return
+				}
+
+				// Handle the packet
+				err = p.handlePacket(dev, id, data)
+				if err != nil {
+					errs <- err
+					return
+				}
+			}
+		}(r)
 	}
+
+	wg.Wait()
+	// Wait...
+
+	// TODO: Check for errors and process them.
+	return nil
 }
 
-func (p *ProtocolRW) handlePacket(dev uint32, id uint32, data []byte) {
+func (p *ProtocolRW) handlePacket(dev uint32, id uint32, data []byte) error {
 	p.activeDevsLock.Lock()
 	_, ok := p.activeDevs[dev]
 	if !ok {
@@ -134,6 +155,10 @@ func (p *ProtocolRW) handlePacket(dev uint32, id uint32, data []byte) {
 		}
 	}
 	p.activeDevsLock.Unlock()
+
+	if data == nil || len(data) < 1 {
+		return errors.New("Invalid data packet")
+	}
 
 	cmd := data[0]
 
@@ -172,7 +197,7 @@ func (p *ProtocolRW) handlePacket(dev uint32, id uint32, data []byte) {
 			data: data,
 		}
 	}
-
+	return nil
 }
 
 func (mp *ProtocolRW) WaitForPacket(dev uint32, id uint32) ([]byte, error) {

@@ -14,14 +14,26 @@ import (
 
 const size = 1024 * 1024
 
-func setup() *ToProtocol {
+func setup(num int) *ToProtocol {
 	var store storage.StorageProvider
 
-	r1, w1 := io.Pipe()
-	r2, w2 := io.Pipe()
+	readers1 := make([]io.Reader, 0)
+	readers2 := make([]io.Reader, 0)
+	writers1 := make([]io.Writer, 0)
+	writers2 := make([]io.Writer, 0)
 
-	prSource := NewProtocolRW(context.TODO(), r1, []io.Writer{w2}, nil)
-	prDest := NewProtocolRW(context.TODO(), r2, []io.Writer{w1}, func(p Protocol, dev uint32) {})
+	for i := 0; i < num; i++ {
+		r1, w1 := io.Pipe()
+		r2, w2 := io.Pipe()
+		readers1 = append(readers1, r1)
+		writers1 = append(writers1, w1)
+
+		readers2 = append(readers2, r2)
+		writers2 = append(writers2, w2)
+	}
+
+	prSource := NewProtocolRW(context.TODO(), readers1, writers2, nil)
+	prDest := NewProtocolRW(context.TODO(), readers2, writers1, func(p Protocol, dev uint32) {})
 
 	sourceToProtocol := NewToProtocol(uint64(size), 1, prSource)
 
@@ -48,10 +60,10 @@ func setup() *ToProtocol {
 }
 
 func BenchmarkWriteAt(mb *testing.B) {
-	sourceToProtocol := setup()
+	sourceToProtocol := setup(1)
 
 	// Do some writes
-	buff := make([]byte, 4096)
+	buff := make([]byte, 256*1024)
 	rand.Read(buff)
 
 	mb.ReportAllocs()
@@ -73,10 +85,12 @@ func BenchmarkWriteAt(mb *testing.B) {
 }
 
 func BenchmarkWriteAtConcurrent(mb *testing.B) {
-	sourceToProtocol := setup()
+	maxConcurrent := 16
+
+	sourceToProtocol := setup(maxConcurrent)
 
 	// Do some writes concurrently
-	buff := make([]byte, 4096)
+	buff := make([]byte, 256*1024)
 	rand.Read(buff)
 
 	mb.ReportAllocs()
@@ -84,7 +98,7 @@ func BenchmarkWriteAtConcurrent(mb *testing.B) {
 	mb.ResetTimer()
 
 	var wg sync.WaitGroup
-	concurrency := make(chan bool, 100)
+	concurrency := make(chan bool, maxConcurrent)
 
 	p := 0
 
