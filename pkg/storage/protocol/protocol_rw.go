@@ -20,28 +20,28 @@ type Waiters struct {
 }
 
 type ProtocolRW struct {
-	ctx           context.Context
-	r             io.Reader
-	writers       []io.Writer
-	writerHeaders [][]byte
-	writerLocks   []sync.Mutex
-	rHeader       []byte
-	txID          uint32
-	activeDevs    map[uint32]bool
-	waiters       map[uint32]Waiters
-	waitersLock   sync.Mutex
-	newdevFN      func(Protocol, uint32)
+	ctx            context.Context
+	readers        []io.Reader
+	writers        []io.Writer
+	writerHeaders  [][]byte
+	writerLocks    []sync.Mutex
+	txID           uint32
+	activeDevs     map[uint32]bool
+	activeDevsLock sync.Mutex
+	waiters        map[uint32]Waiters
+	waitersLock    sync.Mutex
+	newdevFN       func(Protocol, uint32)
 }
 
 func NewProtocolRW(ctx context.Context, r io.Reader, writers []io.Writer, newdevFN func(Protocol, uint32)) *ProtocolRW {
 	prw := &ProtocolRW{
 		ctx:        ctx,
-		r:          r,
 		waiters:    make(map[uint32]Waiters),
 		newdevFN:   newdevFN,
 		activeDevs: make(map[uint32]bool),
-		rHeader:    make([]byte, 12),
 	}
+
+	prw.readers = []io.Reader{r}
 
 	prw.writers = writers
 	prw.writerLocks = make([]sync.Mutex, len(writers))
@@ -100,84 +100,79 @@ func (p *ProtocolRW) SendPacket(dev uint32, id uint32, data []byte) (uint32, err
 	return id, err
 }
 
-// Read a packet
-func (p *ProtocolRW) readPacket() (uint32, uint32, []byte, error) {
-	_, err := io.ReadFull(p.r, p.rHeader)
-	if err != nil {
-		return 0, 0, nil, err
-	}
-	dev := binary.LittleEndian.Uint32(p.rHeader)
-	id := binary.LittleEndian.Uint32(p.rHeader[4:])
-	length := binary.LittleEndian.Uint32(p.rHeader[8:])
-
-	if err != nil {
-		return 0, 0, nil, err
-	}
-
-	data := make([]byte, length)
-
-	_, err = io.ReadFull(p.r, data)
-
-	if err != nil {
-		return 0, 0, nil, err
-	}
-	return dev, id, data, nil
-}
-
 func (p *ProtocolRW) Handle() error {
+	r := p.readers[0]
+	header := make([]byte, 4+4+4)
 	for {
-		dev, id, data, err := p.readPacket()
+		_, err := io.ReadFull(r, header)
 		if err != nil {
 			return err
 		}
-		// Now queue it up in a channel
+		dev := binary.LittleEndian.Uint32(header)
+		id := binary.LittleEndian.Uint32(header[4:])
+		length := binary.LittleEndian.Uint32(header[8:])
 
-		_, ok := p.activeDevs[dev]
-		if !ok {
-			p.activeDevs[dev] = true
-			if p.newdevFN != nil {
-				p.newdevFN(p, dev)
-			}
+		data := make([]byte, length)
+		_, err = io.ReadFull(r, data)
+
+		if err != nil {
+			return err
 		}
 
-		cmd := data[0]
+		// Handle the packet
+		p.handlePacket(dev, id, data)
+	}
+}
 
-		p.waitersLock.Lock()
-		w, ok := p.waiters[dev]
-		if !ok {
-			w = Waiters{
-				byCmd: make(map[byte]chan packetinfo),
-				byID:  make(map[uint32]chan packetinfo),
-			}
-			p.waiters[dev] = w
-		}
-
-		wq_id, okk := w.byID[id]
-		if !okk {
-			wq_id = make(chan packetinfo, 8) // Some buffer here...
-			w.byID[id] = wq_id
-		}
-
-		wq_cmd, okk := w.byCmd[cmd]
-		if !okk {
-			wq_cmd = make(chan packetinfo, 8) // Some buffer here...
-			w.byCmd[cmd] = wq_cmd
-		}
-
-		p.waitersLock.Unlock()
-
-		if IsResponse(cmd) {
-			wq_id <- packetinfo{
-				id:   id,
-				data: data,
-			}
-		} else {
-			wq_cmd <- packetinfo{
-				id:   id,
-				data: data,
-			}
+func (p *ProtocolRW) handlePacket(dev uint32, id uint32, data []byte) {
+	p.activeDevsLock.Lock()
+	_, ok := p.activeDevs[dev]
+	if !ok {
+		p.activeDevs[dev] = true
+		if p.newdevFN != nil {
+			p.newdevFN(p, dev)
 		}
 	}
+	p.activeDevsLock.Unlock()
+
+	cmd := data[0]
+
+	p.waitersLock.Lock()
+	w, ok := p.waiters[dev]
+	if !ok {
+		w = Waiters{
+			byCmd: make(map[byte]chan packetinfo),
+			byID:  make(map[uint32]chan packetinfo),
+		}
+		p.waiters[dev] = w
+	}
+
+	wq_id, okk := w.byID[id]
+	if !okk {
+		wq_id = make(chan packetinfo, 8) // Some buffer here...
+		w.byID[id] = wq_id
+	}
+
+	wq_cmd, okk := w.byCmd[cmd]
+	if !okk {
+		wq_cmd = make(chan packetinfo, 8) // Some buffer here...
+		w.byCmd[cmd] = wq_cmd
+	}
+
+	p.waitersLock.Unlock()
+
+	if IsResponse(cmd) {
+		wq_id <- packetinfo{
+			id:   id,
+			data: data,
+		}
+	} else {
+		wq_cmd <- packetinfo{
+			id:   id,
+			data: data,
+		}
+	}
+
 }
 
 func (mp *ProtocolRW) WaitForPacket(dev uint32, id uint32) ([]byte, error) {
