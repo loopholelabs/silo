@@ -53,7 +53,30 @@ func NewProtocolRW(ctx context.Context, readers []io.Reader, writers []io.Writer
 	return prw
 }
 
+func (p *ProtocolRW) initDev(dev uint32) {
+	p.activeDevsLock.Lock()
+	_, ok := p.activeDevs[dev]
+	if !ok {
+		p.activeDevs[dev] = true
+
+		// Setup waiter here, this is the first packet we've received for this dev.
+		p.waitersLock.Lock()
+		p.waiters[dev] = Waiters{
+			byCmd: make(map[byte]chan packetinfo),
+			byID:  make(map[uint32]chan packetinfo),
+		}
+		p.waitersLock.Unlock()
+
+		if p.newdevFN != nil {
+			p.newdevFN(p, dev)
+		}
+	}
+	p.activeDevsLock.Unlock()
+}
+
 func (p *ProtocolRW) SendPacketWriter(dev uint32, id uint32, length uint32, data func(w io.Writer) error) (uint32, error) {
+	p.initDev(dev)
+
 	// Encode and send it down the writer...
 	if id == ID_PICK_ANY {
 		id = atomic.AddUint32(&p.txID, 1)
@@ -78,6 +101,8 @@ func (p *ProtocolRW) SendPacketWriter(dev uint32, id uint32, length uint32, data
 
 // Send a packet
 func (p *ProtocolRW) SendPacket(dev uint32, id uint32, data []byte) (uint32, error) {
+	p.initDev(dev)
+
 	// Encode and send it down the writer...
 	if id == ID_PICK_ANY {
 		id = atomic.AddUint32(&p.txID, 1)
@@ -146,15 +171,7 @@ func (p *ProtocolRW) Handle() error {
 }
 
 func (p *ProtocolRW) handlePacket(dev uint32, id uint32, data []byte) error {
-	p.activeDevsLock.Lock()
-	_, ok := p.activeDevs[dev]
-	if !ok {
-		p.activeDevs[dev] = true
-		if p.newdevFN != nil {
-			p.newdevFN(p, dev)
-		}
-	}
-	p.activeDevsLock.Unlock()
+	p.initDev(dev)
 
 	if data == nil || len(data) < 1 {
 		return errors.New("Invalid data packet")
@@ -202,14 +219,7 @@ func (p *ProtocolRW) handlePacket(dev uint32, id uint32, data []byte) error {
 
 func (mp *ProtocolRW) WaitForPacket(dev uint32, id uint32) ([]byte, error) {
 	mp.waitersLock.Lock()
-	w, ok := mp.waiters[dev]
-	if !ok {
-		w = Waiters{
-			byCmd: make(map[byte]chan packetinfo),
-			byID:  make(map[uint32]chan packetinfo),
-		}
-		mp.waiters[dev] = w
-	}
+	w := mp.waiters[dev]
 	wq, okk := w.byID[id]
 	if !okk {
 		wq = make(chan packetinfo, 8) // Some buffer here...
@@ -228,14 +238,7 @@ func (mp *ProtocolRW) WaitForPacket(dev uint32, id uint32) ([]byte, error) {
 
 func (mp *ProtocolRW) WaitForCommand(dev uint32, cmd byte) (uint32, []byte, error) {
 	mp.waitersLock.Lock()
-	w, ok := mp.waiters[dev]
-	if !ok {
-		w = Waiters{
-			byCmd: make(map[byte]chan packetinfo),
-			byID:  make(map[uint32]chan packetinfo),
-		}
-		mp.waiters[dev] = w
-	}
+	w := mp.waiters[dev]
 	wq, okk := w.byCmd[cmd]
 	if !okk {
 		wq = make(chan packetinfo, 8) // Some buffer here...

@@ -32,11 +32,6 @@ func setup(num int) *ToProtocol {
 		writers2 = append(writers2, w2)
 	}
 
-	prSource := NewProtocolRW(context.TODO(), readers1, writers2, nil)
-	prDest := NewProtocolRW(context.TODO(), readers2, writers1, func(p Protocol, dev uint32) {})
-
-	sourceToProtocol := NewToProtocol(uint64(size), 1, prSource)
-
 	storeFactory := func(di *DevInfo) storage.StorageProvider {
 		cr := func(size int) storage.StorageProvider {
 			return sources.NewMemoryStorage(int(di.Size))
@@ -45,15 +40,20 @@ func setup(num int) *ToProtocol {
 		return store
 	}
 
-	destFromProtocol := NewFromProtocol(1, storeFactory, prDest)
+	prSource := NewProtocolRW(context.TODO(), readers1, writers2, nil)
+	prDest := NewProtocolRW(context.TODO(), readers2, writers1, func(p Protocol, dev uint32) {
+		destFromProtocol := NewFromProtocol(dev, storeFactory, p)
+		go destFromProtocol.HandleDevInfo()
+		go destFromProtocol.HandleSend(context.TODO())
+		go destFromProtocol.HandleReadAt()
+		go destFromProtocol.HandleWriteAt()
+
+	})
+
+	sourceToProtocol := NewToProtocol(uint64(size), 1, prSource)
 
 	go prSource.Handle()
 	go prDest.Handle()
-
-	go destFromProtocol.HandleDevInfo()
-	go destFromProtocol.HandleSend(context.TODO())
-	go destFromProtocol.HandleReadAt()
-	go destFromProtocol.HandleWriteAt()
 
 	sourceToProtocol.SendDevInfo("test", 1024*1024)
 	return sourceToProtocol
