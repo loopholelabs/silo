@@ -157,27 +157,29 @@ func TestMigratorSimplePipe(t *testing.T) {
 	r1, w1 := io.Pipe()
 	r2, w2 := io.Pipe()
 
+	initDev := func(p protocol.Protocol, dev uint32) {
+		destStorageFactory := func(di *protocol.DevInfo) storage.StorageProvider {
+			destStorage = sources.NewMemoryStorage(int(di.Size))
+			return destStorage
+		}
+
+		// Pipe from the protocol to destWaiting
+		destFrom := protocol.NewFromProtocol(dev, destStorageFactory, p)
+		ctx := context.TODO()
+		go destFrom.HandleSend(ctx)
+		go destFrom.HandleReadAt()
+		go destFrom.HandleWriteAt()
+		go destFrom.HandleDevInfo()
+	}
+
 	prSource := protocol.NewProtocolRW(context.TODO(), []io.Reader{r1}, []io.Writer{w2}, nil)
-	prDest := protocol.NewProtocolRW(context.TODO(), []io.Reader{r2}, []io.Writer{w1}, nil)
+	prDest := protocol.NewProtocolRW(context.TODO(), []io.Reader{r2}, []io.Writer{w1}, initDev)
 
 	go prSource.Handle()
 	go prDest.Handle()
 
 	// Pipe a destination to the protocol
 	destination := protocol.NewToProtocol(sourceDirtyRemote.Size(), 17, prSource)
-
-	destStorageFactory := func(di *protocol.DevInfo) storage.StorageProvider {
-		destStorage = sources.NewMemoryStorage(int(di.Size))
-		return destStorage
-	}
-
-	// Pipe from the protocol to destWaiting
-	destFrom := protocol.NewFromProtocol(17, destStorageFactory, prDest)
-	ctx := context.TODO()
-	go destFrom.HandleSend(ctx)
-	go destFrom.HandleReadAt()
-	go destFrom.HandleWriteAt()
-	go destFrom.HandleDevInfo()
 
 	destination.SendDevInfo("test", uint32(blockSize))
 

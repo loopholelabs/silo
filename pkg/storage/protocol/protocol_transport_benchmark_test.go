@@ -3,6 +3,7 @@ package protocol
 import (
 	"context"
 	"crypto/rand"
+	"fmt"
 	"io"
 	"sync"
 	"testing"
@@ -85,39 +86,46 @@ func BenchmarkWriteAt(mb *testing.B) {
 }
 
 func BenchmarkWriteAtConcurrent(mb *testing.B) {
+	bufferSizes := []int{4 * 1024, 64 * 1024, 256 * 1024, 1024 * 1024}
+
 	maxConcurrent := 16
 
 	sourceToProtocol := setup(maxConcurrent)
 
-	// Do some writes concurrently
-	buff := make([]byte, 256*1024)
-	rand.Read(buff)
+	for _, bSize := range bufferSizes {
 
-	mb.ReportAllocs()
-	mb.SetBytes(int64(len(buff)))
-	mb.ResetTimer()
+		mb.Run(fmt.Sprintf("buffer_%d", bSize), func(b *testing.B) {
+			// Do some writes concurrently
+			buff := make([]byte, bSize)
+			rand.Read(buff)
 
-	var wg sync.WaitGroup
-	concurrency := make(chan bool, maxConcurrent)
+			b.ReportAllocs()
+			b.SetBytes(int64(len(buff)))
+			b.ResetTimer()
 
-	p := 0
+			var wg sync.WaitGroup
+			concurrency := make(chan bool, maxConcurrent)
 
-	for i := 0; i < mb.N; i++ {
-		concurrency <- true
-		wg.Add(1)
-		go func(ptr int64) {
-			n, err := sourceToProtocol.WriteAt(buff, ptr)
-			if err != nil || n != len(buff) {
-				panic(err)
+			p := 0
+
+			for i := 0; i < b.N; i++ {
+				concurrency <- true
+				wg.Add(1)
+				go func(ptr int64) {
+					n, err := sourceToProtocol.WriteAt(buff, ptr)
+					if err != nil || n != len(buff) {
+						panic(err)
+					}
+					wg.Done()
+					<-concurrency
+				}(int64(p))
+				p += len(buff) // Move forward...
+				if p+len(buff) > size {
+					p = 0
+				}
 			}
-			wg.Done()
-			<-concurrency
-		}(int64(p))
-		p += 1024
-		if p+len(buff) > size {
-			p = 0
-		}
-	}
 
-	wg.Wait()
+			wg.Wait()
+		})
+	}
 }
