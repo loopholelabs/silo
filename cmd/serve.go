@@ -68,7 +68,13 @@ func runServe(ccmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}()
 
-	for _, s := range []int{1024 * 1024 * 1024, 100 * 1024 * 1024} {
+	for _, s := range []int{
+		1024 * 1024 * 1024,
+		100 * 1024 * 1024,
+		2 * 1024 * 1024 * 1024,
+		8 * 1024 * 1024,
+		7 * 1024 * 1024,
+		156 * 1000} {
 		sinfo, err := setupStorageDevice(s)
 		if err != nil {
 			panic("Could not setup storage.")
