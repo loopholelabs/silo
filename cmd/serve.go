@@ -6,7 +6,6 @@ import (
 	"io"
 	"net"
 	"os"
-	"os/exec"
 	"os/signal"
 	"sync"
 	"syscall"
@@ -37,8 +36,6 @@ var (
 )
 
 var serve_addr string
-var serve_expose_dev bool
-var serve_mount_dev bool
 
 var src_exposed []storage.ExposedStorage
 var src_storage []*storageInfo
@@ -49,8 +46,6 @@ var serveBars []*mpb.Bar
 func init() {
 	rootCmd.AddCommand(cmdServe)
 	cmdServe.Flags().StringVarP(&serve_addr, "addr", "a", ":5170", "Address to serve from")
-	cmdServe.Flags().BoolVarP(&serve_expose_dev, "expose", "e", false, "Expose as nbd dev")
-	cmdServe.Flags().BoolVarP(&serve_mount_dev, "mount", "m", false, "mkfs.ext4 and mount")
 }
 
 type storageInfo struct {
@@ -59,6 +54,13 @@ type storageInfo struct {
 	orderer    *blocks.PriorityBlockOrder
 	num_blocks int
 	block_size int
+	name       string
+}
+
+type storageConfig struct {
+	Name   string
+	Size   int
+	Expose bool
 }
 
 func runServe(ccmd *cobra.Command, args []string) {
@@ -80,18 +82,16 @@ func runServe(ccmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}()
 
-	for i, s := range []int{
-
-		1024 * 1024 * 1024,
-		100 * 1024 * 1024,
-		2 * 1024 * 1024 * 1024,
-		8 * 1024 * 1024,
-		7 * 1024 * 1024,
-		156 * 1000,
-		200 * 1024 * 1024,
-		300 * 1024 * 1024,
-		900,
-		83 * 1000} {
+	for i, s := range []*storageConfig{
+		{Name: "Disk0", Size: 1024 * 1024 * 1024, Expose: false},
+		{Name: "Disk1", Size: 2 * 1024 * 1024, Expose: false},
+		{Name: "Disk2", Size: 100 * 1024 * 1024, Expose: false},
+		{Name: "Disk3", Size: 1234567, Expose: false},
+		{Name: "Memory0", Size: 2 * 1024 * 1024 * 1024, Expose: false},
+		{Name: "Memory1", Size: 7 * 1024 * 1024, Expose: false},
+		{Name: "Stuff", Size: 900, Expose: false},
+		{Name: "Other", Size: 72 * 1024 * 1024, Expose: false},
+	} {
 
 		fmt.Printf("Setup storage %d size %d\n", i, s)
 		sinfo, err := setupStorageDevice(s)
@@ -126,7 +126,7 @@ func runServe(ccmd *cobra.Command, args []string) {
 		for i, s := range src_storage {
 			wg.Add(1)
 			go func(index int, src *storageInfo) {
-				err := migrateDevice(uint32(index), fmt.Sprintf("dev_%d", index), pro, src)
+				err := migrateDevice(uint32(index), src.name, pro, src)
 				if err != nil {
 					fmt.Printf("There was an issue migrating the storage %d %v\n", index, err)
 				}
@@ -148,27 +148,25 @@ func shutdown_everything() {
 		i.lockable.Unlock()
 	}
 
-	if serve_expose_dev {
-		fmt.Printf("Shutting down devices cleanly...\n")
-		for _, e := range src_exposed {
-			src_dev_shutdown(e)
-		}
+	fmt.Printf("Shutting down devices cleanly...\n")
+	for _, e := range src_exposed {
+		src_dev_shutdown(e)
 	}
 }
 
-func setupStorageDevice(size int) (*storageInfo, error) {
+func setupStorageDevice(conf *storageConfig) (*storageInfo, error) {
 	block_size := 1024 * 64
-	num_blocks := (size + block_size - 1) / block_size
+	num_blocks := (conf.Size + block_size - 1) / block_size
 
 	cr := func(s int) storage.StorageProvider {
 		return sources.NewMemoryStorage(s)
 	}
 	// Setup some sharded memory storage (for concurrent write speed)
-	shard_size := size
-	if size > 64*1024 {
-		shard_size = size / 1024
+	shard_size := conf.Size
+	if conf.Size > 64*1024 {
+		shard_size = conf.Size / 1024
 	}
-	source := modules.NewShardedStorage(size, shard_size, cr)
+	source := modules.NewShardedStorage(conf.Size, shard_size, cr)
 	sourceMetrics := modules.NewMetrics(source)
 	sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(sourceMetrics, block_size)
 	sourceMonitor := volatilitymonitor.NewVolatilityMonitor(sourceDirtyLocal, block_size, 10*time.Second)
@@ -178,7 +176,7 @@ func setupStorageDevice(size int) (*storageInfo, error) {
 	orderer := blocks.NewPriorityBlockOrder(num_blocks, sourceMonitor)
 	orderer.AddAll()
 
-	if serve_expose_dev {
+	if conf.Expose {
 		p, err := src_dev_setup(sourceStorage)
 		if err != nil {
 			return nil, err
@@ -191,6 +189,7 @@ func setupStorageDevice(size int) (*storageInfo, error) {
 		orderer:    orderer,
 		block_size: block_size,
 		num_blocks: num_blocks,
+		name:       conf.Name,
 	}, nil
 }
 
@@ -347,53 +346,12 @@ func src_dev_setup(prov storage.StorageProvider) (storage.ExposedStorage, error)
 
 	device := p.Device()
 	fmt.Printf("* Device ready on /dev/%s\n", device)
-
-	if serve_mount_dev {
-		err = os.Mkdir(fmt.Sprintf("/mnt/mount%s", device), 0600)
-		if err != nil {
-			return nil, fmt.Errorf("Error mkdir %v", err)
-		}
-
-		cmd := exec.Command("mkfs.ext4", fmt.Sprintf("/dev/%s", device))
-		err = cmd.Run()
-		if err != nil {
-			return nil, fmt.Errorf("Error mkfs.ext4 %v", err)
-		}
-
-		cmd = exec.Command("mount", fmt.Sprintf("/dev/%s", device), fmt.Sprintf("/mnt/mount%s", device))
-		err = cmd.Run()
-		if err != nil {
-			return nil, fmt.Errorf("Error mount %v", err)
-		}
-	}
 	return p, nil
 }
 
 func src_dev_shutdown(p storage.ExposedStorage) error {
 	device := p.Device()
 
-	if serve_mount_dev {
-
-		cmd := exec.Command("umount", fmt.Sprintf("/dev/%s", device))
-		err := cmd.Run()
-		if err != nil {
-			fmt.Printf("Could not umount device %s %v\n", device, err)
-			//		return err
-		}
-
-		err = os.Remove(fmt.Sprintf("/mnt/mount%s", device))
-
-		if err != nil {
-			fmt.Printf("Count not remove /mnt/mount%s %v\n", device, err)
-			//		return err
-		}
-
-		fmt.Printf("Shutdown nbd device %s\n", device)
-		err = p.Shutdown()
-		if err != nil {
-			return err
-		}
-
-	}
-	return nil
+	fmt.Printf("Shutdown nbd device %s\n", device)
+	return p.Shutdown()
 }
