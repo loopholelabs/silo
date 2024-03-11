@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/fatih/color"
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/blocks"
 	"github.com/loopholelabs/silo/pkg/storage/dirtytracker"
@@ -22,6 +23,8 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/sources"
 	"github.com/loopholelabs/silo/pkg/storage/volatilitymonitor"
 	"github.com/spf13/cobra"
+	"github.com/vbauerster/mpb/v8"
+	"github.com/vbauerster/mpb/v8/decor"
 )
 
 var (
@@ -40,6 +43,9 @@ var serve_mount_dev bool
 var src_exposed []storage.ExposedStorage
 var src_storage []*storageInfo
 
+var serveProgress *mpb.Progress
+var serveBars []*mpb.Bar
+
 func init() {
 	rootCmd.AddCommand(cmdServe)
 	cmdServe.Flags().StringVarP(&serve_addr, "addr", "a", ":5170", "Address to serve from")
@@ -56,6 +62,12 @@ type storageInfo struct {
 }
 
 func runServe(ccmd *cobra.Command, args []string) {
+	serveProgress = mpb.New(
+		mpb.WithOutput(color.Output),
+		mpb.WithAutoRefresh(),
+	)
+	serveBars = make([]*mpb.Bar, 0)
+
 	src_exposed = make([]storage.ExposedStorage, 0)
 	src_storage = make([]*storageInfo, 0)
 	fmt.Printf("Starting silo serve %s\n", serve_addr)
@@ -68,13 +80,20 @@ func runServe(ccmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}()
 
-	for _, s := range []int{
+	for i, s := range []int{
+
 		1024 * 1024 * 1024,
 		100 * 1024 * 1024,
 		2 * 1024 * 1024 * 1024,
 		8 * 1024 * 1024,
 		7 * 1024 * 1024,
-		156 * 1000} {
+		156 * 1000,
+		200 * 1024 * 1024,
+		300 * 1024 * 1024,
+		900,
+		83 * 1000} {
+
+		fmt.Printf("Setup storage %d size %d\n", i, s)
 		sinfo, err := setupStorageDevice(s)
 		if err != nil {
 			panic("Could not setup storage.")
@@ -145,7 +164,11 @@ func setupStorageDevice(size int) (*storageInfo, error) {
 		return sources.NewMemoryStorage(s)
 	}
 	// Setup some sharded memory storage (for concurrent write speed)
-	source := modules.NewShardedStorage(size, size/1024, cr)
+	shard_size := size
+	if size > 64*1024 {
+		shard_size = size / 1024
+	}
+	source := modules.NewShardedStorage(size, shard_size, cr)
 	sourceMetrics := modules.NewMetrics(source)
 	sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(sourceMetrics, block_size)
 	sourceMonitor := volatilitymonitor.NewVolatilityMonitor(sourceDirtyLocal, block_size, 10*time.Second)
@@ -179,6 +202,29 @@ func migrateDevice(dev_id uint32, name string,
 	dest := protocol.NewToProtocol(uint64(size), dev_id, pro)
 
 	dest.SendDevInfo(name, uint32(sinfo.block_size))
+
+	statusString := " "
+
+	statusFn := func(s decor.Statistics) string {
+		return statusString
+	}
+
+	bar := serveProgress.AddBar(int64(size),
+		mpb.PrependDecorators(
+			decor.Name(name, decor.WCSyncSpaceR),
+			decor.CountersKiloByte("%d/%d", decor.WCSyncWidth),
+		),
+		mpb.AppendDecorators(
+			decor.EwmaETA(decor.ET_STYLE_GO, 30),
+			decor.Name(" "),
+			decor.EwmaSpeed(decor.SizeB1024(0), "% .2f", 60, decor.WCSyncWidth),
+			decor.OnComplete(decor.Percentage(decor.WC{W: 5}), "done"),
+			decor.Name(" "),
+			decor.Any(statusFn, decor.WC{W: 2}),
+		),
+	)
+
+	serveBars = append(serveBars, bar)
 
 	go dest.HandleNeedAt(func(offset int64, length int32) {
 		// Prioritize blocks...
@@ -219,11 +265,22 @@ func migrateDevice(dev_id uint32, name string,
 		sinfo.lockable.Unlock()
 		dest.SendEvent(protocol.EventPostUnlock)
 	}
+
+	last_value := uint64(0)
+	last_time := time.Now()
+
 	conf.ProgressHandler = func(p *migrator.MigrationProgress) {
-		fmt.Printf("[%s] Progress Moved: %d/%d %.2f%% Clean: %d/%d %.2f%% InProgress: %d\n",
-			name, p.MigratedBlocks, p.TotalBlocks, p.MigratedBlocksPerc,
-			p.ReadyBlocks, p.TotalBlocks, p.ReadyBlocksPerc,
-			p.ActiveBlocks)
+		/*
+			fmt.Printf("[%s] Progress Moved: %d/%d %.2f%% Clean: %d/%d %.2f%% InProgress: %d\n",
+				name, p.MigratedBlocks, p.TotalBlocks, p.MigratedBlocksPerc,
+				p.ReadyBlocks, p.TotalBlocks, p.ReadyBlocksPerc,
+				p.ActiveBlocks)
+		*/
+		v := uint64(p.ReadyBlocks) * size / uint64(p.TotalBlocks)
+		bar.SetCurrent(int64(v))
+		bar.EwmaIncrInt64(int64(v-last_value), time.Since(last_time))
+		last_time = time.Now()
+		last_value = v
 	}
 
 	mig, err := migrator.NewMigrator(sinfo.tracker, dest, sinfo.orderer, conf)
@@ -255,7 +312,7 @@ func migrateDevice(dev_id uint32, name string,
 		// Optional: Send the list of dirty blocks over...
 		dest.DirtyList(blocks)
 
-		fmt.Printf("[%s] Migrating dirty blocks %d\n", name, len(blocks))
+		//		fmt.Printf("[%s] Migrating dirty blocks %d\n", name, len(blocks))
 		err := mig.MigrateDirty(blocks)
 		if err != nil {
 			return err
@@ -267,11 +324,15 @@ func migrateDevice(dev_id uint32, name string,
 		return err
 	}
 
-	fmt.Printf("[%s] Migration completed\n", name)
+	//	fmt.Printf("[%s] Migration completed\n", name)
 	err = dest.SendEvent(protocol.EventCompleted)
 	if err != nil {
 		return err
 	}
+
+	// Completed.
+	bar.SetCurrent(int64(size))
+
 	return nil
 }
 

@@ -155,7 +155,11 @@ func handleIncomingDevice(pro protocol.Protocol, dev uint32) {
 			return sources.NewMemoryStorage(s)
 		}
 		// Setup some sharded memory storage (for concurrent write speed)
-		destStorage = modules.NewShardedStorage(int(di.Size), int(di.Size/1024), cr)
+		shard_size := di.Size
+		if di.Size > 64*1024 {
+			shard_size = di.Size / 1024
+		}
+		destStorage = modules.NewShardedStorage(int(di.Size), int(shard_size), cr)
 
 		destMonitorStorage = modules.NewHooks(destStorage)
 
