@@ -145,3 +145,49 @@ func TestNBDNLDeviceUnalignedPartialRead(t *testing.T) {
 	// Make sure the data is equal
 	assert.Equal(t, b[7:7+88], buffer)
 }
+
+func TestNBDNLDeviceUnalignedPartialWrite(t *testing.T) {
+	currentUser, err := user.Current()
+	if err != nil {
+		panic(err)
+	}
+	if currentUser.Username != "root" {
+		fmt.Printf("Cannot run test unless we are root.\n")
+		return
+	}
+
+	var ndev *ExposedStorageNBDNL
+	defer func() {
+		err := ndev.Shutdown()
+		assert.NoError(t, err)
+	}()
+
+	size := 900
+	prov := sources.NewMemoryStorage(size)
+	ndev = NewExposedStorageNBDNL(prov, 1, 0, uint64(size), 4096, true)
+
+	err = ndev.Init()
+	assert.NoError(t, err)
+
+	devfile, err := os.OpenFile(fmt.Sprintf("/dev/nbd%d", ndev.devIndex), os.O_RDWR, 0666)
+	assert.NoError(t, err)
+
+	// Try doing a read...
+	buffer := make([]byte, 800)
+	rand.Read(buffer)
+	num, err := devfile.WriteAt(buffer, 10)
+	assert.NoError(t, err)
+	assert.Equal(t, 800, num)
+	devfile.Sync()
+	devfile.Close()
+
+	// Make sure the write got through to our provider
+
+	b := make([]byte, 900)
+	num, err = prov.ReadAt(b, 0)
+	assert.NoError(t, err)
+	assert.Equal(t, 900, num)
+
+	// Make sure the data is equal
+	assert.Equal(t, b[10:810], buffer)
+}
