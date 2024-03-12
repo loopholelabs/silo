@@ -1,6 +1,7 @@
 package expose
 
 import (
+	"crypto/rand"
 	"fmt"
 	"os"
 	"os/user"
@@ -55,4 +56,92 @@ func TestNBDNLDevice(t *testing.T) {
 	}
 
 	wg.Wait()
+}
+
+func TestNBDNLDeviceSmall(t *testing.T) {
+	currentUser, err := user.Current()
+	if err != nil {
+		panic(err)
+	}
+	if currentUser.Username != "root" {
+		fmt.Printf("Cannot run test unless we are root.\n")
+		return
+	}
+
+	var ndev *ExposedStorageNBDNL
+	defer func() {
+		err := ndev.Shutdown()
+		assert.NoError(t, err)
+	}()
+
+	size := 900
+	prov := sources.NewMemoryStorage(size)
+
+	b := make([]byte, 900)
+	rand.Read(b)
+	n, err := prov.WriteAt(b, 0)
+	assert.NoError(t, err)
+	assert.Equal(t, 900, n)
+
+	ndev = NewExposedStorageNBDNL(prov, 1, 0, uint64(size), 4096, true)
+
+	err = ndev.Init()
+	assert.NoError(t, err)
+
+	devfile, err := os.OpenFile(fmt.Sprintf("/dev/nbd%d", ndev.devIndex), os.O_RDWR, 0666)
+	assert.NoError(t, err)
+
+	// Try doing a read...
+	buffer := make([]byte, 900)
+	num, err := devfile.ReadAt(buffer, 0)
+	assert.NoError(t, err)
+	assert.Equal(t, 900, num)
+	devfile.Close()
+
+	// Make sure the data is equal
+	assert.Equal(t, b, buffer)
+}
+
+func TestNBDNLDeviceUnalignedPartialRead(t *testing.T) {
+	currentUser, err := user.Current()
+	if err != nil {
+		panic(err)
+	}
+	if currentUser.Username != "root" {
+		fmt.Printf("Cannot run test unless we are root.\n")
+		return
+	}
+
+	var ndev *ExposedStorageNBDNL
+	defer func() {
+		err := ndev.Shutdown()
+		assert.NoError(t, err)
+	}()
+
+	size := 8 * 1024
+	prov := sources.NewMemoryStorage(size)
+
+	b := make([]byte, size)
+	rand.Read(b)
+	n, err := prov.WriteAt(b, 0)
+	assert.NoError(t, err)
+	assert.Equal(t, size, n)
+
+	ndev = NewExposedStorageNBDNL(prov, 1, 0, uint64(size), 4096, true)
+
+	err = ndev.Init()
+	assert.NoError(t, err)
+
+	devfile, err := os.OpenFile(fmt.Sprintf("/dev/nbd%d", ndev.devIndex), os.O_RDWR, 0666)
+	assert.NoError(t, err)
+
+	// Try doing a read...
+	buffer := make([]byte, 88)
+	num, err := devfile.ReadAt(buffer, 7)
+	assert.NoError(t, err)
+	assert.Equal(t, len(buffer), num)
+	devfile.Close()
+
+	// Make sure the data is equal
+	assert.Equal(t, b[7:7+88], buffer)
 }

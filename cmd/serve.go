@@ -93,7 +93,7 @@ func runServe(ccmd *cobra.Command, args []string) {
 		{Name: "Other", Size: 72 * 1024 * 1024, Expose: false},
 	} {
 
-		fmt.Printf("Setup storage %d size %d\n", i, s)
+		fmt.Printf("Setup storage %d [%s] size %d\n", i, s.Name, s.Size)
 		sinfo, err := setupStorageDevice(s)
 		if err != nil {
 			panic("Could not setup storage.")

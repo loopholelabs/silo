@@ -30,6 +30,11 @@ type ExposedStorageNBDNL struct {
 }
 
 func NewExposedStorageNBDNL(prov storage.StorageProvider, numConnections int, timeout uint64, size uint64, blockSize uint64, async bool) *ExposedStorageNBDNL {
+
+	// The size must be a multiple of sector size
+	alignTo := uint64(512)
+	size = alignTo * ((size + alignTo - 1) / alignTo)
+
 	return &ExposedStorageNBDNL{
 		prov:           prov,
 		numConnections: numConnections,
@@ -47,47 +52,59 @@ func (n *ExposedStorageNBDNL) Device() string {
 
 func (n *ExposedStorageNBDNL) Init() error {
 
-	socks := make([]*os.File, 0)
+	for {
 
-	// Create the socket pairs
-	for i := 0; i < n.numConnections; i++ {
-		sockPair, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_STREAM, 0)
-		if err != nil {
-			return err
+		socks := make([]*os.File, 0)
+
+		// Create the socket pairs
+		for i := 0; i < n.numConnections; i++ {
+			sockPair, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_STREAM, 0)
+			if err != nil {
+				return err
+			}
+
+			client := os.NewFile(uintptr(sockPair[0]), "client")
+			server := os.NewFile(uintptr(sockPair[1]), "server")
+			serverc, err := net.FileConn(server)
+			if err != nil {
+				return err
+			}
+			server.Close()
+
+			//		fmt.Printf("[%d] Socket pair %d -> %d %v %v %v\n", i, sockPair[0], sockPair[1], client, server, serverc)
+
+			d := NewDispatch(serverc, n.prov)
+			d.ASYNC_READS = n.async
+			d.ASYNC_WRITES = n.async
+			// Start reading commands on the socket and dispatching them to our provider
+			go d.Handle()
+			n.socks = append(n.socks, serverc)
+			socks = append(socks, client)
+		}
+		var opts []nbdnl.ConnectOption
+		opts = append(opts, nbdnl.WithBlockSize(uint64(n.blockSize)))
+		opts = append(opts, nbdnl.WithTimeout(100*time.Millisecond))
+		opts = append(opts, nbdnl.WithDeadconnTimeout(100*time.Millisecond))
+
+		serverFlags := nbdnl.FlagHasFlags | nbdnl.FlagCanMulticonn
+
+		idx, err := nbdnl.Connect(nbdnl.IndexAny, socks, n.size, 0, serverFlags, opts...)
+		if err == nil {
+			n.devIndex = int(idx)
+			break
 		}
 
-		client := os.NewFile(uintptr(sockPair[0]), "client")
-		server := os.NewFile(uintptr(sockPair[1]), "server")
-		serverc, err := net.FileConn(server)
-		if err != nil {
-			return err
+		//		fmt.Printf("\n\nError from nbdnl.Connect %v\n\n", err)
+
+		// Sometimes (rare), there seems to be a BADF error here. Lets just retry for now...
+		// Close things down and try again...
+		for _, s := range socks {
+			s.Close()
 		}
-		server.Close()
 
-		//		fmt.Printf("[%d] Socket pair %d -> %d %v %v %v\n", i, sockPair[0], sockPair[1], client, server, serverc)
-
-		d := NewDispatch(serverc, n.prov)
-		d.ASYNC_READS = n.async
-		d.ASYNC_WRITES = n.async
-		// Start reading commands on the socket and dispatching them to our provider
-		go d.Handle()
-		n.socks = append(n.socks, serverc)
-		socks = append(socks, client)
+		//		fmt.Printf("\n\nRetrying...\n\n")
+		time.Sleep(50 * time.Millisecond)
 	}
-	var opts []nbdnl.ConnectOption
-	opts = append(opts, nbdnl.WithBlockSize(uint64(n.blockSize)))
-	opts = append(opts, nbdnl.WithTimeout(100*time.Millisecond))
-	opts = append(opts, nbdnl.WithDeadconnTimeout(100*time.Millisecond))
-
-	serverFlags := nbdnl.ServerFlags(0) //
-	serverFlags = nbdnl.FlagHasFlags | nbdnl.FlagCanMulticonn
-
-	idx, err := nbdnl.Connect(nbdnl.IndexAny, socks, n.size, 0, serverFlags, opts...)
-	if err != nil {
-		return err
-	}
-
-	n.devIndex = int(idx)
 
 	// Wait until it's connected...
 	for {
