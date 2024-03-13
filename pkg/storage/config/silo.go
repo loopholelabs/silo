@@ -3,6 +3,8 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/gohcl"
@@ -18,6 +20,27 @@ type DeviceSchema struct {
 	Name   string `hcl:"name,label"`
 	Size   string `hcl:"size,attr"`
 	Expose bool   `hcl:"expose,optional"`
+}
+
+func (ds *DeviceSchema) ByteSize() int {
+	// Parse the size string
+	multiplier := 1
+	s := strings.Trim(strings.ToLower(ds.Size), " \t\r\n")
+	if strings.HasSuffix(s, "k") {
+		multiplier = 1024
+		s = s[:len(s)-1]
+	} else if strings.HasSuffix(s, "m") {
+		multiplier = 1024 * 1024
+		s = s[:len(s)-1]
+	} else if strings.HasSuffix(s, "g") {
+		multiplier = 1024 * 1024 * 1024
+		s = s[:len(s)-1]
+	}
+	i, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		panic(err)
+	}
+	return int(i) * multiplier
 }
 
 func ReadSchema(path string) (*SiloSchema, error) {

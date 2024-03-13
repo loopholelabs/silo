@@ -94,7 +94,7 @@ func (n *ExposedStorageNBDNL) Init() error {
 			break
 		}
 
-		//		fmt.Printf("\n\nError from nbdnl.Connect %v\n\n", err)
+		fmt.Printf("\n\nError from nbdnl.Connect %v\n\n", err)
 
 		// Sometimes (rare), there seems to be a BADF error here. Lets just retry for now...
 		// Close things down and try again...

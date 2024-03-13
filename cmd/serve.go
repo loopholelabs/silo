@@ -14,6 +14,7 @@ import (
 	"github.com/fatih/color"
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/blocks"
+	"github.com/loopholelabs/silo/pkg/storage/config"
 	"github.com/loopholelabs/silo/pkg/storage/dirtytracker"
 	"github.com/loopholelabs/silo/pkg/storage/expose"
 	"github.com/loopholelabs/silo/pkg/storage/migrator"
@@ -82,18 +83,14 @@ func runServe(ccmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}()
 
-	for i, s := range []*storageConfig{
-		{Name: "Disk0", Size: 1024 * 1024 * 1024, Expose: false},
-		{Name: "Disk1", Size: 2 * 1024 * 1024, Expose: false},
-		{Name: "Disk2", Size: 100 * 1024 * 1024, Expose: false},
-		{Name: "Disk3", Size: 1234567, Expose: false},
-		{Name: "Memory0", Size: 2 * 1024 * 1024 * 1024, Expose: false},
-		{Name: "Memory1", Size: 7 * 1024 * 1024, Expose: false},
-		{Name: "Stuff", Size: 900, Expose: false},
-		{Name: "Other", Size: 72 * 1024 * 1024, Expose: false},
-	} {
+	siloConf, err := config.ReadSchema("silo.conf")
+	if err != nil {
+		panic(err)
+	}
 
-		fmt.Printf("Setup storage %d [%s] size %d\n", i, s.Name, s.Size)
+	for i, s := range siloConf.Device {
+
+		fmt.Printf("Setup storage %d [%s] size %s - %d\n", i, s.Name, s.Size, s.ByteSize())
 		sinfo, err := setupStorageDevice(s)
 		if err != nil {
 			panic("Could not setup storage.")
@@ -154,19 +151,19 @@ func shutdown_everything() {
 	}
 }
 
-func setupStorageDevice(conf *storageConfig) (*storageInfo, error) {
+func setupStorageDevice(conf *config.DeviceSchema) (*storageInfo, error) {
 	block_size := 1024 * 64
-	num_blocks := (conf.Size + block_size - 1) / block_size
+	num_blocks := (conf.ByteSize() + block_size - 1) / block_size
 
 	cr := func(s int) storage.StorageProvider {
 		return sources.NewMemoryStorage(s)
 	}
 	// Setup some sharded memory storage (for concurrent write speed)
-	shard_size := conf.Size
-	if conf.Size > 64*1024 {
-		shard_size = conf.Size / 1024
+	shard_size := conf.ByteSize()
+	if conf.ByteSize() > 64*1024 {
+		shard_size = conf.ByteSize() / 1024
 	}
-	source := modules.NewShardedStorage(conf.Size, shard_size, cr)
+	source := modules.NewShardedStorage(conf.ByteSize(), shard_size, cr)
 	sourceMetrics := modules.NewMetrics(source)
 	sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(sourceMetrics, block_size)
 	sourceMonitor := volatilitymonitor.NewVolatilityMonitor(sourceDirtyLocal, block_size, 10*time.Second)
