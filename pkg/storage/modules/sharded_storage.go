@@ -16,7 +16,7 @@ type ShardedStorage struct {
 	size      int
 }
 
-func NewShardedStorage(size int, blocksize int, creator func(size int) storage.StorageProvider) *ShardedStorage {
+func NewShardedStorage(size int, blocksize int, creator func(index int, size int) storage.StorageProvider) *ShardedStorage {
 	bms := &ShardedStorage{
 		blocks:    make([]storage.StorageProvider, 0),
 		blocksize: blocksize,
@@ -28,7 +28,7 @@ func NewShardedStorage(size int, blocksize int, creator func(size int) storage.S
 		if left < blocksize {
 			d = left
 		}
-		bms.blocks = append(bms.blocks, creator(d))
+		bms.blocks = append(bms.blocks, creator(i, d))
 		left -= d
 	}
 	return bms

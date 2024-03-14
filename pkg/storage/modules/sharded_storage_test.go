@@ -9,7 +9,7 @@ import (
 )
 
 func TestShardedStorage(t *testing.T) {
-	cr := func(s int) storage.StorageProvider {
+	cr := func(i int, s int) storage.StorageProvider {
 		return sources.NewMemoryStorage(s)
 	}
 
@@ -33,7 +33,7 @@ func TestShardedStorage(t *testing.T) {
 }
 
 func TestShardedStoragePartial(t *testing.T) {
-	cr := func(s int) storage.StorageProvider {
+	cr := func(i int, s int) storage.StorageProvider {
 		return sources.NewMemoryStorage(s)
 	}
 

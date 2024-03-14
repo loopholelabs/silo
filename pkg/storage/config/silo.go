@@ -13,13 +13,22 @@ import (
 )
 
 type SiloSchema struct {
-	Device []*DeviceSchema `hcl:"device,block"`
+	Device   []*DeviceSchema   `hcl:"device,block"`
+	Location []*LocationSchema `hcl:"location,block"`
 }
 
 type DeviceSchema struct {
-	Name   string `hcl:"name,label"`
-	Size   string `hcl:"size,attr"`
-	Expose bool   `hcl:"expose,optional"`
+	Name     string `hcl:"name,label"`
+	Size     string `hcl:"size,attr"`
+	Expose   bool   `hcl:"expose,optional"`
+	System   string `hcl:"system,attr"`
+	Location string `hcl:"location,optional"`
+}
+
+type LocationSchema struct {
+	Name     string `hcl:"name,label"`
+	System   string `hcl:"system,optional"`
+	Location string `hcl:"location,optional"`
 }
 
 func (ds *DeviceSchema) ByteSize() int {

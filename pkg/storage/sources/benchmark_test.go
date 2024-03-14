@@ -1,4 +1,4 @@
-package sources
+package sources_test
 
 import (
 	"fmt"
@@ -10,6 +10,7 @@ import (
 
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/modules"
+	"github.com/loopholelabs/silo/pkg/storage/sources"
 )
 
 type sourceInfo struct {
@@ -18,16 +19,16 @@ type sourceInfo struct {
 }
 
 func BenchmarkSourcesRead(mb *testing.B) {
-	sources := make([]sourceInfo, 0)
+	mysources := make([]sourceInfo, 0)
 
 	// Create some sources to test...
-	sources = append(sources, sourceInfo{"MemoryStorage", NewMemoryStorage(1024 * 1024 * 4)})
-	cr := func(s int) storage.StorageProvider {
-		return NewMemoryStorage(s)
+	mysources = append(mysources, sourceInfo{"MemoryStorage", sources.NewMemoryStorage(1024 * 1024 * 4)})
+	cr := func(i int, s int) storage.StorageProvider {
+		return sources.NewMemoryStorage(s)
 	}
-	sources = append(sources, sourceInfo{"ShardedMemoryStorage", modules.NewShardedStorage(1024*1024*4, 1024*4, cr)})
+	mysources = append(mysources, sourceInfo{"ShardedMemoryStorage", modules.NewShardedStorage(1024*1024*4, 1024*4, cr)})
 
-	fileStorage, err := NewFileStorage("test_data", 1024*1024*4)
+	fileStorage, err := sources.NewFileStorage("test_data", 1024*1024*4)
 	if err != nil {
 		panic(err)
 	}
@@ -35,10 +36,10 @@ func BenchmarkSourcesRead(mb *testing.B) {
 		fileStorage.Close()
 		os.Remove("test_data")
 	}()
-	sources = append(sources, sourceInfo{"FileStorage", fileStorage})
+	mysources = append(mysources, sourceInfo{"FileStorage", fileStorage})
 
 	// Test some different sources read speed...
-	for _, s := range sources {
+	for _, s := range mysources {
 
 		mb.Run(s.Name, func(b *testing.B) {
 
@@ -70,16 +71,16 @@ func BenchmarkSourcesRead(mb *testing.B) {
 }
 
 func BenchmarkSourcesWrite(mb *testing.B) {
-	sources := make([]sourceInfo, 0)
+	mysources := make([]sourceInfo, 0)
 
 	// Create some sources to test...
-	sources = append(sources, sourceInfo{"MemoryStorage", NewMemoryStorage(1024 * 1024 * 4)})
-	cr := func(s int) storage.StorageProvider {
-		return NewMemoryStorage(s)
+	mysources = append(mysources, sourceInfo{"MemoryStorage", sources.NewMemoryStorage(1024 * 1024 * 4)})
+	cr := func(i int, s int) storage.StorageProvider {
+		return sources.NewMemoryStorage(s)
 	}
-	sources = append(sources, sourceInfo{"ShardedMemoryStorage", modules.NewShardedStorage(1024*1024*4, 1024*4, cr)})
+	mysources = append(mysources, sourceInfo{"ShardedMemoryStorage", modules.NewShardedStorage(1024*1024*4, 1024*4, cr)})
 
-	fileStorage, err := NewFileStorage("test_data", 1024*1024*4)
+	fileStorage, err := sources.NewFileStorage("test_data", 1024*1024*4)
 	if err != nil {
 		panic(err)
 	}
@@ -87,21 +88,21 @@ func BenchmarkSourcesWrite(mb *testing.B) {
 		fileStorage.Close()
 		os.Remove("test_data")
 	}()
-	sources = append(sources, sourceInfo{"FileStorage", fileStorage})
+	mysources = append(mysources, sourceInfo{"FileStorage", fileStorage})
 
 	// Do sharded files...
-	sharded_files := make(map[string]*FileStorage)
+	sharded_files := make(map[string]*sources.FileStorage)
 
-	crf := func(s int) storage.StorageProvider {
+	crf := func(i int, s int) storage.StorageProvider {
 		name := fmt.Sprintf("test_data_shard_%d", len(sharded_files))
-		fs, err := NewFileStorage(name, int64(s))
+		fs, err := sources.NewFileStorage(name, int64(s))
 		if err != nil {
 			panic(err)
 		}
 		sharded_files[name] = fs
-		return NewMemoryStorage(s)
+		return sources.NewMemoryStorage(s)
 	}
-	sources = append(sources, sourceInfo{"ShardedFileStorage", modules.NewShardedStorage(1024*1024*4, 1024*4, crf)})
+	mysources = append(mysources, sourceInfo{"ShardedFileStorage", modules.NewShardedStorage(1024*1024*4, 1024*4, crf)})
 	defer func() {
 		for f, ms := range sharded_files {
 			ms.Close()
@@ -110,7 +111,7 @@ func BenchmarkSourcesWrite(mb *testing.B) {
 	}()
 
 	// Test some different sources read speed...
-	for _, s := range sources {
+	for _, s := range mysources {
 
 		mb.Run(s.Name, func(b *testing.B) {
 

@@ -155,7 +155,7 @@ func setupStorageDevice(conf *config.DeviceSchema) (*storageInfo, error) {
 	block_size := 1024 * 64
 	num_blocks := (conf.ByteSize() + block_size - 1) / block_size
 
-	cr := func(s int) storage.StorageProvider {
+	cr := func(i int, s int) storage.StorageProvider {
 		return sources.NewMemoryStorage(s)
 	}
 	// Setup some sharded memory storage (for concurrent write speed)

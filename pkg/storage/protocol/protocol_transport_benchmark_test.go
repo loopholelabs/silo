@@ -34,7 +34,7 @@ func setup(num int) *ToProtocol {
 	}
 
 	storeFactory := func(di *DevInfo) storage.StorageProvider {
-		cr := func(size int) storage.StorageProvider {
+		cr := func(i int, size int) storage.StorageProvider {
 			return sources.NewMemoryStorage(int(di.Size))
 		}
 		store = modules.NewShardedStorage(int(di.Size), 1024, cr)

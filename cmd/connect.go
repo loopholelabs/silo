@@ -172,7 +172,7 @@ func handleIncomingDevice(pro protocol.Protocol, dev uint32) {
 		dst_bars = append(dst_bars, bar)
 
 		// You can change this to use sources.NewFileStorage etc etc
-		cr := func(s int) storage.StorageProvider {
+		cr := func(i int, s int) storage.StorageProvider {
 			return sources.NewMemoryStorage(s)
 		}
 		// Setup some sharded memory storage (for concurrent write speed)
