@@ -9,12 +9,13 @@ import (
 )
 
 func TestShardedStorage(t *testing.T) {
-	cr := func(i int, s int) storage.StorageProvider {
-		return sources.NewMemoryStorage(s)
+	cr := func(i int, s int) (storage.StorageProvider, error) {
+		return sources.NewMemoryStorage(s), nil
 	}
 
 	// Create a new block storage, backed by memory storage
-	source := NewShardedStorage(1024*1024, 1024, cr)
+	source, err := NewShardedStorage(1024*1024, 1024, cr)
+	assert.NoError(t, err)
 
 	data := []byte("Hello world")
 
@@ -33,12 +34,13 @@ func TestShardedStorage(t *testing.T) {
 }
 
 func TestShardedStoragePartial(t *testing.T) {
-	cr := func(i int, s int) storage.StorageProvider {
-		return sources.NewMemoryStorage(s)
+	cr := func(i int, s int) (storage.StorageProvider, error) {
+		return sources.NewMemoryStorage(s), nil
 	}
 
 	// Create a new block storage, backed by memory storage
-	source := NewShardedStorage(6000, 4096, cr)
+	source, err := NewShardedStorage(6000, 4096, cr)
+	assert.NoError(t, err)
 
 	data := make([]byte, 6000)
 

@@ -155,15 +155,18 @@ func setupStorageDevice(conf *config.DeviceSchema) (*storageInfo, error) {
 	block_size := 1024 * 64
 	num_blocks := (conf.ByteSize() + block_size - 1) / block_size
 
-	cr := func(i int, s int) storage.StorageProvider {
-		return sources.NewMemoryStorage(s)
+	cr := func(i int, s int) (storage.StorageProvider, error) {
+		return sources.NewMemoryStorage(s), nil
 	}
 	// Setup some sharded memory storage (for concurrent write speed)
 	shard_size := conf.ByteSize()
 	if conf.ByteSize() > 64*1024 {
 		shard_size = conf.ByteSize() / 1024
 	}
-	source := modules.NewShardedStorage(conf.ByteSize(), shard_size, cr)
+	source, err := modules.NewShardedStorage(conf.ByteSize(), shard_size, cr)
+	if err != nil {
+		return nil, err
+	}
 	sourceMetrics := modules.NewMetrics(source)
 	sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(sourceMetrics, block_size)
 	sourceMonitor := volatilitymonitor.NewVolatilityMonitor(sourceDirtyLocal, block_size, 10*time.Second)

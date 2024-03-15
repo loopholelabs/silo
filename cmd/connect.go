@@ -172,15 +172,19 @@ func handleIncomingDevice(pro protocol.Protocol, dev uint32) {
 		dst_bars = append(dst_bars, bar)
 
 		// You can change this to use sources.NewFileStorage etc etc
-		cr := func(i int, s int) storage.StorageProvider {
-			return sources.NewMemoryStorage(s)
+		cr := func(i int, s int) (storage.StorageProvider, error) {
+			return sources.NewMemoryStorage(s), nil
 		}
 		// Setup some sharded memory storage (for concurrent write speed)
 		shard_size := di.Size
 		if di.Size > 64*1024 {
 			shard_size = di.Size / 1024
 		}
-		destStorage = modules.NewShardedStorage(int(di.Size), int(shard_size), cr)
+		var err error
+		destStorage, err = modules.NewShardedStorage(int(di.Size), int(shard_size), cr)
+		if err != nil {
+			panic(err) // FIXME
+		}
 
 		destMonitorStorage = modules.NewHooks(destStorage)
 

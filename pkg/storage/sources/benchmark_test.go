@@ -23,10 +23,14 @@ func BenchmarkSourcesRead(mb *testing.B) {
 
 	// Create some sources to test...
 	mysources = append(mysources, sourceInfo{"MemoryStorage", sources.NewMemoryStorage(1024 * 1024 * 4)})
-	cr := func(i int, s int) storage.StorageProvider {
-		return sources.NewMemoryStorage(s)
+	cr := func(i int, s int) (storage.StorageProvider, error) {
+		return sources.NewMemoryStorage(s), nil
 	}
-	mysources = append(mysources, sourceInfo{"ShardedMemoryStorage", modules.NewShardedStorage(1024*1024*4, 1024*4, cr)})
+	ss, err := modules.NewShardedStorage(1024*1024*4, 1024*4, cr)
+	if err != nil {
+		panic(err)
+	}
+	mysources = append(mysources, sourceInfo{"ShardedMemoryStorage", ss})
 
 	fileStorage, err := sources.NewFileStorage("test_data", 1024*1024*4)
 	if err != nil {
@@ -75,10 +79,14 @@ func BenchmarkSourcesWrite(mb *testing.B) {
 
 	// Create some sources to test...
 	mysources = append(mysources, sourceInfo{"MemoryStorage", sources.NewMemoryStorage(1024 * 1024 * 4)})
-	cr := func(i int, s int) storage.StorageProvider {
-		return sources.NewMemoryStorage(s)
+	cr := func(i int, s int) (storage.StorageProvider, error) {
+		return sources.NewMemoryStorage(s), nil
 	}
-	mysources = append(mysources, sourceInfo{"ShardedMemoryStorage", modules.NewShardedStorage(1024*1024*4, 1024*4, cr)})
+	ss, err := modules.NewShardedStorage(1024*1024*4, 1024*4, cr)
+	if err != nil {
+		panic(err)
+	}
+	mysources = append(mysources, sourceInfo{"ShardedMemoryStorage", ss})
 
 	fileStorage, err := sources.NewFileStorage("test_data", 1024*1024*4)
 	if err != nil {
@@ -93,16 +101,20 @@ func BenchmarkSourcesWrite(mb *testing.B) {
 	// Do sharded files...
 	sharded_files := make(map[string]*sources.FileStorage)
 
-	crf := func(i int, s int) storage.StorageProvider {
+	crf := func(i int, s int) (storage.StorageProvider, error) {
 		name := fmt.Sprintf("test_data_shard_%d", len(sharded_files))
 		fs, err := sources.NewFileStorage(name, int64(s))
 		if err != nil {
 			panic(err)
 		}
 		sharded_files[name] = fs
-		return sources.NewMemoryStorage(s)
+		return sources.NewMemoryStorage(s), nil
 	}
-	mysources = append(mysources, sourceInfo{"ShardedFileStorage", modules.NewShardedStorage(1024*1024*4, 1024*4, crf)})
+	nss, err := modules.NewShardedStorage(1024*1024*4, 1024*4, crf)
+	if err != nil {
+		panic(err)
+	}
+	mysources = append(mysources, sourceInfo{"ShardedFileStorage", nss})
 	defer func() {
 		for f, ms := range sharded_files {
 			ms.Close()

@@ -34,10 +34,14 @@ func setup(num int) *ToProtocol {
 	}
 
 	storeFactory := func(di *DevInfo) storage.StorageProvider {
-		cr := func(i int, size int) storage.StorageProvider {
-			return sources.NewMemoryStorage(int(di.Size))
+		cr := func(i int, size int) (storage.StorageProvider, error) {
+			return sources.NewMemoryStorage(int(di.Size)), nil
 		}
-		store = modules.NewShardedStorage(int(di.Size), 1024, cr)
+		var err error
+		store, err = modules.NewShardedStorage(int(di.Size), 1024, cr)
+		if err != nil {
+			panic(err)
+		}
 		return store
 	}
 
