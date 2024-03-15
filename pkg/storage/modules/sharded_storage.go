@@ -7,6 +7,8 @@ package modules
  */
 
 import (
+	"fmt"
+
 	"github.com/loopholelabs/silo/pkg/storage"
 )
 
@@ -17,23 +19,28 @@ type ShardedStorage struct {
 }
 
 func NewShardedStorage(size int, blocksize int, creator func(index int, size int) (storage.StorageProvider, error)) (*ShardedStorage, error) {
+	if blocksize == 0 {
+		return nil, fmt.Errorf("Invalid block size of 0")
+	}
 	bms := &ShardedStorage{
 		blocks:    make([]storage.StorageProvider, 0),
 		blocksize: blocksize,
 		size:      size,
 	}
 	left := size
+	n := 0
 	for i := 0; i < size; i += blocksize {
 		d := blocksize
 		if left < blocksize {
 			d = left
 		}
-		b, err := creator(i, d)
+		b, err := creator(n, d)
 		if err != nil {
 			return nil, err
 		}
 		bms.blocks = append(bms.blocks, b)
 		left -= d
+		n++
 	}
 	return bms, nil
 }
