@@ -43,6 +43,10 @@ func (dtl *DirtyTrackerLocal) Size() uint64 {
 	return dtl.dt.localSize()
 }
 
+func (dtl *DirtyTrackerLocal) Close() error {
+	return dtl.dt.prov.Close()
+}
+
 type DirtyTrackerRemote struct {
 	dt *DirtyTracker
 }
@@ -61,6 +65,10 @@ func (dtl *DirtyTrackerRemote) Flush() error {
 
 func (dtl *DirtyTrackerRemote) Size() uint64 {
 	return dtl.dt.remoteSize()
+}
+
+func (dtl *DirtyTrackerRemote) Close() error {
+	return dtl.dt.prov.Close()
 }
 
 func NewDirtyTracker(prov storage.StorageProvider, blockSize int) (*DirtyTrackerLocal, *DirtyTrackerRemote) {

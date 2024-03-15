@@ -36,3 +36,7 @@ func (i *Logger) Flush() error {
 func (i *Logger) Size() uint64 {
 	return i.prov.Size()
 }
+
+func (i *Logger) Close() error {
+	return i.prov.Close()
+}

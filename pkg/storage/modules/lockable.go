@@ -53,6 +53,10 @@ func (i *Lockable) Size() uint64 {
 	return i.prov.Size()
 }
 
+func (i *Lockable) Close() error {
+	return i.prov.Close()
+}
+
 func (i *Lockable) Unlock() {
 	i.lock.L.Lock()
 	defer i.lock.L.Unlock()

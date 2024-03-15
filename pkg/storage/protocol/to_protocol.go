@@ -117,6 +117,10 @@ func (i *ToProtocol) Size() uint64 {
 	return i.size
 }
 
+func (i *ToProtocol) Close() error {
+	return nil
+}
+
 // Handle any NeedAt commands, and send to an orderer...
 func (i *ToProtocol) HandleNeedAt(cb func(offset int64, length int32)) error {
 	for {

@@ -97,6 +97,10 @@ func (wcl *WaitingCacheLocal) Size() uint64 {
 	return wcl.wc.prov.Size()
 }
 
+func (wcl *WaitingCacheLocal) Close() error {
+	return wcl.wc.prov.Close()
+}
+
 func (wcl *WaitingCacheLocal) DirtyBlocks(blocks []uint) {
 	for _, v := range blocks {
 		wcl.wc.markUnavailableRemoteBlock(v)

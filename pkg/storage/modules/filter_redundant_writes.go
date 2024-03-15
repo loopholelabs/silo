@@ -78,3 +78,7 @@ func (i *FilterRedundantWrites) Flush() error {
 func (i *FilterRedundantWrites) Size() uint64 {
 	return i.prov.Size()
 }
+
+func (i *FilterRedundantWrites) Close() error {
+	return i.prov.Close()
+}

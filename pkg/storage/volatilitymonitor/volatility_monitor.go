@@ -143,3 +143,7 @@ func (i *VolatilityMonitor) Flush() error {
 func (i *VolatilityMonitor) Size() uint64 {
 	return i.prov.Size()
 }
+
+func (i *VolatilityMonitor) Close() error {
+	return i.prov.Close()
+}

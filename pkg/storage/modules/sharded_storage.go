@@ -136,3 +136,14 @@ func (i *ShardedStorage) Flush() error {
 func (i *ShardedStorage) Size() uint64 {
 	return uint64(i.size)
 }
+
+func (i *ShardedStorage) Close() error {
+	var err error
+	for _, b := range i.blocks {
+		e := b.Close()
+		if e != nil {
+			err = e
+		}
+	}
+	return err
+}

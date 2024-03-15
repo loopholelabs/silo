@@ -81,3 +81,7 @@ func (wcl *WaitingCacheRemote) Flush() error {
 func (wcl *WaitingCacheRemote) Size() uint64 {
 	return wcl.wc.prov.Size()
 }
+
+func (wcl *WaitingCacheRemote) Close() error {
+	return wcl.wc.prov.Close()
+}

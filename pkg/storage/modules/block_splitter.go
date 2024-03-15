@@ -144,3 +144,7 @@ func (i *BlockSplitter) Flush() error {
 func (i *BlockSplitter) Size() uint64 {
 	return i.prov.Size()
 }
+
+func (i *BlockSplitter) Close() error {
+	return i.prov.Close()
+}

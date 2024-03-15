@@ -97,3 +97,7 @@ func (i *Splitter) Flush() error {
 func (i *Splitter) Size() uint64 {
 	return i.defaultProvider.Size()
 }
+
+func (i *Splitter) Close() error {
+	return i.defaultProvider.Close()
+}

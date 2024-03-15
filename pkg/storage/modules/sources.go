@@ -20,7 +20,10 @@ func NewDevices(ds []*config.DeviceSchema) (map[string]storage.StorageProvider, 
 	for _, c := range ds {
 		dev, err := NewDevice(c)
 		if err != nil {
-			// We should probably close/shutdown any devices we have already setup here (graceful exit)
+			// Close/shutdown any we already setup, but we'll ignore any close errors here.
+			for _, cc := range devices {
+				cc.Close()
+			}
 			return nil, err
 		}
 		devices[c.Name] = dev

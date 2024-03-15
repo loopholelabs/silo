@@ -27,3 +27,7 @@ func (i *Nothing) Flush() error {
 func (i *Nothing) Size() uint64 {
 	return 0
 }
+
+func (i *Nothing) Close() error {
+	return nil
+}
