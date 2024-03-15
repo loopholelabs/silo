@@ -20,7 +20,6 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/migrator"
 	"github.com/loopholelabs/silo/pkg/storage/modules"
 	"github.com/loopholelabs/silo/pkg/storage/protocol"
-	"github.com/loopholelabs/silo/pkg/storage/sources"
 	"github.com/loopholelabs/silo/pkg/storage/volatilitymonitor"
 	"github.com/spf13/cobra"
 	"github.com/vbauerster/mpb/v8"
@@ -37,6 +36,7 @@ var (
 )
 
 var serve_addr string
+var serve_conf string
 
 var src_exposed []storage.ExposedStorage
 var src_storage []*storageInfo
@@ -47,6 +47,7 @@ var serveBars []*mpb.Bar
 func init() {
 	rootCmd.AddCommand(cmdServe)
 	cmdServe.Flags().StringVarP(&serve_addr, "addr", "a", ":5170", "Address to serve from")
+	cmdServe.Flags().StringVarP(&serve_conf, "conf", "c", "silo.conf", "Configuration file")
 }
 
 type storageInfo struct {
@@ -83,7 +84,7 @@ func runServe(ccmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}()
 
-	siloConf, err := config.ReadSchema("silo.conf")
+	siloConf, err := config.ReadSchema(serve_conf)
 	if err != nil {
 		panic(err)
 	}
@@ -93,7 +94,7 @@ func runServe(ccmd *cobra.Command, args []string) {
 		fmt.Printf("Setup storage %d [%s] size %s - %d\n", i, s.Name, s.Size, s.ByteSize())
 		sinfo, err := setupStorageDevice(s)
 		if err != nil {
-			panic("Could not setup storage.")
+			panic(fmt.Sprintf("Could not setup storage. %v", err))
 		}
 		src_storage = append(src_storage, sinfo)
 	}
@@ -155,15 +156,7 @@ func setupStorageDevice(conf *config.DeviceSchema) (*storageInfo, error) {
 	block_size := 1024 * 64
 	num_blocks := (conf.ByteSize() + block_size - 1) / block_size
 
-	cr := func(i int, s int) (storage.StorageProvider, error) {
-		return sources.NewMemoryStorage(s), nil
-	}
-	// Setup some sharded memory storage (for concurrent write speed)
-	shard_size := conf.ByteSize()
-	if conf.ByteSize() > 64*1024 {
-		shard_size = conf.ByteSize() / 1024
-	}
-	source, err := modules.NewShardedStorage(conf.ByteSize(), shard_size, cr)
+	source, err := modules.NewDevice(conf)
 	if err != nil {
 		return nil, err
 	}

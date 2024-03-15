@@ -20,9 +20,9 @@ type SiloSchema struct {
 type DeviceSchema struct {
 	Name      string `hcl:"name,label"`
 	Size      string `hcl:"size,attr"`
+	System    string `hcl:"system,attr"`
 	BlockSize int    `hcl:"blocksize,optional"`
 	Expose    bool   `hcl:"expose,optional"`
-	System    string `hcl:"system,attr"`
 	Location  string `hcl:"location,optional"`
 }
 
