@@ -15,8 +15,8 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/blocks"
 	"github.com/loopholelabs/silo/pkg/storage/config"
+	"github.com/loopholelabs/silo/pkg/storage/device"
 	"github.com/loopholelabs/silo/pkg/storage/dirtytracker"
-	"github.com/loopholelabs/silo/pkg/storage/expose"
 	"github.com/loopholelabs/silo/pkg/storage/migrator"
 	"github.com/loopholelabs/silo/pkg/storage/modules"
 	"github.com/loopholelabs/silo/pkg/storage/protocol"
@@ -147,8 +147,11 @@ func shutdown_everything() {
 	}
 
 	fmt.Printf("Shutting down devices cleanly...\n")
-	for _, e := range src_exposed {
-		src_dev_shutdown(e)
+	for _, p := range src_exposed {
+		device := p.Device()
+
+		fmt.Printf("Shutdown nbd device %s\n", device)
+		p.Shutdown()
 	}
 }
 
@@ -156,9 +159,13 @@ func setupStorageDevice(conf *config.DeviceSchema) (*storageInfo, error) {
 	block_size := 1024 * 64
 	num_blocks := (conf.ByteSize() + block_size - 1) / block_size
 
-	source, err := modules.NewDevice(conf)
+	source, ex, err := device.NewDevice(conf)
 	if err != nil {
 		return nil, err
+	}
+	if ex != nil {
+		fmt.Printf("Device %s exposed as %s\n", conf.Name, ex.Device())
+		src_exposed = append(src_exposed, ex)
 	}
 	sourceMetrics := modules.NewMetrics(source)
 	sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(sourceMetrics, block_size)
@@ -169,13 +176,6 @@ func setupStorageDevice(conf *config.DeviceSchema) (*storageInfo, error) {
 	orderer := blocks.NewPriorityBlockOrder(num_blocks, sourceMonitor)
 	orderer.AddAll()
 
-	if conf.Expose {
-		p, err := src_dev_setup(sourceStorage)
-		if err != nil {
-			return nil, err
-		}
-		src_exposed = append(src_exposed, p)
-	}
 	return &storageInfo{
 		tracker:    sourceDirtyRemote,
 		lockable:   sourceStorage,
@@ -326,25 +326,4 @@ func migrateDevice(dev_id uint32, name string,
 	bar.SetCurrent(int64(size))
 
 	return nil
-}
-
-func src_dev_setup(prov storage.StorageProvider) (storage.ExposedStorage, error) {
-	p := expose.NewExposedStorageNBDNL(prov, 1, 0, prov.Size(), 4096, true)
-
-	err := p.Init()
-	if err != nil {
-		fmt.Printf("p.Init returned %v\n", err)
-		return nil, err
-	}
-
-	device := p.Device()
-	fmt.Printf("* Device ready on /dev/%s\n", device)
-	return p, nil
-}
-
-func src_dev_shutdown(p storage.ExposedStorage) error {
-	device := p.Device()
-
-	fmt.Printf("Shutdown nbd device %s\n", device)
-	return p.Shutdown()
 }

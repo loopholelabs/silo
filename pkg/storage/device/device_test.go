@@ -1,10 +1,9 @@
-package modules
+package device
 
 import (
 	"os"
 	"testing"
 
-	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/config"
 	"github.com/stretchr/testify/assert"
 )
@@ -35,7 +34,7 @@ device Test3 {
 }
 `
 
-func setup(t *testing.T) map[string]storage.StorageProvider {
+func setup(t *testing.T) map[string]*Device {
 	s := new(config.SiloSchema)
 	err := s.Decode([]byte(testSchema))
 	assert.NoError(t, err)
@@ -57,42 +56,42 @@ func TestSourcesExisting(t *testing.T) {
 	//	assert.NoError(t, err)
 
 	buff := make([]byte, len(buffer))
-	_, err := devs["Test2"].ReadAt(buff, 400)
+	_, err := devs["Test2"].Provider.ReadAt(buff, 400)
 	assert.NoError(t, err)
 
 	assert.Equal(t, buffer, buff)
 
-	devs["Test2"].Close()
+	devs["Test2"].Provider.Close()
 }
 
 func TestSourcesNew(t *testing.T) {
 	devs := setup(t)
 
 	buffer := []byte("Hello world testing 1 2 3")
-	_, err := devs["TestNew"].WriteAt(buffer, 400)
+	_, err := devs["TestNew"].Provider.WriteAt(buffer, 400)
 	assert.NoError(t, err)
 
 	buff := make([]byte, len(buffer))
-	_, err = devs["TestNew"].ReadAt(buff, 400)
+	_, err = devs["TestNew"].Provider.ReadAt(buff, 400)
 	assert.NoError(t, err)
 
 	assert.Equal(t, buffer, buff)
 
-	devs["TestNew"].Close()
+	devs["TestNew"].Provider.Close()
 }
 
 func TestSourcesExistingDir(t *testing.T) {
 	devs := setup(t)
 
 	buffer := []byte("Hello world testing 1 2 3")
-	_, err := devs["Test3"].WriteAt(buffer, 1020)
+	_, err := devs["Test3"].Provider.WriteAt(buffer, 1020)
 	assert.NoError(t, err)
 
 	buff := make([]byte, len(buffer))
-	_, err = devs["Test3"].ReadAt(buff, 1020)
+	_, err = devs["Test3"].Provider.ReadAt(buff, 1020)
 	assert.NoError(t, err)
 
 	assert.Equal(t, buffer, buff)
 
-	devs["Test3"].Close()
+	devs["Test3"].Provider.Close()
 }
