@@ -12,6 +12,7 @@ type StorageProvider interface {
 	io.WriterAt
 	Size() uint64
 	Flush() error
+	Close() error
 }
 
 type LockableStorageProvider interface {

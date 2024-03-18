@@ -1,10 +1,11 @@
-package modules
+package waitingcache
 
 import (
 	"crypto/rand"
 	"testing"
 	"time"
 
+	"github.com/loopholelabs/silo/pkg/storage/modules"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
 	"github.com/stretchr/testify/assert"
 )
@@ -14,7 +15,7 @@ func TestWaitingCache(t *testing.T) {
 	// Create a new block storage, backed by memory storage
 	size := 1024 * 1024 * 32
 	mem := sources.NewMemoryStorage(size)
-	metrics := NewMetrics(mem)
+	metrics := modules.NewMetrics(mem)
 	waitingLocal, waitingRemote := NewWaitingCache(metrics, 4096)
 
 	data := make([]byte, 12000)
@@ -56,7 +57,7 @@ func TestWaitingCachePartial(t *testing.T) {
 	// Create a new block storage, backed by memory storage
 	size := 6000
 	mem := sources.NewMemoryStorage(size)
-	metrics := NewMetrics(mem)
+	metrics := modules.NewMetrics(mem)
 	waitingLocal, waitingRemote := NewWaitingCache(metrics, 4096)
 
 	data := make([]byte, 6000)
@@ -98,7 +99,7 @@ func TestWaitingCacheLocalWrites(t *testing.T) {
 	// Create a new block storage, backed by memory storage
 	size := 1024 * 1024 * 32
 	mem := sources.NewMemoryStorage(size)
-	metrics := NewMetrics(mem)
+	metrics := modules.NewMetrics(mem)
 	waitingLocal, waitingRemote := NewWaitingCache(metrics, 4096)
 
 	// Try complete blocks

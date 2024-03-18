@@ -3,22 +3,27 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"os"
-	"os/exec"
 	"os/signal"
 	"sync"
 	"syscall"
 	"time"
 
+	"github.com/fatih/color"
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/blocks"
-	"github.com/loopholelabs/silo/pkg/storage/expose"
+	"github.com/loopholelabs/silo/pkg/storage/config"
+	"github.com/loopholelabs/silo/pkg/storage/device"
+	"github.com/loopholelabs/silo/pkg/storage/dirtytracker"
 	"github.com/loopholelabs/silo/pkg/storage/migrator"
 	"github.com/loopholelabs/silo/pkg/storage/modules"
 	"github.com/loopholelabs/silo/pkg/storage/protocol"
-	"github.com/loopholelabs/silo/pkg/storage/sources"
+	"github.com/loopholelabs/silo/pkg/storage/volatilitymonitor"
 	"github.com/spf13/cobra"
+	"github.com/vbauerster/mpb/v8"
+	"github.com/vbauerster/mpb/v8/decor"
 )
 
 var (
@@ -31,17 +36,18 @@ var (
 )
 
 var serve_addr string
-var serve_expose_dev bool
-var serve_mount_dev bool
+var serve_conf string
 
 var src_exposed []storage.ExposedStorage
 var src_storage []*storageInfo
 
+var serveProgress *mpb.Progress
+var serveBars []*mpb.Bar
+
 func init() {
 	rootCmd.AddCommand(cmdServe)
 	cmdServe.Flags().StringVarP(&serve_addr, "addr", "a", ":5170", "Address to serve from")
-	cmdServe.Flags().BoolVarP(&serve_expose_dev, "expose", "e", false, "Expose as nbd dev")
-	cmdServe.Flags().BoolVarP(&serve_mount_dev, "mount", "m", false, "mkfs.ext4 and mount")
+	cmdServe.Flags().StringVarP(&serve_conf, "conf", "c", "silo.conf", "Configuration file")
 }
 
 type storageInfo struct {
@@ -50,9 +56,22 @@ type storageInfo struct {
 	orderer    *blocks.PriorityBlockOrder
 	num_blocks int
 	block_size int
+	name       string
+}
+
+type storageConfig struct {
+	Name   string
+	Size   int
+	Expose bool
 }
 
 func runServe(ccmd *cobra.Command, args []string) {
+	serveProgress = mpb.New(
+		mpb.WithOutput(color.Output),
+		mpb.WithAutoRefresh(),
+	)
+	serveBars = make([]*mpb.Bar, 0)
+
 	src_exposed = make([]storage.ExposedStorage, 0)
 	src_storage = make([]*storageInfo, 0)
 	fmt.Printf("Starting silo serve %s\n", serve_addr)
@@ -65,10 +84,17 @@ func runServe(ccmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}()
 
-	for _, s := range []int{1024 * 1024 * 1024, 100 * 1024 * 1024} {
+	siloConf, err := config.ReadSchema(serve_conf)
+	if err != nil {
+		panic(err)
+	}
+
+	for i, s := range siloConf.Device {
+
+		fmt.Printf("Setup storage %d [%s] size %s - %d\n", i, s.Name, s.Size, s.ByteSize())
 		sinfo, err := setupStorageDevice(s)
 		if err != nil {
-			panic("Could not setup storage.")
+			panic(fmt.Sprintf("Could not setup storage. %v", err))
 		}
 		src_storage = append(src_storage, sinfo)
 	}
@@ -89,7 +115,7 @@ func runServe(ccmd *cobra.Command, args []string) {
 		// Now we can migrate to the client...
 
 		// Wrap the connection in a protocol
-		pro := protocol.NewProtocolRW(context.TODO(), con, con, nil)
+		pro := protocol.NewProtocolRW(context.TODO(), []io.Reader{con}, []io.Writer{con}, nil)
 		go pro.Handle()
 
 		// Lets go through each of the things we want to migrate...
@@ -98,7 +124,7 @@ func runServe(ccmd *cobra.Command, args []string) {
 		for i, s := range src_storage {
 			wg.Add(1)
 			go func(index int, src *storageInfo) {
-				err := migrateDevice(uint32(index), fmt.Sprintf("dev_%d", index), pro, src)
+				err := migrateDevice(uint32(index), src.name, pro, src)
 				if err != nil {
 					fmt.Printf("There was an issue migrating the storage %d %v\n", index, err)
 				}
@@ -120,45 +146,43 @@ func shutdown_everything() {
 		i.lockable.Unlock()
 	}
 
-	if serve_expose_dev {
-		fmt.Printf("Shutting down devices cleanly...\n")
-		for _, e := range src_exposed {
-			src_dev_shutdown(e)
-		}
+	fmt.Printf("Shutting down devices cleanly...\n")
+	for _, p := range src_exposed {
+		device := p.Device()
+
+		fmt.Printf("Shutdown nbd device %s\n", device)
+		p.Shutdown()
 	}
 }
 
-func setupStorageDevice(size int) (*storageInfo, error) {
+func setupStorageDevice(conf *config.DeviceSchema) (*storageInfo, error) {
 	block_size := 1024 * 64
-	num_blocks := (size + block_size - 1) / block_size
+	num_blocks := (conf.ByteSize() + block_size - 1) / block_size
 
-	cr := func(s int) storage.StorageProvider {
-		return sources.NewMemoryStorage(s)
+	source, ex, err := device.NewDevice(conf)
+	if err != nil {
+		return nil, err
 	}
-	// Setup some sharded memory storage (for concurrent write speed)
-	source := modules.NewShardedStorage(size, size/1024, cr)
+	if ex != nil {
+		fmt.Printf("Device %s exposed as %s\n", conf.Name, ex.Device())
+		src_exposed = append(src_exposed, ex)
+	}
 	sourceMetrics := modules.NewMetrics(source)
-	sourceDirty := modules.NewFilterReadDirtyTracker(sourceMetrics, block_size)
-	sourceMonitor := modules.NewVolatilityMonitor(sourceDirty, block_size, 10*time.Second)
+	sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(sourceMetrics, block_size)
+	sourceMonitor := volatilitymonitor.NewVolatilityMonitor(sourceDirtyLocal, block_size, 10*time.Second)
 	sourceStorage := modules.NewLockable(sourceMonitor)
 
 	// Start monitoring blocks.
 	orderer := blocks.NewPriorityBlockOrder(num_blocks, sourceMonitor)
 	orderer.AddAll()
 
-	if serve_expose_dev {
-		p, err := src_dev_setup(sourceStorage)
-		if err != nil {
-			return nil, err
-		}
-		src_exposed = append(src_exposed, p)
-	}
 	return &storageInfo{
-		tracker:    sourceDirty,
+		tracker:    sourceDirtyRemote,
 		lockable:   sourceStorage,
 		orderer:    orderer,
 		block_size: block_size,
 		num_blocks: num_blocks,
+		name:       conf.Name,
 	}, nil
 }
 
@@ -170,6 +194,29 @@ func migrateDevice(dev_id uint32, name string,
 	dest := protocol.NewToProtocol(uint64(size), dev_id, pro)
 
 	dest.SendDevInfo(name, uint32(sinfo.block_size))
+
+	statusString := " "
+
+	statusFn := func(s decor.Statistics) string {
+		return statusString
+	}
+
+	bar := serveProgress.AddBar(int64(size),
+		mpb.PrependDecorators(
+			decor.Name(name, decor.WCSyncSpaceR),
+			decor.CountersKiloByte("%d/%d", decor.WCSyncWidth),
+		),
+		mpb.AppendDecorators(
+			decor.EwmaETA(decor.ET_STYLE_GO, 30),
+			decor.Name(" "),
+			decor.EwmaSpeed(decor.SizeB1024(0), "% .2f", 60, decor.WCSyncWidth),
+			decor.OnComplete(decor.Percentage(decor.WC{W: 5}), "done"),
+			decor.Name(" "),
+			decor.Any(statusFn, decor.WC{W: 2}),
+		),
+	)
+
+	serveBars = append(serveBars, bar)
 
 	go dest.HandleNeedAt(func(offset int64, length int32) {
 		// Prioritize blocks...
@@ -210,11 +257,22 @@ func migrateDevice(dev_id uint32, name string,
 		sinfo.lockable.Unlock()
 		dest.SendEvent(protocol.EventPostUnlock)
 	}
+
+	last_value := uint64(0)
+	last_time := time.Now()
+
 	conf.ProgressHandler = func(p *migrator.MigrationProgress) {
-		fmt.Printf("[%s] Progress Moved: %d/%d %.2f%% Clean: %d/%d %.2f%% InProgress: %d\n",
-			name, p.MigratedBlocks, p.TotalBlocks, p.MigratedBlocksPerc,
-			p.ReadyBlocks, p.TotalBlocks, p.ReadyBlocksPerc,
-			p.ActiveBlocks)
+		/*
+			fmt.Printf("[%s] Progress Moved: %d/%d %.2f%% Clean: %d/%d %.2f%% InProgress: %d\n",
+				name, p.MigratedBlocks, p.TotalBlocks, p.MigratedBlocksPerc,
+				p.ReadyBlocks, p.TotalBlocks, p.ReadyBlocksPerc,
+				p.ActiveBlocks)
+		*/
+		v := uint64(p.ReadyBlocks) * size / uint64(p.TotalBlocks)
+		bar.SetCurrent(int64(v))
+		bar.EwmaIncrInt64(int64(v-last_value), time.Since(last_time))
+		last_time = time.Now()
+		last_value = v
 	}
 
 	mig, err := migrator.NewMigrator(sinfo.tracker, dest, sinfo.orderer, conf)
@@ -237,12 +295,6 @@ func migrateDevice(dev_id uint32, name string,
 
 	// Optional: Enter a loop looking for more dirty blocks to migrate...
 
-	// FIXME:
-	// * If several writes to the SAME block AND its in middle of the migration ReadAt/WriteAt
-	// * It could execute in wrong order
-
-	// * Rate limit blocks
-
 	for {
 		blocks := mig.GetLatestDirty() //
 		if blocks == nil {
@@ -252,7 +304,7 @@ func migrateDevice(dev_id uint32, name string,
 		// Optional: Send the list of dirty blocks over...
 		dest.DirtyList(blocks)
 
-		fmt.Printf("[%s] Migrating dirty blocks %d\n", name, len(blocks))
+		//		fmt.Printf("[%s] Migrating dirty blocks %d\n", name, len(blocks))
 		err := mig.MigrateDirty(blocks)
 		if err != nil {
 			return err
@@ -264,72 +316,14 @@ func migrateDevice(dev_id uint32, name string,
 		return err
 	}
 
-	fmt.Printf("[%s] Migration completed\n", name)
+	//	fmt.Printf("[%s] Migration completed\n", name)
 	err = dest.SendEvent(protocol.EventCompleted)
 	if err != nil {
 		return err
 	}
-	return nil
-}
 
-func src_dev_setup(prov storage.StorageProvider) (storage.ExposedStorage, error) {
-	p := expose.NewExposedStorageNBDNL(prov, 1, 0, prov.Size(), 4096, true)
+	// Completed.
+	bar.SetCurrent(int64(size))
 
-	err := p.Init()
-	if err != nil {
-		fmt.Printf("p.Init returned %v\n", err)
-		return nil, err
-	}
-
-	device := p.Device()
-	fmt.Printf("* Device ready on /dev/%s\n", device)
-
-	if serve_mount_dev {
-		err = os.Mkdir(fmt.Sprintf("/mnt/mount%s", device), 0600)
-		if err != nil {
-			return nil, fmt.Errorf("Error mkdir %v", err)
-		}
-
-		cmd := exec.Command("mkfs.ext4", fmt.Sprintf("/dev/%s", device))
-		err = cmd.Run()
-		if err != nil {
-			return nil, fmt.Errorf("Error mkfs.ext4 %v", err)
-		}
-
-		cmd = exec.Command("mount", fmt.Sprintf("/dev/%s", device), fmt.Sprintf("/mnt/mount%s", device))
-		err = cmd.Run()
-		if err != nil {
-			return nil, fmt.Errorf("Error mount %v", err)
-		}
-	}
-	return p, nil
-}
-
-func src_dev_shutdown(p storage.ExposedStorage) error {
-	device := p.Device()
-
-	if serve_mount_dev {
-
-		cmd := exec.Command("umount", fmt.Sprintf("/dev/%s", device))
-		err := cmd.Run()
-		if err != nil {
-			fmt.Printf("Could not umount device %s %v\n", device, err)
-			//		return err
-		}
-
-		err = os.Remove(fmt.Sprintf("/mnt/mount%s", device))
-
-		if err != nil {
-			fmt.Printf("Count not remove /mnt/mount%s %v\n", device, err)
-			//		return err
-		}
-
-		fmt.Printf("Shutdown nbd device %s\n", device)
-		err = p.Shutdown()
-		if err != nil {
-			return err
-		}
-
-	}
 	return nil
 }

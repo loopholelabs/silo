@@ -62,3 +62,7 @@ func (i *ArtificialLatency) Flush() error {
 func (i *ArtificialLatency) Size() uint64 {
 	return i.prov.Size()
 }
+
+func (i *ArtificialLatency) Close() error {
+	return i.prov.Close()
+}

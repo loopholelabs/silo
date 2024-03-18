@@ -46,6 +46,10 @@ func (i *ReadOnlyGate) Size() uint64 {
 	return i.prov.Size()
 }
 
+func (i *ReadOnlyGate) Close() error {
+	return i.prov.Close()
+}
+
 func (i *ReadOnlyGate) Unlock() {
 	i.lock.L.Lock()
 	i.locked = false

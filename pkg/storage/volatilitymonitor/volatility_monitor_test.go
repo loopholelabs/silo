@@ -1,9 +1,10 @@
-package modules
+package volatilitymonitor
 
 import (
 	"testing"
 	"time"
 
+	"github.com/loopholelabs/silo/pkg/storage/modules"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
 	"github.com/stretchr/testify/assert"
 )
@@ -13,7 +14,7 @@ func TestVolatilityMonitorTotal(t *testing.T) {
 	// Create a new block storage, backed by memory storage
 	size := 1024 * 1024 * 32
 	mem := sources.NewMemoryStorage(size)
-	metrics := NewMetrics(mem)
+	metrics := modules.NewMetrics(mem)
 	vol := NewVolatilityMonitor(metrics, 4096, 1*time.Second)
 
 	offsets := []int64{10, 7000, 7004, 190000}
@@ -34,7 +35,7 @@ func TestVolatilityMonitor(t *testing.T) {
 	// Create a new block storage, backed by memory storage
 	size := 1024 * 1024 * 32
 	mem := sources.NewMemoryStorage(size)
-	metrics := NewMetrics(mem)
+	metrics := modules.NewMetrics(mem)
 	vol := NewVolatilityMonitor(metrics, 4096, 1*time.Second)
 
 	offsets := []int64{10, 7000, 7004, 190000}
@@ -72,7 +73,7 @@ func TestVolatilityMonitorExpiry(t *testing.T) {
 	// Create a new block storage, backed by memory storage
 	size := 1024 * 1024 * 32
 	mem := sources.NewMemoryStorage(size)
-	metrics := NewMetrics(mem)
+	metrics := modules.NewMetrics(mem)
 	vol := NewVolatilityMonitor(metrics, 4096, 50*time.Millisecond)
 
 	offsets := []int64{10, 7000, 7004, 190000}

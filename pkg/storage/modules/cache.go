@@ -114,3 +114,7 @@ func (i *Cache) Flush() error {
 func (i *Cache) Size() uint64 {
 	return i.prov.Size()
 }
+
+func (i *Cache) Close() error {
+	return i.prov.Close()
+}

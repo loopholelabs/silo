@@ -41,3 +41,7 @@ func (i *MemoryStorage) Flush() error {
 func (i *MemoryStorage) Size() uint64 {
 	return uint64(len(i.data))
 }
+
+func (i *MemoryStorage) Close() error {
+	return nil
+}

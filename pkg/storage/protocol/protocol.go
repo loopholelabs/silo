@@ -1,5 +1,7 @@
 package protocol
 
+import "io"
+
 const COMMAND_REQUEST = byte(0)
 const COMMAND_RESPONSE = byte(0x80)
 
@@ -26,6 +28,9 @@ const ID_PICK_ANY = 0
 type Protocol interface {
 	// Send a packet (Returns a transaction id)
 	SendPacket(dev uint32, id uint32, data []byte) (uint32, error)
+
+	// Send a packet using a callback to write the data
+	SendPacketWriter(dev uint32, id uint32, length uint32, data func(w io.Writer) error) (uint32, error)
 
 	// Wait for a response packet (Given specific transaction id)
 	WaitForPacket(dev uint32, id uint32) ([]byte, error)

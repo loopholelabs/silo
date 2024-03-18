@@ -57,3 +57,7 @@ func (i *Hooks) Flush() error {
 func (i *Hooks) Size() uint64 {
 	return i.prov.Size()
 }
+
+func (i *Hooks) Close() error {
+	return i.prov.Close()
+}

@@ -112,31 +112,29 @@ func TestProtocolRWWriteAt(t *testing.T) {
 
 	destDev := make(chan uint32, 8)
 
-	prSource := NewProtocolRW(context.TODO(), r1, w2, nil)
-	prDest := NewProtocolRW(context.TODO(), r2, w1, func(p Protocol, dev uint32) {
-		destDev <- dev
-	})
-
-	sourceToProtocol := NewToProtocol(uint64(size), 1, prSource)
-
 	storeFactory := func(di *DevInfo) storage.StorageProvider {
 		store = sources.NewMemoryStorage(int(di.Size))
 		return store
 	}
 
-	destFromProtocol := NewFromProtocol(1, storeFactory, prDest)
+	prSource := NewProtocolRW(context.TODO(), []io.Reader{r1}, []io.Writer{w2}, nil)
+	prDest := NewProtocolRW(context.TODO(), []io.Reader{r2}, []io.Writer{w1}, func(p Protocol, dev uint32) {
+		destDev <- dev
+		destFromProtocol := NewFromProtocol(dev, storeFactory, p)
+
+		go destFromProtocol.HandleDevInfo()
+		go destFromProtocol.HandleSend(context.TODO())
+		go destFromProtocol.HandleReadAt()
+		go destFromProtocol.HandleWriteAt()
+	})
+
+	sourceToProtocol := NewToProtocol(uint64(size), 1, prSource)
 
 	// TODO: Cleanup
 	go prSource.Handle()
 	go prDest.Handle()
 
 	// Now do some things and make sure they happen...
-
-	// TODO: Shutdown...
-	go destFromProtocol.HandleDevInfo()
-	go destFromProtocol.HandleSend(context.TODO())
-	go destFromProtocol.HandleReadAt()
-	go destFromProtocol.HandleWriteAt()
 
 	sourceToProtocol.SendDevInfo("test", 4096)
 
@@ -173,11 +171,6 @@ func TestProtocolRWReadAt(t *testing.T) {
 	r1, w1 := io.Pipe()
 	r2, w2 := io.Pipe()
 
-	prSource := NewProtocolRW(context.TODO(), r1, w2, nil)
-	prDest := NewProtocolRW(context.TODO(), r2, w1, nil)
-
-	sourceToProtocol := NewToProtocol(uint64(size), 1, prSource)
-
 	storeFactory := func(di *DevInfo) storage.StorageProvider {
 		store = sources.NewMemoryStorage(int(di.Size))
 		n, err := store.WriteAt(buff, 12)
@@ -188,20 +181,25 @@ func TestProtocolRWReadAt(t *testing.T) {
 		return store
 	}
 
-	destFromProtocol := NewFromProtocol(1, storeFactory, prDest)
+	initDev := func(p Protocol, dev uint32) {
+		destFromProtocol := NewFromProtocol(dev, storeFactory, p)
+
+		go destFromProtocol.HandleDevInfo()
+		go destFromProtocol.HandleSend(context.TODO())
+		go destFromProtocol.HandleReadAt()
+		go destFromProtocol.HandleWriteAt()
+	}
+
+	prSource := NewProtocolRW(context.TODO(), []io.Reader{r1}, []io.Writer{w2}, nil)
+	prDest := NewProtocolRW(context.TODO(), []io.Reader{r2}, []io.Writer{w1}, initDev)
+
+	sourceToProtocol := NewToProtocol(uint64(size), 1, prSource)
 
 	// TODO: Cleanup
 	go prSource.Handle()
 	go prDest.Handle()
 
 	// Now do some things and make sure they happen...
-
-	// TODO: Shutdown...
-	go destFromProtocol.HandleDevInfo()
-	go destFromProtocol.HandleSend(context.TODO())
-	go destFromProtocol.HandleReadAt()
-	go destFromProtocol.HandleWriteAt()
-
 	sourceToProtocol.SendDevInfo("test", 4096)
 
 	// Now check it was written to the source

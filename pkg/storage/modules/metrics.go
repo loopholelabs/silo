@@ -156,3 +156,7 @@ func (i *Metrics) Flush() error {
 func (i *Metrics) Size() uint64 {
 	return i.prov.Size()
 }
+
+func (i *Metrics) Close() error {
+	return i.prov.Close()
+}
