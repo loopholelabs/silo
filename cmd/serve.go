@@ -37,6 +37,8 @@ var (
 
 var serve_addr string
 var serve_conf string
+var serve_progress bool
+var serve_continuous bool
 
 var src_exposed []storage.ExposedStorage
 var src_storage []*storageInfo
@@ -48,6 +50,8 @@ func init() {
 	rootCmd.AddCommand(cmdServe)
 	cmdServe.Flags().StringVarP(&serve_addr, "addr", "a", ":5170", "Address to serve from")
 	cmdServe.Flags().StringVarP(&serve_conf, "conf", "c", "silo.conf", "Configuration file")
+	cmdServe.Flags().BoolVarP(&serve_progress, "progress", "p", false, "Show progress")
+	cmdServe.Flags().BoolVarP(&serve_continuous, "continuous", "C", false, "Continuous sync")
 }
 
 type storageInfo struct {
@@ -66,11 +70,13 @@ type storageConfig struct {
 }
 
 func runServe(ccmd *cobra.Command, args []string) {
-	serveProgress = mpb.New(
-		mpb.WithOutput(color.Output),
-		mpb.WithAutoRefresh(),
-	)
-	serveBars = make([]*mpb.Bar, 0)
+	if serve_progress {
+		serveProgress = mpb.New(
+			mpb.WithOutput(color.Output),
+			mpb.WithAutoRefresh(),
+		)
+		serveBars = make([]*mpb.Bar, 0)
+	}
 
 	src_exposed = make([]storage.ExposedStorage, 0)
 	src_storage = make([]*storageInfo, 0)
@@ -172,6 +178,8 @@ func setupStorageDevice(conf *config.DeviceSchema) (*storageInfo, error) {
 	sourceMonitor := volatilitymonitor.NewVolatilityMonitor(sourceDirtyLocal, block_size, 10*time.Second)
 	sourceStorage := modules.NewLockable(sourceMonitor)
 
+	ex.SetProvider(sourceStorage)
+
 	// Start monitoring blocks.
 	orderer := blocks.NewPriorityBlockOrder(num_blocks, sourceMonitor)
 	orderer.AddAll()
@@ -201,22 +209,25 @@ func migrateDevice(dev_id uint32, name string,
 		return statusString
 	}
 
-	bar := serveProgress.AddBar(int64(size),
-		mpb.PrependDecorators(
-			decor.Name(name, decor.WCSyncSpaceR),
-			decor.CountersKiloByte("%d/%d", decor.WCSyncWidth),
-		),
-		mpb.AppendDecorators(
-			decor.EwmaETA(decor.ET_STYLE_GO, 30),
-			decor.Name(" "),
-			decor.EwmaSpeed(decor.SizeB1024(0), "% .2f", 60, decor.WCSyncWidth),
-			decor.OnComplete(decor.Percentage(decor.WC{W: 5}), "done"),
-			decor.Name(" "),
-			decor.Any(statusFn, decor.WC{W: 2}),
-		),
-	)
+	var bar *mpb.Bar
+	if serve_progress {
+		bar = serveProgress.AddBar(int64(size),
+			mpb.PrependDecorators(
+				decor.Name(name, decor.WCSyncSpaceR),
+				decor.CountersKiloByte("%d/%d", decor.WCSyncWidth),
+			),
+			mpb.AppendDecorators(
+				decor.EwmaETA(decor.ET_STYLE_GO, 30),
+				decor.Name(" "),
+				decor.EwmaSpeed(decor.SizeB1024(0), "% .2f", 60, decor.WCSyncWidth),
+				decor.OnComplete(decor.Percentage(decor.WC{W: 5}), "done"),
+				decor.Name(" "),
+				decor.Any(statusFn, decor.WC{W: 2}),
+			),
+		)
 
-	serveBars = append(serveBars, bar)
+		serveBars = append(serveBars, bar)
+	}
 
 	go dest.HandleNeedAt(func(offset int64, length int32) {
 		// Prioritize blocks...
@@ -258,21 +269,23 @@ func migrateDevice(dev_id uint32, name string,
 		dest.SendEvent(protocol.EventPostUnlock)
 	}
 
-	last_value := uint64(0)
-	last_time := time.Now()
+	if serve_progress {
+		last_value := uint64(0)
+		last_time := time.Now()
 
-	conf.ProgressHandler = func(p *migrator.MigrationProgress) {
-		/*
-			fmt.Printf("[%s] Progress Moved: %d/%d %.2f%% Clean: %d/%d %.2f%% InProgress: %d\n",
-				name, p.MigratedBlocks, p.TotalBlocks, p.MigratedBlocksPerc,
-				p.ReadyBlocks, p.TotalBlocks, p.ReadyBlocksPerc,
-				p.ActiveBlocks)
-		*/
-		v := uint64(p.ReadyBlocks) * size / uint64(p.TotalBlocks)
-		bar.SetCurrent(int64(v))
-		bar.EwmaIncrInt64(int64(v-last_value), time.Since(last_time))
-		last_time = time.Now()
-		last_value = v
+		conf.ProgressHandler = func(p *migrator.MigrationProgress) {
+			/*
+				fmt.Printf("[%s] Progress Moved: %d/%d %.2f%% Clean: %d/%d %.2f%% InProgress: %d\n",
+					name, p.MigratedBlocks, p.TotalBlocks, p.MigratedBlocksPerc,
+					p.ReadyBlocks, p.TotalBlocks, p.ReadyBlocksPerc,
+					p.ActiveBlocks)
+			*/
+			v := uint64(p.ReadyBlocks) * size / uint64(p.TotalBlocks)
+			bar.SetCurrent(int64(v))
+			bar.EwmaIncrInt64(int64(v-last_value), time.Since(last_time))
+			last_time = time.Now()
+			last_value = v
+		}
 	}
 
 	mig, err := migrator.NewMigrator(sinfo.tracker, dest, sinfo.orderer, conf)
@@ -297,18 +310,23 @@ func migrateDevice(dev_id uint32, name string,
 
 	for {
 		blocks := mig.GetLatestDirty() //
-		if blocks == nil {
+		if !serve_continuous && blocks == nil {
 			break
 		}
 
-		// Optional: Send the list of dirty blocks over...
-		dest.DirtyList(blocks)
+		if blocks != nil {
+			// Optional: Send the list of dirty blocks over...
+			dest.DirtyList(blocks)
 
-		//		fmt.Printf("[%s] Migrating dirty blocks %d\n", name, len(blocks))
-		err := mig.MigrateDirty(blocks)
-		if err != nil {
-			return err
+			//		fmt.Printf("[%s] Migrating dirty blocks %d\n", name, len(blocks))
+			err := mig.MigrateDirty(blocks)
+			if err != nil {
+				return err
+			}
+		} else {
+			mig.Unlock()
 		}
+		time.Sleep(100 * time.Millisecond)
 	}
 
 	err = mig.WaitForCompletion()
@@ -323,7 +341,9 @@ func migrateDevice(dev_id uint32, name string,
 	}
 
 	// Completed.
-	bar.SetCurrent(int64(size))
+	if serve_progress {
+		bar.SetCurrent(int64(size))
+	}
 
 	return nil
 }

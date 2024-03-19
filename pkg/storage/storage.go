@@ -30,6 +30,7 @@ type ExposedStorage interface {
 	Init() error
 	Shutdown() error
 	Device() string
+	SetProvider(prov StorageProvider)
 }
 
 type BlockOrder interface {

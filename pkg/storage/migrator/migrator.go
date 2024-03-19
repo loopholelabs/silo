@@ -161,6 +161,10 @@ func (m *Migrator) GetLatestDirty() []uint {
 	return nil
 }
 
+func (m *Migrator) Unlock() {
+	m.srcUnlockFN()
+}
+
 /**
  * MigrateDirty migrates a list of dirty blocks.
  */

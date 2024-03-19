@@ -43,6 +43,8 @@ var connect_expose_dev bool
 // Should we also mount the devices
 var connect_mount_dev bool
 
+var connect_progress bool
+
 // List of ExposedStorage so they can be cleaned up on exit.
 var dst_exposed []storage.ExposedStorage
 
@@ -56,6 +58,7 @@ func init() {
 	cmdConnect.Flags().StringVarP(&connect_addr, "addr", "a", "localhost:5170", "Address to serve from")
 	cmdConnect.Flags().BoolVarP(&connect_expose_dev, "expose", "e", false, "Expose as an nbd devices")
 	cmdConnect.Flags().BoolVarP(&connect_mount_dev, "mount", "m", false, "Mount the nbd devices")
+	cmdConnect.Flags().BoolVarP(&connect_progress, "progress", "p", false, "Show progress")
 }
 
 /**
@@ -63,13 +66,14 @@ func init() {
  *
  */
 func runConnect(ccmd *cobra.Command, args []string) {
+	if connect_progress {
+		dst_progress = mpb.New(
+			mpb.WithOutput(color.Output),
+			mpb.WithAutoRefresh(),
+		)
 
-	dst_progress = mpb.New(
-		mpb.WithOutput(color.Output),
-		mpb.WithAutoRefresh(),
-	)
-
-	dst_bars = make([]*mpb.Bar, 0)
+		dst_bars = make([]*mpb.Bar, 0)
+	}
 
 	fmt.Printf("Starting silo connect from source %s\n", connect_addr)
 
@@ -111,7 +115,9 @@ func runConnect(ccmd *cobra.Command, args []string) {
 
 	dst_wg.Wait() // Wait until the migrations have completed...
 
-	dst_progress.Wait()
+	if connect_progress {
+		dst_progress.Wait()
+	}
 
 	fmt.Printf("\nMigrations completed. Please ctrl-c if you want to shut down, or wait an hour :)\n")
 
@@ -151,25 +157,27 @@ func handleIncomingDevice(pro protocol.Protocol, dev uint32) {
 			return statusString
 		}
 
-		bar = dst_progress.AddBar(int64(di.Size),
-			mpb.PrependDecorators(
-				decor.Name(di.Name, decor.WCSyncSpaceR),
-				decor.Name(" "),
-				decor.Any(func(s decor.Statistics) string { return statusExposed }, decor.WC{W: 4}),
-				decor.Name(" "),
-				decor.CountersKiloByte("%d/%d", decor.WCSyncWidth),
-			),
-			mpb.AppendDecorators(
-				decor.EwmaETA(decor.ET_STYLE_GO, 30),
-				decor.Name(" "),
-				decor.EwmaSpeed(decor.SizeB1024(0), "% .2f", 60, decor.WCSyncWidth),
-				decor.OnComplete(decor.Percentage(decor.WC{W: 5}), "done"),
-				decor.Name(" "),
-				decor.Any(statusFn, decor.WC{W: 2}),
-			),
-		)
+		if connect_progress {
+			bar = dst_progress.AddBar(int64(di.Size),
+				mpb.PrependDecorators(
+					decor.Name(di.Name, decor.WCSyncSpaceR),
+					decor.Name(" "),
+					decor.Any(func(s decor.Statistics) string { return statusExposed }, decor.WC{W: 4}),
+					decor.Name(" "),
+					decor.CountersKiloByte("%d/%d", decor.WCSyncWidth),
+				),
+				mpb.AppendDecorators(
+					decor.EwmaETA(decor.ET_STYLE_GO, 30),
+					decor.Name(" "),
+					decor.EwmaSpeed(decor.SizeB1024(0), "% .2f", 60, decor.WCSyncWidth),
+					decor.OnComplete(decor.Percentage(decor.WC{W: 5}), "done"),
+					decor.Name(" "),
+					decor.Any(statusFn, decor.WC{W: 2}),
+				),
+			)
 
-		dst_bars = append(dst_bars, bar)
+			dst_bars = append(dst_bars, bar)
+		}
 
 		// You can change this to use sources.NewFileStorage etc etc
 		cr := func(i int, s int) (storage.StorageProvider, error) {
@@ -188,19 +196,21 @@ func handleIncomingDevice(pro protocol.Protocol, dev uint32) {
 
 		destMonitorStorage = modules.NewHooks(destStorage)
 
-		last_value := uint64(0)
-		last_time := time.Now()
+		if connect_progress {
+			last_value := uint64(0)
+			last_time := time.Now()
 
-		destMonitorStorage.Post_write = func(buffer []byte, offset int64, n int, err error) (int, error) {
-			// Update the progress bar
-			available, total := destWaitingLocal.Availability()
-			v := uint64(available) * di.Size / uint64(total)
-			bar.SetCurrent(int64(v))
-			bar.EwmaIncrInt64(int64(v-last_value), time.Since(last_time))
-			last_time = time.Now()
-			last_value = v
+			destMonitorStorage.Post_write = func(buffer []byte, offset int64, n int, err error) (int, error) {
+				// Update the progress bar
+				available, total := destWaitingLocal.Availability()
+				v := uint64(available) * di.Size / uint64(total)
+				bar.SetCurrent(int64(v))
+				bar.EwmaIncrInt64(int64(v-last_value), time.Since(last_time))
+				last_time = time.Now()
+				last_value = v
 
-			return n, err
+				return n, err
+			}
 		}
 
 		// Use a WaitingCache which will wait for migration blocks, send priorities etc
@@ -257,7 +267,9 @@ func handleIncomingDevice(pro protocol.Protocol, dev uint32) {
 			//			available, total := destWaitingLocal.Availability()
 			//			fmt.Printf("= %d = Availability (%d/%d)\n", dev, available, total)
 			// Set bar to completed
-			bar.SetCurrent(int64(destWaitingLocal.Size()))
+			if connect_progress {
+				bar.SetCurrent(int64(destWaitingLocal.Size()))
+			}
 		}
 	})
 
@@ -273,16 +285,10 @@ func dst_device_setup(prov storage.StorageProvider) (storage.ExposedStorage, err
 	p := expose.NewExposedStorageNBDNL(prov, 1, 0, prov.Size(), 4096, true)
 	var err error
 
-	for {
-		// Try it a few times... FIXME
-		err = p.Init()
-		if err != nil {
-			fmt.Printf("\n\n\np.Init returned %v\n\n\n", err)
-			//return nil, err
-		} else {
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
+	err = p.Init()
+	if err != nil {
+		fmt.Printf("\n\n\np.Init returned %v\n\n\n", err)
+		return nil, err
 	}
 
 	device := p.Device()

@@ -46,6 +46,31 @@ func NewExposedStorageNBDNL(prov storage.StorageProvider, numConnections int, ti
 	}
 }
 
+func (n *ExposedStorageNBDNL) SetProvider(prov storage.StorageProvider) {
+	n.prov = prov
+}
+
+// Impl StorageProvider here so we can route calls to provider
+func (i *ExposedStorageNBDNL) ReadAt(buffer []byte, offset int64) (int, error) {
+	return i.prov.ReadAt(buffer, offset)
+}
+
+func (i *ExposedStorageNBDNL) WriteAt(buffer []byte, offset int64) (int, error) {
+	return i.prov.WriteAt(buffer, offset)
+}
+
+func (i *ExposedStorageNBDNL) Flush() error {
+	return i.prov.Flush()
+}
+
+func (i *ExposedStorageNBDNL) Size() uint64 {
+	return i.prov.Size()
+}
+
+func (i *ExposedStorageNBDNL) Close() error {
+	return i.prov.Close()
+}
+
 func (n *ExposedStorageNBDNL) Device() string {
 	return fmt.Sprintf("nbd%d", n.devIndex)
 }
@@ -71,9 +96,7 @@ func (n *ExposedStorageNBDNL) Init() error {
 			}
 			server.Close()
 
-			//		fmt.Printf("[%d] Socket pair %d -> %d %v %v %v\n", i, sockPair[0], sockPair[1], client, server, serverc)
-
-			d := NewDispatch(serverc, n.prov)
+			d := NewDispatch(serverc, n)
 			d.ASYNC_READS = n.async
 			d.ASYNC_WRITES = n.async
 			// Start reading commands on the socket and dispatching them to our provider
