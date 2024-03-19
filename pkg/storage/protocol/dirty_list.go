@@ -16,13 +16,15 @@ func EncodeDirtyList(blocks []uint) []byte {
 }
 
 func DecodeDirtyList(buff []byte) ([]uint, error) {
-	if buff == nil || len(buff) < 9 || buff[0] != COMMAND_DIRTY_LIST {
+	if buff == nil || len(buff) < 5 || buff[0] != COMMAND_DIRTY_LIST {
 		return nil, errors.New("Invalid packet")
 	}
 	length := binary.LittleEndian.Uint32(buff[1:])
 	blocks := make([]uint, length)
-	for i := 0; i < int(length); i++ {
-		blocks[i] = uint(binary.LittleEndian.Uint32(buff[(5 + i*4):]))
+	if length > 0 {
+		for i := 0; i < int(length); i++ {
+			blocks[i] = uint(binary.LittleEndian.Uint32(buff[(5 + i*4):]))
+		}
 	}
 	return blocks, nil
 }
