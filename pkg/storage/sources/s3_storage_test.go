@@ -14,7 +14,7 @@ func setup(t *testing.T) (string, string) {
 	if err != nil {
 		panic(err)
 	}
-	resource, err := pool.Run("minio", "2022", []string{"MINIO_ROOT_USER=silosilo", "MINIO_ROOT_PASSWORD=silosilo", "MINIO_DEFAULT_BUCKETS=silosilo"})
+	resource, err := pool.Run("docker.io/bitnami/minio", "2022", []string{"MINIO_ROOT_USER=silosilo", "MINIO_ROOT_PASSWORD=silosilo", "MINIO_DEFAULT_BUCKETS=silosilo"})
 	if err != nil {
 		panic(err)
 	}
@@ -41,7 +41,7 @@ func setup(t *testing.T) (string, string) {
 	return PORT_9000, PORT_9001
 }
 
-func S3StorageTest(t *testing.T) {
+func TestS3Storage(t *testing.T) {
 	PORT_9000, PORT_9001 := setup(t)
 
 	fmt.Printf("minio setup, lets run stuff against it...9000=%s 9001=%s\n", PORT_9000, PORT_9001)

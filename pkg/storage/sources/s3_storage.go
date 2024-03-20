@@ -59,7 +59,7 @@ func NewS3StorageCreate(endpoint string,
 	for b := 0; b < b_end; b++ {
 		offset := b * blockSize
 
-		_, err := client.PutObject(bucket, fmt.Sprintf("%s-%d", offset), bytes.NewReader(buffer), int64(blockSize), minio.PutObjectOptions{})
+		_, err := client.PutObject(bucket, fmt.Sprintf("%s-%d", prefix, offset), bytes.NewReader(buffer), int64(blockSize), minio.PutObjectOptions{})
 		if err != nil {
 			return nil, err
 		}
