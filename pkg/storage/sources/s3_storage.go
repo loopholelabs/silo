@@ -2,10 +2,13 @@ package sources
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
+	"io"
 
-	"github.com/minio/minio-go"
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
 var (
@@ -27,7 +30,13 @@ func NewS3Storage(endpoint string,
 	prefix string,
 	size uint64,
 	blockSize int) (*S3Storage, error) {
-	client, err := minio.New(endpoint, access, secretAccess, true)
+
+	client, err := minio.New(endpoint, &minio.Options{
+		Creds:  credentials.NewStaticV4(access, secretAccess, ""),
+		Secure: false,
+	})
+
+	//client, err := minio.New(endpoint, access, secretAccess, false)
 	if err != nil {
 		return nil, err
 	}
@@ -48,9 +57,28 @@ func NewS3StorageCreate(endpoint string,
 	prefix string,
 	size uint64,
 	blockSize int) (*S3Storage, error) {
-	client, err := minio.New(endpoint, access, secretAccess, true)
+
+	client, err := minio.New(endpoint, &minio.Options{
+		Creds:  credentials.NewStaticV4(access, secretAccess, ""),
+		Secure: false,
+	})
+	//		client, err := minio.New(endpoint, access, secretAccess, false)
 	if err != nil {
 		return nil, err
+	}
+
+	fmt.Printf("Created minio client...%s %s %s\n", endpoint, access, secretAccess)
+
+	exists, err := client.BucketExists(context.TODO(), bucket)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		// If the bucket doesn't exist, Create the bucket...
+		err = client.MakeBucket(context.TODO(), bucket, minio.MakeBucketOptions{})
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	b_end := (int(size) + blockSize - 1) / blockSize
@@ -59,8 +87,9 @@ func NewS3StorageCreate(endpoint string,
 	for b := 0; b < b_end; b++ {
 		offset := b * blockSize
 
-		_, err := client.PutObject(bucket, fmt.Sprintf("%s-%d", prefix, offset), bytes.NewReader(buffer), int64(blockSize), minio.PutObjectOptions{})
+		_, err := client.PutObject(context.TODO(), bucket, fmt.Sprintf("%s-%d", prefix, offset), bytes.NewReader(buffer), int64(blockSize), minio.PutObjectOptions{})
 		if err != nil {
+			fmt.Printf("Error putting %s\n", bucket)
 			return nil, err
 		}
 	}
@@ -88,7 +117,7 @@ func (i *S3Storage) ReadAt(buffer []byte, offset int64) (int, error) {
 	errs := make(chan error, blocks)
 
 	getData := func(buff []byte, off int64) (int, error) {
-		obj, err := i.client.GetObject(i.bucket, fmt.Sprintf("%s-%d", i.prefix, off), minio.GetObjectOptions{})
+		obj, err := i.client.GetObject(context.TODO(), i.bucket, fmt.Sprintf("%s-%d", i.prefix, off), minio.GetObjectOptions{})
 		if err != nil {
 			return 0, err
 		}
@@ -127,7 +156,7 @@ func (i *S3Storage) ReadAt(buffer []byte, offset int64) (int, error) {
 	// Wait for completion, Check for errors and return...
 	for b := b_start; b < b_end; b++ {
 		e := <-errs
-		if e != nil {
+		if e != nil && !errors.Is(e, io.EOF) {
 			return 0, e
 		}
 	}
