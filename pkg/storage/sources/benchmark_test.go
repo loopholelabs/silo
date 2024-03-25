@@ -11,6 +11,7 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/modules"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
+	"github.com/loopholelabs/silo/pkg/testutils"
 )
 
 type sourceInfo struct {
@@ -19,7 +20,22 @@ type sourceInfo struct {
 }
 
 func BenchmarkSourcesRead(mb *testing.B) {
+	PORT_9000 := testutils.SetupMinio(mb.Cleanup)
+
 	mysources := make([]sourceInfo, 0)
+
+	for _, s3block := range []int{512, 1024, 4096, 64 * 1024} {
+		size := 1024 * 1024
+		s3store, err := sources.NewS3StorageCreate(fmt.Sprintf("localhost:%s", PORT_9000), "silosilo", "silosilo", fmt.Sprintf("silosilo-%d", s3block), "file", uint64(size), s3block)
+		if err != nil {
+			panic(err)
+		}
+
+		mysources = append(mysources, sourceInfo{
+			Name:   fmt.Sprintf("S3Minio_%d", s3block),
+			Source: s3store,
+		})
+	}
 
 	// Create some sources to test...
 	mysources = append(mysources, sourceInfo{"MemoryStorage", sources.NewMemoryStorage(1024 * 1024 * 4)})
@@ -32,7 +48,7 @@ func BenchmarkSourcesRead(mb *testing.B) {
 	}
 	mysources = append(mysources, sourceInfo{"ShardedMemoryStorage", ss})
 
-	fileStorage, err := sources.NewFileStorage("test_data", 1024*1024*4)
+	fileStorage, err := sources.NewFileStorageCreate("test_data", 1024*1024*4)
 	if err != nil {
 		panic(err)
 	}
@@ -69,13 +85,28 @@ func BenchmarkSourcesRead(mb *testing.B) {
 
 			wg.Wait()
 
-			b.SetBytes(int64(totalData))
+			b.SetBytes(4096)
 		})
 	}
 }
 
 func BenchmarkSourcesWrite(mb *testing.B) {
+	PORT_9000 := testutils.SetupMinio(mb.Cleanup)
+
 	mysources := make([]sourceInfo, 0)
+
+	for _, s3block := range []int{512, 1024, 4096, 64 * 1024, 1024 * 1024} {
+		size := 4 * 1024 * 1024
+		s3store, err := sources.NewS3StorageCreate(fmt.Sprintf("localhost:%s", PORT_9000), "silosilo", "silosilo", fmt.Sprintf("silosilo-%d", s3block), "file", uint64(size), s3block)
+		if err != nil {
+			panic(err)
+		}
+
+		mysources = append(mysources, sourceInfo{
+			Name:   fmt.Sprintf("S3Minio_%d", s3block),
+			Source: s3store,
+		})
+	}
 
 	// Create some sources to test...
 	mysources = append(mysources, sourceInfo{"MemoryStorage", sources.NewMemoryStorage(1024 * 1024 * 4)})
@@ -88,7 +119,7 @@ func BenchmarkSourcesWrite(mb *testing.B) {
 	}
 	mysources = append(mysources, sourceInfo{"ShardedMemoryStorage", ss})
 
-	fileStorage, err := sources.NewFileStorage("test_data", 1024*1024*4)
+	fileStorage, err := sources.NewFileStorageCreate("test_data", 1024*1024*4)
 	if err != nil {
 		panic(err)
 	}
@@ -103,7 +134,7 @@ func BenchmarkSourcesWrite(mb *testing.B) {
 
 	crf := func(i int, s int) (storage.StorageProvider, error) {
 		name := fmt.Sprintf("test_data_shard_%d", len(sharded_files))
-		fs, err := sources.NewFileStorage(name, int64(s))
+		fs, err := sources.NewFileStorageCreate(name, int64(s))
 		if err != nil {
 			panic(err)
 		}
@@ -149,7 +180,7 @@ func BenchmarkSourcesWrite(mb *testing.B) {
 
 			wg.Wait()
 
-			b.SetBytes(int64(totalData))
+			b.SetBytes(4096)
 		})
 	}
 }
