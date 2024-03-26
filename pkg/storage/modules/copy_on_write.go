@@ -49,7 +49,7 @@ func (i *CopyOnWrite) ReadAt(buffer []byte, offset int64) (int, error) {
 		go func(block_no uint) {
 			block_offset := int64(block_no) * int64(i.blockSize)
 			var err error
-			if block_offset > offset {
+			if block_offset >= offset {
 				// Partial read at the end
 				if len(buffer[block_offset-offset:]) < i.blockSize {
 					if i.exists.BitSet(int(block_no)) {
@@ -139,7 +139,7 @@ func (i *CopyOnWrite) WriteAt(buffer []byte, offset int64) (int, error) {
 		go func(block_no uint) {
 			block_offset := int64(block_no) * int64(i.blockSize)
 			var err error
-			if block_offset > offset {
+			if block_offset >= offset {
 				// Partial write at the end
 				if len(buffer[block_offset-offset:]) < i.blockSize {
 					if i.exists.BitSet(int(block_no)) {
