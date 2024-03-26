@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestCopyOnWriteSimple(t *testing.T) {
+func TestCopyOnWriteReads(t *testing.T) {
 
 	// Create a new block storage, backed by memory storage
 	size := 1024 * 1024
@@ -67,4 +67,44 @@ func TestCopyOnWriteSimple(t *testing.T) {
 	assert.Equal(t, uint64(4), snapCache2.Read_ops)
 	assert.Equal(t, uint64(6), snapCache2.Write_ops)
 
+}
+
+func TestCopyOnWriteWrites(t *testing.T) {
+
+	// Create a new block storage, backed by memory storage
+	size := 1024 * 1024
+	srcMem := sources.NewMemoryStorage(size)
+	mem := NewMetrics(srcMem)
+	srcCache := sources.NewMemoryStorage(size)
+	cache := NewMetrics(srcCache)
+
+	// Fill it with stuff
+	data := make([]byte, size)
+	rand.Read(data)
+	_, err := srcMem.WriteAt(data, 0)
+	assert.NoError(t, err)
+
+	cow := NewCopyOnWrite(mem, cache, 10)
+
+	// Now try doing some writes...
+
+	buff := make([]byte, 30)
+	_, err = cow.WriteAt(buff, 18)
+	assert.NoError(t, err)
+
+	n := cow.exists.Count(0, cow.exists.Length())
+	assert.Equal(t, 4, n)
+
+	// Read some back make sure it looks ok...
+
+	buff2 := make([]byte, 100)
+	_, err = cow.ReadAt(buff2, 0)
+
+	buff3 := make([]byte, 100)
+	// Read from src
+	copy(buff3, data)
+	// Merge in write
+	copy(buff3[18:], buff)
+
+	assert.Equal(t, buff3, buff2)
 }
