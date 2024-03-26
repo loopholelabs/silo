@@ -19,11 +19,11 @@ func SetupMinio(cleanup func(func())) string {
 		Repository: "minio/minio",
 		Tag:        "latest",
 		Cmd:        []string{"server", "/data"},
-
-		PortBindings: map[docker.Port][]docker.PortBinding{
-			"9000/tcp": []docker.PortBinding{{HostPort: "9000"}},
-		},
-
+		/*
+			PortBindings: map[docker.Port][]docker.PortBinding{
+				"9000/tcp": []docker.PortBinding{{HostPort: "9000"}},
+			},
+		*/
 		Env: []string{"MINIO_ACCESS_KEY=silosilo", "MINIO_SECRET_KEY=silosilo"},
 	}
 
