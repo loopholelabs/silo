@@ -16,6 +16,7 @@ import (
 const (
 	SYSTEM_MEMORY      = "memory"
 	SYSTEM_FILE        = "file"
+	SYSTEM_S3          = "s3"
 	DEFAULT_BLOCK_SIZE = 4096
 )
 
@@ -65,6 +66,9 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 		if err != nil {
 			return nil, nil, err
 		}
+	} else if ds.System == SYSTEM_S3 {
+		//
+		return nil, nil, fmt.Errorf("S3 Not Supported yet")
 	} else if ds.System == SYSTEM_FILE {
 
 		// Check what we have been given...
