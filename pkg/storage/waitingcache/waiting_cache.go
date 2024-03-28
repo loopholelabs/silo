@@ -1,7 +1,6 @@
 package waitingcache
 
 import (
-	"fmt"
 	"sync"
 
 	"github.com/loopholelabs/silo/pkg/storage"
@@ -57,9 +56,7 @@ func (i *WaitingCache) waitForRemoteBlocks(b_start uint, b_end uint, lockCB func
 
 func (i *WaitingCache) waitForRemoteBlock(b uint, lockCB func(b uint)) {
 	i.lockersLock.Lock()
-	fmt.Printf("waitForRemoteBlock %d\n", b)
 	avail := i.remote.available.BitSet(int(b))
-	fmt.Printf("avail %t %d\n", avail, i.remote.available.Length())
 	if avail {
 		i.lockersLock.Unlock()
 		return
