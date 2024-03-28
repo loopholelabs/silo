@@ -1,6 +1,8 @@
 package waitingcache
 
-import "github.com/loopholelabs/silo/pkg/storage/util"
+import (
+	"github.com/loopholelabs/silo/pkg/storage/util"
+)
 
 type WaitingCacheLocal struct {
 	wc         *WaitingCache
@@ -63,7 +65,7 @@ func (wcl *WaitingCacheLocal) WriteAt(buffer []byte, offset int64) (int, error) 
 	}
 	// If the last block is incomplete, we need to wait for it from remote
 	if (end % uint64(wcl.wc.blockSize)) > 0 {
-		wcl.wc.waitForRemoteBlock(b_end, func(b uint) {})
+		wcl.wc.waitForRemoteBlock(b_end-1, func(b uint) {})
 		b_end--
 	}
 

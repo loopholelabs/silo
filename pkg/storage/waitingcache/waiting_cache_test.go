@@ -146,3 +146,34 @@ func TestWaitingCacheLocalWrites(t *testing.T) {
 	assert.Equal(t, data[offset:int(offset)+len(buffer)], buffer)
 
 }
+
+func TestWaitingCacheLocalWrites_ARCH61(t *testing.T) {
+
+	// Create a new block storage, backed by memory storage
+	size := 64 * 1024
+	mem := sources.NewMemoryStorage(size)
+	metrics := modules.NewMetrics(mem)
+	waitingLocal, waitingRemote := NewWaitingCache(metrics, 1024)
+
+	// Try complete blocks
+	data := make([]byte, size)
+	rand.Read(data)
+
+	// We'll write something in 50ms
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		_, err := waitingRemote.WriteAt(data, 0)
+		assert.NoError(t, err)
+	}()
+
+	// The waiting cache will wait for data to be available.
+	buffer := make([]byte, 65500) // Last block is incomplete
+	ctime := time.Now()
+	_, err := waitingLocal.WriteAt(buffer, 0)
+	assert.NoError(t, err)
+	wait_time := time.Since(ctime).Milliseconds()
+
+	// We'd expect this read to take around 50ms (It's waiting for the data)
+	assert.InDelta(t, wait_time, 50, 10)
+
+}
