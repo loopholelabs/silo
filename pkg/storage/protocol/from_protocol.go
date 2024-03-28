@@ -150,6 +150,36 @@ func (fp *FromProtocol) HandleWriteAt() error {
 	}
 }
 
+// Handle any WriteAtComp commands, and send to provider
+func (fp *FromProtocol) HandleWriteAtComp() error {
+	fp.init.Wait()
+
+	for {
+		id, data, err := fp.protocol.WaitForCommand(fp.dev, COMMAND_WRITE_AT_COMP)
+		if err != nil {
+			return err
+		}
+
+		offset, write_data, err := DecodeWriteAtComp(data)
+		if err != nil {
+			return err
+		}
+
+		// Handle in a goroutine
+		go func(goffset int64, gdata []byte, gid uint32) {
+			n, err := fp.prov.WriteAt(gdata, goffset)
+			war := &WriteAtResponse{
+				Bytes: n,
+				Error: err,
+			}
+			fp.send_queue <- sendData{
+				id:   gid,
+				data: EncodeWriteAtResponse(war),
+			}
+		}(offset, write_data, id)
+	}
+}
+
 // Handle any DirtyList commands
 func (fp *FromProtocol) HandleDirtyList(cb func(blocks []uint)) error {
 	for {
