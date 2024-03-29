@@ -147,8 +147,8 @@ func BenchmarkMigrationPipe(mb *testing.B) {
 					// Do some sharding here...
 					cr := func(index int, size int) (storage.StorageProvider, error) {
 						mem := sources.NewMemoryStorage(size)
-						s := modules.NewArtificialLatency(mem, 5*time.Millisecond, 1*time.Nanosecond, 5*time.Millisecond, 1*time.Nanosecond)
-						return s, nil
+						//s := modules.NewArtificialLatency(mem, 5*time.Millisecond, 1*time.Nanosecond, 5*time.Millisecond, 1*time.Nanosecond)
+						return mem, nil
 					}
 					destStorage, err = modules.NewShardedStorage(int(di.Size), testconf.shardSize, cr)
 
@@ -164,11 +164,17 @@ func BenchmarkMigrationPipe(mb *testing.B) {
 				go destFrom.HandleDevInfo()
 			}
 
-			prSource := protocol.NewProtocolRW(context.TODO(), readers1, writers2, nil)
-			prDest := protocol.NewProtocolRW(context.TODO(), readers2, writers1, initDev)
+			prSourceRW := protocol.NewProtocolRW(context.TODO(), readers1, writers2, nil)
+			prDestRW := protocol.NewProtocolRW(context.TODO(), readers2, writers1, initDev)
 
-			go prSource.Handle()
-			go prDest.Handle()
+			go prSourceRW.Handle()
+			go prDestRW.Handle()
+
+			prSource := protocol.NewTestProtocolLatency(prSourceRW, 80*time.Millisecond)
+			prDest := protocol.NewTestProtocolLatency(prDestRW, 80*time.Millisecond)
+
+			// Make sure new devs get given the latency protocol...
+			prDestRW.SetNewDevProtocol(prDest)
 
 			// Pipe a destination to the protocol
 			destination := protocol.NewToProtocol(sourceDirtyRemote.Size(), 17, prSource)

@@ -32,6 +32,7 @@ type ProtocolRW struct {
 	waiters        map[uint32]Waiters
 	waitersLock    sync.Mutex
 	newdevFN       func(Protocol, uint32)
+	newdevProtocol Protocol
 }
 
 func NewProtocolRW(ctx context.Context, readers []io.Reader, writers []io.Writer, newdevFN func(Protocol, uint32)) *ProtocolRW {
@@ -50,7 +51,12 @@ func NewProtocolRW(ctx context.Context, readers []io.Reader, writers []io.Writer
 	for i := 0; i < len(writers); i++ {
 		prw.writerHeaders[i] = make([]byte, 4+4+4)
 	}
+	prw.newdevProtocol = prw // Return ourselves by default.
 	return prw
+}
+
+func (p *ProtocolRW) SetNewDevProtocol(proto Protocol) {
+	p.newdevProtocol = proto
 }
 
 func (p *ProtocolRW) initDev(dev uint32) {
