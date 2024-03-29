@@ -227,7 +227,7 @@ func TestEventResponse(t *testing.T) {
 
 }
 
-func TestReadAtComp(t *testing.T) {
+func TestWriteAtComp(t *testing.T) {
 
 	buff := []byte{26,
 		0, 0, 0, 0,

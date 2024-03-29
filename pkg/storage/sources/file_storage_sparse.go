@@ -10,7 +10,7 @@ import (
 /**
  * Simple sparse file storage provider
  *
- * - Reads only succeed if the data has been written.
+ * - Reads default to ZERO if no data has been written for a block.
  * - Partial block reads supported.
  * - Only complete block writes count. (Partial blocks are discarded).
  */
@@ -121,7 +121,12 @@ func (i *FileStorageSparse) readBlock(buffer []byte, b uint) error {
 		_, err := i.fp.ReadAt(buffer, int64(off))
 		return err
 	} else {
-		panic("read before write on FileStorageSparse")
+		// Assume zeros
+		for i := range buffer {
+			buffer[i] = 0
+		}
+		return nil
+		// panic("read before write on FileStorageSparse")
 	}
 }
 

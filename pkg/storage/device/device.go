@@ -16,6 +16,7 @@ import (
 const (
 	SYSTEM_MEMORY      = "memory"
 	SYSTEM_FILE        = "file"
+	SYSTEM_SPARSE_FILE = "sparsefile"
 	SYSTEM_S3          = "s3"
 	DEFAULT_BLOCK_SIZE = 4096
 )
@@ -69,6 +70,25 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 	} else if ds.System == SYSTEM_S3 {
 		//
 		return nil, nil, fmt.Errorf("S3 Not Supported yet")
+	} else if ds.System == SYSTEM_SPARSE_FILE {
+		file, err := os.Open(ds.Location)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				// It doesn't exist, so lets create it and return
+				prov, err = sources.NewFileStorageSparseCreate(ds.Location, uint64(ds.ByteSize()), bs)
+				if err != nil {
+					return nil, nil, err
+				}
+			} else {
+				return nil, nil, err
+			}
+		} else {
+			file.Close()
+			prov, err = sources.NewFileStorageSparse(ds.Location, uint64(ds.ByteSize()), bs)
+			if err != nil {
+				return nil, nil, err
+			}
+		}
 	} else if ds.System == SYSTEM_FILE {
 
 		// Check what we have been given...
@@ -136,6 +156,8 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 		return nil, nil, fmt.Errorf("Unsupported storage system %s", ds.System)
 
 	}
+
+	// TODO: Optionally use a copy on write RO source...
 
 	// Now optionaly expose the device
 	var ex storage.ExposedStorage

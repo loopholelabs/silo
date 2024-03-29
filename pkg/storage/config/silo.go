@@ -36,7 +36,10 @@ func (ds *DeviceSchema) ByteSize() int {
 	// Parse the size string
 	multiplier := 1
 	s := strings.Trim(strings.ToLower(ds.Size), " \t\r\n")
-	if strings.HasSuffix(s, "k") {
+	if strings.HasSuffix(s, "b") {
+		multiplier = 1
+		s = s[:len(s)-1]
+	} else if strings.HasSuffix(s, "k") {
 		multiplier = 1024
 		s = s[:len(s)-1]
 	} else if strings.HasSuffix(s, "m") {

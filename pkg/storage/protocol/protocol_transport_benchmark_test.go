@@ -52,6 +52,7 @@ func setup(num int) *ToProtocol {
 		go destFromProtocol.HandleSend(context.TODO())
 		go destFromProtocol.HandleReadAt()
 		go destFromProtocol.HandleWriteAt()
+		go destFromProtocol.HandleWriteAtComp()
 
 	})
 
@@ -70,6 +71,34 @@ func BenchmarkWriteAt(mb *testing.B) {
 	// Do some writes
 	buff := make([]byte, 256*1024)
 	rand.Read(buff)
+
+	mb.ReportAllocs()
+	mb.SetBytes(int64(len(buff)))
+	mb.ResetTimer()
+
+	p := 0
+
+	for i := 0; i < mb.N; i++ {
+		n, err := sourceToProtocol.WriteAt(buff, int64(p))
+		if err != nil || n != len(buff) {
+			panic(err)
+		}
+		p += 1024
+		if p+len(buff) > size {
+			p = 0
+		}
+	}
+}
+
+func BenchmarkWriteAtComp(mb *testing.B) {
+	sourceToProtocol := setup(1)
+
+	sourceToProtocol.CompressedWrites = true
+
+	// Do some writes
+	buff := make([]byte, 256*1024)
+	// NB: Make them just zeros so they compress v well...
+	//	rand.Read(buff)
 
 	mb.ReportAllocs()
 	mb.SetBytes(int64(len(buff)))
