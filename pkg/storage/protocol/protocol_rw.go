@@ -74,7 +74,7 @@ func (p *ProtocolRW) initDev(dev uint32) {
 		p.waitersLock.Unlock()
 
 		if p.newdevFN != nil {
-			p.newdevFN(p, dev)
+			p.newdevFN(p.newdevProtocol, dev)
 		}
 	}
 	p.activeDevsLock.Unlock()
@@ -159,7 +159,6 @@ func (p *ProtocolRW) Handle() error {
 					return
 				}
 
-				// Handle the packet
 				err = p.handlePacket(dev, id, data)
 				if err != nil {
 					errs <- err

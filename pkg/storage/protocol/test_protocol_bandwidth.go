@@ -31,6 +31,10 @@ func NewTestProtocolBandwidth(proto Protocol, recvBandwidth uint64) Protocol {
 func (p *TestProtocolBandwidth) addRecentPacket(l uint64) {
 	p.recentPacketsLock.Lock()
 	defer p.recentPacketsLock.Unlock()
+
+	// Inside lock
+	p.waitForBandwidth()
+
 	p.recentPackets = append(p.recentPackets, &packetInfo{
 		ctime: time.Now(),
 		bytes: l,
@@ -38,8 +42,6 @@ func (p *TestProtocolBandwidth) addRecentPacket(l uint64) {
 }
 
 func (p *TestProtocolBandwidth) checkBandwidth(since time.Duration) (uint64, time.Duration) {
-	p.recentPacketsLock.Lock()
-	defer p.recentPacketsLock.Unlock()
 	totalBytes := uint64(0)
 	earliestTime := time.Now()
 	for _, pi := range p.recentPackets {
@@ -54,8 +56,6 @@ func (p *TestProtocolBandwidth) checkBandwidth(since time.Duration) (uint64, tim
 }
 
 func (p *TestProtocolBandwidth) expireBandwidth(since time.Duration) {
-	p.recentPacketsLock.Lock()
-	defer p.recentPacketsLock.Unlock()
 	newRecentPackets := make([]*packetInfo, 0)
 	for _, pi := range p.recentPackets {
 		if time.Since(pi.ctime) < since {
@@ -93,14 +93,12 @@ func (p *TestProtocolBandwidth) waitForBandwidth() {
 }
 
 func (p *TestProtocolBandwidth) WaitForPacket(dev uint32, id uint32) ([]byte, error) {
-	p.waitForBandwidth()
 	data, err := p.proto.WaitForPacket(dev, id)
 	p.addRecentPacket(uint64(len(data) + 12))
 	return data, err
 }
 
 func (p *TestProtocolBandwidth) WaitForCommand(dev uint32, cmd byte) (uint32, []byte, error) {
-	p.waitForBandwidth()
 	id, data, err := p.proto.WaitForCommand(dev, cmd)
 	p.addRecentPacket(uint64(len(data) + 12))
 	return id, data, err

@@ -212,5 +212,6 @@ func (i *CopyOnWrite) Size() uint64 {
 }
 
 func (i *CopyOnWrite) Close() error {
+	i.cache.Close()
 	return i.source.Close()
 }

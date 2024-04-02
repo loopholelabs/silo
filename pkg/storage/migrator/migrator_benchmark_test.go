@@ -75,28 +75,32 @@ type testConfig struct {
 	blockSize   int
 	name        string
 	shardSize   int
+	compress    bool
 }
 
 func BenchmarkMigrationPipe(mb *testing.B) {
 
 	size := 15 * 1024 * 1024
 	tests := []testConfig{
-		{name: "32-concurrency", numPipes: 1, concurrency: 32, blockSize: 64 * 1024, shardSize: 64 * 1024},
-		{name: "128-concurrency", numPipes: 1, concurrency: 128, blockSize: 64 * 1024, shardSize: 64 * 1024},
-		{name: "max-concurrency", numPipes: 1, concurrency: 1000000, blockSize: 64 * 1024, shardSize: 64 * 1024},
+		{name: "32-concurrency", numPipes: 1, concurrency: 32, blockSize: 64 * 1024, shardSize: 64 * 1024, compress: false},
+		{name: "128-concurrency", numPipes: 1, concurrency: 128, blockSize: 64 * 1024, shardSize: 64 * 1024, compress: false},
+		{name: "max-concurrency", numPipes: 1, concurrency: 1000000, blockSize: 64 * 1024, shardSize: 64 * 1024, compress: false},
 
-		{name: "1-pipe", numPipes: 1, concurrency: 1000000, blockSize: 64 * 1024, shardSize: 64 * 1024},
-		{name: "4-pipes", numPipes: 4, concurrency: 1000000, blockSize: 64 * 1024, shardSize: 64 * 1024},
-		{name: "32-pipes", numPipes: 32, concurrency: 1000000, blockSize: 64 * 1024, shardSize: 64 * 1024},
+		{name: "1-pipe", numPipes: 1, concurrency: 1000000, blockSize: 64 * 1024, shardSize: 64 * 1024, compress: false},
+		{name: "4-pipes", numPipes: 4, concurrency: 1000000, blockSize: 64 * 1024, shardSize: 64 * 1024, compress: false},
+		{name: "32-pipes", numPipes: 32, concurrency: 1000000, blockSize: 64 * 1024, shardSize: 64 * 1024, compress: false},
 
-		{name: "4k-blocks", numPipes: 32, concurrency: 1000000, blockSize: 4096, shardSize: 64 * 1024},
-		{name: "64k-blocks", numPipes: 32, concurrency: 1000000, blockSize: 64 * 1024, shardSize: 64 * 1024},
-		{name: "256k-blocks", numPipes: 32, concurrency: 1000000, blockSize: 256 * 1024, shardSize: 64 * 1024},
+		{name: "4k-blocks", numPipes: 32, concurrency: 1000000, blockSize: 4096, shardSize: 64 * 1024, compress: false},
+		{name: "64k-blocks", numPipes: 32, concurrency: 1000000, blockSize: 64 * 1024, shardSize: 64 * 1024, compress: false},
+		{name: "256k-blocks", numPipes: 32, concurrency: 1000000, blockSize: 256 * 1024, shardSize: 64 * 1024, compress: false},
 
-		{name: "no-sharding", numPipes: 32, concurrency: 1000000, blockSize: 256 * 1024, shardSize: size},
-		{name: "4k-shards", numPipes: 32, concurrency: 1000000, blockSize: 256 * 1024, shardSize: 4 * 1024},
-		{name: "64k-shards", numPipes: 32, concurrency: 1000000, blockSize: 256 * 1024, shardSize: 64 * 1024},
-		{name: "256k-shards", numPipes: 32, concurrency: 1000000, blockSize: 256 * 1024, shardSize: 256 * 1024},
+		{name: "no-sharding", numPipes: 32, concurrency: 1000000, blockSize: 256 * 1024, shardSize: size, compress: false},
+		{name: "4k-shards", numPipes: 32, concurrency: 1000000, blockSize: 256 * 1024, shardSize: 4 * 1024, compress: false},
+		{name: "64k-shards", numPipes: 32, concurrency: 1000000, blockSize: 256 * 1024, shardSize: 64 * 1024, compress: false},
+		{name: "256k-shards", numPipes: 32, concurrency: 1000000, blockSize: 256 * 1024, shardSize: 256 * 1024, compress: false},
+
+		{name: "no-compress", numPipes: 32, concurrency: 1000000, blockSize: 256 * 1024, shardSize: 256 * 1024, compress: false},
+		{name: "compress", numPipes: 32, concurrency: 1000000, blockSize: 256 * 1024, shardSize: 256 * 1024, compress: true},
 	}
 
 	for _, testconf := range tests {
@@ -109,7 +113,7 @@ func BenchmarkMigrationPipe(mb *testing.B) {
 			sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(sourceStorageMem, blockSize)
 			sourceStorage := modules.NewLockable(sourceDirtyLocal)
 
-			// Set up some data here.
+			// Set up some data here. NB This is v nicely compressable
 			buffer := make([]byte, size)
 			for i := 0; i < size; i++ {
 				buffer[i] = 9
@@ -161,6 +165,7 @@ func BenchmarkMigrationPipe(mb *testing.B) {
 				go destFrom.HandleSend(ctx)
 				go destFrom.HandleReadAt()
 				go destFrom.HandleWriteAt()
+				go destFrom.HandleWriteAtComp()
 				go destFrom.HandleDevInfo()
 			}
 
@@ -173,11 +178,19 @@ func BenchmarkMigrationPipe(mb *testing.B) {
 			prSource := protocol.NewTestProtocolLatency(prSourceRW, 80*time.Millisecond)
 			prDest := protocol.NewTestProtocolLatency(prDestRW, 80*time.Millisecond)
 
-			// Make sure new devs get given the latency protocol...
+			prSource = protocol.NewTestProtocolBandwidth(prSource, 1024*1024*1024) // 1GB/sec
+			prDest = protocol.NewTestProtocolBandwidth(prDest, 1024*1024*1024)     // 1GB/sec
+
+			// Make sure new devs get given the latency/bandwidth protocol...
+
 			prDestRW.SetNewDevProtocol(prDest)
 
 			// Pipe a destination to the protocol
 			destination := protocol.NewToProtocol(sourceDirtyRemote.Size(), 17, prSource)
+
+			if testconf.compress {
+				destination.CompressedWrites = true
+			}
 
 			destination.SendDevInfo("test", uint32(blockSize))
 
