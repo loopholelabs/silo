@@ -52,7 +52,7 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 	var prov storage.StorageProvider
 	var err error
 
-	bs := ds.BlockSize
+	bs := int(ds.ByteBlockSize())
 	if bs == 0 {
 		bs = DEFAULT_BLOCK_SIZE
 	}
@@ -157,7 +157,17 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 
 	}
 
-	// TODO: Optionally use a copy on write RO source...
+	// Optionally use a copy on write RO source...
+	if ds.ROSource != nil {
+		// Create the ROSource...
+		rodev, _, err := NewDevice(ds.ROSource)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		// Now hook it in as the read only source for this device...
+		prov = modules.NewCopyOnWrite(rodev, prov, int(ds.ByteBlockSize()))
+	}
 
 	// Now optionaly expose the device
 	var ex storage.ExposedStorage

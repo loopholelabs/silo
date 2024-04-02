@@ -18,12 +18,13 @@ type SiloSchema struct {
 }
 
 type DeviceSchema struct {
-	Name      string `hcl:"name,label"`
-	Size      string `hcl:"size,attr"`
-	System    string `hcl:"system,attr"`
-	BlockSize int    `hcl:"blocksize,optional"`
-	Expose    bool   `hcl:"expose,optional"`
-	Location  string `hcl:"location,optional"`
+	Name      string        `hcl:"name,label"`
+	Size      string        `hcl:"size,attr"`
+	System    string        `hcl:"system,attr"`
+	BlockSize string        `hcl:"blocksize,optional"`
+	Expose    bool          `hcl:"expose,optional"`
+	Location  string        `hcl:"location,optional"`
+	ROSource  *DeviceSchema `hcl:"source,block"`
 }
 
 type LocationSchema struct {
@@ -32,10 +33,13 @@ type LocationSchema struct {
 	Location string `hcl:"location,optional"`
 }
 
-func (ds *DeviceSchema) ByteSize() int {
+func parseByteValue(val string) int64 {
 	// Parse the size string
-	multiplier := 1
-	s := strings.Trim(strings.ToLower(ds.Size), " \t\r\n")
+	multiplier := int64(1)
+	s := strings.Trim(strings.ToLower(val), " \t\r\n")
+	if s == "" {
+		return 0
+	}
 	if strings.HasSuffix(s, "b") {
 		multiplier = 1
 		s = s[:len(s)-1]
@@ -53,7 +57,15 @@ func (ds *DeviceSchema) ByteSize() int {
 	if err != nil {
 		panic(err)
 	}
-	return int(i) * multiplier
+	return int64(i) * multiplier
+}
+
+func (ds *DeviceSchema) ByteSize() int64 {
+	return parseByteValue(ds.Size)
+}
+
+func (ds *DeviceSchema) ByteBlockSize() int64 {
+	return parseByteValue(ds.BlockSize)
 }
 
 func ReadSchema(path string) (*SiloSchema, error) {

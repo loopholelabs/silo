@@ -8,24 +8,26 @@ import (
 )
 
 type Logger struct {
-	prov storage.StorageProvider
+	prov   storage.StorageProvider
+	prefix string
 }
 
-func NewLogger(prov storage.StorageProvider) *Logger {
+func NewLogger(prov storage.StorageProvider, prefix string) *Logger {
 	return &Logger{
-		prov: prov,
+		prov:   prov,
+		prefix: prefix,
 	}
 }
 
 func (i *Logger) ReadAt(buffer []byte, offset int64) (int, error) {
 	n, err := i.prov.ReadAt(buffer, offset)
-	fmt.Printf("%v: ReadAt(%d, offset=%d) -> %d, %v\n", time.Now(), len(buffer), offset, n, err)
+	fmt.Printf("%v: %s ReadAt(%d, offset=%d) -> %d, %v\n", time.Now(), i.prefix, len(buffer), offset, n, err)
 	return n, err
 }
 
 func (i *Logger) WriteAt(buffer []byte, offset int64) (int, error) {
 	n, err := i.prov.WriteAt(buffer, offset)
-	fmt.Printf("%v: WriteAt(%d, offset=%d) -> %d, %v\n", time.Now(), len(buffer), offset, n, err)
+	fmt.Printf("%v: %s WriteAt(%d, offset=%d) -> %d, %v\n", time.Now(), i.prefix, len(buffer), offset, n, err)
 	return n, err
 }
 
