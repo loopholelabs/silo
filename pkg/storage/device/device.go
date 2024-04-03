@@ -1,6 +1,7 @@
 package device
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"os"
@@ -16,6 +17,7 @@ import (
 const (
 	SYSTEM_MEMORY      = "memory"
 	SYSTEM_FILE        = "file"
+	SYSTEM_SPARSE_FILE = "sparsefile"
 	SYSTEM_S3          = "s3"
 	DEFAULT_BLOCK_SIZE = 4096
 )
@@ -51,7 +53,7 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 	var prov storage.StorageProvider
 	var err error
 
-	bs := ds.BlockSize
+	bs := int(ds.ByteBlockSize())
 	if bs == 0 {
 		bs = DEFAULT_BLOCK_SIZE
 	}
@@ -69,6 +71,25 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 	} else if ds.System == SYSTEM_S3 {
 		//
 		return nil, nil, fmt.Errorf("S3 Not Supported yet")
+	} else if ds.System == SYSTEM_SPARSE_FILE {
+		file, err := os.Open(ds.Location)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				// It doesn't exist, so lets create it and return
+				prov, err = sources.NewFileStorageSparseCreate(ds.Location, uint64(ds.ByteSize()), bs)
+				if err != nil {
+					return nil, nil, err
+				}
+			} else {
+				return nil, nil, err
+			}
+		} else {
+			file.Close()
+			prov, err = sources.NewFileStorageSparse(ds.Location, uint64(ds.ByteSize()), bs)
+			if err != nil {
+				return nil, nil, err
+			}
+		}
 	} else if ds.System == SYSTEM_FILE {
 
 		// Check what we have been given...
@@ -135,6 +156,45 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 	} else {
 		return nil, nil, fmt.Errorf("Unsupported storage system %s", ds.System)
 
+	}
+
+	// Optionally use a copy on write RO source...
+	if ds.ROSource != nil {
+		// Create the ROSource...
+		rodev, _, err := NewDevice(ds.ROSource)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		// Now hook it in as the read only source for this device...
+		cow := modules.NewCopyOnWrite(rodev, prov, int(ds.ByteBlockSize()))
+		prov = cow
+		// If we can find a cow file, load it up...
+		data, err := os.ReadFile(ds.ROSource.Name)
+		if err == nil {
+			// Load up the blocks...
+			blocks := make([]uint, 0)
+			for i := 0; i < len(data); i += 4 {
+				v := binary.LittleEndian.Uint32(data[i:])
+				blocks = append(blocks, uint(v))
+			}
+			cow.SetBlockExists(blocks)
+		} else if errors.Is(err, os.ErrNotExist) {
+			// Doesn't exists, so it's a new cow
+		} else {
+			return nil, nil, err
+		}
+
+		// Make sure the cow data gets dumped on close...
+		cow.CloseFunc = func() {
+			blocks := cow.GetBlockExists()
+			// Write it out to file
+			data := make([]byte, 0)
+			for _, b := range blocks {
+				data = binary.LittleEndian.AppendUint32(data, uint32(b))
+			}
+			os.WriteFile(ds.ROSource.Name, data, 0666)
+		}
 	}
 
 	// Now optionaly expose the device

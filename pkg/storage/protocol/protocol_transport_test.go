@@ -55,6 +55,53 @@ func TestProtocolWriteAt(t *testing.T) {
 	assert.Equal(t, buff, buff2)
 }
 
+func TestProtocolWriteAtComp(t *testing.T) {
+	size := 1024 * 1024
+	var store storage.StorageProvider
+
+	// Setup a protocol in the middle, and make sure our reads/writes get through ok
+
+	pr := NewMockProtocol()
+
+	sourceToProtocol := NewToProtocol(uint64(size), 1, pr)
+
+	sourceToProtocol.CompressedWrites = true
+
+	storeFactory := func(di *DevInfo) storage.StorageProvider {
+		store = sources.NewMemoryStorage(int(di.Size))
+		return store
+	}
+
+	destFromProtocol := NewFromProtocol(1, storeFactory, pr)
+
+	// Now do some things and make sure they happen...
+
+	// TODO: Shutdown...
+	go destFromProtocol.HandleDevInfo()
+	go destFromProtocol.HandleSend(context.TODO())
+	go destFromProtocol.HandleReadAt()
+	go destFromProtocol.HandleWriteAt()
+	go destFromProtocol.HandleWriteAtComp()
+
+	// Send devInfo
+	sourceToProtocol.SendDevInfo("test", 4096)
+
+	buff := make([]byte, 4096)
+	rand.Read(buff)
+	n, err := sourceToProtocol.WriteAt(buff, 12)
+
+	assert.NoError(t, err)
+	assert.Equal(t, len(buff), n)
+
+	// Now check it was written to the source
+	buff2 := make([]byte, 4096)
+	n, err = store.ReadAt(buff2, 12)
+	assert.NoError(t, err)
+	assert.Equal(t, len(buff2), n)
+
+	assert.Equal(t, buff, buff2)
+}
+
 func TestProtocolReadAt(t *testing.T) {
 	size := 1024 * 1024
 	var store storage.StorageProvider

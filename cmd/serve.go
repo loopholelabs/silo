@@ -150,6 +150,7 @@ func shutdown_everything() {
 	fmt.Printf("Unlocking devices...\n")
 	for _, i := range src_storage {
 		i.lockable.Unlock()
+		i.tracker.Close()
 	}
 
 	fmt.Printf("Shutting down devices cleanly...\n")
@@ -163,7 +164,7 @@ func shutdown_everything() {
 
 func setupStorageDevice(conf *config.DeviceSchema) (*storageInfo, error) {
 	block_size := 1024 * 64
-	num_blocks := (conf.ByteSize() + block_size - 1) / block_size
+	num_blocks := (int(conf.ByteSize()) + block_size - 1) / block_size
 
 	source, ex, err := device.NewDevice(conf)
 	if err != nil {

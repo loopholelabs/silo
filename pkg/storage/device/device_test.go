@@ -29,7 +29,7 @@ device TestNew {
 device Test3 {
 	system = "file"
 	size = "4k"
-	blocksize = 1024
+	blocksize = "1k"
 	location = "./testdata/testfile_3/"
 }
 `
@@ -52,7 +52,7 @@ func TestSourcesExisting(t *testing.T) {
 	devs := setup(t)
 
 	buffer := []byte("Hello world testing 1 2 3")
-	//	_, err = devs["Test2"].WriteAt(buffer, 400)
+	//	_, err := devs["Test2"].Provider.WriteAt(buffer, 400)
 	//	assert.NoError(t, err)
 
 	buff := make([]byte, len(buffer))

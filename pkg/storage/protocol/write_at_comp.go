@@ -63,8 +63,9 @@ func EncodeWriteAtComp(offset int64, data []byte) []byte {
 
 			p += l
 			start = p
+		} else {
+			p++
 		}
-		p++
 	}
 
 	if start != p {
