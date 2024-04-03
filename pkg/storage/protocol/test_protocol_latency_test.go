@@ -36,17 +36,18 @@ func TestTestProtocolLatency(t *testing.T) {
 	go destFromProtocol.HandleReadAt()
 	go destFromProtocol.HandleWriteAt()
 
+	ctime := time.Now()
+
 	// Send devInfo
 	sourceToProtocol.SendDevInfo("test", 4096)
 
 	buff := make([]byte, 4096)
 	rand.Read(buff)
-	ctime := time.Now()
 	n, err := sourceToProtocol.WriteAt(buff, 12)
 
 	assert.NoError(t, err)
 	assert.Equal(t, len(buff), n)
 
-	// Check it took some time (50ms for WriteAt, and 50ms for WriteAtResponse)
-	assert.WithinDuration(t, ctime.Add(100*time.Millisecond), time.Now(), 10*time.Millisecond)
+	// Check it took some time
+	assert.WithinDuration(t, ctime.Add(50*time.Millisecond), time.Now(), 10*time.Millisecond)
 }
