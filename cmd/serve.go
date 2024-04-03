@@ -150,6 +150,7 @@ func shutdown_everything() {
 	fmt.Printf("Unlocking devices...\n")
 	for _, i := range src_storage {
 		i.lockable.Unlock()
+		i.tracker.Close()
 	}
 
 	fmt.Printf("Shutting down devices cleanly...\n")

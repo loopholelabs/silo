@@ -14,6 +14,7 @@ type CopyOnWrite struct {
 	size       uint64
 	blockSize  int
 	blockLocks []sync.Mutex
+	CloseFunc  func()
 }
 
 func NewCopyOnWrite(source storage.StorageProvider, cache storage.StorageProvider, blockSize int) *CopyOnWrite {
@@ -25,7 +26,18 @@ func NewCopyOnWrite(source storage.StorageProvider, cache storage.StorageProvide
 		size:       source.Size(),
 		blockSize:  blockSize,
 		blockLocks: make([]sync.Mutex, numBlocks),
+		CloseFunc:  func() {},
 	}
+}
+
+func (i *CopyOnWrite) SetBlockExists(blocks []uint) {
+	for _, b := range blocks {
+		i.exists.SetBit(int(b))
+	}
+}
+
+func (i *CopyOnWrite) GetBlockExists() []uint {
+	return i.exists.Collect(0, i.exists.Length())
 }
 
 func (i *CopyOnWrite) ReadAt(buffer []byte, offset int64) (int, error) {
@@ -213,5 +225,7 @@ func (i *CopyOnWrite) Size() uint64 {
 
 func (i *CopyOnWrite) Close() error {
 	i.cache.Close()
-	return i.source.Close()
+	i.source.Close()
+	i.CloseFunc()
+	return nil
 }

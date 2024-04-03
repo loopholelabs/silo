@@ -1,6 +1,7 @@
 package device
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"os"
@@ -166,7 +167,34 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 		}
 
 		// Now hook it in as the read only source for this device...
-		prov = modules.NewCopyOnWrite(rodev, prov, int(ds.ByteBlockSize()))
+		cow := modules.NewCopyOnWrite(rodev, prov, int(ds.ByteBlockSize()))
+		prov = cow
+		// If we can find a cow file, load it up...
+		data, err := os.ReadFile(ds.ROSource.Name)
+		if err == nil {
+			// Load up the blocks...
+			blocks := make([]uint, 0)
+			for i := 0; i < len(data); i += 4 {
+				v := binary.LittleEndian.Uint32(data[i:])
+				blocks = append(blocks, uint(v))
+			}
+			cow.SetBlockExists(blocks)
+		} else if errors.Is(err, os.ErrNotExist) {
+			// Doesn't exists, so it's a new cow
+		} else {
+			return nil, nil, err
+		}
+
+		// Make sure the cow data gets dumped on close...
+		cow.CloseFunc = func() {
+			blocks := cow.GetBlockExists()
+			// Write it out to file
+			data := make([]byte, 0)
+			for _, b := range blocks {
+				data = binary.LittleEndian.AppendUint32(data, uint32(b))
+			}
+			os.WriteFile(ds.ROSource.Name, data, 0666)
+		}
 	}
 
 	// Now optionaly expose the device
