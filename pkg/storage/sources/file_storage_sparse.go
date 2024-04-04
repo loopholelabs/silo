@@ -9,9 +9,9 @@ import (
 /**
  * Simple sparse file storage provider
  *
- * - Reads default to ZERO if no data has been written for a block.
+ * - Reads panic if no data has been written for a block.
  * - Partial block reads supported.
- * - Only complete block writes count. (Partial blocks are discarded).
+ * - Only complete block writes count. (Partial blocks panic for now).
  */
 type FileStorageSparse struct {
 	f           string
@@ -76,34 +76,35 @@ func NewFileStorageSparse(f string, size uint64, blockSize int) (*FileStorageSpa
 }
 
 func (i *FileStorageSparse) writeBlock(buffer []byte, b uint) error {
-	i.writeLock.Lock()
-	defer i.writeLock.Unlock()
-
+	i.writeLock.RLock()
 	off, ok := i.offsets[b]
 	if ok {
 		// Write to the data where it is...
 		_, err := i.fp.WriteAt(buffer, int64(off))
+		i.writeLock.RUnlock()
 		return err
-	} else {
-		// Need to append the data to the end of the file...
-		blockHeader := make([]byte, 8)
-		binary.LittleEndian.PutUint64(blockHeader, uint64(b))
-		i.offsets[b] = i.currentSize + uint64(len(blockHeader))
-		i.currentSize += uint64(len(blockHeader)) + uint64(i.blockSize)
-		_, err := i.fp.Seek(0, 2) // Go to the end
-		if err != nil {
-			return err
-		}
-		_, err = i.fp.Write(blockHeader)
-		if err != nil {
-			return err
-		}
-		_, err = i.fp.Write(buffer)
-		if err != nil {
-			return err
-		}
 	}
-	return nil
+	i.writeLock.RUnlock()
+
+	// Doing an append on the file, we will lock completely so any ReadAt / WriteAt and offsets access don't happen
+	i.writeLock.Lock()
+	defer i.writeLock.Unlock()
+
+	// Need to append the data to the end of the file...
+	blockHeader := make([]byte, 8)
+	binary.LittleEndian.PutUint64(blockHeader, uint64(b))
+	i.offsets[b] = i.currentSize + uint64(len(blockHeader))
+	i.currentSize += uint64(len(blockHeader)) + uint64(i.blockSize)
+	_, err := i.fp.Seek(0, 2) // Go to the end of the file
+	if err != nil {
+		return err
+	}
+	_, err = i.fp.Write(blockHeader)
+	if err != nil {
+		return err
+	}
+	_, err = i.fp.Write(buffer)
+	return err
 }
 
 func (i *FileStorageSparse) readBlock(buffer []byte, b uint) error {
