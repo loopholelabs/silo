@@ -2,7 +2,6 @@ package sources
 
 import (
 	"encoding/binary"
-	"fmt"
 	"os"
 	"sync"
 )
@@ -45,25 +44,26 @@ func NewFileStorageSparse(f string, size uint64, blockSize int) (*FileStorageSpa
 		return nil, err
 	}
 
-	// Read the offsets file...
+	// Scan through the file and get the offsets...
 	offsets := make(map[uint]uint64)
 
-	data, err := os.ReadFile(fmt.Sprintf("%s.offsets", f))
-	if err != nil {
-		return nil, err
-	}
-
-	// Parse the data
-	p := 0
+	header := make([]byte, 8)
+	p := int64(0)
 	for {
-		if p >= len(data) {
+		l, err := fp.ReadAt(header, p)
+		if l == len(header) {
+			// Parse it...
+			b := binary.LittleEndian.Uint64(header)
+			offsets[uint(b)] = uint64(p) + uint64(len(header))
+		} else {
 			break
 		}
-		block := binary.LittleEndian.Uint64(data[p:])
-		offset := binary.LittleEndian.Uint64(data[p+8:])
-		offsets[uint(block)] = offset
-		p += 16
+		if err != nil {
+			return nil, err
+		}
+		p += int64(len(header) + blockSize)
 	}
+	// Read the offsets file...
 
 	return &FileStorageSparse{
 		f:           f,
@@ -73,17 +73,6 @@ func NewFileStorageSparse(f string, size uint64, blockSize int) (*FileStorageSpa
 		offsets:     offsets,
 		currentSize: uint64(len(offsets) * blockSize),
 	}, nil
-}
-
-func (i *FileStorageSparse) writeOffsetsFile() error {
-	data := make([]byte, len(i.offsets)*16)
-	p := 0
-	for block, offset := range i.offsets {
-		binary.LittleEndian.PutUint64(data[p:], uint64(block))
-		binary.LittleEndian.PutUint64(data[p+8:], uint64(offset))
-		p += 16
-	}
-	return os.WriteFile(fmt.Sprintf("%s.offsets", i.f), data, 0666)
 }
 
 func (i *FileStorageSparse) writeBlock(buffer []byte, b uint) error {
@@ -97,9 +86,15 @@ func (i *FileStorageSparse) writeBlock(buffer []byte, b uint) error {
 		return err
 	} else {
 		// Need to append the data to the end of the file...
-		i.offsets[b] = i.currentSize
-		i.currentSize += uint64(i.blockSize)
+		blockHeader := make([]byte, 8)
+		binary.LittleEndian.PutUint64(blockHeader, uint64(b))
+		i.offsets[b] = i.currentSize + uint64(len(blockHeader))
+		i.currentSize += uint64(len(blockHeader)) + uint64(i.blockSize)
 		_, err := i.fp.Seek(0, 2) // Go to the end
+		if err != nil {
+			return err
+		}
+		_, err = i.fp.Write(blockHeader)
 		if err != nil {
 			return err
 		}
@@ -121,12 +116,14 @@ func (i *FileStorageSparse) readBlock(buffer []byte, b uint) error {
 		_, err := i.fp.ReadAt(buffer, int64(off))
 		return err
 	} else {
-		// Assume zeros
-		for i := range buffer {
-			buffer[i] = 0
-		}
-		return nil
-		// panic("read before write on FileStorageSparse")
+		/*
+			// Assume zeros
+			for i := range buffer {
+				buffer[i] = 0
+			}
+			return nil
+		*/
+		panic("read before write on FileStorageSparse")
 	}
 }
 
@@ -195,6 +192,7 @@ func (i *FileStorageSparse) WriteAt(buffer []byte, offset int64) (int, error) {
 			if len(buffer[block_offset-offset:]) < i.blockSize {
 				// Partial write at the end
 				// FIXME: For now, we IGNORE Partial blocks.
+				panic("Ignoring partial block write")
 			} else {
 				s := block_offset - offset
 				e := s + int64(i.blockSize)
@@ -206,22 +204,17 @@ func (i *FileStorageSparse) WriteAt(buffer []byte, offset int64) (int, error) {
 		} else {
 			// Partial write at the start
 			// FIXME: For now, we IGNORE Partial blocks.
+			panic("Ignoring partial block write")
 		}
 	}
-
 	return len(buffer), nil
 }
 
 func (i *FileStorageSparse) Close() error {
-	// Write out an offsets file for the offset information...
-	i.writeOffsetsFile()
-	// TODO: Check for error
 	return i.fp.Close()
 }
 
 func (i *FileStorageSparse) Flush() error {
-	i.writeOffsetsFile()
-	// TODO: Check for error
 	i.fp.Sync()
 	return nil
 }
