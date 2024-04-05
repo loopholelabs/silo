@@ -260,14 +260,14 @@ func migrateDevice(dev_id uint32, name string,
 
 	conf := migrator.NewMigratorConfig().WithBlockSize(sinfo.block_size)
 	conf.LockerHandler = func() {
-		dest.SendEvent(protocol.EventPreLock)
+		dest.SendEvent(&protocol.Event{Type: protocol.EventPreLock})
 		sinfo.lockable.Lock()
-		dest.SendEvent(protocol.EventPostLock)
+		dest.SendEvent(&protocol.Event{Type: protocol.EventPostLock})
 	}
 	conf.UnlockerHandler = func() {
-		dest.SendEvent(protocol.EventPreUnlock)
+		dest.SendEvent(&protocol.Event{Type: protocol.EventPreUnlock})
 		sinfo.lockable.Unlock()
-		dest.SendEvent(protocol.EventPostUnlock)
+		dest.SendEvent(&protocol.Event{Type: protocol.EventPostUnlock})
 	}
 
 	if serve_progress {
@@ -336,7 +336,7 @@ func migrateDevice(dev_id uint32, name string,
 	}
 
 	//	fmt.Printf("[%s] Migration completed\n", name)
-	err = dest.SendEvent(protocol.EventCompleted)
+	err = dest.SendEvent(&protocol.Event{Type: protocol.EventCompleted})
 	if err != nil {
 		return err
 	}

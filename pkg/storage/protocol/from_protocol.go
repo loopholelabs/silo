@@ -34,7 +34,7 @@ func NewFromProtocol(dev uint32, provFactory func(*DevInfo) storage.StorageProvi
 }
 
 // Handle any Events
-func (fp *FromProtocol) HandleEvent(cb func(EventType)) error {
+func (fp *FromProtocol) HandleEvent(cb func(*Event)) error {
 	fp.init.Wait()
 
 	for {
@@ -48,7 +48,7 @@ func (fp *FromProtocol) HandleEvent(cb func(EventType)) error {
 		}
 
 		// Relay the event, wait, and then respond.
-		cb(ev.Type)
+		cb(ev)
 
 		fp.send_queue <- sendData{
 			id:   id,

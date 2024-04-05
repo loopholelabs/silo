@@ -277,8 +277,8 @@ func TestProtocolEvents(t *testing.T) {
 
 	// Now do some things and make sure they happen...
 	go destFromProtocol.HandleDevInfo()
-	go destFromProtocol.HandleEvent(func(e EventType) {
-		events <- e
+	go destFromProtocol.HandleEvent(func(e *Event) {
+		events <- e.Type
 	})
 	go destFromProtocol.HandleSend(context.TODO())
 
@@ -287,15 +287,15 @@ func TestProtocolEvents(t *testing.T) {
 
 	// Send some events and make sure they happen at the other end...
 
-	sourceToProtocol.SendEvent(EventPreLock)
+	sourceToProtocol.SendEvent(&Event{Type: EventPreLock})
 	// There should be the event waiting for us already.
 	assert.Equal(t, 1, len(events))
 	e := <-events
 	assert.Equal(t, EventPreLock, e)
-	sourceToProtocol.SendEvent(EventPostLock)
-	sourceToProtocol.SendEvent(EventPreUnlock)
-	sourceToProtocol.SendEvent(EventPostUnlock)
-	sourceToProtocol.SendEvent(EventCompleted)
+	sourceToProtocol.SendEvent(&Event{Type: EventPostLock})
+	sourceToProtocol.SendEvent(&Event{Type: EventPreUnlock})
+	sourceToProtocol.SendEvent(&Event{Type: EventPostUnlock})
+	sourceToProtocol.SendEvent(&Event{Type: EventCompleted})
 	e = <-events
 	assert.Equal(t, EventPostLock, e)
 	e = <-events
