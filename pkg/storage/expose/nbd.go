@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"strings"
 	"syscall"
 	"time"
 
@@ -124,6 +125,10 @@ func (n *ExposedStorageNBDNL) Init() error {
 		// Close things down and try again...
 		for _, s := range socks {
 			s.Close()
+		}
+
+		if strings.Contains(err.Error(), "invalid argument") {
+			return err
 		}
 
 		//		fmt.Printf("\n\nRetrying...\n\n")

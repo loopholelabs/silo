@@ -58,6 +58,37 @@ func TestNBDNLDevice(t *testing.T) {
 	wg.Wait()
 }
 
+func TestNBDNLDeviceBlocksizes(t *testing.T) {
+	currentUser, err := user.Current()
+	if err != nil {
+		panic(err)
+	}
+	if currentUser.Username != "root" {
+		fmt.Printf("Cannot run test unless we are root.\n")
+		return
+	}
+
+	blockSizes := []int{512, 1 * 1024, 2 * 1024, 4 * 1024}
+
+	size := 4 * 1024 * 1024
+	prov := sources.NewMemoryStorage(size)
+
+	for _, bs := range blockSizes {
+		t.Run(fmt.Sprintf("blockSize-%d", bs), func(tt *testing.T) {
+			var n *ExposedStorageNBDNL
+			defer func() {
+				err := n.Shutdown()
+				assert.NoError(t, err)
+			}()
+
+			n = NewExposedStorageNBDNL(prov, 8, 0, uint64(size), uint64(bs), true)
+
+			err = n.Init()
+			assert.NoError(t, err)
+		})
+	}
+}
+
 func TestNBDNLDeviceSmall(t *testing.T) {
 	currentUser, err := user.Current()
 	if err != nil {

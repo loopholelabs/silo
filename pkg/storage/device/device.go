@@ -167,7 +167,7 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 		}
 
 		// Now hook it in as the read only source for this device...
-		cow := modules.NewCopyOnWrite(rodev, prov, int(ds.ByteBlockSize()))
+		cow := modules.NewCopyOnWrite(rodev, prov, bs)
 		prov = cow
 		// If we can find a cow file, load it up...
 		data, err := os.ReadFile(ds.ROSource.Name)
@@ -197,10 +197,20 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 		}
 	}
 
+	NBD_BLOCK_SIZE := uint64(4096)
+
 	// Now optionaly expose the device
 	var ex storage.ExposedStorage
 	if ds.Expose {
-		ex = expose.NewExposedStorageNBDNL(prov, 8, 0, prov.Size(), 4096, true)
+		if ds.ROSource != nil {
+			if bs != int(NBD_BLOCK_SIZE) {
+				panic("Error! CopyOnWrite block size must be 4k if you want to expose as nbd")
+			}
+		}
+		if ds.System == SYSTEM_SPARSE_FILE && bs != int(NBD_BLOCK_SIZE) {
+			panic("Error! SparseFile block size must be 4k if you want to expose as nbd")
+		}
+		ex = expose.NewExposedStorageNBDNL(prov, 8, 0, prov.Size(), NBD_BLOCK_SIZE, true)
 
 		err := ex.Init()
 		if err != nil {
