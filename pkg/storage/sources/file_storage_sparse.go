@@ -169,7 +169,7 @@ func (i *FileStorageSparse) ReadAt(buffer []byte, offset int64) (int, error) {
 			block_buffer := make([]byte, i.blockSize)
 			err := i.readBlock(block_buffer, b)
 			if err == nil {
-				count += copy(buffer, block_buffer[offset-block_offset:])
+				count += copy(buffer[:buffer_end], block_buffer[offset-block_offset:])
 			} else {
 				return 0, err
 			}
@@ -238,7 +238,7 @@ func (i *FileStorageSparse) WriteAt(buffer []byte, offset int64) (int, error) {
 				return 0, err
 			} else {
 				// Merge the data in, and write it back...
-				count += copy(block_buffer[offset-block_offset:], buffer)
+				count += copy(block_buffer[offset-block_offset:], buffer[:buffer_end])
 				err := i.writeBlock(block_buffer, b)
 				if err != nil {
 					return 0, nil

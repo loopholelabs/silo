@@ -108,3 +108,60 @@ func TestCopyOnWriteWrites(t *testing.T) {
 
 	assert.Equal(t, buff3, buff2)
 }
+
+func TestCopyOnWriteReadOverrun(t *testing.T) {
+
+	// Create a new block storage, backed by memory storage
+	size := 1024 * 1024
+	srcMem := sources.NewMemoryStorage(size)
+	mem := NewMetrics(srcMem)
+	srcCache := sources.NewMemoryStorage(size)
+	cache := NewMetrics(srcCache)
+
+	// Fill it with stuff
+	data := make([]byte, size+10) // Some extra
+	rand.Read(data)
+	onlydata := data[:size]
+	n, err := srcMem.WriteAt(data, 0)
+	assert.NoError(t, err)
+	assert.Equal(t, size, n)
+
+	cow := NewCopyOnWrite(mem, cache, 1024)
+
+	buff2 := make([]byte, 100)
+	n, err = cow.ReadAt(buff2, int64(size-50))
+
+	assert.NoError(t, err)
+	assert.Equal(t, 50, n)
+
+	assert.Equal(t, onlydata[size-50:], buff2[:50])
+}
+
+func TestCopyOnWriteReadOverrunNonMultiple(t *testing.T) {
+
+	// Create a new block storage, backed by memory storage
+	size := 1024 * 1024
+	srcMem := sources.NewMemoryStorage(size)
+	mem := NewMetrics(srcMem)
+	srcCache := sources.NewMemoryStorage(size)
+	cache := NewMetrics(srcCache)
+
+	// Fill it with stuff
+	data := make([]byte, size+10)
+	rand.Read(data)
+	onlydata := data[:size]
+
+	cow := NewCopyOnWrite(mem, cache, 1000) // NB 1024*1024 isn't multiple of 1000 blocksize
+
+	n, err := cow.WriteAt(data, 0)
+	assert.NoError(t, err)
+	assert.Equal(t, size, n)
+
+	buff2 := make([]byte, 100)
+	n, err = cow.ReadAt(buff2, int64(size-50))
+
+	assert.NoError(t, err)
+	assert.Equal(t, 50, n)
+
+	assert.Equal(t, onlydata[size-50:], buff2[:50])
+}
