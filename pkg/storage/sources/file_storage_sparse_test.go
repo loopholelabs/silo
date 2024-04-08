@@ -145,3 +145,26 @@ func TestFileStorageSparseOverrun(t *testing.T) {
 	assert.Equal(t, 40, n)
 
 }
+
+func TestFileStorageSparseNonMultiple(t *testing.T) {
+	source, err := NewFileStorageSparseCreate("test_data_sparse", 102, 10)
+	assert.NoError(t, err)
+
+	t.Cleanup(func() {
+		os.Remove("test_data_sparse")
+	})
+
+	data := make([]byte, 50)
+	rand.Read(data)
+
+	n, err := source.WriteAt(data, 60)
+	assert.NoError(t, err)
+	assert.Equal(t, 42, n)
+
+	data2 := make([]byte, 50)
+	n, err = source.ReadAt(data2, 60)
+	assert.NoError(t, err)
+	assert.Equal(t, 42, n)
+
+	assert.Equal(t, data[:42], data2[:42])
+}
