@@ -163,7 +163,7 @@ func shutdown_everything() {
 }
 
 func setupStorageDevice(conf *config.DeviceSchema) (*storageInfo, error) {
-	block_size := 1024 * 64
+	block_size := 1024 * 4 //64
 	num_blocks := (int(conf.ByteSize()) + block_size - 1) / block_size
 
 	source, ex, err := device.NewDevice(conf)
@@ -179,10 +179,16 @@ func setupStorageDevice(conf *config.DeviceSchema) (*storageInfo, error) {
 	sourceMonitor := volatilitymonitor.NewVolatilityMonitor(sourceDirtyLocal, block_size, 10*time.Second)
 	sourceStorage := modules.NewLockable(sourceMonitor)
 
-	ex.SetProvider(sourceStorage)
+	if ex != nil {
+		ex.SetProvider(sourceStorage)
+	}
 
 	// Start monitoring blocks.
-	orderer := blocks.NewPriorityBlockOrder(num_blocks, sourceMonitor)
+	//orderer := blocks.NewPriorityBlockOrder(num_blocks, sourceMonitor)
+
+	// Try with a boring orderer...
+	anyorderer := blocks.NewAnyBlockOrder(num_blocks, nil)
+	orderer := blocks.NewPriorityBlockOrder(num_blocks, anyorderer) //sourceMonitor)
 	orderer.AddAll()
 
 	return &storageInfo{
@@ -269,6 +275,9 @@ func migrateDevice(dev_id uint32, name string,
 		sinfo.lockable.Unlock()
 		dest.SendEvent(&protocol.Event{Type: protocol.EventPostUnlock})
 	}
+	conf.Concurrency = map[int]int{
+		storage.BlockTypeAny: 1000000,
+	}
 
 	if serve_progress {
 		last_value := uint64(0)
@@ -286,6 +295,15 @@ func migrateDevice(dev_id uint32, name string,
 			bar.EwmaIncrInt64(int64(v-last_value), time.Since(last_time))
 			last_time = time.Now()
 			last_value = v
+		}
+	} else {
+		conf.ProgressHandler = func(p *migrator.MigrationProgress) {
+
+			fmt.Printf("[%s] Progress Moved: %d/%d %.2f%% Clean: %d/%d %.2f%% InProgress: %d\n",
+				name, p.MigratedBlocks, p.TotalBlocks, p.MigratedBlocksPerc,
+				p.ReadyBlocks, p.TotalBlocks, p.ReadyBlocksPerc,
+				p.ActiveBlocks)
+
 		}
 	}
 

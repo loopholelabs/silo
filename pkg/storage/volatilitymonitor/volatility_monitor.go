@@ -40,7 +40,7 @@ func (i *VolatilityMonitor) GetNext() *storage.BlockInfo {
 	block := -1 // All done
 	block_count := 0
 
-	// Find something...
+	// Find something to return...
 	i.blockDataLock.Lock()
 	defer i.blockDataLock.Unlock()
 
@@ -55,6 +55,9 @@ func (i *VolatilityMonitor) GetNext() *storage.BlockInfo {
 			if block == -1 || (c <= block_count) {
 				block = int(n)
 				block_count = c
+				if block_count == 0 {
+					break // Special case - this is a static block. Not going to find better.
+				}
 			}
 		}
 	}

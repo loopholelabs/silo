@@ -1,6 +1,7 @@
 package util
 
 import (
+	"errors"
 	"sync/atomic"
 )
 
@@ -365,6 +366,42 @@ func (bf *Bitfield) Collect(start uint, end uint) []uint {
 		}
 	}
 	return positions
+}
+
+/**
+ * Collect the positions of all 1 bits
+ *
+ */
+func (bf *Bitfield) CollectFirstAndClear(start uint, end uint) (uint, error) {
+	p := start >> 6
+	i := uint64(1 << (start & 63))
+	n := start
+	if n < end {
+		val := atomic.LoadUint64(&bf.data[p])
+		for {
+			// Check the bit
+			if (val & i) != 0 {
+				// Clear it
+				for !atomic.CompareAndSwapUint64(&bf.data[p], val, val&^i) {
+					val = atomic.LoadUint64(&bf.data[p])
+				}
+				return n, nil
+			}
+
+			// Move along one...
+			n++
+			if n == end {
+				break
+			}
+			i = i << 1
+			if i == 0 {
+				i = 1
+				p++
+				val = atomic.LoadUint64(&bf.data[p])
+			}
+		}
+	}
+	return 0, errors.New("Nothing left")
 }
 
 /**

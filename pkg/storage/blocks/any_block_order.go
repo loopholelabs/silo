@@ -51,20 +51,28 @@ func (bo *AnyBlockOrder) Remove(block int) {
 
 // Get the next block...
 func (bo *AnyBlockOrder) GetNext() *storage.BlockInfo {
-	bo.lock.Lock()
-	defer bo.lock.Unlock()
+	//	bo.lock.Lock()
+	//	defer bo.lock.Unlock()
 
 	// Find something available...
-	for i := 0; i < bo.numBlocks; i++ {
-		if bo.available.BitSet(i) {
-			bo.available.ClearBit(i)
-			if bo.next != nil {
-				bo.next.Remove(i)
-			}
-			return &storage.BlockInfo{Block: i}
+	n, err := bo.available.CollectFirstAndClear(0, bo.available.Length())
+	if err == nil {
+		if bo.next != nil {
+			bo.next.Remove(int(n))
 		}
+		return &storage.BlockInfo{Block: int(n)}
 	}
-
+	/*
+		for i := 0; i < bo.numBlocks; i++ {
+			if bo.available.BitSet(i) {
+				bo.available.ClearBit(i)
+				if bo.next != nil {
+					bo.next.Remove(i)
+				}
+				return &storage.BlockInfo{Block: i}
+			}
+		}
+	*/
 	if bo.next == nil {
 		return storage.BlockInfoFinish
 	}

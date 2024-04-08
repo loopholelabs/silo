@@ -76,7 +76,6 @@ func (bo *PriorityBlockOrder) PrioritiseBlock(block int) bool {
 // Get the next block...
 func (bo *PriorityBlockOrder) GetNext() *storage.BlockInfo {
 	bo.lock.Lock()
-	defer bo.lock.Unlock()
 	// If we have any priority blocks, return them in order
 	//
 	earliest := time.Now()
@@ -98,8 +97,10 @@ func (bo *PriorityBlockOrder) GetNext() *storage.BlockInfo {
 		if bo.next != nil {
 			bo.next.Remove(earliestBlock)
 		}
+		bo.lock.Unlock()
 		return &storage.BlockInfo{Block: earliestBlock, Type: storage.BlockTypePriority}
 	}
+	bo.lock.Unlock()
 
 	if bo.next == nil {
 		return storage.BlockInfoFinish
@@ -107,8 +108,10 @@ func (bo *PriorityBlockOrder) GetNext() *storage.BlockInfo {
 	v := bo.next.GetNext()
 	if v != storage.BlockInfoFinish {
 		// Remove it from our own set
+		bo.lock.Lock()
 		delete(bo.priorityBlocks, uint(v.Block))
 		bo.available.ClearBit(v.Block)
+		bo.lock.Unlock()
 	}
 	return v
 }

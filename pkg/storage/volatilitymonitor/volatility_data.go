@@ -1,11 +1,18 @@
 package volatilitymonitor
 
-import "time"
+import (
+	"time"
+)
 
 type volatilityData struct {
-	log []int64
+	block uint
+	log   []int64
 }
 
+/**
+ * Add will do a lazy add - if it can find one that has expired it'll replace it and return.
+ * If not it'll append on the end.
+ */
 func (bd *volatilityData) Add(expiry time.Duration) {
 	n := time.Now().UnixNano()
 	for i := 0; i < len(bd.log); i++ {
@@ -18,6 +25,9 @@ func (bd *volatilityData) Add(expiry time.Duration) {
 }
 
 func (bd *volatilityData) Count(expiry time.Duration) int {
+	if len(bd.log) == 0 {
+		return 0 // Special case this
+	}
 	n := time.Now().UnixNano()
 	count := 0
 	for i := 0; i < len(bd.log); i++ {
