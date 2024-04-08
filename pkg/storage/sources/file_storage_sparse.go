@@ -10,9 +10,10 @@ import (
 /**
  * Simple sparse file storage provider
  *
- * - Reads panic if no data has been written for a block.
- * - Partial block reads supported.
- * - Only complete block writes count. (Partial blocks panic for now).
+ * - Reads return error if no data has been written for a block yet.
+ * - Partial block reads supported as long as the blocks exist.
+ * - Partial block writes supported as long as the blocks exist (Have already been written to completely).
+ *
  */
 type FileStorageSparse struct {
 	f           string
@@ -130,6 +131,7 @@ func (i *FileStorageSparse) ReadAt(buffer []byte, offset int64) (int, error) {
 
 	b_start := uint(offset / int64(i.blockSize))
 	b_end := uint((end-1)/uint64(i.blockSize)) + 1
+	count := 0
 
 	// FIXME: We could paralelise these
 	for b := b_start; b < b_end; b++ {
@@ -140,7 +142,7 @@ func (i *FileStorageSparse) ReadAt(buffer []byte, offset int64) (int, error) {
 				block_buffer := make([]byte, i.blockSize)
 				err := i.readBlock(block_buffer, b)
 				if err == nil {
-					copy(buffer[block_offset-offset:], block_buffer)
+					count += copy(buffer[block_offset-offset:], block_buffer)
 				} else {
 					return 0, err
 				}
@@ -154,20 +156,21 @@ func (i *FileStorageSparse) ReadAt(buffer []byte, offset int64) (int, error) {
 				if err != nil {
 					return 0, err
 				}
+				count += i.blockSize
 			}
 		} else {
 			// Partial read at the start
 			block_buffer := make([]byte, i.blockSize)
 			err := i.readBlock(block_buffer, b)
 			if err == nil {
-				copy(buffer, block_buffer[offset-block_offset:])
+				count += copy(buffer, block_buffer[offset-block_offset:])
 			} else {
 				return 0, err
 			}
 		}
 	}
 
-	return len(buffer), nil
+	return count, nil
 }
 
 func (i *FileStorageSparse) WriteAt(buffer []byte, offset int64) (int, error) {
@@ -179,6 +182,7 @@ func (i *FileStorageSparse) WriteAt(buffer []byte, offset int64) (int, error) {
 
 	b_start := uint(offset / int64(i.blockSize))
 	b_end := uint((end-1)/uint64(i.blockSize)) + 1
+	count := 0
 
 	for b := b_start; b < b_end; b++ {
 		block_offset := int64(b) * int64(i.blockSize)
@@ -191,7 +195,7 @@ func (i *FileStorageSparse) WriteAt(buffer []byte, offset int64) (int, error) {
 					return 0, err
 				} else {
 					// Merge the data in, and write it back...
-					copy(blockBuffer, buffer[block_offset-offset:])
+					count += copy(blockBuffer, buffer[block_offset-offset:])
 					err := i.writeBlock(blockBuffer, b)
 					if err != nil {
 						return 0, nil
@@ -207,6 +211,7 @@ func (i *FileStorageSparse) WriteAt(buffer []byte, offset int64) (int, error) {
 				if err != nil {
 					return 0, err
 				}
+				count += i.blockSize
 			}
 		} else {
 			// Partial write at the start
@@ -216,7 +221,7 @@ func (i *FileStorageSparse) WriteAt(buffer []byte, offset int64) (int, error) {
 				return 0, err
 			} else {
 				// Merge the data in, and write it back...
-				copy(blockBuffer[offset-block_offset:], buffer)
+				count += copy(blockBuffer[offset-block_offset:], buffer)
 				err := i.writeBlock(blockBuffer, b)
 				if err != nil {
 					return 0, nil
@@ -224,7 +229,7 @@ func (i *FileStorageSparse) WriteAt(buffer []byte, offset int64) (int, error) {
 			}
 		}
 	}
-	return len(buffer), nil
+	return count, nil
 }
 
 func (i *FileStorageSparse) Close() error {

@@ -29,6 +29,10 @@ func TestFileStorageSparseCreate(t *testing.T) {
 	assert.NoError(t, err)
 
 	assert.Equal(t, data, buffer)
+
+	// Check we can't read data that isn't there yet
+	_, err = source.ReadAt(buffer, 50)
+	assert.Error(t, err)
 }
 
 func TestFileStorageSparsePartialRead(t *testing.T) {
@@ -119,4 +123,25 @@ func TestFileStorageSparsePartialWrite(t *testing.T) {
 	// Try doing partial write on blocks not there
 	_, err = source.WriteAt(buffer, 55)
 	assert.Error(t, err)
+}
+
+func TestFileStorageSparseOverrun(t *testing.T) {
+	source, err := NewFileStorageSparseCreate("test_data_sparse", 100, 10)
+	assert.NoError(t, err)
+
+	t.Cleanup(func() {
+		os.Remove("test_data_sparse")
+	})
+
+	data := make([]byte, 50)
+	rand.Read(data)
+
+	n, err := source.WriteAt(data, 60)
+	assert.NoError(t, err)
+	assert.Equal(t, 40, n)
+
+	n, err = source.ReadAt(data, 60)
+	assert.NoError(t, err)
+	assert.Equal(t, 40, n)
+
 }
