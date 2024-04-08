@@ -2,6 +2,7 @@ package sources
 
 import (
 	"encoding/binary"
+	"errors"
 	"os"
 	"sync"
 )
@@ -117,14 +118,7 @@ func (i *FileStorageSparse) readBlock(buffer []byte, b uint) error {
 		_, err := i.fp.ReadAt(buffer, int64(off))
 		return err
 	} else {
-		/*
-			// Assume zeros
-			for i := range buffer {
-				buffer[i] = 0
-			}
-			return nil
-		*/
-		panic("read before write on FileStorageSparse")
+		return errors.New("cannot do a partial block write on incomplete block")
 	}
 }
 
@@ -137,7 +131,7 @@ func (i *FileStorageSparse) ReadAt(buffer []byte, offset int64) (int, error) {
 	b_start := uint(offset / int64(i.blockSize))
 	b_end := uint((end-1)/uint64(i.blockSize)) + 1
 
-	// Only do complete blocks...
+	// FIXME: We could paralelise these
 	for b := b_start; b < b_end; b++ {
 		block_offset := int64(b) * int64(i.blockSize)
 		if block_offset >= offset {
@@ -186,26 +180,48 @@ func (i *FileStorageSparse) WriteAt(buffer []byte, offset int64) (int, error) {
 	b_start := uint(offset / int64(i.blockSize))
 	b_end := uint((end-1)/uint64(i.blockSize)) + 1
 
-	// Only do complete blocks...
 	for b := b_start; b < b_end; b++ {
 		block_offset := int64(b) * int64(i.blockSize)
 		if block_offset >= offset {
 			if len(buffer[block_offset-offset:]) < i.blockSize {
 				// Partial write at the end
-				// FIXME: For now, we IGNORE Partial blocks.
-				panic("Ignoring partial block write")
+				blockBuffer := make([]byte, i.blockSize)
+				err := i.readBlock(blockBuffer, b)
+				if err != nil {
+					return 0, err
+				} else {
+					// Merge the data in, and write it back...
+					copy(blockBuffer, buffer[block_offset-offset:])
+					err := i.writeBlock(blockBuffer, b)
+					if err != nil {
+						return 0, nil
+					}
+				}
 			} else {
 				s := block_offset - offset
 				e := s + int64(i.blockSize)
 				if e > int64(len(buffer)) {
 					e = int64(len(buffer))
 				}
-				i.writeBlock(buffer[s:e], b)
+				err := i.writeBlock(buffer[s:e], b)
+				if err != nil {
+					return 0, err
+				}
 			}
 		} else {
 			// Partial write at the start
-			// FIXME: For now, we IGNORE Partial blocks.
-			panic("Ignoring partial block write")
+			blockBuffer := make([]byte, i.blockSize)
+			err := i.readBlock(blockBuffer, b)
+			if err != nil {
+				return 0, err
+			} else {
+				// Merge the data in, and write it back...
+				copy(blockBuffer[offset-block_offset:], buffer)
+				err := i.writeBlock(blockBuffer, b)
+				if err != nil {
+					return 0, nil
+				}
+			}
 		}
 	}
 	return len(buffer), nil

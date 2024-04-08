@@ -202,14 +202,6 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 	// Now optionaly expose the device
 	var ex storage.ExposedStorage
 	if ds.Expose {
-		if ds.ROSource != nil {
-			if bs != int(NBD_BLOCK_SIZE) {
-				panic("Error! CopyOnWrite block size must be 4k if you want to expose as nbd")
-			}
-		}
-		if ds.System == SYSTEM_SPARSE_FILE && bs != int(NBD_BLOCK_SIZE) {
-			panic("Error! SparseFile block size must be 4k if you want to expose as nbd")
-		}
 		ex = expose.NewExposedStorageNBDNL(prov, 8, 0, prov.Size(), NBD_BLOCK_SIZE, true)
 
 		err := ex.Init()

@@ -86,3 +86,37 @@ func TestFileStorageSparse(t *testing.T) {
 
 	assert.Equal(t, data, buffer2)
 }
+
+func TestFileStorageSparsePartialWrite(t *testing.T) {
+
+	source, err := NewFileStorageSparseCreate("test_data_sparse", 100, 10)
+	assert.NoError(t, err)
+
+	t.Cleanup(func() {
+		os.Remove("test_data_sparse")
+	})
+
+	data := make([]byte, 50)
+	rand.Read(data)
+
+	// Do complete write for first 5 blocks
+	_, err = source.WriteAt(data, 0)
+	assert.NoError(t, err)
+
+	// Try doing partial write
+	buffer := make([]byte, 30)
+	_, err = source.WriteAt(buffer, 5)
+	assert.NoError(t, err)
+
+	rbuffer := make([]byte, 50)
+	_, err = source.ReadAt(rbuffer, 0)
+	assert.NoError(t, err)
+
+	copy(data[5:], buffer)
+
+	assert.Equal(t, data, rbuffer)
+
+	// Try doing partial write on blocks not there
+	_, err = source.WriteAt(buffer, 55)
+	assert.Error(t, err)
+}
