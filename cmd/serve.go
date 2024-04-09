@@ -39,6 +39,7 @@ var serve_addr string
 var serve_conf string
 var serve_progress bool
 var serve_continuous bool
+var serve_any_order bool
 
 var src_exposed []storage.ExposedStorage
 var src_storage []*storageInfo
@@ -52,6 +53,7 @@ func init() {
 	cmdServe.Flags().StringVarP(&serve_conf, "conf", "c", "silo.conf", "Configuration file")
 	cmdServe.Flags().BoolVarP(&serve_progress, "progress", "p", false, "Show progress")
 	cmdServe.Flags().BoolVarP(&serve_continuous, "continuous", "C", false, "Continuous sync")
+	cmdServe.Flags().BoolVarP(&serve_any_order, "order", "o", false, "Any order (faster)")
 }
 
 type storageInfo struct {
@@ -125,6 +127,8 @@ func runServe(ccmd *cobra.Command, args []string) {
 		go pro.Handle()
 
 		// Lets go through each of the things we want to migrate...
+		ctime := time.Now()
+
 		var wg sync.WaitGroup
 
 		for i, s := range src_storage {
@@ -139,9 +143,13 @@ func runServe(ccmd *cobra.Command, args []string) {
 		}
 		wg.Wait()
 
+		if serveProgress != nil {
+			serveProgress.Wait()
+		}
+		fmt.Printf("\n\nMigration completed in %dms\n", time.Since(ctime).Milliseconds())
+
 		con.Close()
 	}
-
 	shutdown_everything()
 }
 
@@ -163,7 +171,8 @@ func shutdown_everything() {
 }
 
 func setupStorageDevice(conf *config.DeviceSchema) (*storageInfo, error) {
-	block_size := 1024 * 4 //64
+	block_size := 1024 * 128
+
 	num_blocks := (int(conf.ByteSize()) + block_size - 1) / block_size
 
 	source, ex, err := device.NewDevice(conf)
@@ -184,11 +193,14 @@ func setupStorageDevice(conf *config.DeviceSchema) (*storageInfo, error) {
 	}
 
 	// Start monitoring blocks.
-	//orderer := blocks.NewPriorityBlockOrder(num_blocks, sourceMonitor)
 
-	// Try with a boring orderer...
-	anyorderer := blocks.NewAnyBlockOrder(num_blocks, nil)
-	orderer := blocks.NewPriorityBlockOrder(num_blocks, anyorderer) //sourceMonitor)
+	var primary_orderer storage.BlockOrder
+	primary_orderer = sourceMonitor
+
+	if serve_any_order {
+		primary_orderer = blocks.NewAnyBlockOrder(num_blocks, nil)
+	}
+	orderer := blocks.NewPriorityBlockOrder(num_blocks, primary_orderer)
 	orderer.AddAll()
 
 	return &storageInfo{
@@ -279,18 +291,16 @@ func migrateDevice(dev_id uint32, name string,
 		storage.BlockTypeAny: 1000000,
 	}
 
+	last_value := uint64(0)
+	last_time := time.Now()
+
 	if serve_progress {
-		last_value := uint64(0)
-		last_time := time.Now()
 
 		conf.ProgressHandler = func(p *migrator.MigrationProgress) {
-			/*
-				fmt.Printf("[%s] Progress Moved: %d/%d %.2f%% Clean: %d/%d %.2f%% InProgress: %d\n",
-					name, p.MigratedBlocks, p.TotalBlocks, p.MigratedBlocksPerc,
-					p.ReadyBlocks, p.TotalBlocks, p.ReadyBlocksPerc,
-					p.ActiveBlocks)
-			*/
-			v := uint64(p.ReadyBlocks) * size / uint64(p.TotalBlocks)
+			v := uint64(p.ReadyBlocks) * uint64(sinfo.block_size)
+			if v > size {
+				v = size
+			}
 			bar.SetCurrent(int64(v))
 			bar.EwmaIncrInt64(int64(v-last_value), time.Since(last_time))
 			last_time = time.Now()
@@ -298,12 +308,13 @@ func migrateDevice(dev_id uint32, name string,
 		}
 	} else {
 		conf.ProgressHandler = func(p *migrator.MigrationProgress) {
-
 			fmt.Printf("[%s] Progress Moved: %d/%d %.2f%% Clean: %d/%d %.2f%% InProgress: %d\n",
 				name, p.MigratedBlocks, p.TotalBlocks, p.MigratedBlocksPerc,
 				p.ReadyBlocks, p.TotalBlocks, p.ReadyBlocksPerc,
 				p.ActiveBlocks)
-
+		}
+		conf.ErrorHandler = func(b *storage.BlockInfo, err error) {
+			fmt.Printf("[%s] Error for block %d error %v\n", name, b.Block, err)
 		}
 	}
 
@@ -361,7 +372,8 @@ func migrateDevice(dev_id uint32, name string,
 
 	// Completed.
 	if serve_progress {
-		bar.SetCurrent(int64(size))
+		//		bar.SetCurrent(int64(size))
+		//		bar.EwmaIncrInt64(int64(size-last_value), time.Since(last_time))
 	}
 
 	return nil

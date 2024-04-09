@@ -151,7 +151,7 @@ func handleIncomingDevice(pro protocol.Protocol, dev uint32) {
 
 	// This is a storage factory which will be called when we recive DevInfo.
 	storageFactory := func(di *protocol.DevInfo) storage.StorageProvider {
-		//		fmt.Printf("= %d = Received DevInfo name=%s size=%d blocksize=%d\n", dev, di.Name, di.Size, di.BlockSize)
+		// fmt.Printf("= %d = Received DevInfo name=%s size=%d blocksize=%d\n", dev, di.Name, di.Size, di.BlockSize)
 
 		statusFn := func(s decor.Statistics) string {
 			return statusString
@@ -259,7 +259,7 @@ func handleIncomingDevice(pro protocol.Protocol, dev uint32) {
 		} else if e.Type == protocol.EventPreUnlock {
 			statusString = "u" //green.Sprintf("u")
 		}
-		//		fmt.Printf("= %d = Event %s\n", dev, protocol.EventsByType[e])
+		//fmt.Printf("= %d = Event %s\n", dev, protocol.EventsByType[e.Type])
 		// Check we have all data...
 		if e.Type == protocol.EventCompleted {
 			// We completed the migration...
