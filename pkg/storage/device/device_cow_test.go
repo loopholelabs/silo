@@ -12,12 +12,12 @@ import (
 const testCowSchema = `
 device TestCow {
 	system = "sparsefile"
-	size = "2m"
-	blocksize = "64k"
+	size = "4096"
+	blocksize = "1024"
 	location = "./testdata/testfile_cow"
-	source "cow" {
+	source "./testdata/cow_state" {
 		system = "file"
-		size = "2m"
+		size = "4096"
 		location = "./testdata/testfile_cow_src"
 	}
 }
@@ -29,11 +29,11 @@ func setupCow(t *testing.T) map[string]*Device {
 	assert.NoError(t, err)
 	devs, err := NewDevices(s.Device)
 	assert.NoError(t, err)
-	defer func() {
+	t.Cleanup(func() {
 		os.Remove("./testdata/testfile_cow")
-		os.Remove("./testdata/testfile_cow.offsets")
 		os.Remove("./testdata/testfile_cow_src")
-	}()
+		os.Remove("./testdata/cow_state")
+	})
 
 	assert.Equal(t, 1, len(devs))
 	return devs
@@ -41,7 +41,7 @@ func setupCow(t *testing.T) map[string]*Device {
 
 func TestSourceCow(t *testing.T) {
 	// Create a ROSource file
-	cowData := make([]byte, 2*1024*1024)
+	cowData := make([]byte, 4*1024)
 	rand.Read(cowData)
 
 	err := os.WriteFile("./testdata/testfile_cow_src", cowData, 0666)
@@ -52,13 +52,15 @@ func TestSourceCow(t *testing.T) {
 	devs := setupCow(t)
 
 	buffer := []byte("Hello world testing 1 2 3")
-	_, err = devs["TestCow"].Provider.WriteAt(buffer, 400)
+	n, err := devs["TestCow"].Provider.WriteAt(buffer, 400)
 	assert.NoError(t, err)
+	assert.Equal(t, len(buffer), n)
 
 	// Now do some reading...
-	buff := make([]byte, 2*1024*1024)
-	_, err = devs["TestCow"].Provider.ReadAt(buff, 0)
+	buff := make([]byte, len(cowData))
+	n, err = devs["TestCow"].Provider.ReadAt(buff, 0)
 	assert.NoError(t, err)
+	assert.Equal(t, len(buff), n)
 
 	// Do the write here as well
 	copy(cowData[400:], buffer)
@@ -67,4 +69,5 @@ func TestSourceCow(t *testing.T) {
 	assert.Equal(t, cowData, buff)
 
 	devs["TestCow"].Provider.Close()
+
 }
