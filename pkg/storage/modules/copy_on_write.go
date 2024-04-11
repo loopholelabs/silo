@@ -41,7 +41,13 @@ func (i *CopyOnWrite) GetBlockExists() []uint {
 }
 
 func (i *CopyOnWrite) ReadAt(buffer []byte, offset int64) (int, error) {
-	end := uint64(offset + int64(len(buffer)))
+	buffer_end := int64(len(buffer))
+	if offset+int64(len(buffer)) > int64(i.size) {
+		// Get rid of any extra data that we can't store...
+		buffer_end = int64(i.size) - offset
+	}
+
+	end := uint64(offset + buffer_end)
 	if end > i.size {
 		end = i.size
 	}
@@ -56,23 +62,25 @@ func (i *CopyOnWrite) ReadAt(buffer []byte, offset int64) (int, error) {
 
 	blocks := b_end - b_start
 	errs := make(chan error, blocks)
+	counts := make(chan int, blocks)
 
 	for b := b_start; b < b_end; b++ {
 		go func(block_no uint) {
+			count := 0
 			block_offset := int64(block_no) * int64(i.blockSize)
 			var err error
 			if block_offset >= offset {
 				// Partial read at the end
-				if len(buffer[block_offset-offset:]) < i.blockSize {
+				if len(buffer[block_offset-offset:buffer_end]) < i.blockSize {
 					if i.exists.BitSet(int(block_no)) {
-						_, err = i.cache.ReadAt(buffer[block_offset-offset:], block_offset)
+						count, err = i.cache.ReadAt(buffer[block_offset-offset:buffer_end], block_offset)
 					} else {
 						i.blockLocks[block_no].Lock()
 						block_buffer := make([]byte, i.blockSize)
 						// Read existing data
 						_, err = i.source.ReadAt(block_buffer, block_offset)
 						if err == nil {
-							copy(buffer[block_offset-offset:], block_buffer)
+							count = copy(buffer[block_offset-offset:buffer_end], block_buffer)
 							// Write back to cache
 							_, err = i.cache.WriteAt(block_buffer, block_offset)
 							i.exists.SetBit(int(block_no))
@@ -97,18 +105,22 @@ func (i *CopyOnWrite) ReadAt(buffer []byte, offset int64) (int, error) {
 						}
 						i.blockLocks[block_no].Unlock()
 					}
+					count = i.blockSize
 				}
 			} else {
 				// Partial read at the start
 				if i.exists.BitSet(int(block_no)) {
 					plen := i.blockSize - int(offset-block_offset)
-					_, err = i.cache.ReadAt(buffer[:plen], offset)
+					if plen > int(buffer_end) {
+						plen = int(buffer_end)
+					}
+					count, err = i.cache.ReadAt(buffer[:plen], offset)
 				} else {
 					i.blockLocks[block_no].Lock()
 					block_buffer := make([]byte, i.blockSize)
 					_, err = i.source.ReadAt(block_buffer, block_offset)
 					if err == nil {
-						copy(buffer, block_buffer[offset-block_offset:])
+						count = copy(buffer[:buffer_end], block_buffer[offset-block_offset:])
 						_, err = i.cache.WriteAt(block_buffer, block_offset)
 						i.exists.SetBit(int(block_no))
 					}
@@ -116,22 +128,32 @@ func (i *CopyOnWrite) ReadAt(buffer []byte, offset int64) (int, error) {
 				}
 			}
 			errs <- err
+			counts <- count
 		}(b)
 	}
 
 	// Wait for completion, Check for errors and return...
+	count := 0
 	for b := b_start; b < b_end; b++ {
 		e := <-errs
 		if e != nil {
 			return 0, e
 		}
+		c := <-counts
+		count += c
 	}
 
-	return len(buffer), nil
+	return count, nil
 }
 
 func (i *CopyOnWrite) WriteAt(buffer []byte, offset int64) (int, error) {
-	end := uint64(offset + int64(len(buffer)))
+	buffer_end := int64(len(buffer))
+	if offset+int64(len(buffer)) > int64(i.size) {
+		// Get rid of any extra data that we can't store...
+		buffer_end = int64(i.size) - offset
+	}
+
+	end := uint64(offset + buffer_end)
 	if end > i.size {
 		end = i.size
 	}
@@ -146,16 +168,18 @@ func (i *CopyOnWrite) WriteAt(buffer []byte, offset int64) (int, error) {
 
 	blocks := b_end - b_start
 	errs := make(chan error, blocks)
+	counts := make(chan int, blocks)
 
 	for b := b_start; b < b_end; b++ {
 		go func(block_no uint) {
 			block_offset := int64(block_no) * int64(i.blockSize)
 			var err error
+			count := 0
 			if block_offset >= offset {
 				// Partial write at the end
-				if len(buffer[block_offset-offset:]) < i.blockSize {
+				if len(buffer[block_offset-offset:buffer_end]) < i.blockSize {
 					if i.exists.BitSet(int(block_no)) {
-						_, err = i.cache.WriteAt(buffer[block_offset-offset:], block_offset)
+						count, err = i.cache.WriteAt(buffer[block_offset-offset:buffer_end], block_offset)
 					} else {
 						i.blockLocks[block_no].Lock()
 						block_buffer := make([]byte, i.blockSize)
@@ -163,7 +187,7 @@ func (i *CopyOnWrite) WriteAt(buffer []byte, offset int64) (int, error) {
 						_, err = i.source.ReadAt(block_buffer, block_offset)
 						if err == nil {
 							// Merge in data
-							copy(block_buffer, buffer[block_offset-offset:])
+							count = copy(block_buffer, buffer[block_offset-offset:buffer_end])
 							// Write back to cache
 							_, err = i.cache.WriteAt(block_buffer, block_offset)
 							i.exists.SetBit(int(block_no))
@@ -181,19 +205,23 @@ func (i *CopyOnWrite) WriteAt(buffer []byte, offset int64) (int, error) {
 					_, err = i.cache.WriteAt(buffer[s:e], block_offset)
 					i.exists.SetBit(int(block_no))
 					i.blockLocks[block_no].Unlock()
+					count = i.blockSize
 				}
 			} else {
 				// Partial write at the start
 				if i.exists.BitSet(int(block_no)) {
 					plen := i.blockSize - int(offset-block_offset)
-					_, err = i.cache.WriteAt(buffer[:plen], offset)
+					if plen > int(buffer_end) {
+						plen = int(buffer_end)
+					}
+					count, err = i.cache.WriteAt(buffer[:plen], offset)
 				} else {
 					i.blockLocks[block_no].Lock()
 					block_buffer := make([]byte, i.blockSize)
 					_, err = i.source.ReadAt(block_buffer, block_offset)
 					if err == nil {
 						// Merge in data
-						copy(block_buffer[offset-block_offset:], buffer)
+						count = copy(block_buffer[offset-block_offset:], buffer[:buffer_end])
 						_, err = i.cache.WriteAt(block_buffer, block_offset)
 						i.exists.SetBit(int(block_no))
 					}
@@ -201,18 +229,22 @@ func (i *CopyOnWrite) WriteAt(buffer []byte, offset int64) (int, error) {
 				}
 			}
 			errs <- err
+			counts <- count
 		}(b)
 	}
 
 	// Wait for completion, Check for errors and return...
+	count := 0
 	for b := b_start; b < b_end; b++ {
 		e := <-errs
 		if e != nil {
 			return 0, e
 		}
+		c := <-counts
+		count += c
 	}
 
-	return len(buffer), nil
+	return count, nil
 }
 
 func (i *CopyOnWrite) Flush() error {

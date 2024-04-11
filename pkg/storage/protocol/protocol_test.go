@@ -210,6 +210,17 @@ func TestEvent(t *testing.T) {
 
 }
 
+func TestCustomEvent(t *testing.T) {
+	b := EncodeEvent(&Event{Type: EventCustom, CustomType: 9, CustomPayload: []byte{1, 2, 3}})
+
+	e, err := DecodeEvent(b)
+	assert.NoError(t, err)
+	assert.Equal(t, EventCustom, e.Type)
+	assert.Equal(t, byte(9), e.CustomType)
+	assert.Equal(t, []byte{1, 2, 3}, e.CustomPayload)
+
+}
+
 func TestEventResponse(t *testing.T) {
 	b := EncodeEventResponse()
 

@@ -24,11 +24,8 @@ func NewToProtocol(size uint64, deviceID uint32, p Protocol) *ToProtocol {
 	}
 }
 
-func (i *ToProtocol) SendEvent(e EventType) error {
-	ev := &Event{
-		Type: e,
-	}
-	b := EncodeEvent(ev)
+func (i *ToProtocol) SendEvent(e *Event) error {
+	b := EncodeEvent(e)
 	id, err := i.protocol.SendPacket(i.dev, ID_PICK_ANY, b)
 	if err != nil {
 		return err

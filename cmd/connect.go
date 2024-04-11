@@ -151,7 +151,7 @@ func handleIncomingDevice(pro protocol.Protocol, dev uint32) {
 
 	// This is a storage factory which will be called when we recive DevInfo.
 	storageFactory := func(di *protocol.DevInfo) storage.StorageProvider {
-		//		fmt.Printf("= %d = Received DevInfo name=%s size=%d blocksize=%d\n", dev, di.Name, di.Size, di.BlockSize)
+		// fmt.Printf("= %d = Received DevInfo name=%s size=%d blocksize=%d\n", dev, di.Name, di.Size, di.BlockSize)
 
 		statusFn := func(s decor.Statistics) string {
 			return statusString
@@ -249,19 +249,19 @@ func handleIncomingDevice(pro protocol.Protocol, dev uint32) {
 	go dest.HandleDevInfo()
 
 	// Handle events from the source
-	go dest.HandleEvent(func(e protocol.EventType) {
-		if e == protocol.EventPostLock {
+	go dest.HandleEvent(func(e *protocol.Event) {
+		if e.Type == protocol.EventPostLock {
 			statusString = "L" //red.Sprintf("L")
-		} else if e == protocol.EventPreLock {
+		} else if e.Type == protocol.EventPreLock {
 			statusString = "l" //red.Sprintf("l")
-		} else if e == protocol.EventPostUnlock {
+		} else if e.Type == protocol.EventPostUnlock {
 			statusString = "U" //green.Sprintf("U")
-		} else if e == protocol.EventPreUnlock {
+		} else if e.Type == protocol.EventPreUnlock {
 			statusString = "u" //green.Sprintf("u")
 		}
-		//		fmt.Printf("= %d = Event %s\n", dev, protocol.EventsByType[e])
+		//fmt.Printf("= %d = Event %s\n", dev, protocol.EventsByType[e.Type])
 		// Check we have all data...
-		if e == protocol.EventCompleted {
+		if e.Type == protocol.EventCompleted {
 			// We completed the migration...
 			dst_wg.Done()
 			//			available, total := destWaitingLocal.Availability()

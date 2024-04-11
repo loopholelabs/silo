@@ -2,7 +2,7 @@ package sources
 
 import (
 	"encoding/binary"
-	"fmt"
+	"errors"
 	"os"
 	"sync"
 )
@@ -10,9 +10,10 @@ import (
 /**
  * Simple sparse file storage provider
  *
- * - Reads default to ZERO if no data has been written for a block.
- * - Partial block reads supported.
- * - Only complete block writes count. (Partial blocks are discarded).
+ * - Reads return error if no data has been written for a block yet.
+ * - Partial block reads supported as long as the blocks exist.
+ * - Partial block writes supported as long as the blocks exist (Have already been written to completely).
+ *
  */
 type FileStorageSparse struct {
 	f           string
@@ -45,25 +46,26 @@ func NewFileStorageSparse(f string, size uint64, blockSize int) (*FileStorageSpa
 		return nil, err
 	}
 
-	// Read the offsets file...
+	// Scan through the file and get the offsets...
 	offsets := make(map[uint]uint64)
 
-	data, err := os.ReadFile(fmt.Sprintf("%s.offsets", f))
-	if err != nil {
-		return nil, err
-	}
-
-	// Parse the data
-	p := 0
+	header := make([]byte, 8)
+	p := int64(0)
 	for {
-		if p >= len(data) {
+		l, err := fp.ReadAt(header, p)
+		if l == len(header) {
+			// Parse it...
+			b := binary.LittleEndian.Uint64(header)
+			offsets[uint(b)] = uint64(p) + uint64(len(header))
+		} else {
 			break
 		}
-		block := binary.LittleEndian.Uint64(data[p:])
-		offset := binary.LittleEndian.Uint64(data[p+8:])
-		offsets[uint(block)] = offset
-		p += 16
+		if err != nil {
+			return nil, err
+		}
+		p += int64(len(header) + blockSize)
 	}
+	// Read the offsets file...
 
 	return &FileStorageSparse{
 		f:           f,
@@ -75,40 +77,36 @@ func NewFileStorageSparse(f string, size uint64, blockSize int) (*FileStorageSpa
 	}, nil
 }
 
-func (i *FileStorageSparse) writeOffsetsFile() error {
-	data := make([]byte, len(i.offsets)*16)
-	p := 0
-	for block, offset := range i.offsets {
-		binary.LittleEndian.PutUint64(data[p:], uint64(block))
-		binary.LittleEndian.PutUint64(data[p+8:], uint64(offset))
-		p += 16
-	}
-	return os.WriteFile(fmt.Sprintf("%s.offsets", i.f), data, 0666)
-}
-
 func (i *FileStorageSparse) writeBlock(buffer []byte, b uint) error {
-	i.writeLock.Lock()
-	defer i.writeLock.Unlock()
-
+	i.writeLock.RLock()
 	off, ok := i.offsets[b]
 	if ok {
 		// Write to the data where it is...
 		_, err := i.fp.WriteAt(buffer, int64(off))
+		i.writeLock.RUnlock()
 		return err
-	} else {
-		// Need to append the data to the end of the file...
-		i.offsets[b] = i.currentSize
-		i.currentSize += uint64(i.blockSize)
-		_, err := i.fp.Seek(0, 2) // Go to the end
-		if err != nil {
-			return err
-		}
-		_, err = i.fp.Write(buffer)
-		if err != nil {
-			return err
-		}
 	}
-	return nil
+	i.writeLock.RUnlock()
+
+	// Doing an append on the file, we will lock completely so any ReadAt / WriteAt and offsets access don't happen
+	i.writeLock.Lock()
+	defer i.writeLock.Unlock()
+
+	// Need to append the data to the end of the file...
+	blockHeader := make([]byte, 8)
+	binary.LittleEndian.PutUint64(blockHeader, uint64(b))
+	i.offsets[b] = i.currentSize + uint64(len(blockHeader))
+	i.currentSize += uint64(len(blockHeader)) + uint64(i.blockSize)
+	_, err := i.fp.Seek(0, 2) // Go to the end of the file
+	if err != nil {
+		return err
+	}
+	_, err = i.fp.Write(blockHeader)
+	if err != nil {
+		return err
+	}
+	_, err = i.fp.Write(buffer)
+	return err
 }
 
 func (i *FileStorageSparse) readBlock(buffer []byte, b uint) error {
@@ -121,34 +119,36 @@ func (i *FileStorageSparse) readBlock(buffer []byte, b uint) error {
 		_, err := i.fp.ReadAt(buffer, int64(off))
 		return err
 	} else {
-		// Assume zeros
-		for i := range buffer {
-			buffer[i] = 0
-		}
-		return nil
-		// panic("read before write on FileStorageSparse")
+		return errors.New("cannot do a partial block write on incomplete block")
 	}
 }
 
 func (i *FileStorageSparse) ReadAt(buffer []byte, offset int64) (int, error) {
-	end := uint64(offset + int64(len(buffer)))
+	buffer_end := int64(len(buffer))
+	if offset+int64(len(buffer)) > int64(i.size) {
+		// Get rid of any extra data that we can't store...
+		buffer_end = int64(i.size) - offset
+	}
+
+	end := uint64(offset + buffer_end)
 	if end > i.size {
 		end = i.size
 	}
 
 	b_start := uint(offset / int64(i.blockSize))
 	b_end := uint((end-1)/uint64(i.blockSize)) + 1
+	count := 0
 
-	// Only do complete blocks...
+	// FIXME: We could paralelise these
 	for b := b_start; b < b_end; b++ {
 		block_offset := int64(b) * int64(i.blockSize)
 		if block_offset >= offset {
-			if len(buffer[block_offset-offset:]) < i.blockSize {
+			if len(buffer[block_offset-offset:buffer_end]) < i.blockSize {
 				// Partial read at the end
 				block_buffer := make([]byte, i.blockSize)
 				err := i.readBlock(block_buffer, b)
 				if err == nil {
-					copy(buffer[block_offset-offset:], block_buffer)
+					count += copy(buffer[block_offset-offset:buffer_end], block_buffer)
 				} else {
 					return 0, err
 				}
@@ -162,66 +162,98 @@ func (i *FileStorageSparse) ReadAt(buffer []byte, offset int64) (int, error) {
 				if err != nil {
 					return 0, err
 				}
+				count += i.blockSize
 			}
 		} else {
 			// Partial read at the start
 			block_buffer := make([]byte, i.blockSize)
 			err := i.readBlock(block_buffer, b)
 			if err == nil {
-				copy(buffer, block_buffer[offset-block_offset:])
+				count += copy(buffer[:buffer_end], block_buffer[offset-block_offset:])
 			} else {
 				return 0, err
 			}
 		}
 	}
 
-	return len(buffer), nil
+	return count, nil
 }
 
 func (i *FileStorageSparse) WriteAt(buffer []byte, offset int64) (int, error) {
+	buffer_end := int64(len(buffer))
+	if offset+int64(len(buffer)) > int64(i.size) {
+		// Get rid of any extra data that we can't store...
+		buffer_end = int64(i.size) - offset
+	}
 
-	end := uint64(offset + int64(len(buffer)))
+	end := uint64(offset + buffer_end)
 	if end > i.size {
 		end = i.size
 	}
 
 	b_start := uint(offset / int64(i.blockSize))
 	b_end := uint((end-1)/uint64(i.blockSize)) + 1
+	count := 0
 
-	// Only do complete blocks...
 	for b := b_start; b < b_end; b++ {
 		block_offset := int64(b) * int64(i.blockSize)
 		if block_offset >= offset {
-			if len(buffer[block_offset-offset:]) < i.blockSize {
+			if len(buffer[block_offset-offset:buffer_end]) < i.blockSize {
 				// Partial write at the end
-				// FIXME: For now, we IGNORE Partial blocks.
+				block_buffer := make([]byte, i.blockSize)
+				var err error
+				// IF it's the last block partial, we don't need to do a read. It's complete already
+				if block_offset+int64(i.blockSize) > int64(i.size) {
+					// We don't need to read the last block here.
+				} else {
+					err = i.readBlock(block_buffer, b)
+				}
+				if err != nil {
+					return 0, err
+				} else {
+					// Merge the data in, and write it back...
+					count += copy(block_buffer, buffer[block_offset-offset:buffer_end])
+					err := i.writeBlock(block_buffer, b)
+					if err != nil {
+						return 0, nil
+					}
+				}
 			} else {
 				s := block_offset - offset
 				e := s + int64(i.blockSize)
 				if e > int64(len(buffer)) {
 					e = int64(len(buffer))
 				}
-				i.writeBlock(buffer[s:e], b)
+				err := i.writeBlock(buffer[s:e], b)
+				if err != nil {
+					return 0, err
+				}
+				count += i.blockSize
 			}
 		} else {
 			// Partial write at the start
-			// FIXME: For now, we IGNORE Partial blocks.
+			block_buffer := make([]byte, i.blockSize)
+			err := i.readBlock(block_buffer, b)
+			if err != nil {
+				return 0, err
+			} else {
+				// Merge the data in, and write it back...
+				count += copy(block_buffer[offset-block_offset:], buffer[:buffer_end])
+				err := i.writeBlock(block_buffer, b)
+				if err != nil {
+					return 0, nil
+				}
+			}
 		}
 	}
-
-	return len(buffer), nil
+	return count, nil
 }
 
 func (i *FileStorageSparse) Close() error {
-	// Write out an offsets file for the offset information...
-	i.writeOffsetsFile()
-	// TODO: Check for error
 	return i.fp.Close()
 }
 
 func (i *FileStorageSparse) Flush() error {
-	i.writeOffsetsFile()
-	// TODO: Check for error
 	i.fp.Sync()
 	return nil
 }

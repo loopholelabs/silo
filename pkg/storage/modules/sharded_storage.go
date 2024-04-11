@@ -47,6 +47,7 @@ func NewShardedStorage(size int, blocksize int, creator func(index int, size int
 
 func (i *ShardedStorage) ReadAt(buffer []byte, offset int64) (int, error) {
 	errs := make(chan error, 2+(len(buffer)/i.blocksize))
+	counts := make(chan int, 2+(len(buffer)/i.blocksize))
 
 	left := len(buffer)
 	ptr := 0
@@ -66,8 +67,9 @@ func (i *ShardedStorage) ReadAt(buffer []byte, offset int64) (int, error) {
 
 		// Do reads concurrently
 		go func(prov storage.StorageProvider, dest []byte, off int64) {
-			_, err := prov.ReadAt(dest, off)
+			n, err := prov.ReadAt(dest, off)
 			errs <- err
+			counts <- n
 		}(i.blocks[s], buffer[ptr:e], si)
 
 		num_reads++
@@ -77,18 +79,22 @@ func (i *ShardedStorage) ReadAt(buffer []byte, offset int64) (int, error) {
 		left -= count
 	}
 
+	count := 0
 	for i := 0; i < num_reads; i++ {
 		e := <-errs
 		if e != nil {
 			return 0, e
 		}
+		c := <-counts
+		count += c
 	}
 
-	return ptr, nil
+	return count, nil
 }
 
 func (i *ShardedStorage) WriteAt(buffer []byte, offset int64) (int, error) {
 	errs := make(chan error, 2+(len(buffer)/i.blocksize))
+	counts := make(chan int, 2+(len(buffer)/i.blocksize))
 
 	left := len(buffer)
 	ptr := 0
@@ -108,8 +114,9 @@ func (i *ShardedStorage) WriteAt(buffer []byte, offset int64) (int, error) {
 
 		// Do writes concurrently
 		go func(prov storage.StorageProvider, dest []byte, off int64) {
-			_, err := prov.WriteAt(dest, off)
+			n, err := prov.WriteAt(dest, off)
 			errs <- err
+			counts <- n
 		}(i.blocks[s], buffer[ptr:e], si)
 
 		num_reads++
@@ -119,14 +126,17 @@ func (i *ShardedStorage) WriteAt(buffer []byte, offset int64) (int, error) {
 		left -= count
 	}
 
+	count := 0
 	for i := 0; i < num_reads; i++ {
 		e := <-errs
 		if e != nil {
 			return 0, e
 		}
+		c := <-counts
+		count += c
 	}
 
-	return ptr, nil
+	return count, nil
 
 }
 
