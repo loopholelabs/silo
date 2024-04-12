@@ -1,12 +1,14 @@
 package migrator
 
 import (
+	"crypto/sha256"
 	"errors"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/loopholelabs/silo/pkg/storage"
+	"github.com/loopholelabs/silo/pkg/storage/integrity"
 	"github.com/loopholelabs/silo/pkg/storage/util"
 )
 
@@ -17,6 +19,7 @@ type MigratorConfig struct {
 	ErrorHandler    func(b *storage.BlockInfo, err error)
 	ProgressHandler func(p *MigrationProgress)
 	Concurrency     map[int]int
+	Integrity       bool
 }
 
 func NewMigratorConfig() *MigratorConfig {
@@ -32,6 +35,7 @@ func NewMigratorConfig() *MigratorConfig {
 			storage.BlockTypeDirty:    100,
 			storage.BlockTypePriority: 16,
 		},
+		Integrity: false,
 	}
 }
 
@@ -70,6 +74,7 @@ type Migrator struct {
 	ctime              time.Time
 	concurrency        map[int]chan bool
 	wg                 sync.WaitGroup
+	integrity          *integrity.IntegrityChecker
 }
 
 func NewMigrator(source storage.TrackingStorageProvider,
@@ -104,6 +109,10 @@ func NewMigrator(source storage.TrackingStorageProvider,
 	// Initialize concurrency channels
 	for b, v := range config.Concurrency {
 		m.concurrency[b] = make(chan bool, v)
+	}
+
+	if config.Integrity {
+		m.integrity = integrity.NewIntegrityChecker(int64(m.dest.Size()), m.blockSize)
 	}
 	return m, nil
 }
@@ -209,6 +218,13 @@ func (m *Migrator) WaitForCompletion() error {
 	return nil
 }
 
+func (m *Migrator) GetHashes() map[uint][sha256.Size]byte {
+	if m.integrity == nil {
+		return nil
+	}
+	return m.integrity.GetHashes()
+}
+
 func (m *Migrator) reportProgress(forced bool) {
 	m.progressLock.Lock()
 	defer m.progressLock.Unlock()
@@ -268,6 +284,11 @@ func (m *Migrator) migrateBlock(block int) error {
 	n, err = m.dest.WriteAt(buff, int64(offset))
 	if n != len(buff) || err != nil {
 		return err
+	}
+
+	// If we have an integrity check setup, lets hash the block for later...
+	if m.integrity != nil {
+		m.integrity.HashBlock(uint(block), buff)
 	}
 
 	atomic.AddInt64(&m.metricBlocksMoved, 1)

@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"context"
+	"crypto/sha256"
 	"sync"
 
 	"github.com/loopholelabs/silo/pkg/storage"
@@ -53,6 +54,30 @@ func (fp *FromProtocol) HandleEvent(cb func(*Event)) error {
 		fp.send_queue <- sendData{
 			id:   id,
 			data: EncodeEventResponse(),
+		}
+	}
+}
+
+// Handle hashes
+func (fp *FromProtocol) HandleHashes(cb func(map[uint][sha256.Size]byte)) error {
+	fp.init.Wait()
+
+	for {
+		id, data, err := fp.protocol.WaitForCommand(fp.dev, COMMAND_HASHES)
+		if err != nil {
+			return err
+		}
+		hashes, err := DecodeHashes(data)
+		if err != nil {
+			return err
+		}
+
+		// Relay the hashes, wait and then respond
+		cb(hashes)
+
+		fp.send_queue <- sendData{
+			id:   id,
+			data: EncodeHashesResponse(),
 		}
 	}
 }

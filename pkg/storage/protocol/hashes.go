@@ -14,7 +14,7 @@ func EncodeHashes(hashes map[uint][sha256.Size]byte) []byte {
 	for i, v := range hashes {
 		binary.LittleEndian.PutUint32(buff[ptr:], uint32(i))
 		ptr += 4
-		copy(buff[ptr+4:], v[:])
+		copy(buff[ptr:], v[:])
 		ptr += sha256.Size
 	}
 	return buff
@@ -30,8 +30,8 @@ func DecodeHashes(buff []byte) (map[uint][sha256.Size]byte, error) {
 		if ptr == len(buff) {
 			break
 		}
-		if ptr+(4+sha256.Size) >= len(buff) {
-			return nil, errors.New("Invalid packet")
+		if ptr+(4+sha256.Size) > len(buff) {
+			return nil, errors.New("Invalid packet data")
 		}
 		b := binary.LittleEndian.Uint32(buff[ptr:])
 		ptr += 4
@@ -40,4 +40,15 @@ func DecodeHashes(buff []byte) (map[uint][sha256.Size]byte, error) {
 		hashes[uint(b)] = [sha256.Size]byte(v)
 	}
 	return hashes, nil
+}
+
+func EncodeHashesResponse() []byte {
+	return []byte{COMMAND_HASHES_RESPONSE}
+}
+
+func DecodeHashesResponse(buff []byte) error {
+	if buff == nil || len(buff) != 1 || buff[0] != COMMAND_HASHES_RESPONSE {
+		return errors.New("Invalid packet")
+	}
+	return nil
 }

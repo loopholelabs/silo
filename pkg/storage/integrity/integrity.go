@@ -2,6 +2,8 @@ package integrity
 
 import (
 	"crypto/sha256"
+	"fmt"
+	"sync"
 
 	"github.com/loopholelabs/silo/pkg/storage"
 )
@@ -10,7 +12,8 @@ type IntegrityChecker struct {
 	block_size int
 	size       int64
 	num_blocks int
-	hashes     [][sha256.Size]byte
+	hashes     map[uint][sha256.Size]byte
+	lock       sync.Mutex
 }
 
 func NewIntegrityChecker(size int64, block_size int) *IntegrityChecker {
@@ -19,7 +22,7 @@ func NewIntegrityChecker(size int64, block_size int) *IntegrityChecker {
 		block_size: block_size,
 		size:       size,
 		num_blocks: int(num_blocks),
-		hashes:     make([][sha256.Size]byte, num_blocks),
+		hashes:     make(map[uint][sha256.Size]byte, num_blocks),
 	}
 }
 
@@ -28,7 +31,26 @@ func NewIntegrityChecker(size int64, block_size int) *IntegrityChecker {
  *
  */
 func (i *IntegrityChecker) SetHash(block uint, hash [sha256.Size]byte) {
+	i.lock.Lock()
+	defer i.lock.Unlock()
 	i.hashes[block] = hash
+}
+
+func (i *IntegrityChecker) SetHashes(hashes map[uint][sha256.Size]byte) {
+	i.lock.Lock()
+	defer i.lock.Unlock()
+	i.hashes = hashes
+}
+
+// Grab a snapshot of hashes...
+func (i *IntegrityChecker) GetHashes() map[uint][sha256.Size]byte {
+	v := make(map[uint][sha256.Size]byte)
+	i.lock.Lock()
+	defer i.lock.Unlock()
+	for b, h := range i.hashes {
+		v[b] = h
+	}
+	return v
 }
 
 /**
@@ -46,11 +68,18 @@ func (i *IntegrityChecker) Check(prov storage.StorageProvider) (bool, error) {
 		// Calculate the hash...
 		v := sha256.Sum256(block_buffer[:n])
 		// Make sure it's same as the value we have...
+		i.lock.Lock()
+		hash, ok := i.hashes[uint(b)]
+		if !ok {
+			return false, fmt.Errorf("Hash not present for block %d", b)
+		}
 		for d := 0; d < sha256.Size; d++ {
-			if v[d] != i.hashes[b][d] {
+			if v[d] != hash[d] {
 				return false, nil
 			}
 		}
+		i.lock.Unlock()
+
 	}
 	return true, nil
 }
@@ -67,8 +96,18 @@ func (i *IntegrityChecker) Hash(prov storage.StorageProvider) error {
 		if err != nil {
 			return err
 		}
-		// Calculate the hash and store it...
-		i.hashes[b] = sha256.Sum256(block_buffer[:n])
+		i.HashBlock(uint(b), block_buffer[:n])
 	}
 	return nil
+}
+
+/**
+ * Hash a block and store it in our map...
+ *
+ */
+func (i *IntegrityChecker) HashBlock(block uint, data []byte) {
+	h := sha256.Sum256(data)
+	i.lock.Lock()
+	defer i.lock.Unlock()
+	i.hashes[block] = h
 }

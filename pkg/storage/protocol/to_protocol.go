@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"crypto/sha256"
 	"encoding/binary"
 	"errors"
 )
@@ -38,6 +39,21 @@ func (i *ToProtocol) SendEvent(e *Event) error {
 	}
 
 	return DecodeEventResponse(r)
+}
+
+func (i *ToProtocol) SendHashes(hashes map[uint][sha256.Size]byte) error {
+	h := EncodeHashes(hashes)
+	id, err := i.protocol.SendPacket(i.dev, ID_PICK_ANY, h)
+	if err != nil {
+		return err
+	}
+	// Wait for an ack
+	r, err := i.protocol.WaitForPacket(i.dev, id)
+	if err != nil {
+		return err
+	}
+
+	return DecodeHashesResponse(r)
 }
 
 func (i *ToProtocol) SendDevInfo(name string, block_size uint32) error {
