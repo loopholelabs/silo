@@ -144,7 +144,8 @@ func handleIncomingDevice(pro protocol.Protocol, dev uint32) {
 
 	var blockSize uint
 
-	var statusString = "  "
+	var statusString = " "
+	var statusVerify = " "
 	var statusExposed = "     "
 
 	if !dst_wg_first {
@@ -160,7 +161,7 @@ func handleIncomingDevice(pro protocol.Protocol, dev uint32) {
 		blockSize = uint(di.BlockSize)
 
 		statusFn := func(s decor.Statistics) string {
-			return statusString
+			return statusString + statusVerify
 		}
 
 		if connect_progress {
@@ -280,14 +281,19 @@ func handleIncomingDevice(pro protocol.Protocol, dev uint32) {
 	})
 
 	go dest.HandleHashes(func(hashes map[uint][sha256.Size]byte) {
-		fmt.Printf("[%d] Got %d hashes...\n", dev, len(hashes))
+		//		fmt.Printf("[%d] Got %d hashes...\n", dev, len(hashes))
 		in := integrity.NewIntegrityChecker(int64(destStorage.Size()), int(blockSize))
 		in.SetHashes(hashes)
 		correct, err := in.Check(destStorage)
 		if err != nil {
 			panic(err)
 		}
-		fmt.Printf("[%d] Verification result %t\n", dev, correct)
+		//		fmt.Printf("[%d] Verification result %t\n", dev, correct)
+		if correct {
+			statusVerify = "\u2611"
+		} else {
+			statusVerify = "\u2612"
+		}
 	})
 
 	// Handle dirty list by invalidating local waiting cache
