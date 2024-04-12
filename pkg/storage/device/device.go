@@ -140,8 +140,11 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 					defer file.Close()
 
 					fileinfo, err := file.Stat()
+					if err != nil {
+						return nil, err
+					}
 					if fileinfo.Size() != int64(s) {
-						return nil, fmt.Errorf("File exists but incorrect size")
+						return nil, fmt.Errorf("file exists but incorrect size")
 					}
 
 					return sources.NewFileStorage(f, int64(s))
@@ -154,7 +157,7 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 			}
 		}
 	} else {
-		return nil, nil, fmt.Errorf("Unsupported storage system %s", ds.System)
+		return nil, nil, fmt.Errorf("unsupported storage system %s", ds.System)
 
 	}
 

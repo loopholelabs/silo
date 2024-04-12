@@ -21,7 +21,7 @@ type FileStorageSparse struct {
 	size        uint64
 	blockSize   int
 	offsets     map[uint]uint64
-	writeLock   sync.RWMutex
+	writeLock   sync.Mutex
 	currentSize uint64
 }
 
@@ -78,19 +78,12 @@ func NewFileStorageSparse(f string, size uint64, blockSize int) (*FileStorageSpa
 }
 
 func (i *FileStorageSparse) writeBlock(buffer []byte, b uint) error {
-	i.writeLock.RLock()
 	off, ok := i.offsets[b]
 	if ok {
 		// Write to the data where it is...
 		_, err := i.fp.WriteAt(buffer, int64(off))
-		i.writeLock.RUnlock()
 		return err
 	}
-	i.writeLock.RUnlock()
-
-	// Doing an append on the file, we will lock completely so any ReadAt / WriteAt and offsets access don't happen
-	i.writeLock.Lock()
-	defer i.writeLock.Unlock()
 
 	// Need to append the data to the end of the file...
 	blockHeader := make([]byte, 8)
@@ -110,9 +103,6 @@ func (i *FileStorageSparse) writeBlock(buffer []byte, b uint) error {
 }
 
 func (i *FileStorageSparse) readBlock(buffer []byte, b uint) error {
-	i.writeLock.RLock()
-	defer i.writeLock.RUnlock()
-
 	off, ok := i.offsets[b]
 	if ok {
 		// Read the data where it is...
@@ -124,6 +114,9 @@ func (i *FileStorageSparse) readBlock(buffer []byte, b uint) error {
 }
 
 func (i *FileStorageSparse) ReadAt(buffer []byte, offset int64) (int, error) {
+	i.writeLock.Lock()
+	defer i.writeLock.Unlock()
+
 	buffer_end := int64(len(buffer))
 	if offset+int64(len(buffer)) > int64(i.size) {
 		// Get rid of any extra data that we can't store...
@@ -180,6 +173,9 @@ func (i *FileStorageSparse) ReadAt(buffer []byte, offset int64) (int, error) {
 }
 
 func (i *FileStorageSparse) WriteAt(buffer []byte, offset int64) (int, error) {
+	i.writeLock.Lock()
+	defer i.writeLock.Unlock()
+
 	buffer_end := int64(len(buffer))
 	if offset+int64(len(buffer)) > int64(i.size) {
 		// Get rid of any extra data that we can't store...

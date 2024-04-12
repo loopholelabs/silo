@@ -15,6 +15,7 @@ type CopyOnWrite struct {
 	blockSize  int
 	blockLocks []sync.Mutex
 	CloseFunc  func()
+	lock       sync.Mutex
 }
 
 func NewCopyOnWrite(source storage.StorageProvider, cache storage.StorageProvider, blockSize int) *CopyOnWrite {
@@ -41,6 +42,9 @@ func (i *CopyOnWrite) GetBlockExists() []uint {
 }
 
 func (i *CopyOnWrite) ReadAt(buffer []byte, offset int64) (int, error) {
+	i.lock.Lock()
+	defer i.lock.Unlock()
+
 	buffer_end := int64(len(buffer))
 	if offset+int64(len(buffer)) > int64(i.size) {
 		// Get rid of any extra data that we can't store...
@@ -138,6 +142,9 @@ func (i *CopyOnWrite) ReadAt(buffer []byte, offset int64) (int, error) {
 }
 
 func (i *CopyOnWrite) WriteAt(buffer []byte, offset int64) (int, error) {
+	i.lock.Lock()
+	defer i.lock.Unlock()
+
 	buffer_end := int64(len(buffer))
 	if offset+int64(len(buffer)) > int64(i.size) {
 		// Get rid of any extra data that we can't store...
