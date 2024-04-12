@@ -14,6 +14,7 @@ const (
 	COMMAND_DEV_INFO      = COMMAND_REQUEST | byte(6)
 	COMMAND_EVENT         = COMMAND_REQUEST | byte(7)
 	COMMAND_WRITE_AT_COMP = COMMAND_REQUEST | byte(8)
+	COMMAND_HASHES        = COMMAND_REQUEST | byte(9)
 )
 
 const (
