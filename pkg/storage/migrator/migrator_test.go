@@ -494,15 +494,18 @@ func TestMigratorWithReaderWriterWrite(t *testing.T) {
 }
 
 func TestMigratorSimpleCowSparse(t *testing.T) {
-	size := 1024 * 1024
+	size := 1024*1024 + 78
 	blockSize := 4096
 	num_blocks := (size + blockSize - 1) / blockSize
 
 	sourceStorageMem := sources.NewMemoryStorage(size)
 	overlay, err := sources.NewFileStorageSparseCreate("test_migrate_cow", uint64(size), blockSize)
 	assert.NoError(t, err)
-	cow := modules.NewCopyOnWrite(sourceStorageMem, overlay, blockSize)
-	sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(cow, blockSize)
+	overlay_log := modules.NewLogger(overlay, "overlay")
+	sourceStorageMem_log := modules.NewLogger(sourceStorageMem, "rosource")
+	cow := modules.NewCopyOnWrite(sourceStorageMem_log, overlay_log, blockSize)
+	cow_log := modules.NewLogger(cow, "cow")
+	sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(cow_log, blockSize)
 	sourceStorage := modules.NewLockable(sourceDirtyLocal)
 
 	t.Cleanup(func() {
@@ -519,13 +522,25 @@ func TestMigratorSimpleCowSparse(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, len(buffer), n)
 
-	// Write something to the overlay as well...
+	// Write some things to the overlay as well...
 
 	buffer = make([]byte, 5000)
 	crand.Read(buffer)
 	n, err = sourceStorage.WriteAt(buffer, 0)
 	assert.NoError(t, err)
 	assert.Equal(t, len(buffer), n)
+
+	buffer2 := make([]byte, 5000)
+	crand.Read(buffer2)
+	n, err = sourceStorage.WriteAt(buffer2, 100)
+	assert.NoError(t, err)
+	assert.Equal(t, len(buffer), n)
+
+	buffer2 = make([]byte, 5000)
+	crand.Read(buffer2)
+	n, err = sourceStorage.WriteAt(buffer2, int64(size)-4000)
+	assert.NoError(t, err)
+	assert.Equal(t, 4000, n)
 
 	orderer := blocks.NewAnyBlockOrder(num_blocks, nil)
 	orderer.AddAll()
@@ -552,6 +567,11 @@ func TestMigratorSimpleCowSparse(t *testing.T) {
 
 	err = mig.WaitForCompletion()
 	assert.NoError(t, err)
+
+	// Don't care about the reads caused by storage.Equals...
+	cow_log.Disable()
+	overlay_log.Disable()
+	sourceStorageMem_log.Disable()
 
 	// This will end with migration completed, and consumer Locked.
 	eq, err := storage.Equals(sourceStorage, destStorage, blockSize)
