@@ -55,7 +55,7 @@ func (i *CopyOnWrite) ReadAt(buffer []byte, offset int64) (int, error) {
 	b_start := uint(offset / int64(i.blockSize))
 	b_end := uint((end-1)/uint64(i.blockSize)) + 1
 
-	// Special case where all the data is in the cache
+	// Special case where all the data is ALL in the cache
 	if i.exists.BitsSet(b_start, b_end) {
 		return i.cache.ReadAt(buffer, offset)
 	}
@@ -81,9 +81,6 @@ func (i *CopyOnWrite) ReadAt(buffer []byte, offset int64) (int, error) {
 						_, err = i.source.ReadAt(block_buffer, block_offset)
 						if err == nil {
 							count = copy(buffer[block_offset-offset:buffer_end], block_buffer)
-							// Write back to cache
-							_, err = i.cache.WriteAt(block_buffer, block_offset)
-							i.exists.SetBit(int(block_no))
 						}
 						i.blockLocks[block_no].Unlock()
 					}
@@ -99,10 +96,6 @@ func (i *CopyOnWrite) ReadAt(buffer []byte, offset int64) (int, error) {
 					} else {
 						i.blockLocks[block_no].Lock()
 						_, err = i.source.ReadAt(buffer[s:e], block_offset)
-						if err == nil {
-							_, err = i.cache.WriteAt(buffer[s:e], block_offset)
-							i.exists.SetBit(int(block_no))
-						}
 						i.blockLocks[block_no].Unlock()
 					}
 					count = i.blockSize
@@ -121,8 +114,6 @@ func (i *CopyOnWrite) ReadAt(buffer []byte, offset int64) (int, error) {
 					_, err = i.source.ReadAt(block_buffer, block_offset)
 					if err == nil {
 						count = copy(buffer[:buffer_end], block_buffer[offset-block_offset:])
-						_, err = i.cache.WriteAt(block_buffer, block_offset)
-						i.exists.SetBit(int(block_no))
 					}
 					i.blockLocks[block_no].Unlock()
 				}
