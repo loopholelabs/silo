@@ -7,6 +7,8 @@ import (
 	"sync"
 )
 
+const BLOCK_HEADER_SIZE = 8
+
 /**
  * Simple sparse file storage provider
  *
@@ -23,13 +25,15 @@ type FileStorageSparse struct {
 	offsets     map[uint]uint64
 	writeLock   sync.Mutex
 	currentSize uint64
+	wg          sync.WaitGroup
 }
 
 func NewFileStorageSparseCreate(f string, size uint64, blockSize int) (*FileStorageSparse, error) {
-	fp, err := os.OpenFile(f, os.O_RDWR|os.O_CREATE, 0666)
+	fp, err := os.OpenFile(f, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0666)
 	if err != nil {
 		return nil, err
 	}
+
 	return &FileStorageSparse{
 		f:           f,
 		fp:          fp,
@@ -49,7 +53,7 @@ func NewFileStorageSparse(f string, size uint64, blockSize int) (*FileStorageSpa
 	// Scan through the file and get the offsets...
 	offsets := make(map[uint]uint64)
 
-	header := make([]byte, 8)
+	header := make([]byte, BLOCK_HEADER_SIZE)
 	p := int64(0)
 	for {
 		l, err := fp.ReadAt(header, p)
@@ -58,14 +62,13 @@ func NewFileStorageSparse(f string, size uint64, blockSize int) (*FileStorageSpa
 			b := binary.LittleEndian.Uint64(header)
 			offsets[uint(b)] = uint64(p) + uint64(len(header))
 		} else {
-			break
+			break // EOF
 		}
 		if err != nil {
 			return nil, err
 		}
-		p += int64(len(header) + blockSize)
+		p += int64(BLOCK_HEADER_SIZE + blockSize)
 	}
-	// Read the offsets file...
 
 	return &FileStorageSparse{
 		f:           f,
@@ -73,7 +76,7 @@ func NewFileStorageSparse(f string, size uint64, blockSize int) (*FileStorageSpa
 		size:        size,
 		blockSize:   blockSize,
 		offsets:     offsets,
-		currentSize: uint64(len(offsets) * blockSize),
+		currentSize: uint64(len(offsets) * (BLOCK_HEADER_SIZE + blockSize)),
 	}, nil
 }
 
@@ -86,14 +89,15 @@ func (i *FileStorageSparse) writeBlock(buffer []byte, b uint) error {
 	}
 
 	// Need to append the data to the end of the file...
-	blockHeader := make([]byte, 8)
+	blockHeader := make([]byte, BLOCK_HEADER_SIZE)
 	binary.LittleEndian.PutUint64(blockHeader, uint64(b))
-	i.offsets[b] = i.currentSize + uint64(len(blockHeader))
-	i.currentSize += uint64(len(blockHeader)) + uint64(i.blockSize)
-	_, err := i.fp.Seek(0, 2) // Go to the end of the file
+	i.offsets[b] = i.currentSize + BLOCK_HEADER_SIZE
+	_, err := i.fp.Seek(int64(i.currentSize), 0) // Go to the end of the file
 	if err != nil {
 		return err
 	}
+
+	i.currentSize += BLOCK_HEADER_SIZE + uint64(i.blockSize)
 	_, err = i.fp.Write(blockHeader)
 	if err != nil {
 		return err
@@ -114,6 +118,9 @@ func (i *FileStorageSparse) readBlock(buffer []byte, b uint) error {
 }
 
 func (i *FileStorageSparse) ReadAt(buffer []byte, offset int64) (int, error) {
+	i.wg.Add(1)
+	defer i.wg.Done()
+	// FIXME: overkill lock
 	i.writeLock.Lock()
 	defer i.writeLock.Unlock()
 
@@ -132,7 +139,7 @@ func (i *FileStorageSparse) ReadAt(buffer []byte, offset int64) (int, error) {
 	b_end := uint((end-1)/uint64(i.blockSize)) + 1
 	count := 0
 
-	// FIXME: We could paralelise these
+	// FIXME: We should paralelise these
 	for b := b_start; b < b_end; b++ {
 		block_offset := int64(b) * int64(i.blockSize)
 		if block_offset >= offset {
@@ -173,6 +180,9 @@ func (i *FileStorageSparse) ReadAt(buffer []byte, offset int64) (int, error) {
 }
 
 func (i *FileStorageSparse) WriteAt(buffer []byte, offset int64) (int, error) {
+	i.wg.Add(1)
+	defer i.wg.Done()
+
 	i.writeLock.Lock()
 	defer i.writeLock.Unlock()
 
@@ -246,6 +256,7 @@ func (i *FileStorageSparse) WriteAt(buffer []byte, offset int64) (int, error) {
 }
 
 func (i *FileStorageSparse) Close() error {
+	i.wg.Wait() // Wait for any pending ops to complete
 	return i.fp.Close()
 }
 

@@ -196,16 +196,17 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 			for _, b := range blocks {
 				data = binary.LittleEndian.AppendUint32(data, uint32(b))
 			}
-			os.WriteFile(ds.ROSource.Name, data, 0666)
+			err := os.WriteFile(ds.ROSource.Name, data, 0666)
+			if err != nil {
+				panic(fmt.Sprintf("COW write state failed with %v", err))
+			}
 		}
 	}
-
-	NBD_BLOCK_SIZE := uint64(4096)
 
 	// Now optionaly expose the device
 	var ex storage.ExposedStorage
 	if ds.Expose {
-		ex = expose.NewExposedStorageNBDNL(prov, 8, 0, prov.Size(), NBD_BLOCK_SIZE, true)
+		ex = expose.NewExposedStorageNBDNL(prov, 8, 0, prov.Size(), expose.NBD_DEFAULT_BLOCK_SIZE, true)
 
 		err := ex.Init()
 		if err != nil {

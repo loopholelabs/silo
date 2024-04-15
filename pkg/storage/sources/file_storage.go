@@ -3,6 +3,7 @@ package sources
 import (
 	"io"
 	"os"
+	"sync"
 )
 
 /**
@@ -12,6 +13,7 @@ import (
 type FileStorage struct {
 	fp   *os.File
 	size int64
+	wg   sync.WaitGroup
 }
 
 func NewFileStorage(f string, size int64) (*FileStorage, error) {
@@ -37,11 +39,9 @@ func NewFileStorageCreate(f string, size int64) (*FileStorage, error) {
 	}, nil
 }
 
-func (i *FileStorage) Close() error {
-	return i.fp.Close()
-}
-
 func (i *FileStorage) ReadAt(buffer []byte, offset int64) (int, error) {
+	i.wg.Add(1)
+	defer i.wg.Done()
 	// We don't want to return EOF
 	n, err := i.fp.ReadAt(buffer, offset)
 	if n < len(buffer) && err == io.EOF {
@@ -51,6 +51,8 @@ func (i *FileStorage) ReadAt(buffer []byte, offset int64) (int, error) {
 }
 
 func (i *FileStorage) WriteAt(buffer []byte, offset int64) (int, error) {
+	i.wg.Add(1)
+	defer i.wg.Done()
 	data := buffer
 	if offset > i.size {
 		return 0, io.EOF
@@ -68,4 +70,9 @@ func (i *FileStorage) Flush() error {
 
 func (i *FileStorage) Size() uint64 {
 	return uint64(i.size)
+}
+
+func (i *FileStorage) Close() error {
+	i.wg.Wait()
+	return i.fp.Close()
 }

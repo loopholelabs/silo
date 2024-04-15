@@ -168,3 +168,53 @@ func TestFileStorageSparseNonMultiple(t *testing.T) {
 
 	assert.Equal(t, data[:42], data2[:42])
 }
+
+func TestFileStorageSparseResume(t *testing.T) {
+
+	source, err := NewFileStorageSparseCreate("test_data_sparse", 100, 10)
+	assert.NoError(t, err)
+
+	t.Cleanup(func() {
+		os.Remove("test_data_sparse")
+	})
+
+	data := make([]byte, 30)
+	rand.Read(data)
+
+	_, err = source.WriteAt(data, 10)
+	assert.NoError(t, err)
+
+	// Try reading it back...
+
+	buffer := make([]byte, len(data))
+	_, err = source.ReadAt(buffer, 10)
+	assert.NoError(t, err)
+
+	assert.Equal(t, data, buffer)
+
+	source2, err := NewFileStorageSparse("test_data_sparse", 100, 10)
+	assert.NoError(t, err)
+
+	buffer2 := make([]byte, len(data))
+	_, err = source2.ReadAt(buffer2, 10)
+	assert.NoError(t, err)
+
+	assert.Equal(t, data, buffer2)
+
+	// Write some new data
+	data2 := make([]byte, 30)
+	rand.Read(data2)
+	_, err = source2.WriteAt(data2, 50)
+	assert.NoError(t, err)
+
+	// Check it got written correctly...
+	_, err = source2.ReadAt(buffer, 50)
+	assert.NoError(t, err)
+
+	assert.Equal(t, data2, buffer)
+
+	_, err = source2.ReadAt(buffer, 10)
+	assert.NoError(t, err)
+
+	assert.Equal(t, data, buffer)
+}
