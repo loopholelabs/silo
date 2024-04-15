@@ -1,12 +1,14 @@
 module github.com/loopholelabs/silo
 
-go 1.20
+go 1.21
+
+toolchain go1.22.2
 
 require (
 	github.com/Merovius/nbd v0.0.0-20231017152624-27b78b60d8da
 	github.com/fatih/color v1.16.0
 	github.com/hashicorp/hcl/v2 v2.20.0
-	github.com/minio/minio-go v6.0.14+incompatible
+	github.com/minio/minio-go/v7 v7.0.69
 	github.com/ory/dockertest/v3 v3.10.0
 	github.com/spf13/cobra v1.8.0
 	github.com/stretchr/testify v1.8.4
@@ -30,7 +32,6 @@ require (
 	github.com/docker/go-connections v0.5.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/go-ini/ini v1.67.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/google/go-cmp v0.5.9 // indirect
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
@@ -49,9 +50,7 @@ require (
 	github.com/mdlayher/netlink v1.7.2 // indirect
 	github.com/mdlayher/socket v0.4.1 // indirect
 	github.com/minio/md5-simd v1.1.2 // indirect
-	github.com/minio/minio-go/v7 v7.0.69 // indirect
 	github.com/minio/sha256-simd v1.0.1 // indirect
-	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/mitchellh/go-wordwrap v0.0.0-20150314170334-ad45545899c7 // indirect
 	github.com/mitchellh/mapstructure v1.4.1 // indirect
 	github.com/moby/term v0.0.0-20201216013528-df9cb8a40635 // indirect

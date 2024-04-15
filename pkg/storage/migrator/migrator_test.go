@@ -2,9 +2,11 @@ package migrator
 
 import (
 	"context"
+	crand "crypto/rand"
 	"io"
 	"math"
 	"math/rand"
+	"os"
 	"testing"
 	"time"
 
@@ -489,4 +491,90 @@ func TestMigratorWithReaderWriterWrite(t *testing.T) {
 	assert.NoError(t, err)
 
 	assert.Equal(t, int64(num_blocks-num_local_blocks), mig.metricBlocksMoved)
+}
+
+func TestMigratorSimpleCowSparse(t *testing.T) {
+	size := 1024*1024 + 78
+	blockSize := 4096
+	num_blocks := (size + blockSize - 1) / blockSize
+
+	sourceStorageMem := sources.NewMemoryStorage(size)
+	overlay, err := sources.NewFileStorageSparseCreate("test_migrate_cow", uint64(size), blockSize)
+	assert.NoError(t, err)
+	overlay_log := modules.NewLogger(overlay, "overlay")
+	sourceStorageMem_log := modules.NewLogger(sourceStorageMem, "rosource")
+	cow := modules.NewCopyOnWrite(sourceStorageMem_log, overlay_log, blockSize)
+	cow_log := modules.NewLogger(cow, "cow")
+	sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(cow_log, blockSize)
+	sourceStorage := modules.NewLockable(sourceDirtyLocal)
+
+	t.Cleanup(func() {
+		os.Remove("test_migrate_cow")
+	})
+
+	// Set up some data here.
+	buffer := make([]byte, size)
+	for i := 0; i < size; i++ {
+		buffer[i] = 9
+	}
+
+	n, err := sourceStorageMem.WriteAt(buffer, 0)
+	assert.NoError(t, err)
+	assert.Equal(t, len(buffer), n)
+
+	// Write some things to the overlay as well...
+
+	buffer = make([]byte, 5000)
+	crand.Read(buffer)
+	n, err = sourceStorage.WriteAt(buffer, 0)
+	assert.NoError(t, err)
+	assert.Equal(t, len(buffer), n)
+
+	buffer2 := make([]byte, 5000)
+	crand.Read(buffer2)
+	n, err = sourceStorage.WriteAt(buffer2, 100)
+	assert.NoError(t, err)
+	assert.Equal(t, len(buffer), n)
+
+	buffer2 = make([]byte, 5000)
+	crand.Read(buffer2)
+	n, err = sourceStorage.WriteAt(buffer2, int64(size)-4000)
+	assert.NoError(t, err)
+	assert.Equal(t, 4000, n)
+
+	orderer := blocks.NewAnyBlockOrder(num_blocks, nil)
+	orderer.AddAll()
+
+	// START moving data from sourceStorage to destStorage
+
+	destStorage := sources.NewMemoryStorage(size)
+
+	conf := NewMigratorConfig().WithBlockSize(blockSize)
+	conf.LockerHandler = sourceStorage.Lock
+	conf.UnlockerHandler = sourceStorage.Unlock
+	conf.ErrorHandler = func(block *storage.BlockInfo, err error) {
+		panic(err)
+	}
+
+	mig, err := NewMigrator(sourceDirtyRemote,
+		destStorage,
+		orderer,
+		conf)
+
+	assert.NoError(t, err)
+
+	mig.Migrate(num_blocks)
+
+	err = mig.WaitForCompletion()
+	assert.NoError(t, err)
+
+	// Don't care about the reads caused by storage.Equals...
+	cow_log.Disable()
+	overlay_log.Disable()
+	sourceStorageMem_log.Disable()
+
+	// This will end with migration completed, and consumer Locked.
+	eq, err := storage.Equals(sourceStorage, destStorage, blockSize)
+	assert.NoError(t, err)
+	assert.True(t, eq)
 }

@@ -290,6 +290,11 @@ func migrateDevice(dev_id uint32, name string,
 	conf.Concurrency = map[int]int{
 		storage.BlockTypeAny: 1000000,
 	}
+	conf.ErrorHandler = func(b *storage.BlockInfo, err error) {
+		// For now...
+		panic(err)
+	}
+	conf.Integrity = true
 
 	last_value := uint64(0)
 	last_time := time.Now()
@@ -335,6 +340,9 @@ func migrateDevice(dev_id uint32, name string,
 	if err != nil {
 		return err
 	}
+
+	hashes := mig.GetHashes() // Get the initial hashes and send them over for verification...
+	dest.SendHashes(hashes)
 
 	// Optional: Enter a loop looking for more dirty blocks to migrate...
 

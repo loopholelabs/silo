@@ -140,8 +140,11 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 					defer file.Close()
 
 					fileinfo, err := file.Stat()
+					if err != nil {
+						return nil, err
+					}
 					if fileinfo.Size() != int64(s) {
-						return nil, fmt.Errorf("File exists but incorrect size")
+						return nil, fmt.Errorf("file exists but incorrect size")
 					}
 
 					return sources.NewFileStorage(f, int64(s))
@@ -154,7 +157,7 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 			}
 		}
 	} else {
-		return nil, nil, fmt.Errorf("Unsupported storage system %s", ds.System)
+		return nil, nil, fmt.Errorf("unsupported storage system %s", ds.System)
 
 	}
 
@@ -193,16 +196,17 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 			for _, b := range blocks {
 				data = binary.LittleEndian.AppendUint32(data, uint32(b))
 			}
-			os.WriteFile(ds.ROSource.Name, data, 0666)
+			err := os.WriteFile(ds.ROSource.Name, data, 0666)
+			if err != nil {
+				panic(fmt.Sprintf("COW write state failed with %v", err))
+			}
 		}
 	}
-
-	NBD_BLOCK_SIZE := uint64(4096)
 
 	// Now optionaly expose the device
 	var ex storage.ExposedStorage
 	if ds.Expose {
-		ex = expose.NewExposedStorageNBDNL(prov, 8, 0, prov.Size(), NBD_BLOCK_SIZE, true)
+		ex = expose.NewExposedStorageNBDNL(prov, 8, 0, prov.Size(), expose.NBD_DEFAULT_BLOCK_SIZE, true)
 
 		err := ex.Init()
 		if err != nil {

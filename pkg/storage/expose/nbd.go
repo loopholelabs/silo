@@ -13,6 +13,8 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage"
 )
 
+const NBD_DEFAULT_BLOCK_SIZE = 4096
+
 /**
  * Exposes a storage provider as an nbd device using netlink
  *
