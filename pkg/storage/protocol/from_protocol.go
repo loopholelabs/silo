@@ -28,7 +28,7 @@ func NewFromProtocol(dev uint32, provFactory func(*packets.DevInfo) storage.Stor
 		dev:         dev,
 		provFactory: provFactory,
 		protocol:    protocol,
-		send_queue:  make(chan sendData),
+		send_queue:  make(chan sendData), // FIXME: This may cause things to block if the HandleSend has quit
 	}
 	// We need to wait for the DevInfo before allowing any reads/writes.
 	fp.init.Add(1)
