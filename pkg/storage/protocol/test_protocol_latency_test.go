@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/loopholelabs/silo/pkg/storage"
+	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
 	"github.com/stretchr/testify/assert"
 )
@@ -24,7 +25,7 @@ func TestTestProtocolLatency(t *testing.T) {
 
 	sourceToProtocol := NewToProtocol(uint64(size), 1, pr)
 
-	storeFactory := func(di *DevInfo) storage.StorageProvider {
+	storeFactory := func(di *packets.DevInfo) storage.StorageProvider {
 		store = sources.NewMemoryStorage(int(di.Size))
 		return store
 	}

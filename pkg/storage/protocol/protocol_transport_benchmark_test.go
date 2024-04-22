@@ -10,6 +10,7 @@ import (
 
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/modules"
+	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
 )
 
@@ -33,7 +34,7 @@ func setup(num int) *ToProtocol {
 		writers2 = append(writers2, w2)
 	}
 
-	storeFactory := func(di *DevInfo) storage.StorageProvider {
+	storeFactory := func(di *packets.DevInfo) storage.StorageProvider {
 		cr := func(i int, size int) (storage.StorageProvider, error) {
 			return sources.NewMemoryStorage(int(di.Size)), nil
 		}

@@ -11,6 +11,7 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/dirtytracker"
 	"github.com/loopholelabs/silo/pkg/storage/modules"
 	"github.com/loopholelabs/silo/pkg/storage/protocol"
+	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
 )
 
@@ -147,7 +148,7 @@ func BenchmarkMigrationPipe(mb *testing.B) {
 			}
 
 			initDev := func(p protocol.Protocol, dev uint32) {
-				destStorageFactory := func(di *protocol.DevInfo) storage.StorageProvider {
+				destStorageFactory := func(di *packets.DevInfo) storage.StorageProvider {
 					// Do some sharding here...
 					cr := func(index int, size int) (storage.StorageProvider, error) {
 						mem := sources.NewMemoryStorage(size)

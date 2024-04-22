@@ -20,6 +20,7 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/migrator"
 	"github.com/loopholelabs/silo/pkg/storage/modules"
 	"github.com/loopholelabs/silo/pkg/storage/protocol"
+	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
 	"github.com/loopholelabs/silo/pkg/storage/volatilitymonitor"
 	"github.com/spf13/cobra"
 	"github.com/vbauerster/mpb/v8"
@@ -278,14 +279,14 @@ func migrateDevice(dev_id uint32, name string,
 
 	conf := migrator.NewMigratorConfig().WithBlockSize(sinfo.block_size)
 	conf.LockerHandler = func() {
-		dest.SendEvent(&protocol.Event{Type: protocol.EventPreLock})
+		dest.SendEvent(&packets.Event{Type: packets.EventPreLock})
 		sinfo.lockable.Lock()
-		dest.SendEvent(&protocol.Event{Type: protocol.EventPostLock})
+		dest.SendEvent(&packets.Event{Type: packets.EventPostLock})
 	}
 	conf.UnlockerHandler = func() {
-		dest.SendEvent(&protocol.Event{Type: protocol.EventPreUnlock})
+		dest.SendEvent(&packets.Event{Type: packets.EventPreUnlock})
 		sinfo.lockable.Unlock()
-		dest.SendEvent(&protocol.Event{Type: protocol.EventPostUnlock})
+		dest.SendEvent(&packets.Event{Type: packets.EventPostUnlock})
 	}
 	conf.Concurrency = map[int]int{
 		storage.BlockTypeAny: 1000000,
@@ -373,7 +374,7 @@ func migrateDevice(dev_id uint32, name string,
 	}
 
 	//	fmt.Printf("[%s] Migration completed\n", name)
-	err = dest.SendEvent(&protocol.Event{Type: protocol.EventCompleted})
+	err = dest.SendEvent(&packets.Event{Type: packets.EventCompleted})
 	if err != nil {
 		return err
 	}

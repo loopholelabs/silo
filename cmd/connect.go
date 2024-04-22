@@ -18,6 +18,7 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/integrity"
 	"github.com/loopholelabs/silo/pkg/storage/modules"
 	"github.com/loopholelabs/silo/pkg/storage/protocol"
+	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
 	"github.com/loopholelabs/silo/pkg/storage/waitingcache"
 	"github.com/spf13/cobra"
@@ -155,7 +156,7 @@ func handleIncomingDevice(pro protocol.Protocol, dev uint32) {
 	dst_wg_first = false
 
 	// This is a storage factory which will be called when we recive DevInfo.
-	storageFactory := func(di *protocol.DevInfo) storage.StorageProvider {
+	storageFactory := func(di *packets.DevInfo) storage.StorageProvider {
 		// fmt.Printf("= %d = Received DevInfo name=%s size=%d blocksize=%d\n", dev, di.Name, di.Size, di.BlockSize)
 
 		blockSize = uint(di.BlockSize)
@@ -256,19 +257,19 @@ func handleIncomingDevice(pro protocol.Protocol, dev uint32) {
 	go dest.HandleDevInfo()
 
 	// Handle events from the source
-	go dest.HandleEvent(func(e *protocol.Event) {
-		if e.Type == protocol.EventPostLock {
+	go dest.HandleEvent(func(e *packets.Event) {
+		if e.Type == packets.EventPostLock {
 			statusString = "L" //red.Sprintf("L")
-		} else if e.Type == protocol.EventPreLock {
+		} else if e.Type == packets.EventPreLock {
 			statusString = "l" //red.Sprintf("l")
-		} else if e.Type == protocol.EventPostUnlock {
+		} else if e.Type == packets.EventPostUnlock {
 			statusString = "U" //green.Sprintf("U")
-		} else if e.Type == protocol.EventPreUnlock {
+		} else if e.Type == packets.EventPreUnlock {
 			statusString = "u" //green.Sprintf("u")
 		}
 		//fmt.Printf("= %d = Event %s\n", dev, protocol.EventsByType[e.Type])
 		// Check we have all data...
-		if e.Type == protocol.EventCompleted {
+		if e.Type == packets.EventCompleted {
 			// We completed the migration...
 			dst_wg.Done()
 			//			available, total := destWaitingLocal.Availability()

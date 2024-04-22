@@ -5,6 +5,8 @@ import (
 	"io"
 	"sync"
 	"sync/atomic"
+
+	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
 )
 
 type MockProtocol struct {
@@ -67,7 +69,7 @@ func (mp *MockProtocol) SendPacket(dev uint32, id uint32, data []byte) (uint32, 
 	// If this matches something being waited for, route it there.
 	// TODO: Don't always do this, expire, etc etc
 
-	if IsResponse(cmd) {
+	if packets.IsResponse(cmd) {
 		wq_id <- packetinfo{
 			id:   id,
 			data: data,

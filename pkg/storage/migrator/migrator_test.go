@@ -15,6 +15,7 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/dirtytracker"
 	"github.com/loopholelabs/silo/pkg/storage/modules"
 	"github.com/loopholelabs/silo/pkg/storage/protocol"
+	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
 	"github.com/loopholelabs/silo/pkg/storage/volatilitymonitor"
 	"github.com/loopholelabs/silo/pkg/storage/waitingcache"
@@ -160,7 +161,7 @@ func TestMigratorSimplePipe(t *testing.T) {
 	r2, w2 := io.Pipe()
 
 	initDev := func(p protocol.Protocol, dev uint32) {
-		destStorageFactory := func(di *protocol.DevInfo) storage.StorageProvider {
+		destStorageFactory := func(di *packets.DevInfo) storage.StorageProvider {
 			destStorage = sources.NewMemoryStorage(int(di.Size))
 			return destStorage
 		}

@@ -193,6 +193,8 @@ func (m *Migrator) MigrateDirty(blocks []uint) error {
 
 		m.wg.Add(1)
 
+		m.cleanBlocks.ClearBit(int(pos))
+
 		go func(block_no *storage.BlockInfo) {
 			err := m.migrateBlock(block_no.Block)
 			if err != nil {
@@ -207,7 +209,6 @@ func (m *Migrator) MigrateDirty(blocks []uint) error {
 			<-cc
 		}(i)
 
-		m.cleanBlocks.ClearBit(int(pos))
 	}
 	return nil
 }

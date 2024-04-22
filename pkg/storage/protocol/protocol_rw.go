@@ -8,6 +8,8 @@ import (
 	"math/rand"
 	"sync"
 	"sync/atomic"
+
+	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
 )
 
 type packetinfo struct {
@@ -208,7 +210,7 @@ func (p *ProtocolRW) handlePacket(dev uint32, id uint32, data []byte) error {
 
 	p.waitersLock.Unlock()
 
-	if IsResponse(cmd) {
+	if packets.IsResponse(cmd) {
 		wq_id <- packetinfo{
 			id:   id,
 			data: data,

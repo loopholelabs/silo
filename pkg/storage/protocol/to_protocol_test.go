@@ -7,6 +7,7 @@ import (
 	"io"
 	"testing"
 
+	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -69,7 +70,7 @@ func TestToProtocolWriteAt(t *testing.T) {
 	toproto := NewToProtocol(1024*1024, 123, pro)
 
 	// Setup a mock response
-	pro.waitPackets <- EncodeWriteAtResponse(&WriteAtResponse{
+	pro.waitPackets <- packets.EncodeWriteAtResponse(&packets.WriteAtResponse{
 		Bytes: 1024,
 		Error: nil,
 	})
@@ -84,7 +85,7 @@ func TestToProtocolWriteAt(t *testing.T) {
 
 	assert.Equal(t, uint32(123), pack.dev)
 	assert.Equal(t, uint32(999), pack.id)
-	offset, data2, err := DecodeWriteAt(pack.data)
+	offset, data2, err := packets.DecodeWriteAt(pack.data)
 	assert.NoError(t, err)
 	assert.Equal(t, int64(17), offset)
 	assert.Equal(t, data, data2)
@@ -96,7 +97,7 @@ func TestToProtocolWriteAtError(t *testing.T) {
 	toproto := NewToProtocol(1024*1024, 123, pro)
 
 	// Setup a mock response
-	pro.waitPackets <- EncodeWriteAtResponse(&WriteAtResponse{
+	pro.waitPackets <- packets.EncodeWriteAtResponse(&packets.WriteAtResponse{
 		Bytes: 0,
 		Error: errors.New("Something"),
 	})
@@ -115,7 +116,7 @@ func TestToProtocolReadAt(t *testing.T) {
 	rand.Read(data)
 
 	// Setup a mock response
-	pro.waitPackets <- EncodeReadAtResponse(&ReadAtResponse{
+	pro.waitPackets <- packets.EncodeReadAtResponse(&packets.ReadAtResponse{
 		Bytes: 1024,
 		Error: nil,
 		Data:  data,
@@ -131,7 +132,7 @@ func TestToProtocolReadAt(t *testing.T) {
 
 	assert.Equal(t, uint32(123), pack.dev)
 	assert.Equal(t, uint32(999), pack.id)
-	offset, length, err := DecodeReadAt(pack.data)
+	offset, length, err := packets.DecodeReadAt(pack.data)
 	assert.NoError(t, err)
 	assert.Equal(t, int64(17), offset)
 	assert.Equal(t, int32(1024), length)
@@ -143,7 +144,7 @@ func TestToProtocolReadAtError(t *testing.T) {
 	toproto := NewToProtocol(1024*1024, 123, pro)
 
 	// Setup a mock response
-	pro.waitPackets <- EncodeReadAtResponse(&ReadAtResponse{
+	pro.waitPackets <- packets.EncodeReadAtResponse(&packets.ReadAtResponse{
 		Bytes: 0,
 		Error: errors.New("Something"),
 		Data:  nil,
