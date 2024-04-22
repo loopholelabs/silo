@@ -83,6 +83,14 @@ func (p *ProtocolRW) initDev(dev uint32) {
 }
 
 func (p *ProtocolRW) SendPacketWriter(dev uint32, id uint32, length uint32, data func(w io.Writer) error) (uint32, error) {
+	// If the context was cancelled, we should return that error
+	select {
+	case <-p.ctx.Done():
+		return 0, p.ctx.Err()
+	default:
+		break
+	}
+
 	p.initDev(dev)
 
 	// Encode and send it down the writer...
@@ -109,6 +117,14 @@ func (p *ProtocolRW) SendPacketWriter(dev uint32, id uint32, length uint32, data
 
 // Send a packet
 func (p *ProtocolRW) SendPacket(dev uint32, id uint32, data []byte) (uint32, error) {
+	// If the context was cancelled, we should return that error
+	select {
+	case <-p.ctx.Done():
+		return 0, p.ctx.Err()
+	default:
+		break
+	}
+
 	p.initDev(dev)
 
 	// Encode and send it down the writer...
@@ -135,15 +151,21 @@ func (p *ProtocolRW) SendPacket(dev uint32, id uint32, data []byte) (uint32, err
 }
 
 func (p *ProtocolRW) Handle() error {
-	var wg sync.WaitGroup
 	errs := make(chan error, len(p.readers))
 
 	for _, r := range p.readers {
-		wg.Add(1)
 		go func(reader io.Reader) {
-			defer wg.Done()
 			header := make([]byte, 4+4+4)
 			for {
+				// If the context was cancelled, we should return that error
+				select {
+				case <-p.ctx.Done():
+					errs <- p.ctx.Err()
+					return
+				default:
+					break
+				}
+
 				_, err := io.ReadFull(reader, header)
 				if err != nil {
 					errs <- err
@@ -170,11 +192,13 @@ func (p *ProtocolRW) Handle() error {
 		}(r)
 	}
 
-	wg.Wait()
-	// Wait...
-
-	// TODO: Check for errors and process them.
-	return nil
+	select {
+	case <-p.ctx.Done():
+		return p.ctx.Err()
+	case e := <-errs:
+		// One of the readers quit. We should report the error...
+		return e
+	}
 }
 
 func (p *ProtocolRW) handlePacket(dev uint32, id uint32, data []byte) error {
