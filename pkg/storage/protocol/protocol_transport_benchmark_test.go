@@ -50,7 +50,6 @@ func setup(num int) *ToProtocol {
 	prDest := NewProtocolRW(context.TODO(), readers2, writers1, func(p Protocol, dev uint32) {
 		destFromProtocol := NewFromProtocol(dev, storeFactory, p)
 		go destFromProtocol.HandleDevInfo()
-		go destFromProtocol.HandleSend(context.TODO())
 		go destFromProtocol.HandleReadAt()
 		go destFromProtocol.HandleWriteAt()
 		go destFromProtocol.HandleWriteAtComp()

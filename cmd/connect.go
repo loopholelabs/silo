@@ -250,8 +250,6 @@ func handleIncomingDevice(pro protocol.Protocol, dev uint32) {
 
 	dest = protocol.NewFromProtocol(dev, storageFactory, pro)
 
-	// Handle sending
-	go dest.HandleSend(context.TODO())
 	go dest.HandleReadAt()
 	go dest.HandleWriteAt()
 	go dest.HandleDevInfo()

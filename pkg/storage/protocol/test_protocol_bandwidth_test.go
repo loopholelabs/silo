@@ -1,7 +1,6 @@
 package protocol
 
 import (
-	"context"
 	"crypto/rand"
 	"testing"
 	"time"
@@ -33,7 +32,6 @@ func TestTestProtocolBandwidth(t *testing.T) {
 	destFromProtocol := NewFromProtocol(1, storeFactory, pr)
 
 	go destFromProtocol.HandleDevInfo()
-	go destFromProtocol.HandleSend(context.TODO())
 	go destFromProtocol.HandleReadAt()
 	go destFromProtocol.HandleWriteAt()
 

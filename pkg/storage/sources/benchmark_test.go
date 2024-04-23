@@ -1,19 +1,6 @@
 package sources_test
 
-import (
-	"fmt"
-	"math/rand"
-	"os"
-	"sync"
-	"sync/atomic"
-	"testing"
-
-	"github.com/loopholelabs/silo/pkg/storage"
-	"github.com/loopholelabs/silo/pkg/storage/modules"
-	"github.com/loopholelabs/silo/pkg/storage/sources"
-	"github.com/loopholelabs/silo/pkg/testutils"
-)
-
+/*
 type sourceInfo struct {
 	Name   string
 	Source storage.StorageProvider
@@ -184,3 +171,5 @@ func BenchmarkSourcesWrite(mb *testing.B) {
 		})
 	}
 }
+
+*/

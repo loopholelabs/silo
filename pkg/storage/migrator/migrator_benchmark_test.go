@@ -162,8 +162,6 @@ func BenchmarkMigrationPipe(mb *testing.B) {
 
 				// Pipe from the protocol to destWaiting
 				destFrom := protocol.NewFromProtocol(dev, destStorageFactory, p)
-				ctx := context.TODO()
-				go destFrom.HandleSend(ctx)
 				go destFrom.HandleReadAt()
 				go destFrom.HandleWriteAt()
 				go destFrom.HandleWriteAtComp()

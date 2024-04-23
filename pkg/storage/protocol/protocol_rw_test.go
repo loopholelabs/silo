@@ -40,7 +40,6 @@ func TestProtocolRWCancel(t *testing.T) {
 		destFromProtocol := NewFromProtocol(dev, storeFactory, p)
 
 		go destFromProtocol.HandleDevInfo()
-		go destFromProtocol.HandleSend(ctx)
 		go destFromProtocol.HandleReadAt()
 		go destFromProtocol.HandleWriteAt()
 	})

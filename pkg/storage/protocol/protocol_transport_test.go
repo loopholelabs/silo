@@ -31,9 +31,7 @@ func TestProtocolWriteAt(t *testing.T) {
 
 	// Now do some things and make sure they happen...
 
-	// TODO: Shutdown...
 	go destFromProtocol.HandleDevInfo()
-	go destFromProtocol.HandleSend(context.TODO())
 	go destFromProtocol.HandleReadAt()
 	go destFromProtocol.HandleWriteAt()
 
@@ -77,9 +75,7 @@ func TestProtocolWriteAtComp(t *testing.T) {
 
 	// Now do some things and make sure they happen...
 
-	// TODO: Shutdown...
 	go destFromProtocol.HandleDevInfo()
-	go destFromProtocol.HandleSend(context.TODO())
 	go destFromProtocol.HandleReadAt()
 	go destFromProtocol.HandleWriteAt()
 	go destFromProtocol.HandleWriteAtComp()
@@ -131,9 +127,7 @@ func TestProtocolReadAt(t *testing.T) {
 
 	// Now do some things and make sure they happen...
 
-	// TODO: Shutdown...
 	go destFromProtocol.HandleDevInfo()
-	go destFromProtocol.HandleSend(context.TODO())
 	go destFromProtocol.HandleReadAt()
 	go destFromProtocol.HandleWriteAt()
 
@@ -171,7 +165,6 @@ func TestProtocolRWWriteAt(t *testing.T) {
 		destFromProtocol := NewFromProtocol(dev, storeFactory, p)
 
 		go destFromProtocol.HandleDevInfo()
-		go destFromProtocol.HandleSend(context.TODO())
 		go destFromProtocol.HandleReadAt()
 		go destFromProtocol.HandleWriteAt()
 	})
@@ -233,7 +226,6 @@ func TestProtocolRWReadAt(t *testing.T) {
 		destFromProtocol := NewFromProtocol(dev, storeFactory, p)
 
 		go destFromProtocol.HandleDevInfo()
-		go destFromProtocol.HandleSend(context.TODO())
 		go destFromProtocol.HandleReadAt()
 		go destFromProtocol.HandleWriteAt()
 	}
@@ -281,7 +273,6 @@ func TestProtocolEvents(t *testing.T) {
 	go destFromProtocol.HandleEvent(func(e *packets.Event) {
 		events <- e.Type
 	})
-	go destFromProtocol.HandleSend(context.TODO())
 
 	// Send devInfo
 	sourceToProtocol.SendDevInfo("test", 4096)
