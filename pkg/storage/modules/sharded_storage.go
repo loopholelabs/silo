@@ -13,9 +13,9 @@ import (
 )
 
 type ShardedStorage struct {
-	blocks    []storage.StorageProvider
-	blocksize int
-	size      int
+	blocks     []storage.StorageProvider
+	block_size int
+	size       int
 }
 
 func NewShardedStorage(size int, blocksize int, creator func(index int, size int) (storage.StorageProvider, error)) (*ShardedStorage, error) {
@@ -23,9 +23,9 @@ func NewShardedStorage(size int, blocksize int, creator func(index int, size int
 		return nil, fmt.Errorf("Invalid block size of 0")
 	}
 	bms := &ShardedStorage{
-		blocks:    make([]storage.StorageProvider, 0),
-		blocksize: blocksize,
-		size:      size,
+		blocks:     make([]storage.StorageProvider, 0),
+		block_size: blocksize,
+		size:       size,
 	}
 	left := size
 	n := 0
@@ -46,8 +46,8 @@ func NewShardedStorage(size int, blocksize int, creator func(index int, size int
 }
 
 func (i *ShardedStorage) ReadAt(buffer []byte, offset int64) (int, error) {
-	errs := make(chan error, 2+(len(buffer)/i.blocksize))
-	counts := make(chan int, 2+(len(buffer)/i.blocksize))
+	errs := make(chan error, 2+(len(buffer)/i.block_size))
+	counts := make(chan int, 2+(len(buffer)/i.block_size))
 
 	left := len(buffer)
 	ptr := 0
@@ -56,10 +56,10 @@ func (i *ShardedStorage) ReadAt(buffer []byte, offset int64) (int, error) {
 		if left == 0 || offset >= int64(i.size) {
 			break
 		}
-		s := offset / int64(i.blocksize)
-		si := offset - (s * int64(i.blocksize)) // Index into block
+		s := offset / int64(i.block_size)
+		si := offset - (s * int64(i.block_size)) // Index into block
 
-		e := (ptr + i.blocksize - int(si))
+		e := (ptr + i.block_size - int(si))
 		if e > len(buffer) {
 			e = len(buffer)
 		}
@@ -93,8 +93,8 @@ func (i *ShardedStorage) ReadAt(buffer []byte, offset int64) (int, error) {
 }
 
 func (i *ShardedStorage) WriteAt(buffer []byte, offset int64) (int, error) {
-	errs := make(chan error, 2+(len(buffer)/i.blocksize))
-	counts := make(chan int, 2+(len(buffer)/i.blocksize))
+	errs := make(chan error, 2+(len(buffer)/i.block_size))
+	counts := make(chan int, 2+(len(buffer)/i.block_size))
 
 	left := len(buffer)
 	ptr := 0
@@ -103,10 +103,10 @@ func (i *ShardedStorage) WriteAt(buffer []byte, offset int64) (int, error) {
 		if left == 0 || offset >= int64(i.size) {
 			break
 		}
-		s := offset / int64(i.blocksize)
-		si := offset - (s * int64(i.blocksize))
+		s := offset / int64(i.block_size)
+		si := offset - (s * int64(i.block_size))
 
-		e := (ptr + i.blocksize - int(si))
+		e := (ptr + i.block_size - int(si))
 		if e > len(buffer) {
 			e = len(buffer)
 		}

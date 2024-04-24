@@ -8,25 +8,25 @@ import (
 )
 
 type CopyOnWrite struct {
-	source    storage.StorageProvider
-	cache     storage.StorageProvider
-	exists    *util.Bitfield
-	size      uint64
-	blockSize int
-	CloseFunc func()
-	lock      sync.Mutex
-	wg        sync.WaitGroup
+	source     storage.StorageProvider
+	cache      storage.StorageProvider
+	exists     *util.Bitfield
+	size       uint64
+	block_size int
+	Close_fn   func()
+	lock       sync.Mutex
+	wg         sync.WaitGroup
 }
 
 func NewCopyOnWrite(source storage.StorageProvider, cache storage.StorageProvider, blockSize int) *CopyOnWrite {
 	numBlocks := (source.Size() + uint64(blockSize) - 1) / uint64(blockSize)
 	return &CopyOnWrite{
-		source:    source,
-		cache:     cache,
-		exists:    util.NewBitfield(int(numBlocks)),
-		size:      source.Size(),
-		blockSize: blockSize,
-		CloseFunc: func() {},
+		source:     source,
+		cache:      cache,
+		exists:     util.NewBitfield(int(numBlocks)),
+		size:       source.Size(),
+		block_size: blockSize,
+		Close_fn:   func() {},
 	}
 }
 
@@ -55,8 +55,8 @@ func (i *CopyOnWrite) ReadAt(buffer []byte, offset int64) (int, error) {
 		end = i.size
 	}
 
-	b_start := uint(offset / int64(i.blockSize))
-	b_end := uint((end-1)/uint64(i.blockSize)) + 1
+	b_start := uint(offset / int64(i.block_size))
+	b_end := uint((end-1)/uint64(i.block_size)) + 1
 
 	// Special case where all the data is ALL in the cache
 	if i.exists.BitsSet(b_start, b_end) {
@@ -69,15 +69,15 @@ func (i *CopyOnWrite) ReadAt(buffer []byte, offset int64) (int, error) {
 
 	for b := b_start; b < b_end; b++ {
 		count := 0
-		block_offset := int64(b) * int64(i.blockSize)
+		block_offset := int64(b) * int64(i.block_size)
 		var err error
 		if block_offset >= offset {
 			// Partial read at the end
-			if len(buffer[block_offset-offset:buffer_end]) < i.blockSize {
+			if len(buffer[block_offset-offset:buffer_end]) < i.block_size {
 				if i.exists.BitSet(int(b)) {
 					count, err = i.cache.ReadAt(buffer[block_offset-offset:buffer_end], block_offset)
 				} else {
-					block_buffer := make([]byte, i.blockSize)
+					block_buffer := make([]byte, i.block_size)
 					// Read existing data
 					_, err = i.source.ReadAt(block_buffer, block_offset)
 					if err == nil {
@@ -87,7 +87,7 @@ func (i *CopyOnWrite) ReadAt(buffer []byte, offset int64) (int, error) {
 			} else {
 				// Complete block reads in the middle
 				s := block_offset - offset
-				e := s + int64(i.blockSize)
+				e := s + int64(i.block_size)
 				if e > int64(len(buffer)) {
 					e = int64(len(buffer))
 				}
@@ -96,18 +96,18 @@ func (i *CopyOnWrite) ReadAt(buffer []byte, offset int64) (int, error) {
 				} else {
 					_, err = i.source.ReadAt(buffer[s:e], block_offset)
 				}
-				count = i.blockSize
+				count = i.block_size
 			}
 		} else {
 			// Partial read at the start
 			if i.exists.BitSet(int(b)) {
-				plen := i.blockSize - int(offset-block_offset)
+				plen := i.block_size - int(offset-block_offset)
 				if plen > int(buffer_end) {
 					plen = int(buffer_end)
 				}
 				count, err = i.cache.ReadAt(buffer[:plen], offset)
 			} else {
-				block_buffer := make([]byte, i.blockSize)
+				block_buffer := make([]byte, i.block_size)
 				_, err = i.source.ReadAt(block_buffer, block_offset)
 				if err == nil {
 					count = copy(buffer[:buffer_end], block_buffer[offset-block_offset:])
@@ -150,8 +150,8 @@ func (i *CopyOnWrite) WriteAt(buffer []byte, offset int64) (int, error) {
 		end = i.size
 	}
 
-	b_start := uint(offset / int64(i.blockSize))
-	b_end := uint((end-1)/uint64(i.blockSize)) + 1
+	b_start := uint(offset / int64(i.block_size))
+	b_end := uint((end-1)/uint64(i.block_size)) + 1
 
 	// Special case where all the data is in the cache
 	if i.exists.BitsSet(b_start, b_end) {
@@ -166,16 +166,16 @@ func (i *CopyOnWrite) WriteAt(buffer []byte, offset int64) (int, error) {
 	// Now we have a series of non-overlapping writes
 	for b := b_start; b < b_end; b++ {
 
-		block_offset := int64(b) * int64(i.blockSize)
+		block_offset := int64(b) * int64(i.block_size)
 		var err error
 		count := 0
 		if block_offset >= offset {
 			// Partial write at the end
-			if len(buffer[block_offset-offset:buffer_end]) < i.blockSize {
+			if len(buffer[block_offset-offset:buffer_end]) < i.block_size {
 				if i.exists.BitSet(int(b)) {
 					count, err = i.cache.WriteAt(buffer[block_offset-offset:buffer_end], block_offset)
 				} else {
-					block_buffer := make([]byte, i.blockSize)
+					block_buffer := make([]byte, i.block_size)
 					// Read existing data
 					_, err = i.source.ReadAt(block_buffer, block_offset)
 					if err == nil {
@@ -189,25 +189,25 @@ func (i *CopyOnWrite) WriteAt(buffer []byte, offset int64) (int, error) {
 			} else {
 				// Complete block writes in the middle
 				s := block_offset - offset
-				e := s + int64(i.blockSize)
+				e := s + int64(i.block_size)
 				if e > int64(len(buffer)) {
 					e = int64(len(buffer))
 				}
 				_, err = i.cache.WriteAt(buffer[s:e], block_offset)
 				i.exists.SetBit(int(b))
-				count = i.blockSize
+				count = i.block_size
 			}
 		} else {
 			// Partial write at the start
 			if i.exists.BitSet(int(b)) {
 
-				plen := i.blockSize - int(offset-block_offset)
+				plen := i.block_size - int(offset-block_offset)
 				if plen > int(buffer_end) {
 					plen = int(buffer_end)
 				}
 				count, err = i.cache.WriteAt(buffer[:plen], offset)
 			} else {
-				block_buffer := make([]byte, i.blockSize)
+				block_buffer := make([]byte, i.block_size)
 				_, err = i.source.ReadAt(block_buffer, block_offset)
 				if err == nil {
 					// Merge in data
@@ -247,6 +247,6 @@ func (i *CopyOnWrite) Close() error {
 	i.wg.Wait() // Wait for any pending reads/writes to complete
 	i.cache.Close()
 	i.source.Close()
-	i.CloseFunc()
+	i.Close_fn()
 	return nil
 }

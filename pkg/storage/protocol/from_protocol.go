@@ -8,24 +8,19 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
 )
 
-type sendData struct {
-	id   uint32
-	data []byte
-}
-
 type FromProtocol struct {
-	dev         uint32
-	prov        storage.StorageProvider
-	provFactory func(*packets.DevInfo) storage.StorageProvider
-	protocol    Protocol
-	init        sync.WaitGroup
+	dev          uint32
+	prov         storage.StorageProvider
+	prov_factory func(*packets.DevInfo) storage.StorageProvider
+	protocol     Protocol
+	init         sync.WaitGroup
 }
 
 func NewFromProtocol(dev uint32, provFactory func(*packets.DevInfo) storage.StorageProvider, protocol Protocol) *FromProtocol {
 	fp := &FromProtocol{
-		dev:         dev,
-		provFactory: provFactory,
-		protocol:    protocol,
+		dev:          dev,
+		prov_factory: provFactory,
+		protocol:     protocol,
 	}
 	// We need to wait for the DevInfo before allowing any reads/writes.
 	fp.init.Add(1)
@@ -92,7 +87,7 @@ func (fp *FromProtocol) HandleDevInfo() error {
 	}
 
 	// Create storage
-	fp.prov = fp.provFactory(di)
+	fp.prov = fp.prov_factory(di)
 	fp.init.Done() // Allow reads/writes
 	return nil
 }

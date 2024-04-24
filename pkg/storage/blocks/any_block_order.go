@@ -8,24 +8,24 @@ import (
 )
 
 type AnyBlockOrder struct {
-	lock      sync.Mutex
-	numBlocks int
-	available util.Bitfield
-	next      storage.BlockOrder
+	lock       sync.Mutex
+	num_blocks int
+	available  util.Bitfield
+	next       storage.BlockOrder
 }
 
 func NewAnyBlockOrder(num_blocks int, next storage.BlockOrder) *AnyBlockOrder {
 	return &AnyBlockOrder{
-		numBlocks: num_blocks,
-		available: *util.NewBitfield(num_blocks),
-		next:      next,
+		num_blocks: num_blocks,
+		available:  *util.NewBitfield(num_blocks),
+		next:       next,
 	}
 }
 
 func (bo *AnyBlockOrder) AddAll() {
 	bo.lock.Lock()
 	defer bo.lock.Unlock()
-	bo.available.SetBits(0, uint(bo.numBlocks))
+	bo.available.SetBits(0, uint(bo.num_blocks))
 	if bo.next != nil {
 		bo.next.AddAll()
 	}

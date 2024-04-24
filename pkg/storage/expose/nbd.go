@@ -20,16 +20,15 @@ const NBD_DEFAULT_BLOCK_SIZE = 4096
  *
  */
 type ExposedStorageNBDNL struct {
-	numConnections int
-	timeout        uint64
-	size           uint64
-	blockSize      uint64
+	num_connections int
+	timeout         uint64
+	size            uint64
+	block_size      uint64
 
-	socks      []io.Closer
-	deviceFile uintptr
-	prov       storage.StorageProvider
-	devIndex   int
-	async      bool
+	socks        []io.Closer
+	prov         storage.StorageProvider
+	device_index int
+	async        bool
 }
 
 func NewExposedStorageNBDNL(prov storage.StorageProvider, numConnections int, timeout uint64, size uint64, blockSize uint64, async bool) *ExposedStorageNBDNL {
@@ -39,13 +38,13 @@ func NewExposedStorageNBDNL(prov storage.StorageProvider, numConnections int, ti
 	size = alignTo * ((size + alignTo - 1) / alignTo)
 
 	return &ExposedStorageNBDNL{
-		prov:           prov,
-		numConnections: numConnections,
-		timeout:        timeout,
-		size:           size,
-		blockSize:      blockSize,
-		socks:          make([]io.Closer, 0),
-		async:          async,
+		prov:            prov,
+		num_connections: numConnections,
+		timeout:         timeout,
+		size:            size,
+		block_size:      blockSize,
+		socks:           make([]io.Closer, 0),
+		async:           async,
 	}
 }
 
@@ -75,7 +74,7 @@ func (i *ExposedStorageNBDNL) Close() error {
 }
 
 func (n *ExposedStorageNBDNL) Device() string {
-	return fmt.Sprintf("nbd%d", n.devIndex)
+	return fmt.Sprintf("nbd%d", n.device_index)
 }
 
 func (n *ExposedStorageNBDNL) Init() error {
@@ -85,7 +84,7 @@ func (n *ExposedStorageNBDNL) Init() error {
 		socks := make([]*os.File, 0)
 
 		// Create the socket pairs
-		for i := 0; i < n.numConnections; i++ {
+		for i := 0; i < n.num_connections; i++ {
 			sockPair, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_STREAM, 0)
 			if err != nil {
 				return err
@@ -103,12 +102,14 @@ func (n *ExposedStorageNBDNL) Init() error {
 			d.ASYNC_READS = n.async
 			d.ASYNC_WRITES = n.async
 			// Start reading commands on the socket and dispatching them to our provider
-			go d.Handle()
+			go func() {
+				_ = d.Handle()
+			}()
 			n.socks = append(n.socks, serverc)
 			socks = append(socks, client)
 		}
 		var opts []nbdnl.ConnectOption
-		opts = append(opts, nbdnl.WithBlockSize(uint64(n.blockSize)))
+		opts = append(opts, nbdnl.WithBlockSize(uint64(n.block_size)))
 		opts = append(opts, nbdnl.WithTimeout(100*time.Millisecond))
 		opts = append(opts, nbdnl.WithDeadconnTimeout(100*time.Millisecond))
 
@@ -116,7 +117,7 @@ func (n *ExposedStorageNBDNL) Init() error {
 
 		idx, err := nbdnl.Connect(nbdnl.IndexAny, socks, n.size, 0, serverFlags, opts...)
 		if err == nil {
-			n.devIndex = int(idx)
+			n.device_index = int(idx)
 			break
 		}
 
@@ -139,7 +140,7 @@ func (n *ExposedStorageNBDNL) Init() error {
 
 	// Wait until it's connected...
 	for {
-		s, err := nbdnl.Status(uint32(n.devIndex))
+		s, err := nbdnl.Status(uint32(n.device_index))
 		if err == nil && s.Connected {
 			break
 		}
@@ -152,7 +153,7 @@ func (n *ExposedStorageNBDNL) Init() error {
 func (n *ExposedStorageNBDNL) Shutdown() error {
 
 	// Ask to disconnect
-	err := nbdnl.Disconnect(uint32(n.devIndex))
+	err := nbdnl.Disconnect(uint32(n.device_index))
 	if err != nil {
 		return err
 	}
@@ -168,7 +169,7 @@ func (n *ExposedStorageNBDNL) Shutdown() error {
 
 	// Wait until it's disconnected...
 	for {
-		s, err := nbdnl.Status(uint32(n.devIndex))
+		s, err := nbdnl.Status(uint32(n.device_index))
 		if err == nil && !s.Connected {
 			break
 		}

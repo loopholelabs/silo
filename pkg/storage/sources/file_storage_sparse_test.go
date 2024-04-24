@@ -18,7 +18,8 @@ func TestFileStorageSparseCreate(t *testing.T) {
 	})
 
 	data := make([]byte, 30)
-	rand.Read(data)
+	_, err = rand.Read(data)
+	assert.NoError(t, err)
 
 	_, err = source.WriteAt(data, 0)
 	assert.NoError(t, err)
@@ -45,7 +46,8 @@ func TestFileStorageSparsePartialRead(t *testing.T) {
 	})
 
 	data := make([]byte, 30)
-	rand.Read(data)
+	_, err = rand.Read(data)
+	assert.NoError(t, err)
 
 	_, err = source.WriteAt(data, 0)
 	assert.NoError(t, err)
@@ -68,7 +70,8 @@ func TestFileStorageSparse(t *testing.T) {
 	})
 
 	data := make([]byte, 30)
-	rand.Read(data)
+	_, err = rand.Read(data)
+	assert.NoError(t, err)
 
 	_, err = source.WriteAt(data, 10)
 	assert.NoError(t, err)
@@ -101,7 +104,8 @@ func TestFileStorageSparsePartialWrite(t *testing.T) {
 	})
 
 	data := make([]byte, 50)
-	rand.Read(data)
+	_, err = rand.Read(data)
+	assert.NoError(t, err)
 
 	// Do complete write for first 5 blocks
 	_, err = source.WriteAt(data, 0)
@@ -134,7 +138,8 @@ func TestFileStorageSparseOverrun(t *testing.T) {
 	})
 
 	data := make([]byte, 50)
-	rand.Read(data)
+	_, err = rand.Read(data)
+	assert.NoError(t, err)
 
 	n, err := source.WriteAt(data, 60)
 	assert.NoError(t, err)
@@ -155,7 +160,8 @@ func TestFileStorageSparseNonMultiple(t *testing.T) {
 	})
 
 	data := make([]byte, 50)
-	rand.Read(data)
+	_, err = rand.Read(data)
+	assert.NoError(t, err)
 
 	n, err := source.WriteAt(data, 60)
 	assert.NoError(t, err)
@@ -179,7 +185,8 @@ func TestFileStorageSparseResume(t *testing.T) {
 	})
 
 	data := make([]byte, 30)
-	rand.Read(data)
+	_, err = rand.Read(data)
+	assert.NoError(t, err)
 
 	_, err = source.WriteAt(data, 10)
 	assert.NoError(t, err)
@@ -203,7 +210,8 @@ func TestFileStorageSparseResume(t *testing.T) {
 
 	// Write some new data
 	data2 := make([]byte, 30)
-	rand.Read(data2)
+	_, err = rand.Read(data2)
+	assert.NoError(t, err)
 	_, err = source2.WriteAt(data2, 50)
 	assert.NoError(t, err)
 

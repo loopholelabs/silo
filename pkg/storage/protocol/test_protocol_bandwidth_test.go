@@ -31,9 +31,15 @@ func TestTestProtocolBandwidth(t *testing.T) {
 
 	destFromProtocol := NewFromProtocol(1, storeFactory, pr)
 
-	go destFromProtocol.HandleDevInfo()
-	go destFromProtocol.HandleReadAt()
-	go destFromProtocol.HandleWriteAt()
+	go func() {
+		_ = destFromProtocol.HandleDevInfo()
+	}()
+	go func() {
+		_ = destFromProtocol.HandleReadAt()
+	}()
+	go func() {
+		_ = destFromProtocol.HandleWriteAt()
+	}()
 
 	// Send devInfo
 	sourceToProtocol.SendDevInfo("test", 4096)

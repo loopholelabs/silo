@@ -31,9 +31,15 @@ func TestTestProtocolLatency(t *testing.T) {
 
 	destFromProtocol := NewFromProtocol(1, storeFactory, pr)
 
-	go destFromProtocol.HandleDevInfo()
-	go destFromProtocol.HandleReadAt()
-	go destFromProtocol.HandleWriteAt()
+	go func() {
+		_ = destFromProtocol.HandleDevInfo()
+	}()
+	go func() {
+		_ = destFromProtocol.HandleReadAt()
+	}()
+	go func() {
+		_ = destFromProtocol.HandleWriteAt()
+	}()
 
 	ctime := time.Now()
 

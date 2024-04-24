@@ -12,9 +12,9 @@ func TestMetrics(t *testing.T) {
 	// Do some things...
 
 	buffer := make([]byte, 4096)
-	met.ReadAt(buffer, 0)
+	_, _ = met.ReadAt(buffer, 0)
 
-	met.WriteAt(buffer, 0)
+	_, _ = met.WriteAt(buffer, 0)
 
 	met.Flush()
 

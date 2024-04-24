@@ -13,22 +13,22 @@ import (
 )
 
 type MigratorConfig struct {
-	BlockSize       int
-	LockerHandler   func()
-	UnlockerHandler func()
-	ErrorHandler    func(b *storage.BlockInfo, err error)
-	ProgressHandler func(p *MigrationProgress)
-	Concurrency     map[int]int
-	Integrity       bool
+	Block_size       int
+	Locker_handler   func()
+	Unlocker_handler func()
+	Error_handler    func(b *storage.BlockInfo, err error)
+	Progress_handler func(p *MigrationProgress)
+	Concurrency      map[int]int
+	Integrity        bool
 }
 
 func NewMigratorConfig() *MigratorConfig {
 	return &MigratorConfig{
-		BlockSize:       0,
-		LockerHandler:   func() {},
-		UnlockerHandler: func() {},
-		ErrorHandler:    func(b *storage.BlockInfo, err error) {},
-		ProgressHandler: func(p *MigrationProgress) {},
+		Block_size:       0,
+		Locker_handler:   func() {},
+		Unlocker_handler: func() {},
+		Error_handler:    func(b *storage.BlockInfo, err error) {},
+		Progress_handler: func(p *MigrationProgress) {},
 		Concurrency: map[int]int{
 			storage.BlockTypeAny:      32,
 			storage.BlockTypeStandard: 32,
@@ -40,41 +40,41 @@ func NewMigratorConfig() *MigratorConfig {
 }
 
 func (mc *MigratorConfig) WithBlockSize(bs int) *MigratorConfig {
-	mc.BlockSize = bs
+	mc.Block_size = bs
 	return mc
 }
 
 type MigrationProgress struct {
-	TotalBlocks        int // Total blocks
-	MigratedBlocks     int // Number of blocks that have been migrated
-	MigratedBlocksPerc float64
-	ReadyBlocks        int // Number of blocks which are up to date (clean). May go down as well as up.
-	ReadyBlocksPerc    float64
-	ActiveBlocks       int // Number of blocks in progress now
+	Total_blocks         int // Total blocks
+	Migrated_blocks      int // Number of blocks that have been migrated
+	Migrated_blocks_perc float64
+	Ready_blocks         int // Number of blocks which are up to date (clean). May go down as well as up.
+	Ready_blocks_perc    float64
+	Active_blocks        int // Number of blocks in progress now
 }
 
 type Migrator struct {
-	srcTrack           storage.TrackingStorageProvider // Tracks writes so we know which are dirty
-	dest               storage.StorageProvider
-	srcLockFN          func()
-	srcUnlockFN        func()
-	errorFN            func(block *storage.BlockInfo, err error)
-	progressFN         func(*MigrationProgress)
-	progressLock       sync.Mutex
-	progressLast       time.Time
-	progressLastStatus *MigrationProgress
-	blockSize          int
-	numBlocks          int
-	metricBlocksMoved  int64
-	blockLocks         []sync.Mutex
-	movingBlocks       *util.Bitfield
-	migratedBlocks     *util.Bitfield
-	cleanBlocks        *util.Bitfield
-	blockOrder         storage.BlockOrder
-	ctime              time.Time
-	concurrency        map[int]chan bool
-	wg                 sync.WaitGroup
-	integrity          *integrity.IntegrityChecker
+	source_tracker       storage.TrackingStorageProvider // Tracks writes so we know which are dirty
+	dest                 storage.StorageProvider
+	source_lock_fn       func()
+	source_unlock_fn     func()
+	error_fn             func(block *storage.BlockInfo, err error)
+	progress_fn          func(*MigrationProgress)
+	progress_lock        sync.Mutex
+	progress_last        time.Time
+	progress_last_status *MigrationProgress
+	block_size           int
+	num_blocks           int
+	metric_blocks_moved  int64
+	block_locks          []sync.Mutex
+	moving_blocks        *util.Bitfield
+	migrated_blocks      *util.Bitfield
+	clean_blocks         *util.Bitfield
+	block_order          storage.BlockOrder
+	ctime                time.Time
+	concurrency          map[int]chan bool
+	wg                   sync.WaitGroup
+	integrity            *integrity.IntegrityChecker
 }
 
 func NewMigrator(source storage.TrackingStorageProvider,
@@ -82,27 +82,27 @@ func NewMigrator(source storage.TrackingStorageProvider,
 	block_order storage.BlockOrder,
 	config *MigratorConfig) (*Migrator, error) {
 
-	num_blocks := (int(source.Size()) + config.BlockSize - 1) / config.BlockSize
+	num_blocks := (int(source.Size()) + config.Block_size - 1) / config.Block_size
 	m := &Migrator{
-		dest:               dest,
-		srcTrack:           source,
-		srcLockFN:          config.LockerHandler,
-		srcUnlockFN:        config.UnlockerHandler,
-		errorFN:            config.ErrorHandler,
-		progressFN:         config.ProgressHandler,
-		blockSize:          config.BlockSize,
-		numBlocks:          num_blocks,
-		metricBlocksMoved:  0,
-		blockOrder:         block_order,
-		movingBlocks:       util.NewBitfield(num_blocks),
-		migratedBlocks:     util.NewBitfield(num_blocks),
-		cleanBlocks:        util.NewBitfield(num_blocks),
-		blockLocks:         make([]sync.Mutex, num_blocks),
-		concurrency:        make(map[int]chan bool),
-		progressLastStatus: &MigrationProgress{},
+		dest:                 dest,
+		source_tracker:       source,
+		source_lock_fn:       config.Locker_handler,
+		source_unlock_fn:     config.Unlocker_handler,
+		error_fn:             config.Error_handler,
+		progress_fn:          config.Progress_handler,
+		block_size:           config.Block_size,
+		num_blocks:           num_blocks,
+		metric_blocks_moved:  0,
+		block_order:          block_order,
+		moving_blocks:        util.NewBitfield(num_blocks),
+		migrated_blocks:      util.NewBitfield(num_blocks),
+		clean_blocks:         util.NewBitfield(num_blocks),
+		block_locks:          make([]sync.Mutex, num_blocks),
+		concurrency:          make(map[int]chan bool),
+		progress_last_status: &MigrationProgress{},
 	}
 
-	if m.dest.Size() != m.srcTrack.Size() {
+	if m.dest.Size() != m.source_tracker.Size() {
 		return nil, errors.New("source and destination sizes must be equal for migration.")
 	}
 
@@ -112,7 +112,7 @@ func NewMigrator(source storage.TrackingStorageProvider,
 	}
 
 	if config.Integrity {
-		m.integrity = integrity.NewIntegrityChecker(int64(m.dest.Size()), m.blockSize)
+		m.integrity = integrity.NewIntegrityChecker(int64(m.dest.Size()), m.block_size)
 	}
 	return m, nil
 }
@@ -124,7 +124,7 @@ func (m *Migrator) Migrate(num_blocks int) error {
 	m.ctime = time.Now()
 
 	for b := 0; b < num_blocks; b++ {
-		i := m.blockOrder.GetNext()
+		i := m.block_order.GetNext()
 		if i == storage.BlockInfoFinish {
 			break
 		}
@@ -140,7 +140,7 @@ func (m *Migrator) Migrate(num_blocks int) error {
 		go func(block_no *storage.BlockInfo) {
 			err := m.migrateBlock(block_no.Block)
 			if err != nil {
-				m.errorFN(block_no, err)
+				m.error_fn(block_no, err)
 			}
 
 			m.wg.Done()
@@ -160,13 +160,13 @@ func (m *Migrator) Migrate(num_blocks int) error {
  */
 func (m *Migrator) GetLatestDirty() []uint {
 	// Queue up some dirty blocks
-	m.srcLockFN()
+	m.source_lock_fn()
 
 	// Check for any dirty blocks to be added on
-	blocks := m.srcTrack.Sync()
+	blocks := m.source_tracker.Sync()
 	changed := blocks.Count(0, blocks.Length())
 	if changed != 0 {
-		m.srcUnlockFN()
+		m.source_unlock_fn()
 
 		block_nos := blocks.Collect(0, blocks.Length())
 		return block_nos
@@ -175,7 +175,7 @@ func (m *Migrator) GetLatestDirty() []uint {
 }
 
 func (m *Migrator) Unlock() {
-	m.srcUnlockFN()
+	m.source_unlock_fn()
 }
 
 /**
@@ -193,12 +193,12 @@ func (m *Migrator) MigrateDirty(blocks []uint) error {
 
 		m.wg.Add(1)
 
-		m.cleanBlocks.ClearBit(int(pos))
+		m.clean_blocks.ClearBit(int(pos))
 
 		go func(block_no *storage.BlockInfo) {
 			err := m.migrateBlock(block_no.Block)
 			if err != nil {
-				m.errorFN(block_no, err)
+				m.error_fn(block_no, err)
 			}
 
 			m.wg.Done()
@@ -227,35 +227,35 @@ func (m *Migrator) GetHashes() map[uint][sha256.Size]byte {
 }
 
 func (m *Migrator) reportProgress(forced bool) {
-	m.progressLock.Lock()
-	defer m.progressLock.Unlock()
+	m.progress_lock.Lock()
+	defer m.progress_lock.Unlock()
 
-	if !forced && time.Since(m.progressLast).Milliseconds() < 100 {
+	if !forced && time.Since(m.progress_last).Milliseconds() < 100 {
 		return // Rate limit progress to once per 100ms
 	}
 
-	migrated := m.migratedBlocks.Count(0, uint(m.numBlocks))
-	perc_mig := float64(migrated*100) / float64(m.numBlocks)
+	migrated := m.migrated_blocks.Count(0, uint(m.num_blocks))
+	perc_mig := float64(migrated*100) / float64(m.num_blocks)
 
-	completed := m.cleanBlocks.Count(0, uint(m.numBlocks))
-	perc_complete := float64(completed*100) / float64(m.numBlocks)
+	completed := m.clean_blocks.Count(0, uint(m.num_blocks))
+	perc_complete := float64(completed*100) / float64(m.num_blocks)
 
-	if completed == m.progressLastStatus.ReadyBlocks &&
-		migrated == m.progressLastStatus.MigratedBlocks {
+	if completed == m.progress_last_status.Ready_blocks &&
+		migrated == m.progress_last_status.Migrated_blocks {
 		return // Nothing has really changed
 	}
 
-	m.progressLast = time.Now()
-	m.progressLastStatus = &MigrationProgress{
-		TotalBlocks:        m.numBlocks,
-		MigratedBlocks:     migrated,
-		MigratedBlocksPerc: perc_mig,
-		ReadyBlocks:        completed,
-		ReadyBlocksPerc:    perc_complete,
-		ActiveBlocks:       m.movingBlocks.Count(0, uint(m.numBlocks)),
+	m.progress_last = time.Now()
+	m.progress_last_status = &MigrationProgress{
+		Total_blocks:         m.num_blocks,
+		Migrated_blocks:      migrated,
+		Migrated_blocks_perc: perc_mig,
+		Ready_blocks:         completed,
+		Ready_blocks_perc:    perc_complete,
+		Active_blocks:        m.moving_blocks.Count(0, uint(m.num_blocks)),
 	}
 	// Callback
-	m.progressFN(m.progressLastStatus)
+	m.progress_fn(m.progress_last_status)
 }
 
 /**
@@ -263,17 +263,17 @@ func (m *Migrator) reportProgress(forced bool) {
  *
  */
 func (m *Migrator) migrateBlock(block int) error {
-	m.blockLocks[block].Lock()
-	defer m.blockLocks[block].Unlock()
+	m.block_locks[block].Lock()
+	defer m.block_locks[block].Unlock()
 
-	m.movingBlocks.SetBit(block)
-	defer m.movingBlocks.ClearBit(block)
+	m.moving_blocks.SetBit(block)
+	defer m.moving_blocks.ClearBit(block)
 
 	// TODO: Pool these somewhere...
-	buff := make([]byte, m.blockSize)
-	offset := int(block) * m.blockSize
+	buff := make([]byte, m.block_size)
+	offset := int(block) * m.block_size
 	// Read from source
-	n, err := m.srcTrack.ReadAt(buff, int64(offset))
+	n, err := m.source_tracker.ReadAt(buff, int64(offset))
 	if err != nil {
 		return err
 	}
@@ -292,10 +292,10 @@ func (m *Migrator) migrateBlock(block int) error {
 		m.integrity.HashBlock(uint(block), buff)
 	}
 
-	atomic.AddInt64(&m.metricBlocksMoved, 1)
+	atomic.AddInt64(&m.metric_blocks_moved, 1)
 	// Mark it as done
-	m.migratedBlocks.SetBit(block)
-	m.cleanBlocks.SetBit(block)
+	m.migrated_blocks.SetBit(block)
+	m.clean_blocks.SetBit(block)
 
 	m.reportProgress(false)
 	return nil

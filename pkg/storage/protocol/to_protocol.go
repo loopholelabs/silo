@@ -12,18 +12,18 @@ var ErrInvalidPacket = errors.New("invalid packet")
 var ErrRemoteWriteError = errors.New("remote write error")
 
 type ToProtocol struct {
-	size             uint64
-	dev              uint32
-	protocol         Protocol
-	CompressedWrites bool
+	size              uint64
+	dev               uint32
+	protocol          Protocol
+	Compressed_writes bool
 }
 
 func NewToProtocol(size uint64, deviceID uint32, p Protocol) *ToProtocol {
 	return &ToProtocol{
-		size:             size,
-		dev:              deviceID,
-		protocol:         p,
-		CompressedWrites: false,
+		size:              size,
+		dev:               deviceID,
+		protocol:          p,
+		Compressed_writes: false,
 	}
 }
 
@@ -60,9 +60,9 @@ func (i *ToProtocol) SendHashes(hashes map[uint][sha256.Size]byte) error {
 
 func (i *ToProtocol) SendDevInfo(name string, block_size uint32) error {
 	di := &packets.DevInfo{
-		Size:      i.size,
-		BlockSize: block_size,
-		Name:      name,
+		Size:       i.size,
+		Block_size: block_size,
+		Name:       name,
 	}
 	b := packets.EncodeDevInfo(di)
 	_, err := i.protocol.SendPacket(i.dev, ID_PICK_ANY, b)
@@ -101,7 +101,7 @@ func (i *ToProtocol) ReadAt(buffer []byte, offset int64) (int, error) {
 func (i *ToProtocol) WriteAt(buffer []byte, offset int64) (int, error) {
 	var id uint32
 	var err error
-	if i.CompressedWrites {
+	if i.Compressed_writes {
 		data := packets.EncodeWriteAtComp(offset, buffer)
 		id, err = i.protocol.SendPacket(i.dev, ID_PICK_ANY, data)
 	} else {

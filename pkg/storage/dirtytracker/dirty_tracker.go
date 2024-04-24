@@ -14,13 +14,13 @@ import (
  */
 
 type DirtyTracker struct {
-	prov      storage.StorageProvider
-	size      uint64
-	blockSize int
-	numBlocks int
-	dirtyLog  *util.Bitfield
-	tracking  *util.Bitfield
-	writeLock sync.RWMutex
+	prov       storage.StorageProvider
+	size       uint64
+	block_size int
+	num_blocks int
+	dirty_log  *util.Bitfield
+	tracking   *util.Bitfield
+	write_lock sync.RWMutex
 }
 
 type DirtyTrackerLocal struct {
@@ -75,28 +75,28 @@ func NewDirtyTracker(prov storage.StorageProvider, blockSize int) (*DirtyTracker
 	size := int(prov.Size())
 	numBlocks := (size + blockSize - 1) / blockSize
 	dt := &DirtyTracker{
-		size:      prov.Size(),
-		blockSize: blockSize,
-		numBlocks: numBlocks,
-		prov:      prov,
-		tracking:  util.NewBitfield(numBlocks),
-		dirtyLog:  util.NewBitfield(numBlocks),
+		size:       prov.Size(),
+		block_size: blockSize,
+		num_blocks: numBlocks,
+		prov:       prov,
+		tracking:   util.NewBitfield(numBlocks),
+		dirty_log:  util.NewBitfield(numBlocks),
 	}
 	return &DirtyTrackerLocal{dt: dt}, &DirtyTrackerRemote{dt: dt}
 }
 
 func (i *DirtyTrackerRemote) Sync() *util.Bitfield {
 	// Prevent any writes while we do the Sync()
-	i.dt.writeLock.Lock()
-	defer i.dt.writeLock.Unlock()
+	i.dt.write_lock.Lock()
+	defer i.dt.write_lock.Unlock()
 
-	info := i.dt.dirtyLog.Clone()
+	info := i.dt.dirty_log.Clone()
 
 	// Remove the dirty blocks from tracking... (They will get added again when a Read is performed to migrate the data)
-	i.dt.tracking.ClearBitsIf(info, 0, uint(i.dt.numBlocks))
+	i.dt.tracking.ClearBitsIf(info, 0, uint(i.dt.num_blocks))
 
 	// Clear the dirty log.
-	i.dt.dirtyLog.Clear()
+	i.dt.dirty_log.Clear()
 	return info
 }
 
@@ -105,8 +105,8 @@ func (i *DirtyTracker) localReadAt(buffer []byte, offset int64) (int, error) {
 }
 
 func (i *DirtyTracker) localWriteAt(buffer []byte, offset int64) (int, error) {
-	i.writeLock.RLock()
-	defer i.writeLock.RUnlock()
+	i.write_lock.RLock()
+	defer i.write_lock.RUnlock()
 
 	n, err := i.prov.WriteAt(buffer, offset)
 
@@ -116,10 +116,10 @@ func (i *DirtyTracker) localWriteAt(buffer []byte, offset int64) (int, error) {
 			end = i.size
 		}
 
-		b_start := uint(offset / int64(i.blockSize))
-		b_end := uint((end-1)/uint64(i.blockSize)) + 1
+		b_start := uint(offset / int64(i.block_size))
+		b_end := uint((end-1)/uint64(i.block_size)) + 1
 
-		i.dirtyLog.SetBitsIf(i.tracking, b_start, b_end)
+		i.dirty_log.SetBitsIf(i.tracking, b_start, b_end)
 	}
 	return n, err
 }
@@ -138,8 +138,8 @@ func (i *DirtyTracker) remoteReadAt(buffer []byte, offset int64) (int, error) {
 		end = i.size
 	}
 
-	b_start := uint(offset / int64(i.blockSize))
-	b_end := uint((end-1)/uint64(i.blockSize)) + 1
+	b_start := uint(offset / int64(i.block_size))
+	b_end := uint((end-1)/uint64(i.block_size)) + 1
 
 	// Enable tracking for this area
 	i.tracking.SetBits(b_start, b_end)

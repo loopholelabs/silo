@@ -78,6 +78,7 @@ func TestCopyOnWriteWrites(t *testing.T) {
 
 	buff2 := make([]byte, 100)
 	_, err = cow.ReadAt(buff2, 0)
+	assert.NoError(t, err)
 
 	buff3 := make([]byte, 100)
 	// Read from src
