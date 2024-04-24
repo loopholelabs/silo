@@ -76,7 +76,8 @@ func TestToProtocolWriteAt(t *testing.T) {
 	})
 
 	data := make([]byte, 1024)
-	rand.Read(data)
+	_, err := rand.Read(data)
+	assert.NoError(t, err)
 	n, err := toproto.WriteAt(data, 17)
 	assert.NoError(t, err)
 	assert.Equal(t, len(data), n)
@@ -113,7 +114,8 @@ func TestToProtocolReadAt(t *testing.T) {
 	toproto := NewToProtocol(1024*1024, 123, pro)
 
 	data := make([]byte, 1024)
-	rand.Read(data)
+	_, err := rand.Read(data)
+	assert.NoError(t, err)
 
 	// Setup a mock response
 	pro.waitPackets <- packets.EncodeReadAtResponse(&packets.ReadAtResponse{

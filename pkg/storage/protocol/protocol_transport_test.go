@@ -42,10 +42,12 @@ func TestProtocolWriteAt(t *testing.T) {
 	}()
 
 	// Send devInfo
-	sourceToProtocol.SendDevInfo("test", 4096)
+	err := sourceToProtocol.SendDevInfo("test", 4096)
+	assert.NoError(t, err)
 
 	buff := make([]byte, 4096)
-	rand.Read(buff)
+	_, err = rand.Read(buff)
+	assert.NoError(t, err)
 	n, err := sourceToProtocol.WriteAt(buff, 12)
 
 	assert.NoError(t, err)
@@ -95,10 +97,13 @@ func TestProtocolWriteAtComp(t *testing.T) {
 	}()
 
 	// Send devInfo
-	sourceToProtocol.SendDevInfo("test", 4096)
+	err := sourceToProtocol.SendDevInfo("test", 4096)
+	assert.NoError(t, err)
 
 	buff := make([]byte, 4096)
-	rand.Read(buff)
+	_, err = rand.Read(buff)
+	assert.NoError(t, err)
+
 	n, err := sourceToProtocol.WriteAt(buff, 12)
 
 	assert.NoError(t, err)
@@ -120,7 +125,8 @@ func TestProtocolReadAt(t *testing.T) {
 	// Setup a protocol in the middle, and make sure our reads/writes get through ok
 
 	buff := make([]byte, 4096)
-	rand.Read(buff)
+	_, err := rand.Read(buff)
+	assert.NoError(t, err)
 
 	pr := NewMockProtocol()
 
@@ -151,7 +157,8 @@ func TestProtocolReadAt(t *testing.T) {
 		_ = destFromProtocol.HandleWriteAt()
 	}()
 
-	sourceToProtocol.SendDevInfo("test", 4096)
+	err = sourceToProtocol.SendDevInfo("test", 4096)
+	assert.NoError(t, err)
 
 	// Now check it was written to the source
 	buff2 := make([]byte, 4096)
@@ -207,14 +214,16 @@ func TestProtocolRWWriteAt(t *testing.T) {
 
 	// Now do some things and make sure they happen...
 
-	sourceToProtocol.SendDevInfo("test", 4096)
+	err := sourceToProtocol.SendDevInfo("test", 4096)
+	assert.NoError(t, err)
 
 	// Should know the dev now...
 	assert.Equal(t, uint32(1), <-destDev)
 	assert.Equal(t, 0, len(destDev))
 
 	buff := make([]byte, 4096)
-	rand.Read(buff)
+	_, err = rand.Read(buff)
+	assert.NoError(t, err)
 	n, err := sourceToProtocol.WriteAt(buff, 12)
 
 	assert.NoError(t, err)
@@ -234,7 +243,8 @@ func TestProtocolRWReadAt(t *testing.T) {
 	var store storage.StorageProvider
 
 	buff := make([]byte, 4096)
-	rand.Read(buff)
+	_, err := rand.Read(buff)
+	assert.NoError(t, err)
 
 	// Setup a protocol in the middle, and make sure our reads/writes get through ok
 
@@ -280,7 +290,8 @@ func TestProtocolRWReadAt(t *testing.T) {
 	}()
 
 	// Now do some things and make sure they happen...
-	sourceToProtocol.SendDevInfo("test", 4096)
+	err = sourceToProtocol.SendDevInfo("test", 4096)
+	assert.NoError(t, err)
 
 	// Now check it was written to the source
 	buff2 := make([]byte, 4096)

@@ -12,9 +12,11 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
+/*
 var (
 	errNoSuchKey = errors.New("The specified key does not exist.") // Minio doesn't export errors
 )
+*/
 
 type S3Storage struct {
 	client     *minio.Client

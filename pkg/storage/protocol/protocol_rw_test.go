@@ -39,9 +39,15 @@ func TestProtocolRWCancel(t *testing.T) {
 		destDev <- dev
 		destFromProtocol := NewFromProtocol(dev, storeFactory, p)
 
-		go destFromProtocol.HandleDevInfo()
-		go destFromProtocol.HandleReadAt()
-		go destFromProtocol.HandleWriteAt()
+		go func() {
+			_ = destFromProtocol.HandleDevInfo()
+		}()
+		go func() {
+			_ = destFromProtocol.HandleReadAt()
+		}()
+		go func() {
+			_ = destFromProtocol.HandleWriteAt()
+		}()
 	})
 
 	sourceToProtocol := NewToProtocol(uint64(size), 1, prSource)
@@ -62,7 +68,8 @@ func TestProtocolRWCancel(t *testing.T) {
 
 	// Now do some things and make sure they happen...
 
-	sourceToProtocol.SendDevInfo("test", 4096)
+	err := sourceToProtocol.SendDevInfo("test", 4096)
+	assert.NoError(t, err)
 
 	// Should know the dev now...
 	assert.Equal(t, uint32(1), <-destDev)
@@ -112,7 +119,9 @@ func TestProtocolRWCancelFromHandler(t *testing.T) {
 
 	// Now do some things and make sure they happen...
 
-	sourceToProtocol.SendDevInfo("test", 4096)
+	err := sourceToProtocol.SendDevInfo("test", 4096)
+	assert.NoError(t, err)
+
 	/*
 		// Close the connections
 		w1.Close()
@@ -155,12 +164,13 @@ func TestProtocolRWSendAfterCancel(t *testing.T) {
 
 	// Now do some things and make sure they happen...
 
-	sourceToProtocol.SendDevInfo("test", 4096)
+	err := sourceToProtocol.SendDevInfo("test", 4096)
+	assert.NoError(t, err)
 	wg.Wait()
 
 	// Now check that we can't send anything...
 
-	_, err := prDest.SendPacket(1, 0, []byte{1, 2, 3})
+	_, err = prDest.SendPacket(1, 0, []byte{1, 2, 3})
 	assert.ErrorIs(t, err, context.Canceled)
 
 	_, err = prDest.SendPacketWriter(1, 0, 0, func(w io.Writer) error { return nil })

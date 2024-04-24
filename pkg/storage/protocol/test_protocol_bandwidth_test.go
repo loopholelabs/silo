@@ -42,12 +42,18 @@ func TestTestProtocolBandwidth(t *testing.T) {
 	}()
 
 	// Send devInfo
-	sourceToProtocol.SendDevInfo("test", 4096)
+	err := sourceToProtocol.SendDevInfo("test", 4096)
+	if err != nil {
+		panic(err)
+	}
 
 	// We'll send around 100KB through, and make sure it takes around a second...
 
 	buff := make([]byte, 1024)
-	rand.Read(buff)
+	_, err = rand.Read(buff)
+	if err != nil {
+		panic(err)
+	}
 	ctime := time.Now()
 
 	for n := 0; n < 100; n++ {

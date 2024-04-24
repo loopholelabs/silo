@@ -5,8 +5,7 @@ import (
 )
 
 type volatilityData struct {
-	block uint
-	log   []int64
+	log []int64
 }
 
 /**
