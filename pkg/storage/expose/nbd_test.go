@@ -41,7 +41,7 @@ func TestNBDNLDevice(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		wg.Add(1)
 		go func() {
-			devfile, err := os.OpenFile(fmt.Sprintf("/dev/nbd%d", n.devIndex), os.O_RDWR, 0666)
+			devfile, err := os.OpenFile(fmt.Sprintf("/dev/nbd%d", n.device_index), os.O_RDWR, 0666)
 			assert.NoError(t, err)
 
 			// Try doing a read...
@@ -109,7 +109,8 @@ func TestNBDNLDeviceSmall(t *testing.T) {
 	prov := sources.NewMemoryStorage(size)
 
 	b := make([]byte, 900)
-	rand.Read(b)
+	_, err = rand.Read(b)
+	assert.NoError(t, err)
 	n, err := prov.WriteAt(b, 0)
 	assert.NoError(t, err)
 	assert.Equal(t, 900, n)
@@ -119,7 +120,7 @@ func TestNBDNLDeviceSmall(t *testing.T) {
 	err = ndev.Init()
 	assert.NoError(t, err)
 
-	devfile, err := os.OpenFile(fmt.Sprintf("/dev/nbd%d", ndev.devIndex), os.O_RDWR, 0666)
+	devfile, err := os.OpenFile(fmt.Sprintf("/dev/nbd%d", ndev.device_index), os.O_RDWR, 0666)
 	assert.NoError(t, err)
 
 	// Try doing a read...
@@ -153,7 +154,8 @@ func TestNBDNLDeviceUnalignedPartialRead(t *testing.T) {
 	prov := sources.NewMemoryStorage(size)
 
 	b := make([]byte, size)
-	rand.Read(b)
+	_, err = rand.Read(b)
+	assert.NoError(t, err)
 	n, err := prov.WriteAt(b, 0)
 	assert.NoError(t, err)
 	assert.Equal(t, size, n)
@@ -163,7 +165,7 @@ func TestNBDNLDeviceUnalignedPartialRead(t *testing.T) {
 	err = ndev.Init()
 	assert.NoError(t, err)
 
-	devfile, err := os.OpenFile(fmt.Sprintf("/dev/nbd%d", ndev.devIndex), os.O_RDWR, 0666)
+	devfile, err := os.OpenFile(fmt.Sprintf("/dev/nbd%d", ndev.device_index), os.O_RDWR, 0666)
 	assert.NoError(t, err)
 
 	// Try doing a read...
@@ -200,17 +202,20 @@ func TestNBDNLDeviceUnalignedPartialWrite(t *testing.T) {
 	err = ndev.Init()
 	assert.NoError(t, err)
 
-	devfile, err := os.OpenFile(fmt.Sprintf("/dev/nbd%d", ndev.devIndex), os.O_RDWR, 0666)
+	devfile, err := os.OpenFile(fmt.Sprintf("/dev/nbd%d", ndev.device_index), os.O_RDWR, 0666)
 	assert.NoError(t, err)
 
 	// Try doing a read...
 	buffer := make([]byte, 800)
-	rand.Read(buffer)
+	_, err = rand.Read(buffer)
+	assert.NoError(t, err)
 	num, err := devfile.WriteAt(buffer, 10)
 	assert.NoError(t, err)
 	assert.Equal(t, 800, num)
-	devfile.Sync()
-	devfile.Close()
+	err = devfile.Sync()
+	assert.NoError(t, err)
+	err = devfile.Close()
+	assert.NoError(t, err)
 
 	// Make sure the write got through to our provider
 

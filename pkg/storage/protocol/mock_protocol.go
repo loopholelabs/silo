@@ -5,12 +5,14 @@ import (
 	"io"
 	"sync"
 	"sync/atomic"
+
+	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
 )
 
 type MockProtocol struct {
-	waiters     map[uint32]Waiters
-	waitersLock sync.Mutex
-	tid         uint32
+	waiters      map[uint32]Waiters
+	waiters_lock sync.Mutex
+	tid          uint32
 }
 
 func NewMockProtocol() *MockProtocol {
@@ -39,7 +41,7 @@ func (mp *MockProtocol) SendPacket(dev uint32, id uint32, data []byte) (uint32, 
 		// TODO. If id wraps around and becomes ID_PICK_ANY etc
 	}
 
-	mp.waitersLock.Lock()
+	mp.waiters_lock.Lock()
 	w, ok := mp.waiters[dev]
 	if !ok {
 		w = Waiters{
@@ -61,13 +63,13 @@ func (mp *MockProtocol) SendPacket(dev uint32, id uint32, data []byte) (uint32, 
 		w.byCmd[cmd] = wq_cmd
 	}
 
-	mp.waitersLock.Unlock()
+	mp.waiters_lock.Unlock()
 
 	// Send it to any listeners
 	// If this matches something being waited for, route it there.
 	// TODO: Don't always do this, expire, etc etc
 
-	if IsResponse(cmd) {
+	if packets.IsResponse(cmd) {
 		wq_id <- packetinfo{
 			id:   id,
 			data: data,
@@ -83,7 +85,7 @@ func (mp *MockProtocol) SendPacket(dev uint32, id uint32, data []byte) (uint32, 
 }
 
 func (mp *MockProtocol) WaitForPacket(dev uint32, id uint32) ([]byte, error) {
-	mp.waitersLock.Lock()
+	mp.waiters_lock.Lock()
 	w, ok := mp.waiters[dev]
 	if !ok {
 		w = Waiters{
@@ -97,7 +99,7 @@ func (mp *MockProtocol) WaitForPacket(dev uint32, id uint32) ([]byte, error) {
 		wq = make(chan packetinfo, 8) // Some buffer here...
 		w.byID[id] = wq
 	}
-	mp.waitersLock.Unlock()
+	mp.waiters_lock.Unlock()
 
 	// Wait for the packet to appear on the channel
 	p := <-wq
@@ -108,7 +110,7 @@ func (mp *MockProtocol) WaitForPacket(dev uint32, id uint32) ([]byte, error) {
 }
 
 func (mp *MockProtocol) WaitForCommand(dev uint32, cmd byte) (uint32, []byte, error) {
-	mp.waitersLock.Lock()
+	mp.waiters_lock.Lock()
 	w, ok := mp.waiters[dev]
 	if !ok {
 		w = Waiters{
@@ -122,7 +124,7 @@ func (mp *MockProtocol) WaitForCommand(dev uint32, cmd byte) (uint32, []byte, er
 		wq = make(chan packetinfo, 8) // Some buffer here...
 		w.byCmd[cmd] = wq
 	}
-	mp.waitersLock.Unlock()
+	mp.waiters_lock.Unlock()
 
 	// Wait for the packet to appear on the channel
 	p := <-wq

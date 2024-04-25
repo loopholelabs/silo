@@ -11,6 +11,7 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/dirtytracker"
 	"github.com/loopholelabs/silo/pkg/storage/modules"
 	"github.com/loopholelabs/silo/pkg/storage/protocol"
+	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
 )
 
@@ -41,8 +42,8 @@ func BenchmarkMigration(mb *testing.B) {
 	destStorage := sources.NewMemoryStorage(size)
 
 	conf := NewMigratorConfig().WithBlockSize(blockSize)
-	conf.LockerHandler = sourceStorage.Lock
-	conf.UnlockerHandler = sourceStorage.Unlock
+	conf.Locker_handler = sourceStorage.Lock
+	conf.Unlocker_handler = sourceStorage.Unlock
 
 	mig, err := NewMigrator(sourceDirtyRemote,
 		destStorage,
@@ -60,7 +61,10 @@ func BenchmarkMigration(mb *testing.B) {
 	// Migrate some number of times...
 	for i := 0; i < mb.N; i++ {
 		orderer.AddAll()
-		mig.Migrate(num_blocks)
+		err = mig.Migrate(num_blocks)
+		if err != nil {
+			panic(err)
+		}
 
 		err = mig.WaitForCompletion()
 		if err != nil {
@@ -147,7 +151,7 @@ func BenchmarkMigrationPipe(mb *testing.B) {
 			}
 
 			initDev := func(p protocol.Protocol, dev uint32) {
-				destStorageFactory := func(di *protocol.DevInfo) storage.StorageProvider {
+				destStorageFactory := func(di *packets.DevInfo) storage.StorageProvider {
 					// Do some sharding here...
 					cr := func(index int, size int) (storage.StorageProvider, error) {
 						mem := sources.NewMemoryStorage(size)
@@ -161,19 +165,29 @@ func BenchmarkMigrationPipe(mb *testing.B) {
 
 				// Pipe from the protocol to destWaiting
 				destFrom := protocol.NewFromProtocol(dev, destStorageFactory, p)
-				ctx := context.TODO()
-				go destFrom.HandleSend(ctx)
-				go destFrom.HandleReadAt()
-				go destFrom.HandleWriteAt()
-				go destFrom.HandleWriteAtComp()
-				go destFrom.HandleDevInfo()
+				go func() {
+					_ = destFrom.HandleReadAt()
+				}()
+				go func() {
+					_ = destFrom.HandleWriteAt()
+				}()
+				go func() {
+					_ = destFrom.HandleWriteAtComp()
+				}()
+				go func() {
+					_ = destFrom.HandleDevInfo()
+				}()
 			}
 
 			prSourceRW := protocol.NewProtocolRW(context.TODO(), readers1, writers2, nil)
 			prDestRW := protocol.NewProtocolRW(context.TODO(), readers2, writers1, initDev)
 
-			go prSourceRW.Handle()
-			go prDestRW.Handle()
+			go func() {
+				_ = prSourceRW.Handle()
+			}()
+			go func() {
+				_ = prDestRW.Handle()
+			}()
 
 			prSource := protocol.NewTestProtocolLatency(prSourceRW, 80*time.Millisecond)
 			prDest := protocol.NewTestProtocolLatency(prDestRW, 80*time.Millisecond)
@@ -189,14 +203,17 @@ func BenchmarkMigrationPipe(mb *testing.B) {
 			destination := protocol.NewToProtocol(sourceDirtyRemote.Size(), 17, prSource)
 
 			if testconf.compress {
-				destination.CompressedWrites = true
+				destination.Compressed_writes = true
 			}
 
-			destination.SendDevInfo("test", uint32(blockSize))
+			err = destination.SendDevInfo("test", uint32(blockSize))
+			if err != nil {
+				panic(err)
+			}
 
 			conf := NewMigratorConfig().WithBlockSize(blockSize)
-			conf.LockerHandler = sourceStorage.Lock
-			conf.UnlockerHandler = sourceStorage.Unlock
+			conf.Locker_handler = sourceStorage.Lock
+			conf.Unlocker_handler = sourceStorage.Unlock
 			conf.Concurrency = map[int]int{
 				storage.BlockTypeAny:      testconf.concurrency,
 				storage.BlockTypeStandard: testconf.concurrency,
@@ -221,7 +238,10 @@ func BenchmarkMigrationPipe(mb *testing.B) {
 			// Migrate some number of times...
 			for i := 0; i < b.N; i++ {
 				orderer.AddAll()
-				mig.Migrate(num_blocks)
+				err = mig.Migrate(num_blocks)
+				if err != nil {
+					panic(err)
+				}
 
 				err = mig.WaitForCompletion()
 				if err != nil {

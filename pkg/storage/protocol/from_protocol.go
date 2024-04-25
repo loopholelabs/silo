@@ -1,33 +1,26 @@
 package protocol
 
 import (
-	"context"
 	"crypto/sha256"
 	"sync"
 
 	"github.com/loopholelabs/silo/pkg/storage"
+	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
 )
 
-type sendData struct {
-	id   uint32
-	data []byte
-}
-
 type FromProtocol struct {
-	dev         uint32
-	prov        storage.StorageProvider
-	provFactory func(*DevInfo) storage.StorageProvider
-	protocol    Protocol
-	send_queue  chan sendData
-	init        sync.WaitGroup
+	dev          uint32
+	prov         storage.StorageProvider
+	prov_factory func(*packets.DevInfo) storage.StorageProvider
+	protocol     Protocol
+	init         sync.WaitGroup
 }
 
-func NewFromProtocol(dev uint32, provFactory func(*DevInfo) storage.StorageProvider, protocol Protocol) *FromProtocol {
+func NewFromProtocol(dev uint32, provFactory func(*packets.DevInfo) storage.StorageProvider, protocol Protocol) *FromProtocol {
 	fp := &FromProtocol{
-		dev:         dev,
-		provFactory: provFactory,
-		protocol:    protocol,
-		send_queue:  make(chan sendData),
+		dev:          dev,
+		prov_factory: provFactory,
+		protocol:     protocol,
 	}
 	// We need to wait for the DevInfo before allowing any reads/writes.
 	fp.init.Add(1)
@@ -35,15 +28,15 @@ func NewFromProtocol(dev uint32, provFactory func(*DevInfo) storage.StorageProvi
 }
 
 // Handle any Events
-func (fp *FromProtocol) HandleEvent(cb func(*Event)) error {
+func (fp *FromProtocol) HandleEvent(cb func(*packets.Event)) error {
 	fp.init.Wait()
 
 	for {
-		id, data, err := fp.protocol.WaitForCommand(fp.dev, COMMAND_EVENT)
+		id, data, err := fp.protocol.WaitForCommand(fp.dev, packets.COMMAND_EVENT)
 		if err != nil {
 			return err
 		}
-		ev, err := DecodeEvent(data)
+		ev, err := packets.DecodeEvent(data)
 		if err != nil {
 			return err
 		}
@@ -51,9 +44,9 @@ func (fp *FromProtocol) HandleEvent(cb func(*Event)) error {
 		// Relay the event, wait, and then respond.
 		cb(ev)
 
-		fp.send_queue <- sendData{
-			id:   id,
-			data: EncodeEventResponse(),
+		_, err = fp.protocol.SendPacket(fp.dev, id, packets.EncodeEventResponse())
+		if err != nil {
+			return err
 		}
 	}
 }
@@ -63,11 +56,11 @@ func (fp *FromProtocol) HandleHashes(cb func(map[uint][sha256.Size]byte)) error 
 	fp.init.Wait()
 
 	for {
-		id, data, err := fp.protocol.WaitForCommand(fp.dev, COMMAND_HASHES)
+		id, data, err := fp.protocol.WaitForCommand(fp.dev, packets.COMMAND_HASHES)
 		if err != nil {
 			return err
 		}
-		hashes, err := DecodeHashes(data)
+		hashes, err := packets.DecodeHashes(data)
 		if err != nil {
 			return err
 		}
@@ -75,55 +68,51 @@ func (fp *FromProtocol) HandleHashes(cb func(map[uint][sha256.Size]byte)) error 
 		// Relay the hashes, wait and then respond
 		cb(hashes)
 
-		fp.send_queue <- sendData{
-			id:   id,
-			data: EncodeHashesResponse(),
+		_, err = fp.protocol.SendPacket(fp.dev, id, packets.EncodeHashesResponse())
+		if err != nil {
+			return err
 		}
 	}
 }
 
 // Handle a DevInfo, and create the storage
 func (fp *FromProtocol) HandleDevInfo() error {
-	_, data, err := fp.protocol.WaitForCommand(fp.dev, COMMAND_DEV_INFO)
+	_, data, err := fp.protocol.WaitForCommand(fp.dev, packets.COMMAND_DEV_INFO)
 	if err != nil {
 		return err
 	}
-	di, err := DecodeDevInfo(data)
+	di, err := packets.DecodeDevInfo(data)
 	if err != nil {
 		return err
 	}
 
 	// Create storage
-	fp.prov = fp.provFactory(di)
+	fp.prov = fp.prov_factory(di)
 	fp.init.Done() // Allow reads/writes
 	return nil
-}
-
-// Send packets out
-func (fp *FromProtocol) HandleSend(ctx context.Context) error {
-	for {
-		select {
-		case s := <-fp.send_queue:
-			_, err := fp.protocol.SendPacket(fp.dev, s.id, s.data)
-			if err != nil {
-				return err
-			}
-		case <-ctx.Done():
-			return nil
-		}
-	}
 }
 
 // Handle any ReadAt commands, and send to provider
 func (fp *FromProtocol) HandleReadAt() error {
 	fp.init.Wait()
 
+	var errLock sync.Mutex
+	var errValue error
+
 	for {
-		id, data, err := fp.protocol.WaitForCommand(fp.dev, COMMAND_READ_AT)
+		// If there was an error in one of the goroutines, return it.
+		errLock.Lock()
+		if errValue != nil {
+			errLock.Unlock()
+			return errValue
+		}
+		errLock.Unlock()
+
+		id, data, err := fp.protocol.WaitForCommand(fp.dev, packets.COMMAND_READ_AT)
 		if err != nil {
 			return err
 		}
-		offset, length, err := DecodeReadAt(data)
+		offset, length, err := packets.DecodeReadAt(data)
 		if err != nil {
 			return err
 		}
@@ -132,14 +121,16 @@ func (fp *FromProtocol) HandleReadAt() error {
 		go func(goffset int64, glength int32, gid uint32) {
 			buff := make([]byte, glength)
 			n, err := fp.prov.ReadAt(buff, goffset)
-			rar := &ReadAtResponse{
+			rar := &packets.ReadAtResponse{
 				Bytes: n,
 				Error: err,
 				Data:  buff,
 			}
-			fp.send_queue <- sendData{
-				id:   gid,
-				data: EncodeReadAtResponse(rar),
+			_, err = fp.protocol.SendPacket(fp.dev, gid, packets.EncodeReadAtResponse(rar))
+			if err != nil {
+				errLock.Lock()
+				errValue = err
+				errLock.Unlock()
 			}
 		}(offset, length, id)
 	}
@@ -149,13 +140,24 @@ func (fp *FromProtocol) HandleReadAt() error {
 func (fp *FromProtocol) HandleWriteAt() error {
 	fp.init.Wait()
 
+	var errLock sync.Mutex
+	var errValue error
+
 	for {
-		id, data, err := fp.protocol.WaitForCommand(fp.dev, COMMAND_WRITE_AT)
+		// If there was an error in one of the goroutines, return it.
+		errLock.Lock()
+		if errValue != nil {
+			errLock.Unlock()
+			return errValue
+		}
+		errLock.Unlock()
+
+		id, data, err := fp.protocol.WaitForCommand(fp.dev, packets.COMMAND_WRITE_AT)
 		if err != nil {
 			return err
 		}
 
-		offset, write_data, err := DecodeWriteAt(data)
+		offset, write_data, err := packets.DecodeWriteAt(data)
 		if err != nil {
 			return err
 		}
@@ -163,13 +165,15 @@ func (fp *FromProtocol) HandleWriteAt() error {
 		// Handle in a goroutine
 		go func(goffset int64, gdata []byte, gid uint32) {
 			n, err := fp.prov.WriteAt(gdata, goffset)
-			war := &WriteAtResponse{
+			war := &packets.WriteAtResponse{
 				Bytes: n,
 				Error: err,
 			}
-			fp.send_queue <- sendData{
-				id:   gid,
-				data: EncodeWriteAtResponse(war),
+			_, err = fp.protocol.SendPacket(fp.dev, gid, packets.EncodeWriteAtResponse(war))
+			if err != nil {
+				errLock.Lock()
+				errValue = err
+				errLock.Unlock()
 			}
 		}(offset, write_data, id)
 	}
@@ -179,13 +183,24 @@ func (fp *FromProtocol) HandleWriteAt() error {
 func (fp *FromProtocol) HandleWriteAtComp() error {
 	fp.init.Wait()
 
+	var errLock sync.Mutex
+	var errValue error
+
 	for {
-		id, data, err := fp.protocol.WaitForCommand(fp.dev, COMMAND_WRITE_AT_COMP)
+		// If there was an error in one of the goroutines, return it.
+		errLock.Lock()
+		if errValue != nil {
+			errLock.Unlock()
+			return errValue
+		}
+		errLock.Unlock()
+
+		id, data, err := fp.protocol.WaitForCommand(fp.dev, packets.COMMAND_WRITE_AT_COMP)
 		if err != nil {
 			return err
 		}
 
-		offset, write_data, err := DecodeWriteAtComp(data)
+		offset, write_data, err := packets.DecodeWriteAtComp(data)
 		if err != nil {
 			return err
 		}
@@ -193,13 +208,15 @@ func (fp *FromProtocol) HandleWriteAtComp() error {
 		// Handle in a goroutine
 		go func(goffset int64, gdata []byte, gid uint32) {
 			n, err := fp.prov.WriteAt(gdata, goffset)
-			war := &WriteAtResponse{
+			war := &packets.WriteAtResponse{
 				Bytes: n,
 				Error: err,
 			}
-			fp.send_queue <- sendData{
-				id:   gid,
-				data: EncodeWriteAtResponse(war),
+			_, err = fp.protocol.SendPacket(fp.dev, gid, packets.EncodeWriteAtResponse(war))
+			if err != nil {
+				errLock.Lock()
+				errValue = err
+				errLock.Unlock()
 			}
 		}(offset, write_data, id)
 	}
@@ -208,11 +225,11 @@ func (fp *FromProtocol) HandleWriteAtComp() error {
 // Handle any DirtyList commands
 func (fp *FromProtocol) HandleDirtyList(cb func(blocks []uint)) error {
 	for {
-		_, data, err := fp.protocol.WaitForCommand(fp.dev, COMMAND_DIRTY_LIST)
+		_, data, err := fp.protocol.WaitForCommand(fp.dev, packets.COMMAND_DIRTY_LIST)
 		if err != nil {
 			return err
 		}
-		blocks, err := DecodeDirtyList(data)
+		blocks, err := packets.DecodeDirtyList(data)
 		if err != nil {
 			return err
 		}
@@ -222,13 +239,13 @@ func (fp *FromProtocol) HandleDirtyList(cb func(blocks []uint)) error {
 }
 
 func (i *FromProtocol) NeedAt(offset int64, length int32) error {
-	b := EncodeNeedAt(offset, length)
+	b := packets.EncodeNeedAt(offset, length)
 	_, err := i.protocol.SendPacket(i.dev, ID_PICK_ANY, b)
 	return err
 }
 
 func (i *FromProtocol) DontNeedAt(offset int64, length int32) error {
-	b := EncodeDontNeedAt(offset, length)
+	b := packets.EncodeDontNeedAt(offset, length)
 	_, err := i.protocol.SendPacket(i.dev, ID_PICK_ANY, b)
 	return err
 }

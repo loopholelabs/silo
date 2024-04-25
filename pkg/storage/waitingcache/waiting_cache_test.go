@@ -19,7 +19,8 @@ func TestWaitingCache(t *testing.T) {
 	waitingLocal, waitingRemote := NewWaitingCache(metrics, 4096)
 
 	data := make([]byte, 12000)
-	rand.Read(data)
+	_, err := rand.Read(data)
+	assert.NoError(t, err)
 
 	// We'll write something in 50ms
 	go func() {
@@ -32,7 +33,7 @@ func TestWaitingCache(t *testing.T) {
 	offset := int64(20)
 	buffer := make([]byte, 8000)
 	ctime := time.Now()
-	_, err := waitingLocal.ReadAt(buffer, offset)
+	_, err = waitingLocal.ReadAt(buffer, offset)
 	assert.NoError(t, err)
 	wait_time := time.Since(ctime).Milliseconds()
 
@@ -61,7 +62,8 @@ func TestWaitingCachePartial(t *testing.T) {
 	waitingLocal, waitingRemote := NewWaitingCache(metrics, 4096)
 
 	data := make([]byte, 6000)
-	rand.Read(data)
+	_, err := rand.Read(data)
+	assert.NoError(t, err)
 
 	// We'll write something in 50ms
 	go func() {
@@ -74,7 +76,7 @@ func TestWaitingCachePartial(t *testing.T) {
 	offset := int64(0)
 	buffer := make([]byte, 6000)
 	ctime := time.Now()
-	_, err := waitingLocal.ReadAt(buffer, offset)
+	_, err = waitingLocal.ReadAt(buffer, offset)
 	assert.NoError(t, err)
 	wait_time := time.Since(ctime).Milliseconds()
 
@@ -104,7 +106,8 @@ func TestWaitingCacheLocalWrites(t *testing.T) {
 
 	// Try complete blocks
 	data := make([]byte, 8192)
-	rand.Read(data)
+	_, err := rand.Read(data)
+	assert.NoError(t, err)
 
 	// We'll write something in 50ms
 	go func() {
@@ -117,7 +120,7 @@ func TestWaitingCacheLocalWrites(t *testing.T) {
 	offset := int64(4096)
 	buffer := make([]byte, 4096)
 	ctime := time.Now()
-	_, err := waitingLocal.ReadAt(buffer, offset)
+	_, err = waitingLocal.ReadAt(buffer, offset)
 	assert.NoError(t, err)
 	wait_time := time.Since(ctime).Milliseconds()
 
@@ -129,7 +132,8 @@ func TestWaitingCacheLocalWrites(t *testing.T) {
 	// Write from remote
 
 	dataRemote := make([]byte, 8192)
-	rand.Read(dataRemote)
+	_, err = rand.Read(dataRemote)
+	assert.NoError(t, err)
 	_, err = waitingRemote.WriteAt(dataRemote, 0)
 	assert.NoError(t, err)
 
@@ -157,7 +161,8 @@ func TestWaitingCacheLocalWrites_ARCH61(t *testing.T) {
 
 	// Try complete blocks
 	data := make([]byte, size)
-	rand.Read(data)
+	_, err := rand.Read(data)
+	assert.NoError(t, err)
 
 	// We'll write something in 50ms
 	go func() {
@@ -169,7 +174,7 @@ func TestWaitingCacheLocalWrites_ARCH61(t *testing.T) {
 	// The waiting cache will wait for data to be available.
 	buffer := make([]byte, 65500) // Last block is incomplete
 	ctime := time.Now()
-	_, err := waitingLocal.WriteAt(buffer, 0)
+	_, err = waitingLocal.WriteAt(buffer, 0)
 	assert.NoError(t, err)
 	wait_time := time.Since(ctime).Milliseconds()
 

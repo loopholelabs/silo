@@ -12,17 +12,19 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
+/*
 var (
 	errNoSuchKey = errors.New("The specified key does not exist.") // Minio doesn't export errors
 )
+*/
 
 type S3Storage struct {
-	client    *minio.Client
-	bucket    string
-	prefix    string
-	size      uint64
-	blockSize int
-	lockers   []sync.RWMutex
+	client     *minio.Client
+	bucket     string
+	prefix     string
+	size       uint64
+	block_size int
+	lockers    []sync.RWMutex
 }
 
 func NewS3Storage(endpoint string,
@@ -45,12 +47,12 @@ func NewS3Storage(endpoint string,
 	numBlocks := (int(size) + blockSize - 1) / blockSize
 
 	return &S3Storage{
-		size:      size,
-		blockSize: blockSize,
-		client:    client,
-		bucket:    bucket,
-		prefix:    prefix,
-		lockers:   make([]sync.RWMutex, numBlocks),
+		size:       size,
+		block_size: blockSize,
+		client:     client,
+		bucket:     bucket,
+		prefix:     prefix,
+		lockers:    make([]sync.RWMutex, numBlocks),
 	}, nil
 }
 
@@ -97,12 +99,12 @@ func NewS3StorageCreate(endpoint string,
 	numBlocks := (int(size) + blockSize - 1) / blockSize
 
 	return &S3Storage{
-		size:      size,
-		blockSize: blockSize,
-		client:    client,
-		bucket:    bucket,
-		prefix:    prefix,
-		lockers:   make([]sync.RWMutex, numBlocks),
+		size:       size,
+		block_size: blockSize,
+		client:     client,
+		bucket:     bucket,
+		prefix:     prefix,
+		lockers:    make([]sync.RWMutex, numBlocks),
 	}, nil
 }
 
@@ -113,16 +115,16 @@ func (i *S3Storage) ReadAt(buffer []byte, offset int64) (int, error) {
 		end = i.size
 	}
 
-	b_start := uint(offset / int64(i.blockSize))
-	b_end := uint((end-1)/uint64(i.blockSize)) + 1
+	b_start := uint(offset / int64(i.block_size))
+	b_end := uint((end-1)/uint64(i.block_size)) + 1
 
 	blocks := b_end - b_start
 	errs := make(chan error, blocks)
 
 	getData := func(buff []byte, off int64) (int, error) {
-		i.lockers[off/int64(i.blockSize)].RLock()
+		i.lockers[off/int64(i.block_size)].RLock()
 		obj, err := i.client.GetObject(context.TODO(), i.bucket, fmt.Sprintf("%s-%d", i.prefix, off), minio.GetObjectOptions{})
-		i.lockers[off/int64(i.blockSize)].RUnlock()
+		i.lockers[off/int64(i.block_size)].RUnlock()
 		if err != nil {
 			return 0, err
 		}
@@ -131,18 +133,18 @@ func (i *S3Storage) ReadAt(buffer []byte, offset int64) (int, error) {
 
 	for b := b_start; b < b_end; b++ {
 		go func(block_no uint) {
-			block_offset := int64(block_no) * int64(i.blockSize)
+			block_offset := int64(block_no) * int64(i.block_size)
 			var err error
 			if block_offset > offset {
 				// Partial read at the end
-				if len(buffer[block_offset-offset:]) < i.blockSize {
-					block_buffer := make([]byte, i.blockSize)
+				if len(buffer[block_offset-offset:]) < i.block_size {
+					block_buffer := make([]byte, i.block_size)
 					_, err = getData(block_buffer, block_offset)
 					copy(buffer[block_offset-offset:], block_buffer)
 				} else {
 					// Complete read in the middle
 					s := block_offset - offset
-					e := s + int64(i.blockSize)
+					e := s + int64(i.block_size)
 					if e > int64(len(buffer)) {
 						e = int64(len(buffer))
 					}
@@ -150,7 +152,7 @@ func (i *S3Storage) ReadAt(buffer []byte, offset int64) (int, error) {
 				}
 			} else {
 				// Partial read at the start
-				block_buffer := make([]byte, i.blockSize)
+				block_buffer := make([]byte, i.block_size)
 				_, err = getData(block_buffer, block_offset)
 				copy(buffer, block_buffer[offset-block_offset:])
 			}
@@ -176,16 +178,16 @@ func (i *S3Storage) WriteAt(buffer []byte, offset int64) (int, error) {
 		end = i.size
 	}
 
-	b_start := uint(offset / int64(i.blockSize))
-	b_end := uint((end-1)/uint64(i.blockSize)) + 1
+	b_start := uint(offset / int64(i.block_size))
+	b_end := uint((end-1)/uint64(i.block_size)) + 1
 
 	blocks := b_end - b_start
 	errs := make(chan error, blocks)
 
 	getData := func(buff []byte, off int64) (int, error) {
-		i.lockers[off/int64(i.blockSize)].RLock()
+		i.lockers[off/int64(i.block_size)].RLock()
 		obj, err := i.client.GetObject(context.TODO(), i.bucket, fmt.Sprintf("%s-%d", i.prefix, off), minio.GetObjectOptions{})
-		i.lockers[off/int64(i.blockSize)].RUnlock()
+		i.lockers[off/int64(i.block_size)].RUnlock()
 		if err != nil {
 			return 0, err
 		}
@@ -193,11 +195,11 @@ func (i *S3Storage) WriteAt(buffer []byte, offset int64) (int, error) {
 	}
 
 	putData := func(buff []byte, off int64) (int, error) {
-		i.lockers[off/int64(i.blockSize)].Lock()
+		i.lockers[off/int64(i.block_size)].Lock()
 		obj, err := i.client.PutObject(context.TODO(), i.bucket, fmt.Sprintf("%s-%d", i.prefix, off),
-			bytes.NewReader(buff), int64(i.blockSize),
+			bytes.NewReader(buff), int64(i.block_size),
 			minio.PutObjectOptions{})
-		i.lockers[off/int64(i.blockSize)].Unlock()
+		i.lockers[off/int64(i.block_size)].Unlock()
 		if err != nil {
 			return 0, err
 		}
@@ -206,12 +208,12 @@ func (i *S3Storage) WriteAt(buffer []byte, offset int64) (int, error) {
 
 	for b := b_start; b < b_end; b++ {
 		go func(block_no uint) {
-			block_offset := int64(block_no) * int64(i.blockSize)
+			block_offset := int64(block_no) * int64(i.block_size)
 			var err error
 			if block_offset > offset {
 				// Partial write at the end
-				if len(buffer[block_offset-offset:]) < i.blockSize {
-					block_buffer := make([]byte, i.blockSize)
+				if len(buffer[block_offset-offset:]) < i.block_size {
+					block_buffer := make([]byte, i.block_size)
 					// Read existing data
 					_, err = getData(block_buffer, block_offset)
 					if err == nil || errors.Is(err, io.EOF) {
@@ -223,7 +225,7 @@ func (i *S3Storage) WriteAt(buffer []byte, offset int64) (int, error) {
 				} else {
 					// Complete write in the middle
 					s := block_offset - offset
-					e := s + int64(i.blockSize)
+					e := s + int64(i.block_size)
 					if e > int64(len(buffer)) {
 						e = int64(len(buffer))
 					}
@@ -231,7 +233,7 @@ func (i *S3Storage) WriteAt(buffer []byte, offset int64) (int, error) {
 				}
 			} else {
 				// Partial write at the start
-				block_buffer := make([]byte, i.blockSize)
+				block_buffer := make([]byte, i.block_size)
 				_, err = getData(block_buffer, block_offset)
 				if err == nil || errors.Is(err, io.EOF) {
 					copy(block_buffer[offset-block_offset:], buffer)

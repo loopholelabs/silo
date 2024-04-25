@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/loopholelabs/silo/pkg/storage"
+	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
 	"github.com/stretchr/testify/assert"
 )
@@ -21,7 +22,7 @@ func TestProtocolWriteAt(t *testing.T) {
 
 	sourceToProtocol := NewToProtocol(uint64(size), 1, pr)
 
-	storeFactory := func(di *DevInfo) storage.StorageProvider {
+	storeFactory := func(di *packets.DevInfo) storage.StorageProvider {
 		store = sources.NewMemoryStorage(int(di.Size))
 		return store
 	}
@@ -30,17 +31,23 @@ func TestProtocolWriteAt(t *testing.T) {
 
 	// Now do some things and make sure they happen...
 
-	// TODO: Shutdown...
-	go destFromProtocol.HandleDevInfo()
-	go destFromProtocol.HandleSend(context.TODO())
-	go destFromProtocol.HandleReadAt()
-	go destFromProtocol.HandleWriteAt()
+	go func() {
+		_ = destFromProtocol.HandleDevInfo()
+	}()
+	go func() {
+		_ = destFromProtocol.HandleReadAt()
+	}()
+	go func() {
+		_ = destFromProtocol.HandleWriteAt()
+	}()
 
 	// Send devInfo
-	sourceToProtocol.SendDevInfo("test", 4096)
+	err := sourceToProtocol.SendDevInfo("test", 4096)
+	assert.NoError(t, err)
 
 	buff := make([]byte, 4096)
-	rand.Read(buff)
+	_, err = rand.Read(buff)
+	assert.NoError(t, err)
 	n, err := sourceToProtocol.WriteAt(buff, 12)
 
 	assert.NoError(t, err)
@@ -65,9 +72,9 @@ func TestProtocolWriteAtComp(t *testing.T) {
 
 	sourceToProtocol := NewToProtocol(uint64(size), 1, pr)
 
-	sourceToProtocol.CompressedWrites = true
+	sourceToProtocol.Compressed_writes = true
 
-	storeFactory := func(di *DevInfo) storage.StorageProvider {
+	storeFactory := func(di *packets.DevInfo) storage.StorageProvider {
 		store = sources.NewMemoryStorage(int(di.Size))
 		return store
 	}
@@ -76,18 +83,27 @@ func TestProtocolWriteAtComp(t *testing.T) {
 
 	// Now do some things and make sure they happen...
 
-	// TODO: Shutdown...
-	go destFromProtocol.HandleDevInfo()
-	go destFromProtocol.HandleSend(context.TODO())
-	go destFromProtocol.HandleReadAt()
-	go destFromProtocol.HandleWriteAt()
-	go destFromProtocol.HandleWriteAtComp()
+	go func() {
+		_ = destFromProtocol.HandleDevInfo()
+	}()
+	go func() {
+		_ = destFromProtocol.HandleReadAt()
+	}()
+	go func() {
+		_ = destFromProtocol.HandleWriteAt()
+	}()
+	go func() {
+		_ = destFromProtocol.HandleWriteAtComp()
+	}()
 
 	// Send devInfo
-	sourceToProtocol.SendDevInfo("test", 4096)
+	err := sourceToProtocol.SendDevInfo("test", 4096)
+	assert.NoError(t, err)
 
 	buff := make([]byte, 4096)
-	rand.Read(buff)
+	_, err = rand.Read(buff)
+	assert.NoError(t, err)
+
 	n, err := sourceToProtocol.WriteAt(buff, 12)
 
 	assert.NoError(t, err)
@@ -109,13 +125,14 @@ func TestProtocolReadAt(t *testing.T) {
 	// Setup a protocol in the middle, and make sure our reads/writes get through ok
 
 	buff := make([]byte, 4096)
-	rand.Read(buff)
+	_, err := rand.Read(buff)
+	assert.NoError(t, err)
 
 	pr := NewMockProtocol()
 
 	sourceToProtocol := NewToProtocol(uint64(size), 1, pr)
 
-	storeFactory := func(di *DevInfo) storage.StorageProvider {
+	storeFactory := func(di *packets.DevInfo) storage.StorageProvider {
 		store = sources.NewMemoryStorage(int(di.Size))
 
 		n, err := store.WriteAt(buff, 12)
@@ -130,13 +147,18 @@ func TestProtocolReadAt(t *testing.T) {
 
 	// Now do some things and make sure they happen...
 
-	// TODO: Shutdown...
-	go destFromProtocol.HandleDevInfo()
-	go destFromProtocol.HandleSend(context.TODO())
-	go destFromProtocol.HandleReadAt()
-	go destFromProtocol.HandleWriteAt()
+	go func() {
+		_ = destFromProtocol.HandleDevInfo()
+	}()
+	go func() {
+		_ = destFromProtocol.HandleReadAt()
+	}()
+	go func() {
+		_ = destFromProtocol.HandleWriteAt()
+	}()
 
-	sourceToProtocol.SendDevInfo("test", 4096)
+	err = sourceToProtocol.SendDevInfo("test", 4096)
+	assert.NoError(t, err)
 
 	// Now check it was written to the source
 	buff2 := make([]byte, 4096)
@@ -159,7 +181,7 @@ func TestProtocolRWWriteAt(t *testing.T) {
 
 	destDev := make(chan uint32, 8)
 
-	storeFactory := func(di *DevInfo) storage.StorageProvider {
+	storeFactory := func(di *packets.DevInfo) storage.StorageProvider {
 		store = sources.NewMemoryStorage(int(di.Size))
 		return store
 	}
@@ -169,28 +191,39 @@ func TestProtocolRWWriteAt(t *testing.T) {
 		destDev <- dev
 		destFromProtocol := NewFromProtocol(dev, storeFactory, p)
 
-		go destFromProtocol.HandleDevInfo()
-		go destFromProtocol.HandleSend(context.TODO())
-		go destFromProtocol.HandleReadAt()
-		go destFromProtocol.HandleWriteAt()
+		go func() {
+			_ = destFromProtocol.HandleDevInfo()
+		}()
+		go func() {
+			_ = destFromProtocol.HandleReadAt()
+		}()
+		go func() {
+			_ = destFromProtocol.HandleWriteAt()
+		}()
 	})
 
 	sourceToProtocol := NewToProtocol(uint64(size), 1, prSource)
 
 	// TODO: Cleanup
-	go prSource.Handle()
-	go prDest.Handle()
+	go func() {
+		_ = prSource.Handle()
+	}()
+	go func() {
+		_ = prDest.Handle()
+	}()
 
 	// Now do some things and make sure they happen...
 
-	sourceToProtocol.SendDevInfo("test", 4096)
+	err := sourceToProtocol.SendDevInfo("test", 4096)
+	assert.NoError(t, err)
 
 	// Should know the dev now...
 	assert.Equal(t, uint32(1), <-destDev)
 	assert.Equal(t, 0, len(destDev))
 
 	buff := make([]byte, 4096)
-	rand.Read(buff)
+	_, err = rand.Read(buff)
+	assert.NoError(t, err)
 	n, err := sourceToProtocol.WriteAt(buff, 12)
 
 	assert.NoError(t, err)
@@ -210,7 +243,8 @@ func TestProtocolRWReadAt(t *testing.T) {
 	var store storage.StorageProvider
 
 	buff := make([]byte, 4096)
-	rand.Read(buff)
+	_, err := rand.Read(buff)
+	assert.NoError(t, err)
 
 	// Setup a protocol in the middle, and make sure our reads/writes get through ok
 
@@ -218,7 +252,7 @@ func TestProtocolRWReadAt(t *testing.T) {
 	r1, w1 := io.Pipe()
 	r2, w2 := io.Pipe()
 
-	storeFactory := func(di *DevInfo) storage.StorageProvider {
+	storeFactory := func(di *packets.DevInfo) storage.StorageProvider {
 		store = sources.NewMemoryStorage(int(di.Size))
 		n, err := store.WriteAt(buff, 12)
 
@@ -231,10 +265,15 @@ func TestProtocolRWReadAt(t *testing.T) {
 	initDev := func(p Protocol, dev uint32) {
 		destFromProtocol := NewFromProtocol(dev, storeFactory, p)
 
-		go destFromProtocol.HandleDevInfo()
-		go destFromProtocol.HandleSend(context.TODO())
-		go destFromProtocol.HandleReadAt()
-		go destFromProtocol.HandleWriteAt()
+		go func() {
+			_ = destFromProtocol.HandleDevInfo()
+		}()
+		go func() {
+			_ = destFromProtocol.HandleReadAt()
+		}()
+		go func() {
+			_ = destFromProtocol.HandleWriteAt()
+		}()
 	}
 
 	prSource := NewProtocolRW(context.TODO(), []io.Reader{r1}, []io.Writer{w2}, nil)
@@ -243,11 +282,16 @@ func TestProtocolRWReadAt(t *testing.T) {
 	sourceToProtocol := NewToProtocol(uint64(size), 1, prSource)
 
 	// TODO: Cleanup
-	go prSource.Handle()
-	go prDest.Handle()
+	go func() {
+		_ = prSource.Handle()
+	}()
+	go func() {
+		_ = prDest.Handle()
+	}()
 
 	// Now do some things and make sure they happen...
-	sourceToProtocol.SendDevInfo("test", 4096)
+	err = sourceToProtocol.SendDevInfo("test", 4096)
+	assert.NoError(t, err)
 
 	// Now check it was written to the source
 	buff2 := make([]byte, 4096)
@@ -266,43 +310,52 @@ func TestProtocolEvents(t *testing.T) {
 
 	sourceToProtocol := NewToProtocol(uint64(size), 1, pr)
 
-	storeFactory := func(di *DevInfo) storage.StorageProvider {
+	storeFactory := func(di *packets.DevInfo) storage.StorageProvider {
 		store = sources.NewMemoryStorage(int(di.Size))
 		return store
 	}
 
 	destFromProtocol := NewFromProtocol(1, storeFactory, pr)
 
-	events := make(chan EventType, 10)
+	events := make(chan packets.EventType, 10)
 
 	// Now do some things and make sure they happen...
-	go destFromProtocol.HandleDevInfo()
-	go destFromProtocol.HandleEvent(func(e *Event) {
-		events <- e.Type
-	})
-	go destFromProtocol.HandleSend(context.TODO())
+	go func() {
+		_ = destFromProtocol.HandleDevInfo()
+	}()
+	go func() {
+		_ = destFromProtocol.HandleEvent(func(e *packets.Event) {
+			events <- e.Type
+		})
+	}()
 
 	// Send devInfo
-	sourceToProtocol.SendDevInfo("test", 4096)
+	err := sourceToProtocol.SendDevInfo("test", 4096)
+	assert.NoError(t, err)
 
 	// Send some events and make sure they happen at the other end...
 
-	sourceToProtocol.SendEvent(&Event{Type: EventPreLock})
+	err = sourceToProtocol.SendEvent(&packets.Event{Type: packets.EventPreLock})
+	assert.NoError(t, err)
 	// There should be the event waiting for us already.
 	assert.Equal(t, 1, len(events))
 	e := <-events
-	assert.Equal(t, EventPreLock, e)
-	sourceToProtocol.SendEvent(&Event{Type: EventPostLock})
-	sourceToProtocol.SendEvent(&Event{Type: EventPreUnlock})
-	sourceToProtocol.SendEvent(&Event{Type: EventPostUnlock})
-	sourceToProtocol.SendEvent(&Event{Type: EventCompleted})
+	assert.Equal(t, packets.EventPreLock, e)
+	err = sourceToProtocol.SendEvent(&packets.Event{Type: packets.EventPostLock})
+	assert.NoError(t, err)
+	err = sourceToProtocol.SendEvent(&packets.Event{Type: packets.EventPreUnlock})
+	assert.NoError(t, err)
+	err = sourceToProtocol.SendEvent(&packets.Event{Type: packets.EventPostUnlock})
+	assert.NoError(t, err)
+	err = sourceToProtocol.SendEvent(&packets.Event{Type: packets.EventCompleted})
+	assert.NoError(t, err)
 	e = <-events
-	assert.Equal(t, EventPostLock, e)
+	assert.Equal(t, packets.EventPostLock, e)
 	e = <-events
-	assert.Equal(t, EventPreUnlock, e)
+	assert.Equal(t, packets.EventPreUnlock, e)
 	e = <-events
-	assert.Equal(t, EventPostUnlock, e)
+	assert.Equal(t, packets.EventPostUnlock, e)
 	e = <-events
-	assert.Equal(t, EventCompleted, e)
+	assert.Equal(t, packets.EventCompleted, e)
 
 }

@@ -1,12 +1,12 @@
 package protocol
 
 import (
-	"context"
 	"crypto/rand"
 	"testing"
 	"time"
 
 	"github.com/loopholelabs/silo/pkg/storage"
+	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
 	"github.com/stretchr/testify/assert"
 )
@@ -24,25 +24,32 @@ func TestTestProtocolLatency(t *testing.T) {
 
 	sourceToProtocol := NewToProtocol(uint64(size), 1, pr)
 
-	storeFactory := func(di *DevInfo) storage.StorageProvider {
+	storeFactory := func(di *packets.DevInfo) storage.StorageProvider {
 		store = sources.NewMemoryStorage(int(di.Size))
 		return store
 	}
 
 	destFromProtocol := NewFromProtocol(1, storeFactory, pr)
 
-	go destFromProtocol.HandleDevInfo()
-	go destFromProtocol.HandleSend(context.TODO())
-	go destFromProtocol.HandleReadAt()
-	go destFromProtocol.HandleWriteAt()
+	go func() {
+		_ = destFromProtocol.HandleDevInfo()
+	}()
+	go func() {
+		_ = destFromProtocol.HandleReadAt()
+	}()
+	go func() {
+		_ = destFromProtocol.HandleWriteAt()
+	}()
 
 	ctime := time.Now()
 
 	// Send devInfo
-	sourceToProtocol.SendDevInfo("test", 4096)
+	err := sourceToProtocol.SendDevInfo("test", 4096)
+	assert.NoError(t, err)
 
 	buff := make([]byte, 4096)
-	rand.Read(buff)
+	_, err = rand.Read(buff)
+	assert.NoError(t, err)
 	n, err := sourceToProtocol.WriteAt(buff, 12)
 
 	assert.NoError(t, err)

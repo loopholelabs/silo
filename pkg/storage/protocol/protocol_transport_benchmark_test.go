@@ -10,6 +10,7 @@ import (
 
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/modules"
+	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
 )
 
@@ -33,7 +34,7 @@ func setup(num int) *ToProtocol {
 		writers2 = append(writers2, w2)
 	}
 
-	storeFactory := func(di *DevInfo) storage.StorageProvider {
+	storeFactory := func(di *packets.DevInfo) storage.StorageProvider {
 		cr := func(i int, size int) (storage.StorageProvider, error) {
 			return sources.NewMemoryStorage(int(di.Size)), nil
 		}
@@ -48,20 +49,34 @@ func setup(num int) *ToProtocol {
 	prSource := NewProtocolRW(context.TODO(), readers1, writers2, nil)
 	prDest := NewProtocolRW(context.TODO(), readers2, writers1, func(p Protocol, dev uint32) {
 		destFromProtocol := NewFromProtocol(dev, storeFactory, p)
-		go destFromProtocol.HandleDevInfo()
-		go destFromProtocol.HandleSend(context.TODO())
-		go destFromProtocol.HandleReadAt()
-		go destFromProtocol.HandleWriteAt()
-		go destFromProtocol.HandleWriteAtComp()
+		go func() {
+			_ = destFromProtocol.HandleDevInfo()
+		}()
+		go func() {
+			_ = destFromProtocol.HandleReadAt()
+		}()
+		go func() {
+			_ = destFromProtocol.HandleWriteAt()
+		}()
+		go func() {
+			_ = destFromProtocol.HandleWriteAtComp()
+		}()
 
 	})
 
 	sourceToProtocol := NewToProtocol(uint64(size), 1, prSource)
 
-	go prSource.Handle()
-	go prDest.Handle()
+	go func() {
+		_ = prSource.Handle()
+	}()
+	go func() {
+		_ = prDest.Handle()
+	}()
 
-	sourceToProtocol.SendDevInfo("test", 1024*1024)
+	err := sourceToProtocol.SendDevInfo("test", 1024*1024)
+	if err != nil {
+		panic(err)
+	}
 	return sourceToProtocol
 }
 
@@ -70,8 +85,10 @@ func BenchmarkWriteAt(mb *testing.B) {
 
 	// Do some writes
 	buff := make([]byte, 256*1024)
-	rand.Read(buff)
-
+	_, err := rand.Read(buff)
+	if err != nil {
+		panic(err)
+	}
 	mb.ReportAllocs()
 	mb.SetBytes(int64(len(buff)))
 	mb.ResetTimer()
@@ -93,7 +110,7 @@ func BenchmarkWriteAt(mb *testing.B) {
 func BenchmarkWriteAtComp(mb *testing.B) {
 	sourceToProtocol := setup(1)
 
-	sourceToProtocol.CompressedWrites = true
+	sourceToProtocol.Compressed_writes = true
 
 	// Do some writes
 	buff := make([]byte, 256*1024)
@@ -130,8 +147,10 @@ func BenchmarkWriteAtConcurrent(mb *testing.B) {
 		mb.Run(fmt.Sprintf("buffer_%d", bSize), func(b *testing.B) {
 			// Do some writes concurrently
 			buff := make([]byte, bSize)
-			rand.Read(buff)
-
+			_, err := rand.Read(buff)
+			if err != nil {
+				panic(err)
+			}
 			b.ReportAllocs()
 			b.SetBytes(int64(len(buff)))
 			b.ResetTimer()

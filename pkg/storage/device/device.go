@@ -36,7 +36,7 @@ func NewDevices(ds []*config.DeviceSchema) (map[string]*Device, error) {
 			for _, cc := range devices {
 				cc.Provider.Close()
 				if cc.Exposed != nil {
-					cc.Exposed.Shutdown()
+					_ = cc.Exposed.Shutdown()
 				}
 			}
 			return nil, err
@@ -189,7 +189,7 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 		}
 
 		// Make sure the cow data gets dumped on close...
-		cow.CloseFunc = func() {
+		cow.Close_fn = func() {
 			blocks := cow.GetBlockExists()
 			// Write it out to file
 			data := make([]byte, 0)

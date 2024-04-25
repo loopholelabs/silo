@@ -16,7 +16,8 @@ func TestIntegrity(t *testing.T) {
 	mem := sources.NewMemoryStorage(size)
 
 	data := make([]byte, size)
-	rand.Read(data)
+	_, err := rand.Read(data)
+	assert.NoError(t, err)
 
 	n, err := mem.WriteAt(data, 0)
 	assert.NoError(t, err)
@@ -41,7 +42,8 @@ func TestIntegrityChangedData(t *testing.T) {
 	mem := sources.NewMemoryStorage(size)
 
 	data := make([]byte, size)
-	rand.Read(data)
+	_, err := rand.Read(data)
+	assert.NoError(t, err)
 
 	n, err := mem.WriteAt(data, 0)
 	assert.NoError(t, err)
@@ -71,7 +73,8 @@ func TestIntegrityHashChanged(t *testing.T) {
 	mem := sources.NewMemoryStorage(size)
 
 	data := make([]byte, size)
-	rand.Read(data)
+	_, err := rand.Read(data)
+	assert.NoError(t, err)
 
 	n, err := mem.WriteAt(data, 0)
 	assert.NoError(t, err)

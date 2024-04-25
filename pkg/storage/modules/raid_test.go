@@ -44,9 +44,10 @@ func TestRaid(t *testing.T) {
 		wg.Add(1)
 		go func(o int) {
 			buff := make([]byte, 100)
-			rand.Read(buff)
+			_, err := rand.Read(buff)
+			assert.NoError(t, err)
 			//offset := mrand.Intn(size)
-			_, err := raid.WriteAt(buff, int64(o))
+			_, err = raid.WriteAt(buff, int64(o))
 			assert.NoError(t, err)
 			wg.Done()
 		}(offset)

@@ -17,8 +17,9 @@ func TestCopyOnWriteReads(t *testing.T) {
 
 	// Fill it with stuff
 	data := make([]byte, size)
-	rand.Read(data)
-	_, err := mem.WriteAt(data, 0)
+	_, err := rand.Read(data)
+	assert.NoError(t, err)
+	_, err = mem.WriteAt(data, 0)
 	assert.NoError(t, err)
 
 	cow := NewCopyOnWrite(mem, cache, 10)
@@ -59,8 +60,9 @@ func TestCopyOnWriteWrites(t *testing.T) {
 
 	// Fill it with stuff
 	data := make([]byte, size)
-	rand.Read(data)
-	_, err := srcMem.WriteAt(data, 0)
+	_, err := rand.Read(data)
+	assert.NoError(t, err)
+	_, err = srcMem.WriteAt(data, 0)
 	assert.NoError(t, err)
 
 	cow := NewCopyOnWrite(mem, cache, 10)
@@ -78,6 +80,7 @@ func TestCopyOnWriteWrites(t *testing.T) {
 
 	buff2 := make([]byte, 100)
 	_, err = cow.ReadAt(buff2, 0)
+	assert.NoError(t, err)
 
 	buff3 := make([]byte, 100)
 	// Read from src
@@ -99,7 +102,8 @@ func TestCopyOnWriteReadOverrun(t *testing.T) {
 
 	// Fill it with stuff
 	data := make([]byte, size+10) // Some extra
-	rand.Read(data)
+	_, err := rand.Read(data)
+	assert.NoError(t, err)
 	onlydata := data[:size]
 	n, err := srcMem.WriteAt(data, 0)
 	assert.NoError(t, err)
@@ -127,7 +131,8 @@ func TestCopyOnWriteReadOverrunNonMultiple(t *testing.T) {
 
 	// Fill it with stuff
 	data := make([]byte, size+10)
-	rand.Read(data)
+	_, err := rand.Read(data)
+	assert.NoError(t, err)
 	onlydata := data[:size]
 
 	cow := NewCopyOnWrite(mem, cache, 1000) // NB 1024*1024 isn't multiple of 1000 blocksize

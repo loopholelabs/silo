@@ -13,32 +13,32 @@ import (
  *
  */
 type ArtificialLatency struct {
-	lock                sync.RWMutex
-	prov                storage.StorageProvider
-	latencyRead         time.Duration
-	latencyWrite        time.Duration
-	latencyReadPerByte  time.Duration
-	latencyWritePerByte time.Duration
+	lock                   sync.RWMutex
+	prov                   storage.StorageProvider
+	latency_read           time.Duration
+	latency_write          time.Duration
+	latency_read_per_byte  time.Duration
+	latency_write_per_byte time.Duration
 }
 
 func NewArtificialLatency(prov storage.StorageProvider, latencyRead time.Duration, latencyReadPerByte time.Duration, latencyWrite time.Duration, latencyWritePerByte time.Duration) *ArtificialLatency {
 	return &ArtificialLatency{
-		prov:                prov,
-		latencyRead:         latencyRead,
-		latencyWrite:        latencyWrite,
-		latencyReadPerByte:  latencyReadPerByte,
-		latencyWritePerByte: latencyWritePerByte,
+		prov:                   prov,
+		latency_read:           latencyRead,
+		latency_write:          latencyWrite,
+		latency_read_per_byte:  latencyReadPerByte,
+		latency_write_per_byte: latencyWritePerByte,
 	}
 }
 
 func (i *ArtificialLatency) ReadAt(buffer []byte, offset int64) (int, error) {
 	i.lock.RLock()
 	defer i.lock.RUnlock()
-	if i.latencyRead != 0 {
-		time.Sleep(i.latencyRead)
+	if i.latency_read != 0 {
+		time.Sleep(i.latency_read)
 	}
-	if i.latencyReadPerByte != 0 {
-		time.Sleep(i.latencyReadPerByte * time.Duration(len(buffer)))
+	if i.latency_read_per_byte != 0 {
+		time.Sleep(i.latency_read_per_byte * time.Duration(len(buffer)))
 	}
 	return i.prov.ReadAt(buffer, offset)
 }
@@ -46,11 +46,11 @@ func (i *ArtificialLatency) ReadAt(buffer []byte, offset int64) (int, error) {
 func (i *ArtificialLatency) WriteAt(buffer []byte, offset int64) (int, error) {
 	i.lock.Lock()
 	defer i.lock.Unlock()
-	if i.latencyWrite != 0 {
-		time.Sleep(i.latencyWrite)
+	if i.latency_write != 0 {
+		time.Sleep(i.latency_write)
 	}
-	if i.latencyWritePerByte != 0 {
-		time.Sleep(i.latencyWritePerByte * time.Duration(len(buffer)))
+	if i.latency_write_per_byte != 0 {
+		time.Sleep(i.latency_write_per_byte * time.Duration(len(buffer)))
 	}
 	return i.prov.WriteAt(buffer, offset)
 }

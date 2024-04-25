@@ -32,7 +32,10 @@ func NewFileStorageCreate(f string, size int64) (*FileStorage, error) {
 	if err != nil {
 		return nil, err
 	}
-	fp.Truncate(size)
+	err = fp.Truncate(size)
+	if err != nil {
+		return nil, err
+	}
 	return &FileStorage{
 		fp:   fp,
 		size: size,
@@ -64,8 +67,7 @@ func (i *FileStorage) WriteAt(buffer []byte, offset int64) (int, error) {
 }
 
 func (i *FileStorage) Flush() error {
-	i.fp.Sync()
-	return nil
+	return i.fp.Sync()
 }
 
 func (i *FileStorage) Size() uint64 {

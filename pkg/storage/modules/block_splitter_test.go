@@ -22,8 +22,9 @@ func TestBlockSplitterRead(t *testing.T) {
 
 	// Fill it with stuff
 	data := make([]byte, size)
-	rand.Read(data)
-	_, err := mem.WriteAt(data, 0)
+	_, err := rand.Read(data)
+	assert.NoError(t, err)
+	_, err = mem.WriteAt(data, 0)
 	assert.NoError(t, err)
 
 	read_len := 1234567
@@ -32,6 +33,7 @@ func TestBlockSplitterRead(t *testing.T) {
 	buffer := make([]byte, read_len)
 	ctime_1 := time.Now()
 	_, err = split.ReadAt(buffer, 10)
+	assert.NoError(t, err)
 	read_duration_split := time.Since(ctime_1)
 
 	assert.NoError(t, err)
@@ -40,6 +42,7 @@ func TestBlockSplitterRead(t *testing.T) {
 	buffer2 := make([]byte, read_len)
 	ctime_2 := time.Now()
 	_, err = mem.ReadAt(buffer2, 10)
+	assert.NoError(t, err)
 	read_duration := time.Since(ctime_2)
 
 	assert.Equal(t, buffer2, buffer)
@@ -61,14 +64,16 @@ func TestBlockSplitterWrite(t *testing.T) {
 
 	// Write some stuff to the mem...
 	b := make([]byte, size)
-	rand.Read(b)
-	_, err := mem.WriteAt(b, 0)
+	_, err := rand.Read(b)
+	assert.NoError(t, err)
+	_, err = mem.WriteAt(b, 0)
 	assert.NoError(t, err)
 
 	offset := int64(10)
 	// Write using a splitter (splits the read up into concurrent block writes)
 	buffer := make([]byte, write_len)
-	rand.Read(buffer)
+	_, err = rand.Read(buffer)
+	assert.NoError(t, err)
 	_, err = split.WriteAt(buffer, offset)
 	assert.NoError(t, err)
 

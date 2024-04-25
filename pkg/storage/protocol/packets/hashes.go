@@ -1,4 +1,4 @@
-package protocol
+package packets
 
 import (
 	"crypto/sha256"

@@ -15,6 +15,7 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/dirtytracker"
 	"github.com/loopholelabs/silo/pkg/storage/modules"
 	"github.com/loopholelabs/silo/pkg/storage/protocol"
+	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
 	"github.com/loopholelabs/silo/pkg/storage/volatilitymonitor"
 	"github.com/loopholelabs/silo/pkg/storage/waitingcache"
@@ -52,8 +53,8 @@ func TestMigratorSimple(t *testing.T) {
 	destStorage := sources.NewMemoryStorage(size)
 
 	conf := NewMigratorConfig().WithBlockSize(blockSize)
-	conf.LockerHandler = sourceStorage.Lock
-	conf.UnlockerHandler = sourceStorage.Unlock
+	conf.Locker_handler = sourceStorage.Lock
+	conf.Unlocker_handler = sourceStorage.Unlock
 
 	mig, err := NewMigrator(sourceDirtyRemote,
 		destStorage,
@@ -62,7 +63,8 @@ func TestMigratorSimple(t *testing.T) {
 
 	assert.NoError(t, err)
 
-	mig.Migrate(num_blocks)
+	err = mig.Migrate(num_blocks)
+	assert.NoError(t, err)
 
 	err = mig.WaitForCompletion()
 	assert.NoError(t, err)
@@ -104,8 +106,8 @@ func TestMigratorPartial(t *testing.T) {
 	destStorage := sources.NewMemoryStorage(size)
 
 	conf := NewMigratorConfig().WithBlockSize(blockSize)
-	conf.LockerHandler = sourceStorage.Lock
-	conf.UnlockerHandler = sourceStorage.Unlock
+	conf.Locker_handler = sourceStorage.Lock
+	conf.Unlocker_handler = sourceStorage.Unlock
 
 	mig, err := NewMigrator(sourceDirtyRemote,
 		destStorage,
@@ -114,7 +116,8 @@ func TestMigratorPartial(t *testing.T) {
 
 	assert.NoError(t, err)
 
-	mig.Migrate(num_blocks)
+	err = mig.Migrate(num_blocks)
+	assert.NoError(t, err)
 
 	err = mig.WaitForCompletion()
 	assert.NoError(t, err)
@@ -160,34 +163,43 @@ func TestMigratorSimplePipe(t *testing.T) {
 	r2, w2 := io.Pipe()
 
 	initDev := func(p protocol.Protocol, dev uint32) {
-		destStorageFactory := func(di *protocol.DevInfo) storage.StorageProvider {
+		destStorageFactory := func(di *packets.DevInfo) storage.StorageProvider {
 			destStorage = sources.NewMemoryStorage(int(di.Size))
 			return destStorage
 		}
 
 		// Pipe from the protocol to destWaiting
 		destFrom := protocol.NewFromProtocol(dev, destStorageFactory, p)
-		ctx := context.TODO()
-		go destFrom.HandleSend(ctx)
-		go destFrom.HandleReadAt()
-		go destFrom.HandleWriteAt()
-		go destFrom.HandleDevInfo()
+		go func() {
+			_ = destFrom.HandleReadAt()
+		}()
+		go func() {
+			_ = destFrom.HandleWriteAt()
+		}()
+		go func() {
+			_ = destFrom.HandleDevInfo()
+		}()
 	}
 
 	prSource := protocol.NewProtocolRW(context.TODO(), []io.Reader{r1}, []io.Writer{w2}, nil)
 	prDest := protocol.NewProtocolRW(context.TODO(), []io.Reader{r2}, []io.Writer{w1}, initDev)
 
-	go prSource.Handle()
-	go prDest.Handle()
+	go func() {
+		_ = prSource.Handle()
+	}()
+	go func() {
+		_ = prDest.Handle()
+	}()
 
 	// Pipe a destination to the protocol
 	destination := protocol.NewToProtocol(sourceDirtyRemote.Size(), 17, prSource)
 
-	destination.SendDevInfo("test", uint32(blockSize))
+	err = destination.SendDevInfo("test", uint32(blockSize))
+	assert.NoError(t, err)
 
 	conf := NewMigratorConfig().WithBlockSize(blockSize)
-	conf.LockerHandler = sourceStorage.Lock
-	conf.UnlockerHandler = sourceStorage.Unlock
+	conf.Locker_handler = sourceStorage.Lock
+	conf.Unlocker_handler = sourceStorage.Unlock
 
 	mig, err := NewMigrator(sourceDirtyRemote,
 		destination,
@@ -196,7 +208,8 @@ func TestMigratorSimplePipe(t *testing.T) {
 
 	assert.NoError(t, err)
 
-	mig.Migrate(num_blocks)
+	err = mig.Migrate(num_blocks)
+	assert.NoError(t, err)
 
 	err = mig.WaitForCompletion()
 	assert.NoError(t, err)
@@ -271,8 +284,8 @@ func TestMigratorWithReaderWriter(t *testing.T) {
 	destWaitingLocal, destWaitingRemote := waitingcache.NewWaitingCache(destStorage, blockSize)
 
 	conf := NewMigratorConfig().WithBlockSize(blockSize)
-	conf.LockerHandler = sourceStorage.Lock
-	conf.UnlockerHandler = sourceStorage.Unlock
+	conf.Locker_handler = sourceStorage.Lock
+	conf.Unlocker_handler = sourceStorage.Unlock
 
 	mig, err := NewMigrator(sourceDirtyRemote,
 		destWaitingRemote,
@@ -321,7 +334,8 @@ func TestMigratorWithReaderWriter(t *testing.T) {
 		}
 	}()
 
-	mig.Migrate(num_blocks)
+	err = mig.Migrate(num_blocks)
+	assert.NoError(t, err)
 
 	err = mig.WaitForCompletion()
 	assert.NoError(t, err)
@@ -411,8 +425,8 @@ func TestMigratorWithReaderWriterWrite(t *testing.T) {
 	destWaitingLocal, destWaitingRemote := waitingcache.NewWaitingCache(destStorage, blockSize)
 
 	conf := NewMigratorConfig().WithBlockSize(blockSize)
-	conf.LockerHandler = sourceStorage.Lock
-	conf.UnlockerHandler = sourceStorage.Unlock
+	conf.Locker_handler = sourceStorage.Lock
+	conf.Unlocker_handler = sourceStorage.Unlock
 	// Get rid of concurrency
 	conf.Concurrency = map[int]int{storage.BlockTypeAny: 1}
 
@@ -485,12 +499,13 @@ func TestMigratorWithReaderWriterWrite(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, len(b), n)
 
-	mig.Migrate(num_blocks)
+	err = mig.Migrate(num_blocks)
+	assert.NoError(t, err)
 
 	err = mig.WaitForCompletion()
 	assert.NoError(t, err)
 
-	assert.Equal(t, int64(num_blocks-num_local_blocks), mig.metricBlocksMoved)
+	assert.Equal(t, int64(num_blocks-num_local_blocks), mig.metric_blocks_moved)
 }
 
 func TestMigratorSimpleCowSparse(t *testing.T) {
@@ -525,19 +540,22 @@ func TestMigratorSimpleCowSparse(t *testing.T) {
 	// Write some things to the overlay as well...
 
 	buffer = make([]byte, 5000)
-	crand.Read(buffer)
+	_, err = crand.Read(buffer)
+	assert.NoError(t, err)
 	n, err = sourceStorage.WriteAt(buffer, 0)
 	assert.NoError(t, err)
 	assert.Equal(t, len(buffer), n)
 
 	buffer2 := make([]byte, 5000)
-	crand.Read(buffer2)
+	_, err = crand.Read(buffer2)
+	assert.NoError(t, err)
 	n, err = sourceStorage.WriteAt(buffer2, 100)
 	assert.NoError(t, err)
 	assert.Equal(t, len(buffer), n)
 
 	buffer2 = make([]byte, 5000)
-	crand.Read(buffer2)
+	_, err = crand.Read(buffer2)
+	assert.NoError(t, err)
 	n, err = sourceStorage.WriteAt(buffer2, int64(size)-4000)
 	assert.NoError(t, err)
 	assert.Equal(t, 4000, n)
@@ -550,9 +568,9 @@ func TestMigratorSimpleCowSparse(t *testing.T) {
 	destStorage := sources.NewMemoryStorage(size)
 
 	conf := NewMigratorConfig().WithBlockSize(blockSize)
-	conf.LockerHandler = sourceStorage.Lock
-	conf.UnlockerHandler = sourceStorage.Unlock
-	conf.ErrorHandler = func(block *storage.BlockInfo, err error) {
+	conf.Locker_handler = sourceStorage.Lock
+	conf.Unlocker_handler = sourceStorage.Unlock
+	conf.Error_handler = func(block *storage.BlockInfo, err error) {
 		panic(err)
 	}
 
@@ -563,7 +581,8 @@ func TestMigratorSimpleCowSparse(t *testing.T) {
 
 	assert.NoError(t, err)
 
-	mig.Migrate(num_blocks)
+	err = mig.Migrate(num_blocks)
+	assert.NoError(t, err)
 
 	err = mig.WaitForCompletion()
 	assert.NoError(t, err)

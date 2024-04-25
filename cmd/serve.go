@@ -20,6 +20,7 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/migrator"
 	"github.com/loopholelabs/silo/pkg/storage/modules"
 	"github.com/loopholelabs/silo/pkg/storage/protocol"
+	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
 	"github.com/loopholelabs/silo/pkg/storage/volatilitymonitor"
 	"github.com/spf13/cobra"
 	"github.com/vbauerster/mpb/v8"
@@ -65,12 +66,6 @@ type storageInfo struct {
 	name       string
 }
 
-type storageConfig struct {
-	Name   string
-	Size   int
-	Expose bool
-}
-
 func runServe(ccmd *cobra.Command, args []string) {
 	if serve_progress {
 		serveProgress = mpb.New(
@@ -84,7 +79,7 @@ func runServe(ccmd *cobra.Command, args []string) {
 	src_storage = make([]*storageInfo, 0)
 	fmt.Printf("Starting silo serve %s\n", serve_addr)
 
-	c := make(chan os.Signal)
+	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-c
@@ -124,7 +119,9 @@ func runServe(ccmd *cobra.Command, args []string) {
 
 		// Wrap the connection in a protocol
 		pro := protocol.NewProtocolRW(context.TODO(), []io.Reader{con}, []io.Writer{con}, nil)
-		go pro.Handle()
+		go func() {
+			_ = pro.Handle()
+		}()
 
 		// Lets go through each of the things we want to migrate...
 		ctime := time.Now()
@@ -166,7 +163,7 @@ func shutdown_everything() {
 		device := p.Device()
 
 		fmt.Printf("Shutdown nbd device %s\n", device)
-		p.Shutdown()
+		_ = p.Shutdown()
 	}
 }
 
@@ -220,7 +217,10 @@ func migrateDevice(dev_id uint32, name string,
 	size := sinfo.lockable.Size()
 	dest := protocol.NewToProtocol(uint64(size), dev_id, pro)
 
-	dest.SendDevInfo(name, uint32(sinfo.block_size))
+	err := dest.SendDevInfo(name, uint32(sinfo.block_size))
+	if err != nil {
+		return err
+	}
 
 	statusString := " "
 
@@ -248,49 +248,53 @@ func migrateDevice(dev_id uint32, name string,
 		serveBars = append(serveBars, bar)
 	}
 
-	go dest.HandleNeedAt(func(offset int64, length int32) {
-		// Prioritize blocks...
-		end := uint64(offset + int64(length))
-		if end > uint64(size) {
-			end = uint64(size)
-		}
+	go func() {
+		_ = dest.HandleNeedAt(func(offset int64, length int32) {
+			// Prioritize blocks...
+			end := uint64(offset + int64(length))
+			if end > uint64(size) {
+				end = uint64(size)
+			}
 
-		b_start := int(offset / int64(sinfo.block_size))
-		b_end := int((end-1)/uint64(sinfo.block_size)) + 1
-		for b := b_start; b < b_end; b++ {
-			// Ask the orderer to prioritize these blocks...
-			sinfo.orderer.PrioritiseBlock(b)
-		}
-	})
+			b_start := int(offset / int64(sinfo.block_size))
+			b_end := int((end-1)/uint64(sinfo.block_size)) + 1
+			for b := b_start; b < b_end; b++ {
+				// Ask the orderer to prioritize these blocks...
+				sinfo.orderer.PrioritiseBlock(b)
+			}
+		})
+	}()
 
-	go dest.HandleDontNeedAt(func(offset int64, length int32) {
-		end := uint64(offset + int64(length))
-		if end > uint64(size) {
-			end = uint64(size)
-		}
+	go func() {
+		_ = dest.HandleDontNeedAt(func(offset int64, length int32) {
+			end := uint64(offset + int64(length))
+			if end > uint64(size) {
+				end = uint64(size)
+			}
 
-		b_start := int(offset / int64(sinfo.block_size))
-		b_end := int((end-1)/uint64(sinfo.block_size)) + 1
-		for b := b_start; b < b_end; b++ {
-			sinfo.orderer.Remove(b)
-		}
-	})
+			b_start := int(offset / int64(sinfo.block_size))
+			b_end := int((end-1)/uint64(sinfo.block_size)) + 1
+			for b := b_start; b < b_end; b++ {
+				sinfo.orderer.Remove(b)
+			}
+		})
+	}()
 
 	conf := migrator.NewMigratorConfig().WithBlockSize(sinfo.block_size)
-	conf.LockerHandler = func() {
-		dest.SendEvent(&protocol.Event{Type: protocol.EventPreLock})
+	conf.Locker_handler = func() {
+		_ = dest.SendEvent(&packets.Event{Type: packets.EventPreLock})
 		sinfo.lockable.Lock()
-		dest.SendEvent(&protocol.Event{Type: protocol.EventPostLock})
+		_ = dest.SendEvent(&packets.Event{Type: packets.EventPostLock})
 	}
-	conf.UnlockerHandler = func() {
-		dest.SendEvent(&protocol.Event{Type: protocol.EventPreUnlock})
+	conf.Unlocker_handler = func() {
+		_ = dest.SendEvent(&packets.Event{Type: packets.EventPreUnlock})
 		sinfo.lockable.Unlock()
-		dest.SendEvent(&protocol.Event{Type: protocol.EventPostUnlock})
+		_ = dest.SendEvent(&packets.Event{Type: packets.EventPostUnlock})
 	}
 	conf.Concurrency = map[int]int{
 		storage.BlockTypeAny: 1000000,
 	}
-	conf.ErrorHandler = func(b *storage.BlockInfo, err error) {
+	conf.Error_handler = func(b *storage.BlockInfo, err error) {
 		// For now...
 		panic(err)
 	}
@@ -301,8 +305,8 @@ func migrateDevice(dev_id uint32, name string,
 
 	if serve_progress {
 
-		conf.ProgressHandler = func(p *migrator.MigrationProgress) {
-			v := uint64(p.ReadyBlocks) * uint64(sinfo.block_size)
+		conf.Progress_handler = func(p *migrator.MigrationProgress) {
+			v := uint64(p.Ready_blocks) * uint64(sinfo.block_size)
 			if v > size {
 				v = size
 			}
@@ -312,13 +316,13 @@ func migrateDevice(dev_id uint32, name string,
 			last_value = v
 		}
 	} else {
-		conf.ProgressHandler = func(p *migrator.MigrationProgress) {
+		conf.Progress_handler = func(p *migrator.MigrationProgress) {
 			fmt.Printf("[%s] Progress Moved: %d/%d %.2f%% Clean: %d/%d %.2f%% InProgress: %d\n",
-				name, p.MigratedBlocks, p.TotalBlocks, p.MigratedBlocksPerc,
-				p.ReadyBlocks, p.TotalBlocks, p.ReadyBlocksPerc,
-				p.ActiveBlocks)
+				name, p.Migrated_blocks, p.Total_blocks, p.Migrated_blocks_perc,
+				p.Ready_blocks, p.Total_blocks, p.Ready_blocks_perc,
+				p.Active_blocks)
 		}
-		conf.ErrorHandler = func(b *storage.BlockInfo, err error) {
+		conf.Error_handler = func(b *storage.BlockInfo, err error) {
 			fmt.Printf("[%s] Error for block %d error %v\n", name, b.Block, err)
 		}
 	}
@@ -342,7 +346,10 @@ func migrateDevice(dev_id uint32, name string,
 	}
 
 	hashes := mig.GetHashes() // Get the initial hashes and send them over for verification...
-	dest.SendHashes(hashes)
+	err = dest.SendHashes(hashes)
+	if err != nil {
+		return err
+	}
 
 	// Optional: Enter a loop looking for more dirty blocks to migrate...
 
@@ -354,10 +361,13 @@ func migrateDevice(dev_id uint32, name string,
 
 		if blocks != nil {
 			// Optional: Send the list of dirty blocks over...
-			dest.DirtyList(blocks)
+			err := dest.DirtyList(blocks)
+			if err != nil {
+				return err
+			}
 
 			//		fmt.Printf("[%s] Migrating dirty blocks %d\n", name, len(blocks))
-			err := mig.MigrateDirty(blocks)
+			err = mig.MigrateDirty(blocks)
 			if err != nil {
 				return err
 			}
@@ -373,16 +383,16 @@ func migrateDevice(dev_id uint32, name string,
 	}
 
 	//	fmt.Printf("[%s] Migration completed\n", name)
-	err = dest.SendEvent(&protocol.Event{Type: protocol.EventCompleted})
+	err = dest.SendEvent(&packets.Event{Type: packets.EventCompleted})
 	if err != nil {
 		return err
 	}
-
-	// Completed.
-	if serve_progress {
-		//		bar.SetCurrent(int64(size))
-		//		bar.EwmaIncrInt64(int64(size-last_value), time.Since(last_time))
-	}
-
+	/*
+		// Completed.
+		if serve_progress {
+			//		bar.SetCurrent(int64(size))
+			//		bar.EwmaIncrInt64(int64(size-last_value), time.Since(last_time))
+		}
+	*/
 	return nil
 }

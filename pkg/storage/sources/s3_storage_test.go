@@ -20,7 +20,8 @@ func TestS3Storage(t *testing.T) {
 	assert.NoError(t, err)
 
 	buffer := make([]byte, 32*1024)
-	rand.Read(buffer)
+	_, err = rand.Read(buffer)
+	assert.NoError(t, err)
 	_, err = s3store.WriteAt(buffer, 80)
 	assert.NoError(t, err)
 

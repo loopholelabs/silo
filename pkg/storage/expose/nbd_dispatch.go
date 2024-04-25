@@ -64,40 +64,40 @@ type Response struct {
 }
 
 type Dispatch struct {
-	ASYNC_READS      bool
-	ASYNC_WRITES     bool
-	fp               io.ReadWriteCloser
-	responseHeader   []byte
-	writeLock        sync.Mutex
-	prov             storage.StorageProvider
-	fatal            chan error
-	pendingResponses sync.WaitGroup
-	metricPacketsIn  uint64
-	metricPacketsOut uint64
-	readBuffers      chan []byte
+	ASYNC_READS        bool
+	ASYNC_WRITES       bool
+	fp                 io.ReadWriteCloser
+	response_header    []byte
+	write_lock         sync.Mutex
+	prov               storage.StorageProvider
+	fatal              chan error
+	pending_responses  sync.WaitGroup
+	metric_packets_in  uint64
+	metric_packets_out uint64
+	read_buffers       chan []byte
 }
 
 func NewDispatch(fp io.ReadWriteCloser, prov storage.StorageProvider) *Dispatch {
 	d := &Dispatch{
-		ASYNC_WRITES:   true,
-		ASYNC_READS:    true,
-		responseHeader: make([]byte, 16),
-		fatal:          make(chan error, 8),
-		fp:             fp,
-		prov:           prov,
+		ASYNC_WRITES:    true,
+		ASYNC_READS:     true,
+		response_header: make([]byte, 16),
+		fatal:           make(chan error, 8),
+		fp:              fp,
+		prov:            prov,
 	}
-	d.readBuffers = make(chan []byte, READ_POOL_SIZE)
+	d.read_buffers = make(chan []byte, READ_POOL_SIZE)
 	for i := 0; i < READ_POOL_SIZE; i++ {
-		d.readBuffers <- make([]byte, READ_POOL_BUFFER_SIZE)
+		d.read_buffers <- make([]byte, READ_POOL_BUFFER_SIZE)
 	}
 
-	binary.BigEndian.PutUint32(d.responseHeader, NBD_RESPONSE_MAGIC)
+	binary.BigEndian.PutUint32(d.response_header, NBD_RESPONSE_MAGIC)
 	return d
 }
 
 func (d *Dispatch) Wait() {
 	// Wait for any pending responses
-	d.pendingResponses.Wait()
+	d.pending_responses.Wait()
 }
 
 /**
@@ -105,15 +105,15 @@ func (d *Dispatch) Wait() {
  *
  */
 func (d *Dispatch) writeResponse(respError uint32, respHandle uint64, chunk []byte) error {
-	d.writeLock.Lock()
-	defer d.writeLock.Unlock()
+	d.write_lock.Lock()
+	defer d.write_lock.Unlock()
 
 	//	fmt.Printf("WriteResponse %v %x -> %d\n", d.fp, respHandle, len(chunk))
 
-	binary.BigEndian.PutUint32(d.responseHeader[4:], respError)
-	binary.BigEndian.PutUint64(d.responseHeader[8:], respHandle)
+	binary.BigEndian.PutUint32(d.response_header[4:], respError)
+	binary.BigEndian.PutUint64(d.response_header[8:], respHandle)
 
-	_, err := d.fp.Write(d.responseHeader)
+	_, err := d.fp.Write(d.response_header)
 	if err != nil {
 		return err
 	}
@@ -124,7 +124,7 @@ func (d *Dispatch) writeResponse(respError uint32, respHandle uint64, chunk []by
 		}
 	}
 
-	d.metricPacketsOut++
+	d.metric_packets_out++
 	return nil
 }
 
@@ -181,7 +181,7 @@ func (d *Dispatch) Handle() error {
 				} else if request.Type == NBD_CMD_READ {
 					//					fmt.Printf("READ %x %d\n", request.Handle, request.Length)
 					rp += 28
-					d.metricPacketsIn++
+					d.metric_packets_in++
 					err := d.cmdRead(request.Handle, request.From, request.Length)
 					if err != nil {
 						return err
@@ -192,7 +192,7 @@ func (d *Dispatch) Handle() error {
 						rp -= 28
 						break // We don't have enough data yet... Wait for next read
 					}
-					d.metricPacketsIn++
+					d.metric_packets_in++
 					data := make([]byte, request.Length)
 					copy(data, buffer[rp:rp+int(request.Length)])
 					rp += int(request.Length)
@@ -239,7 +239,7 @@ func (d *Dispatch) cmdRead(cmd_handle uint64, cmd_from uint64, cmd_length uint32
 		if length <= READ_POOL_BUFFER_SIZE {
 			// Try to get a buffer from pool
 			select {
-			case b = <-d.readBuffers:
+			case b = <-d.read_buffers:
 				from_pool = true
 				b = b[:length]
 				break
@@ -265,19 +265,19 @@ func (d *Dispatch) cmdRead(cmd_handle uint64, cmd_from uint64, cmd_length uint32
 		err := d.writeResponse(errorValue, handle, data)
 		// Return it to pool if need to
 		if from_pool {
-			d.readBuffers <- b[:READ_POOL_BUFFER_SIZE]
+			d.read_buffers <- b[:READ_POOL_BUFFER_SIZE]
 		}
 		return err
 	}
 
 	if d.ASYNC_READS {
-		d.pendingResponses.Add(1)
+		d.pending_responses.Add(1)
 		go func() {
 			err := performRead(cmd_handle, cmd_from, cmd_length)
 			if err != nil {
 				d.fatal <- err
 			}
-			d.pendingResponses.Done()
+			d.pending_responses.Done()
 		}()
 	} else {
 		return performRead(cmd_handle, cmd_from, cmd_length)
@@ -300,13 +300,13 @@ func (d *Dispatch) cmdWrite(cmd_handle uint64, cmd_from uint64, cmd_length uint3
 	}
 
 	if d.ASYNC_WRITES {
-		d.pendingResponses.Add(1)
+		d.pending_responses.Add(1)
 		go func() {
 			err := performWrite(cmd_handle, cmd_from, cmd_length, cmd_data)
 			if err != nil {
 				d.fatal <- err
 			}
-			d.pendingResponses.Done()
+			d.pending_responses.Done()
 		}()
 	} else {
 		return performWrite(cmd_handle, cmd_from, cmd_length, cmd_data)

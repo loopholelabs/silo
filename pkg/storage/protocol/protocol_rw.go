@@ -8,6 +8,8 @@ import (
 	"math/rand"
 	"sync"
 	"sync/atomic"
+
+	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
 )
 
 type packetinfo struct {
@@ -21,66 +23,74 @@ type Waiters struct {
 }
 
 type ProtocolRW struct {
-	ctx            context.Context
-	readers        []io.Reader
-	writers        []io.Writer
-	writerHeaders  [][]byte
-	writerLocks    []sync.Mutex
-	txID           uint32
-	activeDevs     map[uint32]bool
-	activeDevsLock sync.Mutex
-	waiters        map[uint32]Waiters
-	waitersLock    sync.Mutex
-	newdevFN       func(Protocol, uint32)
-	newdevProtocol Protocol
+	ctx              context.Context
+	readers          []io.Reader
+	writers          []io.Writer
+	writer_headers   [][]byte
+	writer_locks     []sync.Mutex
+	txID             uint32
+	active_devs      map[uint32]bool
+	active_devs_lock sync.Mutex
+	waiters          map[uint32]Waiters
+	waiters_lock     sync.Mutex
+	newdev_fn        func(Protocol, uint32)
+	newdev_protocol  Protocol
 }
 
 func NewProtocolRW(ctx context.Context, readers []io.Reader, writers []io.Writer, newdevFN func(Protocol, uint32)) *ProtocolRW {
 	prw := &ProtocolRW{
-		ctx:        ctx,
-		waiters:    make(map[uint32]Waiters),
-		newdevFN:   newdevFN,
-		activeDevs: make(map[uint32]bool),
+		ctx:         ctx,
+		waiters:     make(map[uint32]Waiters),
+		newdev_fn:   newdevFN,
+		active_devs: make(map[uint32]bool),
 	}
 
 	prw.readers = readers
 
 	prw.writers = writers
-	prw.writerLocks = make([]sync.Mutex, len(writers))
-	prw.writerHeaders = make([][]byte, len(writers))
+	prw.writer_locks = make([]sync.Mutex, len(writers))
+	prw.writer_headers = make([][]byte, len(writers))
 	for i := 0; i < len(writers); i++ {
-		prw.writerHeaders[i] = make([]byte, 4+4+4)
+		prw.writer_headers[i] = make([]byte, 4+4+4)
 	}
-	prw.newdevProtocol = prw // Return ourselves by default.
+	prw.newdev_protocol = prw // Return ourselves by default.
 	return prw
 }
 
 func (p *ProtocolRW) SetNewDevProtocol(proto Protocol) {
-	p.newdevProtocol = proto
+	p.newdev_protocol = proto
 }
 
 func (p *ProtocolRW) initDev(dev uint32) {
-	p.activeDevsLock.Lock()
-	_, ok := p.activeDevs[dev]
+	p.active_devs_lock.Lock()
+	_, ok := p.active_devs[dev]
 	if !ok {
-		p.activeDevs[dev] = true
+		p.active_devs[dev] = true
 
 		// Setup waiter here, this is the first packet we've received for this dev.
-		p.waitersLock.Lock()
+		p.waiters_lock.Lock()
 		p.waiters[dev] = Waiters{
 			byCmd: make(map[byte]chan packetinfo),
 			byID:  make(map[uint32]chan packetinfo),
 		}
-		p.waitersLock.Unlock()
+		p.waiters_lock.Unlock()
 
-		if p.newdevFN != nil {
-			p.newdevFN(p.newdevProtocol, dev)
+		if p.newdev_fn != nil {
+			p.newdev_fn(p.newdev_protocol, dev)
 		}
 	}
-	p.activeDevsLock.Unlock()
+	p.active_devs_lock.Unlock()
 }
 
 func (p *ProtocolRW) SendPacketWriter(dev uint32, id uint32, length uint32, data func(w io.Writer) error) (uint32, error) {
+	// If the context was cancelled, we should return that error
+	select {
+	case <-p.ctx.Done():
+		return 0, p.ctx.Err()
+	default:
+		break
+	}
+
 	p.initDev(dev)
 
 	// Encode and send it down the writer...
@@ -90,14 +100,14 @@ func (p *ProtocolRW) SendPacketWriter(dev uint32, id uint32, length uint32, data
 
 	i := rand.Intn(len(p.writers))
 
-	p.writerLocks[i].Lock()
-	defer p.writerLocks[i].Unlock()
+	p.writer_locks[i].Lock()
+	defer p.writer_locks[i].Unlock()
 
-	binary.LittleEndian.PutUint32(p.writerHeaders[i], dev)
-	binary.LittleEndian.PutUint32(p.writerHeaders[i][4:], id)
-	binary.LittleEndian.PutUint32(p.writerHeaders[i][8:], length)
+	binary.LittleEndian.PutUint32(p.writer_headers[i], dev)
+	binary.LittleEndian.PutUint32(p.writer_headers[i][4:], id)
+	binary.LittleEndian.PutUint32(p.writer_headers[i][8:], length)
 
-	_, err := p.writers[i].Write(p.writerHeaders[i])
+	_, err := p.writers[i].Write(p.writer_headers[i])
 
 	if err != nil {
 		return 0, err
@@ -107,6 +117,14 @@ func (p *ProtocolRW) SendPacketWriter(dev uint32, id uint32, length uint32, data
 
 // Send a packet
 func (p *ProtocolRW) SendPacket(dev uint32, id uint32, data []byte) (uint32, error) {
+	// If the context was cancelled, we should return that error
+	select {
+	case <-p.ctx.Done():
+		return 0, p.ctx.Err()
+	default:
+		break
+	}
+
 	p.initDev(dev)
 
 	// Encode and send it down the writer...
@@ -116,14 +134,14 @@ func (p *ProtocolRW) SendPacket(dev uint32, id uint32, data []byte) (uint32, err
 
 	i := rand.Intn(len(p.writers))
 
-	p.writerLocks[i].Lock()
-	defer p.writerLocks[i].Unlock()
+	p.writer_locks[i].Lock()
+	defer p.writer_locks[i].Unlock()
 
-	binary.LittleEndian.PutUint32(p.writerHeaders[i], dev)
-	binary.LittleEndian.PutUint32(p.writerHeaders[i][4:], id)
-	binary.LittleEndian.PutUint32(p.writerHeaders[i][8:], uint32(len(data)))
+	binary.LittleEndian.PutUint32(p.writer_headers[i], dev)
+	binary.LittleEndian.PutUint32(p.writer_headers[i][4:], id)
+	binary.LittleEndian.PutUint32(p.writer_headers[i][8:], uint32(len(data)))
 
-	_, err := p.writers[i].Write(p.writerHeaders[i])
+	_, err := p.writers[i].Write(p.writer_headers[i])
 
 	if err != nil {
 		return 0, err
@@ -133,15 +151,21 @@ func (p *ProtocolRW) SendPacket(dev uint32, id uint32, data []byte) (uint32, err
 }
 
 func (p *ProtocolRW) Handle() error {
-	var wg sync.WaitGroup
 	errs := make(chan error, len(p.readers))
 
 	for _, r := range p.readers {
-		wg.Add(1)
 		go func(reader io.Reader) {
-			defer wg.Done()
 			header := make([]byte, 4+4+4)
 			for {
+				// If the context was cancelled, we should return that error
+				select {
+				case <-p.ctx.Done():
+					errs <- p.ctx.Err()
+					return
+				default:
+					break
+				}
+
 				_, err := io.ReadFull(reader, header)
 				if err != nil {
 					errs <- err
@@ -168,11 +192,13 @@ func (p *ProtocolRW) Handle() error {
 		}(r)
 	}
 
-	wg.Wait()
-	// Wait...
-
-	// TODO: Check for errors and process them.
-	return nil
+	select {
+	case <-p.ctx.Done():
+		return p.ctx.Err()
+	case e := <-errs:
+		// One of the readers quit. We should report the error...
+		return e
+	}
 }
 
 func (p *ProtocolRW) handlePacket(dev uint32, id uint32, data []byte) error {
@@ -184,7 +210,7 @@ func (p *ProtocolRW) handlePacket(dev uint32, id uint32, data []byte) error {
 
 	cmd := data[0]
 
-	p.waitersLock.Lock()
+	p.waiters_lock.Lock()
 	w, ok := p.waiters[dev]
 	if !ok {
 		w = Waiters{
@@ -206,9 +232,9 @@ func (p *ProtocolRW) handlePacket(dev uint32, id uint32, data []byte) error {
 		w.byCmd[cmd] = wq_cmd
 	}
 
-	p.waitersLock.Unlock()
+	p.waiters_lock.Unlock()
 
-	if IsResponse(cmd) {
+	if packets.IsResponse(cmd) {
 		wq_id <- packetinfo{
 			id:   id,
 			data: data,
@@ -223,14 +249,14 @@ func (p *ProtocolRW) handlePacket(dev uint32, id uint32, data []byte) error {
 }
 
 func (mp *ProtocolRW) WaitForPacket(dev uint32, id uint32) ([]byte, error) {
-	mp.waitersLock.Lock()
+	mp.waiters_lock.Lock()
 	w := mp.waiters[dev]
 	wq, okk := w.byID[id]
 	if !okk {
 		wq = make(chan packetinfo, 8) // Some buffer here...
 		w.byID[id] = wq
 	}
-	mp.waitersLock.Unlock()
+	mp.waiters_lock.Unlock()
 
 	select {
 	case p := <-wq:
@@ -242,14 +268,14 @@ func (mp *ProtocolRW) WaitForPacket(dev uint32, id uint32) ([]byte, error) {
 }
 
 func (mp *ProtocolRW) WaitForCommand(dev uint32, cmd byte) (uint32, []byte, error) {
-	mp.waitersLock.Lock()
+	mp.waiters_lock.Lock()
 	w := mp.waiters[dev]
 	wq, okk := w.byCmd[cmd]
 	if !okk {
 		wq = make(chan packetinfo, 8) // Some buffer here...
 		w.byCmd[cmd] = wq
 	}
-	mp.waitersLock.Unlock()
+	mp.waiters_lock.Unlock()
 
 	select {
 	case p := <-wq:

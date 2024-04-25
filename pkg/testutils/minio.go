@@ -47,7 +47,10 @@ func SetupMinio(cleanup func(func())) string {
 		}
 	})
 
-	resource.Expire(180)
+	err = resource.Expire(180)
+	if err != nil {
+		panic(err)
+	}
 	PORT_9000 := resource.GetPort("9000/tcp")
 
 	err = pool.Retry(func() error {

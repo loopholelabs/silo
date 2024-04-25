@@ -18,6 +18,7 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/integrity"
 	"github.com/loopholelabs/silo/pkg/storage/modules"
 	"github.com/loopholelabs/silo/pkg/storage/protocol"
+	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
 	"github.com/loopholelabs/silo/pkg/storage/waitingcache"
 	"github.com/spf13/cobra"
@@ -82,12 +83,12 @@ func runConnect(ccmd *cobra.Command, args []string) {
 	dst_exposed = make([]storage.ExposedStorage, 0)
 
 	// Handle shutdown gracefully to disconnect any exposed devices correctly.
-	c := make(chan os.Signal)
+	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-c
 		for _, e := range dst_exposed {
-			dst_device_shutdown(e)
+			_ = dst_device_shutdown(e)
 		}
 		os.Exit(1)
 	}()
@@ -128,7 +129,7 @@ func runConnect(ccmd *cobra.Command, args []string) {
 
 	// Shutdown any storage exposed as devices
 	for _, e := range dst_exposed {
-		dst_device_shutdown(e)
+		_ = dst_device_shutdown(e)
 	}
 }
 
@@ -155,10 +156,10 @@ func handleIncomingDevice(pro protocol.Protocol, dev uint32) {
 	dst_wg_first = false
 
 	// This is a storage factory which will be called when we recive DevInfo.
-	storageFactory := func(di *protocol.DevInfo) storage.StorageProvider {
+	storageFactory := func(di *packets.DevInfo) storage.StorageProvider {
 		// fmt.Printf("= %d = Received DevInfo name=%s size=%d blocksize=%d\n", dev, di.Name, di.Size, di.BlockSize)
 
-		blockSize = uint(di.BlockSize)
+		blockSize = uint(di.Block_size)
 
 		statusFn := func(s decor.Statistics) string {
 			return statusString + statusVerify
@@ -222,16 +223,16 @@ func handleIncomingDevice(pro protocol.Protocol, dev uint32) {
 
 		// Use a WaitingCache which will wait for migration blocks, send priorities etc
 		// A WaitingCache has two ends - local and remote.
-		destWaitingLocal, destWaitingRemote = waitingcache.NewWaitingCache(destMonitorStorage, int(di.BlockSize))
+		destWaitingLocal, destWaitingRemote = waitingcache.NewWaitingCache(destMonitorStorage, int(di.Block_size))
 
 		// Connect the waitingCache to the FromProtocol.
 		// Note that since these are hints, errors don't matter too much.
 		destWaitingLocal.NeedAt = func(offset int64, length int32) {
-			dest.NeedAt(offset, length)
+			_ = dest.NeedAt(offset, length)
 		}
 
 		destWaitingLocal.DontNeedAt = func(offset int64, length int32) {
-			dest.DontNeedAt(offset, length)
+			_ = dest.DontNeedAt(offset, length)
 		}
 
 		// Expose this storage as a device if requested
@@ -249,58 +250,68 @@ func handleIncomingDevice(pro protocol.Protocol, dev uint32) {
 
 	dest = protocol.NewFromProtocol(dev, storageFactory, pro)
 
-	// Handle sending
-	go dest.HandleSend(context.TODO())
-	go dest.HandleReadAt()
-	go dest.HandleWriteAt()
-	go dest.HandleDevInfo()
+	go func() {
+		_ = dest.HandleReadAt()
+	}()
+	go func() {
+		_ = dest.HandleWriteAt()
+	}()
+	go func() {
+		_ = dest.HandleDevInfo()
+	}()
 
 	// Handle events from the source
-	go dest.HandleEvent(func(e *protocol.Event) {
-		if e.Type == protocol.EventPostLock {
-			statusString = "L" //red.Sprintf("L")
-		} else if e.Type == protocol.EventPreLock {
-			statusString = "l" //red.Sprintf("l")
-		} else if e.Type == protocol.EventPostUnlock {
-			statusString = "U" //green.Sprintf("U")
-		} else if e.Type == protocol.EventPreUnlock {
-			statusString = "u" //green.Sprintf("u")
-		}
-		//fmt.Printf("= %d = Event %s\n", dev, protocol.EventsByType[e.Type])
-		// Check we have all data...
-		if e.Type == protocol.EventCompleted {
-			// We completed the migration...
-			dst_wg.Done()
-			//			available, total := destWaitingLocal.Availability()
-			//			fmt.Printf("= %d = Availability (%d/%d)\n", dev, available, total)
-			// Set bar to completed
-			if connect_progress {
-				bar.SetCurrent(int64(destWaitingLocal.Size()))
+	go func() {
+		_ = dest.HandleEvent(func(e *packets.Event) {
+			if e.Type == packets.EventPostLock {
+				statusString = "L" //red.Sprintf("L")
+			} else if e.Type == packets.EventPreLock {
+				statusString = "l" //red.Sprintf("l")
+			} else if e.Type == packets.EventPostUnlock {
+				statusString = "U" //green.Sprintf("U")
+			} else if e.Type == packets.EventPreUnlock {
+				statusString = "u" //green.Sprintf("u")
 			}
-		}
-	})
+			//fmt.Printf("= %d = Event %s\n", dev, protocol.EventsByType[e.Type])
+			// Check we have all data...
+			if e.Type == packets.EventCompleted {
+				// We completed the migration...
+				dst_wg.Done()
+				//			available, total := destWaitingLocal.Availability()
+				//			fmt.Printf("= %d = Availability (%d/%d)\n", dev, available, total)
+				// Set bar to completed
+				if connect_progress {
+					bar.SetCurrent(int64(destWaitingLocal.Size()))
+				}
+			}
+		})
+	}()
 
-	go dest.HandleHashes(func(hashes map[uint][sha256.Size]byte) {
-		//		fmt.Printf("[%d] Got %d hashes...\n", dev, len(hashes))
-		in := integrity.NewIntegrityChecker(int64(destStorage.Size()), int(blockSize))
-		in.SetHashes(hashes)
-		correct, err := in.Check(destStorage)
-		if err != nil {
-			panic(err)
-		}
-		//		fmt.Printf("[%d] Verification result %t\n", dev, correct)
-		if correct {
-			statusVerify = "\u2611"
-		} else {
-			statusVerify = "\u2612"
-		}
-	})
+	go func() {
+		_ = dest.HandleHashes(func(hashes map[uint][sha256.Size]byte) {
+			//		fmt.Printf("[%d] Got %d hashes...\n", dev, len(hashes))
+			in := integrity.NewIntegrityChecker(int64(destStorage.Size()), int(blockSize))
+			in.SetHashes(hashes)
+			correct, err := in.Check(destStorage)
+			if err != nil {
+				panic(err)
+			}
+			//		fmt.Printf("[%d] Verification result %t\n", dev, correct)
+			if correct {
+				statusVerify = "\u2611"
+			} else {
+				statusVerify = "\u2612"
+			}
+		})
+	}()
 
 	// Handle dirty list by invalidating local waiting cache
-	go dest.HandleDirtyList(func(dirty []uint) {
-		//	fmt.Printf("= %d = LIST OF DIRTY BLOCKS %v\n", dev, dirty)
-		destWaitingLocal.DirtyBlocks(dirty)
-	})
+	go func() {
+		_ = dest.HandleDirtyList(func(dirty []uint) {
+			//	fmt.Printf("= %d = LIST OF DIRTY BLOCKS %v\n", dev, dirty)
+			destWaitingLocal.DirtyBlocks(dirty)
+		})
+	}()
 }
 
 // Called to setup an exposed storage device

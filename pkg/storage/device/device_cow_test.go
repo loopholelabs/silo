@@ -42,9 +42,10 @@ func setupCow(t *testing.T) map[string]*Device {
 func TestSourceCow(t *testing.T) {
 	// Create a ROSource file
 	cowData := make([]byte, 4*1024)
-	rand.Read(cowData)
+	_, err := rand.Read(cowData)
+	assert.NoError(t, err)
 
-	err := os.WriteFile("./testdata/testfile_cow_src", cowData, 0666)
+	err = os.WriteFile("./testdata/testfile_cow_src", cowData, 0666)
 	if err != nil {
 		panic(err)
 	}
