@@ -121,16 +121,6 @@ func setupSyncStorageDevice(conf *config.DeviceSchema) (*storageInfo, error) {
 
 	// Start monitoring blocks.
 
-	go func() {
-		ticker := time.NewTicker(time.Second * 5)
-		for {
-			select {
-			case <-ticker.C:
-				fmt.Printf("Dirty %d blocks\n", sourceDirtyRemote.MeasureDirty())
-			}
-		}
-	}()
-
 	var primary_orderer storage.BlockOrder
 	primary_orderer = sourceMonitor
 
@@ -183,6 +173,8 @@ func migrateDeviceS3(dev_id uint32, name string,
 		return err
 	}
 
+	dest_metrics := modules.NewMetrics(dest)
+
 	conf := migrator.NewMigratorConfig().WithBlockSize(sync_block_size)
 	conf.Locker_handler = func() {
 		sinfo.lockable.Lock()
@@ -200,12 +192,13 @@ func migrateDeviceS3(dev_id uint32, name string,
 			name, p.Migrated_blocks, p.Total_blocks, p.Migrated_blocks_perc,
 			p.Ready_blocks, p.Total_blocks, p.Ready_blocks_perc,
 			p.Active_blocks)
+		dest_metrics.ShowStats("S3")
 	}
 	conf.Error_handler = func(b *storage.BlockInfo, err error) {
 		fmt.Printf("[%s] Error for block %d error %v\n", name, b.Block, err)
 	}
 
-	log_dest := modules.NewLogger(dest, "S3")
+	log_dest := modules.NewLogger(dest_metrics, "S3")
 
 	mig, err := migrator.NewMigrator(sinfo.tracker, log_dest, sinfo.orderer, conf)
 
@@ -238,6 +231,7 @@ func migrateDeviceS3(dev_id uint32, name string,
 		blocks := mig.GetLatestDirty() //
 
 		if blocks != nil {
+			fmt.Printf("Dirty blocks %v\n", blocks)
 			err = mig.MigrateDirty(blocks)
 			if err != nil {
 				return err
