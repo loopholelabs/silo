@@ -141,13 +141,13 @@ func (i *DirtyTrackerRemote) GetDirtyBlocks(max_age time.Duration, limit int, gr
 
 		// Now sort by how much changed
 		keys := make([]uint, 0, len(grouped_blocks_changed))
-		for key := range grouped_blocks {
+		for key := range grouped_blocks_changed {
 			keys = append(keys, key)
 		}
 
 		// Sort the blocks by how many sub-blocks are dirty.
 		sort.SliceStable(keys, func(i, j int) bool {
-			return len(grouped_blocks[keys[i]]) < len(grouped_blocks[keys[j]])
+			return len(grouped_blocks_changed[keys[i]]) < len(grouped_blocks_changed[keys[j]])
 		})
 
 		// Now add them into grouped_blocks if we can...
