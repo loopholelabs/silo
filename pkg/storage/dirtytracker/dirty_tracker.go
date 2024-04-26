@@ -103,6 +103,12 @@ func (i *DirtyTracker) trackArea(length int64, offset int64) {
 	i.tracking.SetBits(b_start, b_end)
 }
 
+func (i *DirtyTrackerRemote) MeasureDirty() int {
+	i.dt.tracking_lock.Lock()
+	defer i.dt.tracking_lock.Unlock()
+	return len(i.dt.tracking_times)
+}
+
 func (i *DirtyTrackerRemote) GetDirtyBlocks(max_age time.Duration, limit int, group_by_shift int, min_changed int) []uint {
 	grouped_blocks := make(map[uint][]uint)
 

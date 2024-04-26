@@ -127,5 +127,4 @@ func TestReadDirtyTrackerMinChange(t *testing.T) {
 	slices.Sort(blocks)
 	expected_blocks = []uint{0, 2}
 	assert.Equal(t, expected_blocks, blocks)
-
 }
