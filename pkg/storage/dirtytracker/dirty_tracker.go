@@ -103,12 +103,12 @@ func (i *DirtyTracker) trackArea(length int64, offset int64) {
 	i.tracking.SetBits(b_start, b_end)
 }
 
-func (i *DirtyTracker) GetDirtyBlocks(max_age time.Duration, limit int, group_by_shift int) []uint {
+func (i *DirtyTrackerRemote) GetDirtyBlocks(max_age time.Duration, limit int, group_by_shift int, min_changed int) []uint {
 	grouped_blocks := make(map[uint][]uint)
 
 	// First look for any dirty blocks past max_age
-	i.tracking_lock.Lock()
-	for b, t := range i.tracking_times {
+	i.dt.tracking_lock.Lock()
+	for b, t := range i.dt.tracking_times {
 		if time.Since(t) > max_age {
 			grouped_b := b >> group_by_shift
 			v, ok := grouped_blocks[grouped_b]
@@ -122,12 +122,13 @@ func (i *DirtyTracker) GetDirtyBlocks(max_age time.Duration, limit int, group_by
 			}
 		}
 	}
-	i.tracking_lock.Unlock()
+	i.dt.tracking_lock.Unlock()
 
+	// Now we look for changed blocks, and sort by how much.
 	if len(grouped_blocks) < limit {
 		grouped_blocks_changed := make(map[uint][]uint)
 		// Now we also look for extra blocks based on how much they have changed...
-		bls := i.dirty_log.Collect(0, uint(i.num_blocks))
+		bls := i.dt.dirty_log.Collect(0, uint(i.dt.num_blocks))
 		for _, b := range bls {
 			grouped_b := b >> group_by_shift
 			v, ok := grouped_blocks_changed[grouped_b]
@@ -160,23 +161,26 @@ func (i *DirtyTracker) GetDirtyBlocks(max_age time.Duration, limit int, group_by
 			// Pick one out of grouped_blocks_changed, and try to add it
 			k := keys[0]
 			keys = keys[1:]
-			// This may overwrite an existing entry which is max_age, but we'll have the same block + others here
-			grouped_blocks[k] = grouped_blocks_changed[k]
+
+			if len(grouped_blocks_changed[k]) >= min_changed {
+				// This may overwrite an existing entry which is max_age, but we'll have the same block + others here
+				grouped_blocks[k] = grouped_blocks_changed[k]
+			}
 		}
 	}
 
 	// Clear out the tracking data here... It'll get added for tracking again on a readAt()
-	i.write_lock.Lock()
-	defer i.write_lock.Unlock()
+	i.dt.write_lock.Lock()
+	defer i.dt.write_lock.Unlock()
 
 	rblocks := make([]uint, 0)
 	for rb, blocks := range grouped_blocks {
 		for _, b := range blocks {
-			i.tracking.ClearBit(int(b))
-			i.dirty_log.ClearBit(int(b))
-			i.tracking_lock.Lock()
-			delete(i.tracking_times, b)
-			i.tracking_lock.Unlock()
+			i.dt.tracking.ClearBit(int(b))
+			i.dt.dirty_log.ClearBit(int(b))
+			i.dt.tracking_lock.Lock()
+			delete(i.dt.tracking_times, b)
+			i.dt.tracking_lock.Unlock()
 		}
 		rblocks = append(rblocks, rb)
 	}
