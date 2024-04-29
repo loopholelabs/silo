@@ -206,13 +206,22 @@ func migrateDeviceS3(dev_id uint32, name string,
 		return err
 	}
 
-	fmt.Printf("Doing migration...\n")
-
-	// Now do the initial migration...
 	num_blocks := (sinfo.tracker.Size() + uint64(sync_block_size) - 1) / uint64(sync_block_size)
-	err = mig.Migrate(int(num_blocks))
-	if err != nil {
-		return err
+
+	// NB: We only need to do this for existing sources.
+	/*
+		fmt.Printf("Doing migration...\n")
+
+		// Now do the initial migration...
+		err = mig.Migrate(int(num_blocks))
+		if err != nil {
+			return err
+		}
+	*/
+
+	// Since it's a new source, it's all zeros. We don't need to do an initial migration.
+	for b := 0; b < int(num_blocks); b++ {
+		mig.SetMigratedBlock(b)
 	}
 
 	fmt.Printf("Waiting...\n")

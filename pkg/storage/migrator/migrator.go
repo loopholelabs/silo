@@ -118,6 +118,19 @@ func NewMigrator(source storage.TrackingStorageProvider,
 }
 
 /**
+ * Set a block to already migrated state
+ */
+func (m *Migrator) SetMigratedBlock(block int) {
+	m.block_locks[block].Lock()
+	defer m.block_locks[block].Unlock()
+	// Mark it as done
+	m.migrated_blocks.SetBit(block)
+	m.clean_blocks.SetBit(block)
+
+	m.reportProgress(false)
+}
+
+/**
  * Migrate storage to dest.
  */
 func (m *Migrator) Migrate(num_blocks int) error {
@@ -159,16 +172,23 @@ func (m *Migrator) Migrate(num_blocks int) error {
  * If there a no more dirty blocks, we leave the src locked.
  */
 func (m *Migrator) GetLatestDirty() []uint {
-	// Queue up some dirty blocks
+	getter := func() []uint {
+		blocks := m.source_tracker.Sync()
+		return blocks.Collect(0, blocks.Length())
+	}
+	return m.GetLatestDirtyFunc(getter)
+}
+
+/**
+ * Get the latest dirty blocks.
+ * If there a no more dirty blocks, we leave the src locked.
+ */
+func (m *Migrator) GetLatestDirtyFunc(getter func() []uint) []uint {
 	m.source_lock_fn()
 
-	// Check for any dirty blocks to be added on
-	blocks := m.source_tracker.Sync()
-	changed := blocks.Count(0, blocks.Length())
-	if changed != 0 {
+	block_nos := getter()
+	if len(block_nos) != 0 {
 		m.source_unlock_fn()
-
-		block_nos := blocks.Collect(0, blocks.Length())
 		return block_nos
 	}
 	return nil
