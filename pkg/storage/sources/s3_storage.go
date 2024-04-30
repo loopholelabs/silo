@@ -122,12 +122,6 @@ func (i *S3Storage) setContext(block int, cancel context.CancelFunc) {
 	i.contexts_lock.Unlock()
 }
 
-func (i *S3Storage) clearContext(block int) {
-	i.contexts_lock.Lock()
-	i.contexts[block] = nil
-	i.contexts_lock.Unlock()
-}
-
 func (i *S3Storage) ReadAt(buffer []byte, offset int64) (int, error) {
 	// Split the read up into blocks, and concurrenty perform the reads...
 	end := uint64(offset + int64(len(buffer)))
@@ -226,13 +220,7 @@ func (i *S3Storage) WriteAt(buffer []byte, offset int64) (int, error) {
 			bytes.NewReader(buff), int64(i.block_size),
 			minio.PutObjectOptions{})
 
-		// err might be that the context is cancelled
-		if err == context.Canceled {
-			fmt.Printf("*** PUT CANCELLED [%d]***\n", block)
-			return len(buff), nil
-		}
-
-		i.clearContext(int(block))
+		i.setContext(int(block), nil)
 		i.lockers[block].Unlock()
 		if err != nil {
 			return 0, err
@@ -301,4 +289,17 @@ func (i *S3Storage) Close() error {
 	return nil
 }
 
-func (i *S3Storage) CancelWrites(offset int64, length int64) {}
+func (i *S3Storage) CancelWrites(offset int64, length int64) {
+	end := uint64(offset + length)
+	if end > i.size {
+		end = i.size
+	}
+
+	b_start := uint(offset / int64(i.block_size))
+	b_end := uint((end-1)/uint64(i.block_size)) + 1
+
+	for b := b_start; b < b_end; b++ {
+		// Cancel any writes for the given block...
+		i.setContext(int(b), nil)
+	}
+}
