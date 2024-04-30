@@ -50,6 +50,10 @@ func (i *ReadOnlyGate) Close() error {
 	return i.prov.Close()
 }
 
+func (i *ReadOnlyGate) CancelWrites(offset int64, length int64) {
+	// TODO: Implement
+}
+
 func (i *ReadOnlyGate) Unlock() {
 	i.lock.L.Lock()
 	i.locked = false

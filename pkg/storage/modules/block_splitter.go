@@ -148,3 +148,7 @@ func (i *BlockSplitter) Size() uint64 {
 func (i *BlockSplitter) Close() error {
 	return i.prov.Close()
 }
+
+func (i *BlockSplitter) CancelWrites(offset int64, length int64) {
+	i.prov.CancelWrites(offset, length)
+}

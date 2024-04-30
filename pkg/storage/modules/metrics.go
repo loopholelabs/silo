@@ -160,3 +160,7 @@ func (i *Metrics) Size() uint64 {
 func (i *Metrics) Close() error {
 	return i.prov.Close()
 }
+
+func (i *Metrics) CancelWrites(offset int64, length int64) {
+	i.prov.CancelWrites(offset, length)
+}

@@ -1,6 +1,7 @@
 package dirtytracker
 
 import (
+	"fmt"
 	"sort"
 	"sync"
 	"time"
@@ -51,6 +52,10 @@ func (dtl *DirtyTrackerLocal) Close() error {
 	return dtl.dt.prov.Close()
 }
 
+func (dtl *DirtyTrackerLocal) CancelWrites(offset int64, length int64) {
+	dtl.dt.prov.CancelWrites(offset, length)
+}
+
 type DirtyTrackerRemote struct {
 	dt *DirtyTracker
 }
@@ -73,6 +78,10 @@ func (dtl *DirtyTrackerRemote) Size() uint64 {
 
 func (dtl *DirtyTrackerRemote) Close() error {
 	return dtl.dt.prov.Close()
+}
+
+func (dtl *DirtyTrackerRemote) CancelWrites(offset int64, length int64) {
+	dtl.dt.prov.CancelWrites(offset, length)
 }
 
 func NewDirtyTracker(prov storage.StorageProvider, blockSize int) (*DirtyTrackerLocal, *DirtyTrackerRemote) {
@@ -103,13 +112,56 @@ func (i *DirtyTracker) trackArea(length int64, offset int64) {
 	i.tracking.SetBits(b_start, b_end)
 }
 
+/**
+ * Start tracking at the given offset and length
+ *
+ */
+func (i *DirtyTrackerRemote) TrackAt(offset int64, length int64) {
+	i.dt.trackArea(length, offset)
+}
+
+/**
+ * Get a quick measure of how many blocks are currently dirty
+ *
+ */
 func (i *DirtyTrackerRemote) MeasureDirty() int {
 	i.dt.tracking_lock.Lock()
 	defer i.dt.tracking_lock.Unlock()
+
+	fmt.Printf("Dirty blocks=%d size=%d %d / %d\n", i.dt.num_blocks, i.dt.size, i.dt.tracking.Count(0, uint(i.dt.num_blocks)), i.dt.dirty_log.Count(0, uint(i.dt.num_blocks)))
+
 	return len(i.dt.tracking_times)
 }
 
+/**
+ * Get a quick measure of the oldest dirty block
+ *
+ */
+func (i *DirtyTrackerRemote) MeasureDirtyAge() time.Time {
+	i.dt.tracking_lock.Lock()
+	defer i.dt.tracking_lock.Unlock()
+	min_age := time.Now()
+	for _, t := range i.dt.tracking_times {
+		if t.Before(min_age) {
+			min_age = t
+		}
+	}
+	return min_age
+}
+
+/**
+ * Get some dirty blocks using the given criteria
+ *
+ * - max_age - Returns blocks older than the given duration as priority
+ * - limit -   Limits how many blocks are returned
+ * - group_by_shift - Groups subblocks into blocks using the given shift
+ * - min_changed    - Minimum subblock changes in a block
+ */
 func (i *DirtyTrackerRemote) GetDirtyBlocks(max_age time.Duration, limit int, group_by_shift int, min_changed int) []uint {
+	// Prevent any writes while we get dirty blocks
+	i.dt.write_lock.Lock()
+	defer i.dt.write_lock.Unlock()
+
 	grouped_blocks := make(map[uint][]uint)
 
 	// First look for any dirty blocks past max_age
@@ -153,7 +205,7 @@ func (i *DirtyTrackerRemote) GetDirtyBlocks(max_age time.Duration, limit int, gr
 
 		// Sort the blocks by how many sub-blocks are dirty.
 		sort.SliceStable(keys, func(i, j int) bool {
-			return len(grouped_blocks_changed[keys[i]]) < len(grouped_blocks_changed[keys[j]])
+			return len(grouped_blocks_changed[keys[i]]) > len(grouped_blocks_changed[keys[j]])
 		})
 
 		// Now add them into grouped_blocks if we can...
@@ -176,9 +228,6 @@ func (i *DirtyTrackerRemote) GetDirtyBlocks(max_age time.Duration, limit int, gr
 	}
 
 	// Clear out the tracking data here... It'll get added for tracking again on a readAt()
-	i.dt.write_lock.Lock()
-	defer i.dt.write_lock.Unlock()
-
 	rblocks := make([]uint, 0)
 	for rb, blocks := range grouped_blocks {
 		for _, b := range blocks {
@@ -190,35 +239,34 @@ func (i *DirtyTrackerRemote) GetDirtyBlocks(max_age time.Duration, limit int, gr
 		}
 		rblocks = append(rblocks, rb)
 	}
-
 	return rblocks
 }
 
-func (i *DirtyTracker) GetAllDirtyBlocks() *util.Bitfield {
+func (i *DirtyTrackerRemote) GetAllDirtyBlocks() *util.Bitfield {
 	// Prevent any writes while we do the Sync()
-	i.write_lock.Lock()
-	defer i.write_lock.Unlock()
+	i.dt.write_lock.Lock()
+	defer i.dt.write_lock.Unlock()
 
-	info := i.dirty_log.Clone()
+	info := i.dt.dirty_log.Clone()
 
 	// Remove the dirty blocks from tracking... (They will get added again when a Read is performed to migrate the data)
-	i.tracking.ClearBitsIf(info, 0, uint(i.num_blocks))
+	i.dt.tracking.ClearBitsIf(info, 0, uint(i.dt.num_blocks))
 
 	// Clear the dirty log.
-	i.dirty_log.Clear()
+	i.dt.dirty_log.Clear()
 
 	blocks := info.Collect(0, info.Length())
-	i.tracking_lock.Lock()
+	i.dt.tracking_lock.Lock()
 	for _, b := range blocks {
-		delete(i.tracking_times, b)
+		delete(i.dt.tracking_times, b)
 	}
-	i.tracking_lock.Unlock()
+	i.dt.tracking_lock.Unlock()
 
 	return info
 }
 
 func (i *DirtyTrackerRemote) Sync() *util.Bitfield {
-	info := i.dt.GetAllDirtyBlocks()
+	info := i.GetAllDirtyBlocks()
 	return info
 }
 

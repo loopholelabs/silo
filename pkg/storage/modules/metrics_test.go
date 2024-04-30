@@ -7,7 +7,7 @@ import (
 )
 
 func TestMetrics(t *testing.T) {
-	met := NewMetrics(NewNothing())
+	met := NewMetrics(NewNothing(0))
 
 	// Do some things...
 

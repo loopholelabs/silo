@@ -66,3 +66,7 @@ func (i *ArtificialLatency) Size() uint64 {
 func (i *ArtificialLatency) Close() error {
 	return i.prov.Close()
 }
+
+func (i *ArtificialLatency) CancelWrites(offset int64, length int64) {
+	i.prov.CancelWrites(offset, length)
+}

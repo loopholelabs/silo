@@ -13,6 +13,7 @@ type StorageProvider interface {
 	Size() uint64
 	Flush() error
 	Close() error
+	CancelWrites(offset int64, length int64)
 }
 
 type LockableStorageProvider interface {

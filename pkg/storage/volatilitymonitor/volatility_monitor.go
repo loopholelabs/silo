@@ -150,3 +150,7 @@ func (i *VolatilityMonitor) Size() uint64 {
 func (i *VolatilityMonitor) Close() error {
 	return i.prov.Close()
 }
+
+func (i *VolatilityMonitor) CancelWrites(offset int64, length int64) {
+	i.prov.CancelWrites(offset, length)
+}

@@ -19,12 +19,14 @@ var (
 */
 
 type S3Storage struct {
-	client     *minio.Client
-	bucket     string
-	prefix     string
-	size       uint64
-	block_size int
-	lockers    []sync.RWMutex
+	client        *minio.Client
+	bucket        string
+	prefix        string
+	size          uint64
+	block_size    int
+	lockers       []sync.RWMutex
+	contexts      []context.CancelFunc
+	contexts_lock sync.Mutex
 }
 
 func NewS3Storage(endpoint string,
@@ -53,6 +55,7 @@ func NewS3Storage(endpoint string,
 		bucket:     bucket,
 		prefix:     prefix,
 		lockers:    make([]sync.RWMutex, numBlocks),
+		contexts:   make([]context.CancelFunc, numBlocks),
 	}, nil
 }
 
@@ -105,7 +108,24 @@ func NewS3StorageCreate(endpoint string,
 		bucket:     bucket,
 		prefix:     prefix,
 		lockers:    make([]sync.RWMutex, numBlocks),
+		contexts:   make([]context.CancelFunc, numBlocks),
 	}, nil
+}
+
+func (i *S3Storage) setContext(block int, cancel context.CancelFunc) {
+	i.contexts_lock.Lock()
+	ex := i.contexts[block]
+	if ex != nil {
+		ex() // Cancel any existing context for this block
+	}
+	i.contexts[block] = cancel // Set to the new context
+	i.contexts_lock.Unlock()
+}
+
+func (i *S3Storage) clearContext(block int) {
+	i.contexts_lock.Lock()
+	i.contexts[block] = nil
+	i.contexts_lock.Unlock()
 }
 
 func (i *S3Storage) ReadAt(buffer []byte, offset int64) (int, error) {
@@ -185,8 +205,9 @@ func (i *S3Storage) WriteAt(buffer []byte, offset int64) (int, error) {
 	errs := make(chan error, blocks)
 
 	getData := func(buff []byte, off int64) (int, error) {
+		ctx := context.TODO()
 		i.lockers[off/int64(i.block_size)].RLock()
-		obj, err := i.client.GetObject(context.TODO(), i.bucket, fmt.Sprintf("%s-%d", i.prefix, off), minio.GetObjectOptions{})
+		obj, err := i.client.GetObject(ctx, i.bucket, fmt.Sprintf("%s-%d", i.prefix, off), minio.GetObjectOptions{})
 		i.lockers[off/int64(i.block_size)].RUnlock()
 		if err != nil {
 			return 0, err
@@ -195,11 +216,24 @@ func (i *S3Storage) WriteAt(buffer []byte, offset int64) (int, error) {
 	}
 
 	putData := func(buff []byte, off int64) (int, error) {
-		i.lockers[off/int64(i.block_size)].Lock()
-		obj, err := i.client.PutObject(context.TODO(), i.bucket, fmt.Sprintf("%s-%d", i.prefix, off),
+		block := off / int64(i.block_size)
+		ctx, cancelFn := context.WithCancel(context.TODO())
+		i.lockers[block].Lock()
+
+		i.setContext(int(block), cancelFn)
+
+		obj, err := i.client.PutObject(ctx, i.bucket, fmt.Sprintf("%s-%d", i.prefix, off),
 			bytes.NewReader(buff), int64(i.block_size),
 			minio.PutObjectOptions{})
-		i.lockers[off/int64(i.block_size)].Unlock()
+
+		// err might be that the context is cancelled
+		if err == context.Canceled {
+			fmt.Printf("*** PUT CANCELLED [%d]***\n", block)
+			return len(buff), nil
+		}
+
+		i.clearContext(int(block))
+		i.lockers[block].Unlock()
 		if err != nil {
 			return 0, err
 		}
@@ -266,3 +300,5 @@ func (i *S3Storage) Size() uint64 {
 func (i *S3Storage) Close() error {
 	return nil
 }
+
+func (i *S3Storage) CancelWrites(offset int64, length int64) {}
