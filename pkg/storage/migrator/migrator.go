@@ -21,6 +21,7 @@ type MigratorConfig struct {
 	Progress_handler func(p *MigrationProgress)
 	Concurrency      map[int]int
 	Integrity        bool
+	Cancel_writes    bool
 	Recent_write_age time.Duration
 }
 
@@ -38,6 +39,7 @@ func NewMigratorConfig() *MigratorConfig {
 			storage.BlockTypePriority: 16,
 		},
 		Integrity:        false,
+		Cancel_writes:    true,
 		Recent_write_age: time.Minute,
 	}
 }
@@ -48,41 +50,45 @@ func (mc *MigratorConfig) WithBlockSize(bs int) *MigratorConfig {
 }
 
 type MigrationProgress struct {
-	Total_blocks          int // Total blocks
-	Migrated_blocks       int // Number of blocks that have been migrated
-	Migrated_blocks_perc  float64
-	Ready_blocks          int // Number of blocks which are up to date (clean). May go down as well as up.
-	Ready_blocks_perc     float64
-	Active_blocks         int // Number of blocks in progress now
-	Total_Canceled_blocks int // Total blocks that were cancelled
-	Total_Migrated_blocks int // Total blocks that were migrated
+	Total_blocks            int // Total blocks
+	Migrated_blocks         int // Number of blocks that have been migrated
+	Migrated_blocks_perc    float64
+	Ready_blocks            int // Number of blocks which are up to date (clean). May go down as well as up.
+	Ready_blocks_perc       float64
+	Active_blocks           int // Number of blocks in progress now
+	Total_Canceled_blocks   int // Total blocks that were cancelled
+	Total_Migrated_blocks   int // Total blocks that were migrated
+	Total_Duplicated_blocks int
 }
 
 type Migrator struct {
-	source_tracker         storage.TrackingStorageProvider // Tracks writes so we know which are dirty
-	dest                   storage.StorageProvider
-	source_lock_fn         func()
-	source_unlock_fn       func()
-	error_fn               func(block *storage.BlockInfo, err error)
-	progress_fn            func(*MigrationProgress)
-	progress_lock          sync.Mutex
-	progress_last          time.Time
-	progress_last_status   *MigrationProgress
-	block_size             int
-	num_blocks             int
-	metric_blocks_migrated int64
-	metric_blocks_canceled int64
-	block_locks            []sync.Mutex
-	moving_blocks          *util.Bitfield
-	migrated_blocks        *util.Bitfield
-	clean_blocks           *util.Bitfield
-	last_written_blocks    []time.Time
-	block_order            storage.BlockOrder
-	ctime                  time.Time
-	concurrency            map[int]chan bool
-	wg                     sync.WaitGroup
-	integrity              *integrity.IntegrityChecker
-	recent_write_age       time.Duration
+	source_tracker           storage.TrackingStorageProvider // Tracks writes so we know which are dirty
+	dest                     storage.StorageProvider
+	source_lock_fn           func()
+	source_unlock_fn         func()
+	error_fn                 func(block *storage.BlockInfo, err error)
+	progress_fn              func(*MigrationProgress)
+	progress_lock            sync.Mutex
+	progress_last            time.Time
+	progress_last_status     *MigrationProgress
+	block_size               int
+	num_blocks               int
+	metric_blocks_migrated   int64
+	metric_blocks_canceled   int64
+	metric_blocks_duplicates int64
+	block_locks              []sync.Mutex
+	moving_blocks            *util.Bitfield
+	migrated_blocks          *util.Bitfield
+	clean_blocks             *util.Bitfield
+	waiting_blocks           *util.Bitfield
+	last_written_blocks      []time.Time
+	block_order              storage.BlockOrder
+	ctime                    time.Time
+	concurrency              map[int]chan bool
+	wg                       sync.WaitGroup
+	integrity                *integrity.IntegrityChecker
+	cancel_writes            bool
+	recent_write_age         time.Duration
 }
 
 func NewMigrator(source storage.TrackingStorageProvider,
@@ -92,25 +98,28 @@ func NewMigrator(source storage.TrackingStorageProvider,
 
 	num_blocks := (int(source.Size()) + config.Block_size - 1) / config.Block_size
 	m := &Migrator{
-		dest:                   dest,
-		source_tracker:         source,
-		source_lock_fn:         config.Locker_handler,
-		source_unlock_fn:       config.Unlocker_handler,
-		error_fn:               config.Error_handler,
-		progress_fn:            config.Progress_handler,
-		block_size:             config.Block_size,
-		num_blocks:             num_blocks,
-		metric_blocks_migrated: 0,
-		metric_blocks_canceled: 0,
-		block_order:            block_order,
-		moving_blocks:          util.NewBitfield(num_blocks),
-		migrated_blocks:        util.NewBitfield(num_blocks),
-		clean_blocks:           util.NewBitfield(num_blocks),
-		block_locks:            make([]sync.Mutex, num_blocks),
-		concurrency:            make(map[int]chan bool),
-		progress_last_status:   &MigrationProgress{},
-		last_written_blocks:    make([]time.Time, num_blocks),
-		recent_write_age:       config.Recent_write_age,
+		dest:                     dest,
+		source_tracker:           source,
+		source_lock_fn:           config.Locker_handler,
+		source_unlock_fn:         config.Unlocker_handler,
+		error_fn:                 config.Error_handler,
+		progress_fn:              config.Progress_handler,
+		block_size:               config.Block_size,
+		num_blocks:               num_blocks,
+		metric_blocks_migrated:   0,
+		metric_blocks_canceled:   0,
+		metric_blocks_duplicates: 0,
+		block_order:              block_order,
+		moving_blocks:            util.NewBitfield(num_blocks),
+		migrated_blocks:          util.NewBitfield(num_blocks),
+		clean_blocks:             util.NewBitfield(num_blocks),
+		waiting_blocks:           util.NewBitfield(num_blocks),
+		block_locks:              make([]sync.Mutex, num_blocks),
+		concurrency:              make(map[int]chan bool),
+		progress_last_status:     &MigrationProgress{},
+		last_written_blocks:      make([]time.Time, num_blocks),
+		recent_write_age:         config.Recent_write_age,
+		cancel_writes:            config.Cancel_writes,
 	}
 
 	if m.dest.Size() != m.source_tracker.Size() {
@@ -221,8 +230,15 @@ func (m *Migrator) MigrateDirty(blocks []uint) error {
 
 		// Check if there has been a successful write to the block recently
 		// If there has, then cancel any in progress write
-		if time.Since(m.last_written_blocks[pos]) < m.recent_write_age {
+		if m.cancel_writes && time.Since(m.last_written_blocks[pos]) < m.recent_write_age {
 			m.dest.CancelWrites(int64(pos*uint(m.block_size)), int64(m.block_size))
+		}
+
+		// TODO: If there's already one waiting here for this block, we want to do nothing.
+		if m.waiting_blocks.SetBitIfClear(int(pos)) {
+			// Someone else is already waiting here. We will quit.
+			atomic.AddInt64(&m.metric_blocks_duplicates, 1)
+			return nil
 		}
 
 		cc, ok := m.concurrency[i.Type]
@@ -247,6 +263,8 @@ func (m *Migrator) MigrateDirty(blocks []uint) error {
 				cc = m.concurrency[storage.BlockTypeAny]
 			}
 			<-cc
+
+			m.waiting_blocks.ClearBit(int(block_no.Block)) // Allow more writes for this block now.
 		}(i)
 
 	}
@@ -287,14 +305,15 @@ func (m *Migrator) reportProgress(forced bool) {
 
 	m.progress_last = time.Now()
 	m.progress_last_status = &MigrationProgress{
-		Total_blocks:          m.num_blocks,
-		Migrated_blocks:       migrated,
-		Migrated_blocks_perc:  perc_mig,
-		Ready_blocks:          completed,
-		Ready_blocks_perc:     perc_complete,
-		Active_blocks:         m.moving_blocks.Count(0, uint(m.num_blocks)),
-		Total_Canceled_blocks: int(atomic.LoadInt64(&m.metric_blocks_canceled)),
-		Total_Migrated_blocks: int(atomic.LoadInt64(&m.metric_blocks_migrated)),
+		Total_blocks:            m.num_blocks,
+		Migrated_blocks:         migrated,
+		Migrated_blocks_perc:    perc_mig,
+		Ready_blocks:            completed,
+		Ready_blocks_perc:       perc_complete,
+		Active_blocks:           m.moving_blocks.Count(0, uint(m.num_blocks)),
+		Total_Canceled_blocks:   int(atomic.LoadInt64(&m.metric_blocks_canceled)),
+		Total_Migrated_blocks:   int(atomic.LoadInt64(&m.metric_blocks_migrated)),
+		Total_Duplicated_blocks: int(atomic.LoadInt64(&m.metric_blocks_duplicates)),
 	}
 	// Callback
 	m.progress_fn(m.progress_last_status)
