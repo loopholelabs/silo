@@ -70,7 +70,7 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 		}
 	} else if ds.System == SYSTEM_S3 {
 		//
-		return nil, nil, fmt.Errorf("S3 Not Supported yet")
+		return nil, nil, fmt.Errorf("S3 Not Supported in device yet")
 	} else if ds.System == SYSTEM_SPARSE_FILE {
 		file, err := os.Open(ds.Location)
 		if err != nil {
@@ -203,7 +203,16 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 		}
 	}
 
+	// Optionally binlog this dev to a file
+	if ds.Binlog != "" {
+		prov, err = modules.NewBinLog(prov, ds.Binlog)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
 	// Now optionaly expose the device
+	// NB You may well need to call ex.SetProvider if you wish to insert other things in the chain.
 	var ex storage.ExposedStorage
 	if ds.Expose {
 		ex = expose.NewExposedStorageNBDNL(prov, 8, 0, prov.Size(), expose.NBD_DEFAULT_BLOCK_SIZE, true)
