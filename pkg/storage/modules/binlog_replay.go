@@ -29,7 +29,11 @@ func NewBinLogReplay(filename string, prov storage.StorageProvider) (*BinLogRepl
 	}, nil
 }
 
-func (i *BinLogReplay) ExecuteNext() error {
+/**
+ * Execute the next read/write.
+ * If speed is 0 then it's executed immediately, else we wait.
+ */
+func (i *BinLogReplay) ExecuteNext(speed float64) error {
 	// Read a header
 	header := make([]byte, 12)
 	_, err := i.fp.Read(header)
@@ -45,8 +49,9 @@ func (i *BinLogReplay) ExecuteNext() error {
 	// If we need to, we'll wait here until the next log should be replayed.
 	target_dt := time.Duration(binary.LittleEndian.Uint64(header))
 	replay_dt := time.Since(i.ctime)
-	if replay_dt < target_dt {
-		time.Sleep(target_dt - replay_dt)
+	delay := speed * float64(target_dt-replay_dt)
+	if delay > 0 {
+		time.Sleep(time.Duration(delay))
 	}
 
 	length := binary.LittleEndian.Uint32(header[8:])
