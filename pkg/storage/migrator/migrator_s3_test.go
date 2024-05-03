@@ -65,6 +65,9 @@ func TestMigratorToS3(t *testing.T) {
 	conf := NewMigratorConfig().WithBlockSize(blockSize)
 	conf.Locker_handler = sourceStorage.Lock
 	conf.Unlocker_handler = sourceStorage.Unlock
+	conf.Error_handler = func(b *storage.BlockInfo, err error) {
+		assert.Fail(t, fmt.Sprintf("Error migrating block %d: %v", b.Block, err))
+	}
 
 	mig, err := NewMigrator(sourceDirtyRemote,
 		destStorage,
@@ -94,6 +97,9 @@ func TestMigratorToS3(t *testing.T) {
 
 	err = mig.WaitForCompletion()
 	assert.NoError(t, err)
+
+	assert.Equal(t, int64(0), mig.metric_blocks_canceled)
+	assert.Equal(t, int64(0), mig.metric_blocks_duplicates)
 
 	// This will end with migration completed, and consumer Locked.
 	eq, err := storage.Equals(sourceStorageMem, destStorage, blockSize)
