@@ -39,7 +39,7 @@ func NewMigratorConfig() *MigratorConfig {
 			storage.BlockTypePriority: 16,
 		},
 		Integrity:        false,
-		Cancel_writes:    true,
+		Cancel_writes:    false,
 		Recent_write_age: time.Minute,
 	}
 }
