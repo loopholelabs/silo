@@ -80,5 +80,4 @@ func (i *BinLogReplay) ExecuteNext(speed float64) error {
 	} else {
 		panic("Unknown packet in binlog")
 	}
-	return nil
 }
