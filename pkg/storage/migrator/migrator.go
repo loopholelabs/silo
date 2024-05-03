@@ -22,6 +22,7 @@ type MigratorConfig struct {
 	Concurrency      map[int]int
 	Integrity        bool
 	Cancel_writes    bool
+	Dedupe_writes    bool
 	Recent_write_age time.Duration
 }
 
@@ -40,6 +41,7 @@ func NewMigratorConfig() *MigratorConfig {
 		},
 		Integrity:        false,
 		Cancel_writes:    false,
+		Dedupe_writes:    false,
 		Recent_write_age: time.Minute,
 	}
 }
@@ -88,6 +90,7 @@ type Migrator struct {
 	wg                       sync.WaitGroup
 	integrity                *integrity.IntegrityChecker
 	cancel_writes            bool
+	dedupe_writes            bool
 	recent_write_age         time.Duration
 }
 
@@ -120,6 +123,7 @@ func NewMigrator(source storage.TrackingStorageProvider,
 		last_written_blocks:      make([]time.Time, num_blocks),
 		recent_write_age:         config.Recent_write_age,
 		cancel_writes:            config.Cancel_writes,
+		dedupe_writes:            config.Dedupe_writes,
 	}
 
 	if m.dest.Size() != m.source_tracker.Size() {
@@ -234,8 +238,10 @@ func (m *Migrator) MigrateDirty(blocks []uint) error {
 			m.dest.CancelWrites(int64(pos*uint(m.block_size)), int64(m.block_size))
 		}
 
-		// TODO: If there's already one waiting here for this block, we want to do nothing.
-		if m.waiting_blocks.SetBitIfClear(int(pos)) {
+		one_waiting := m.waiting_blocks.SetBitIfClear(int(pos))
+
+		// If there's already one waiting here for this block, we want to do nothing.
+		if m.dedupe_writes && one_waiting {
 			// Someone else is already waiting here. We will quit.
 			atomic.AddInt64(&m.metric_blocks_duplicates, 1)
 			return nil
@@ -246,6 +252,8 @@ func (m *Migrator) MigrateDirty(blocks []uint) error {
 			cc = m.concurrency[storage.BlockTypeAny]
 		}
 		cc <- true
+
+		m.waiting_blocks.ClearBit(int(pos)) // Allow more writes for this to come in now.
 
 		m.wg.Add(1)
 
@@ -263,8 +271,6 @@ func (m *Migrator) MigrateDirty(blocks []uint) error {
 				cc = m.concurrency[storage.BlockTypeAny]
 			}
 			<-cc
-
-			m.waiting_blocks.ClearBit(int(block_no.Block)) // Allow more writes for this block now.
 		}(i)
 
 	}

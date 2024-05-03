@@ -247,6 +247,7 @@ func sync_migrate_s3(_ uint32, name string,
 	}
 	conf.Integrity = false
 	conf.Cancel_writes = true
+	conf.Dedupe_writes = true
 
 	conf.Progress_handler = func(p *migrator.MigrationProgress) {
 		fmt.Printf("[%s] Progress Moved: %d/%d %.2f%% Clean: %d/%d %.2f%% InProgress: %d Total Mig: %d Canceled: %d Dupes: %d\n",
