@@ -85,3 +85,7 @@ func (wcl *WaitingCacheRemote) Size() uint64 {
 func (wcl *WaitingCacheRemote) Close() error {
 	return wcl.wc.prov.Close()
 }
+
+func (wcl *WaitingCacheRemote) CancelWrites(offset int64, length int64) {
+	wcl.wc.prov.CancelWrites(offset, length)
+}

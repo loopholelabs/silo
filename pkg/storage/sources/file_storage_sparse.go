@@ -267,3 +267,5 @@ func (i *FileStorageSparse) Flush() error {
 func (i *FileStorageSparse) Size() uint64 {
 	return uint64(i.size)
 }
+
+func (i *FileStorageSparse) CancelWrites(offset int64, length int64) {}

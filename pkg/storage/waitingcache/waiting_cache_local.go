@@ -108,3 +108,7 @@ func (wcl *WaitingCacheLocal) DirtyBlocks(blocks []uint) {
 		wcl.wc.markUnavailableRemoteBlock(v)
 	}
 }
+
+func (wcl *WaitingCacheLocal) CancelWrites(offset int64, length int64) {
+	wcl.wc.prov.CancelWrites(offset, length)
+}

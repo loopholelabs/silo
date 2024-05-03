@@ -58,3 +58,8 @@ func (i *Logger) Size() uint64 {
 func (i *Logger) Close() error {
 	return i.prov.Close()
 }
+
+func (i *Logger) CancelWrites(offset int64, length int64) {
+	i.prov.CancelWrites(offset, length)
+	// TODO: Implement
+}

@@ -57,6 +57,10 @@ func (i *Lockable) Close() error {
 	return i.prov.Close()
 }
 
+func (i *Lockable) CancelWrites(offset int64, length int64) {
+	i.prov.CancelWrites(offset, length)
+}
+
 func (i *Lockable) Unlock() {
 	i.lock.L.Lock()
 	defer i.lock.L.Unlock()

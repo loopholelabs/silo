@@ -61,3 +61,7 @@ func (i *Hooks) Size() uint64 {
 func (i *Hooks) Close() error {
 	return i.prov.Close()
 }
+
+func (i *Hooks) CancelWrites(offset int64, length int64) {
+	i.prov.CancelWrites(offset, length)
+}

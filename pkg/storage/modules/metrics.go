@@ -47,44 +47,61 @@ func NewMetrics(prov storage.StorageProvider) *Metrics {
 	}
 }
 
+func formatDuration(d time.Duration) string {
+	if d < time.Millisecond {
+		return fmt.Sprintf("%dns", d.Nanoseconds())
+	} else if d < time.Second {
+		return fmt.Sprintf("%dms", d.Milliseconds())
+	} else {
+		return fmt.Sprintf("%.3fs", float64(d)/float64(time.Second))
+	}
+}
+
 func (i *Metrics) ShowStats(prefix string) {
 	read_ops := atomic.LoadUint64(&i.metric_read_ops)
+	read_errors := atomic.LoadUint64(&i.metric_read_errors)
 	read_time := atomic.LoadUint64(&i.metric_read_time)
 	read_avg_time := uint64(0)
-	if read_ops > 0 {
-		read_avg_time = read_time / read_ops
+	if read_ops-read_errors > 0 {
+		read_avg_time = read_time / (read_ops - read_errors)
 	}
-	fmt.Printf("%s: Reads=%d (%d bytes) avg latency %dns, %d errors, ",
+	read_avg_time_f := formatDuration(time.Duration(read_avg_time))
+	fmt.Printf("%s: Reads=%d (%d bytes) avg latency %s, %d errors, ",
 		prefix,
 		read_ops,
 		atomic.LoadUint64(&i.metric_read_bytes),
-		read_avg_time,
-		atomic.LoadUint64(&i.metric_read_errors),
+		read_avg_time_f,
+		read_errors,
 	)
 
 	write_ops := atomic.LoadUint64(&i.metric_write_ops)
+	write_errors := atomic.LoadUint64(&i.metric_write_errors)
 	write_time := atomic.LoadUint64(&i.metric_write_time)
 	write_avg_time := uint64(0)
-	if write_ops > 0 {
-		write_avg_time = write_time / write_ops
+	if write_ops-write_errors > 0 {
+		write_avg_time = write_time / (write_ops - write_errors)
 	}
-	fmt.Printf("Writes=%d (%d bytes) avg latency %dns, %d errors, ",
+	write_avg_time_f := formatDuration(time.Duration(write_avg_time))
+	fmt.Printf("Writes=%d (%d bytes) avg latency %s, %d errors, ",
 		write_ops,
 		atomic.LoadUint64(&i.metric_write_bytes),
-		write_avg_time,
-		atomic.LoadUint64(&i.metric_write_errors),
+		write_avg_time_f,
+		write_errors,
 	)
 
 	flush_ops := atomic.LoadUint64(&i.metric_flush_ops)
+	flush_errors := atomic.LoadUint64(&i.metric_flush_errors)
 	flush_time := atomic.LoadUint64(&i.metric_flush_time)
 	flush_avg_time := uint64(0)
-	if flush_ops > 0 {
-		flush_avg_time = flush_time / flush_ops
+	if flush_ops-flush_errors > 0 {
+		flush_avg_time = flush_time / (flush_ops - flush_errors)
 	}
-	fmt.Printf("Flushes=%d avg latency %dns, %d errors\n",
+	flush_avg_time_f := formatDuration(time.Duration(flush_avg_time))
+
+	fmt.Printf("Flushes=%d avg latency %s, %d errors\n",
 		flush_ops,
-		flush_avg_time,
-		atomic.LoadUint64(&i.metric_flush_errors),
+		flush_avg_time_f,
+		flush_errors,
 	)
 }
 
@@ -123,9 +140,10 @@ func (i *Metrics) ReadAt(buffer []byte, offset int64) (int, error) {
 	atomic.AddUint64(&i.metric_read_bytes, uint64(len(buffer)))
 	ctime := time.Now()
 	n, e := i.prov.ReadAt(buffer, offset)
-	atomic.AddUint64(&i.metric_read_time, uint64(time.Since(ctime).Nanoseconds()))
 	if e != nil {
 		atomic.AddUint64(&i.metric_read_errors, 1)
+	} else {
+		atomic.AddUint64(&i.metric_read_time, uint64(time.Since(ctime).Nanoseconds()))
 	}
 	return n, e
 }
@@ -135,9 +153,10 @@ func (i *Metrics) WriteAt(buffer []byte, offset int64) (int, error) {
 	atomic.AddUint64(&i.metric_write_bytes, uint64(len(buffer)))
 	ctime := time.Now()
 	n, e := i.prov.WriteAt(buffer, offset)
-	atomic.AddUint64(&i.metric_write_time, uint64(time.Since(ctime).Nanoseconds()))
 	if e != nil {
 		atomic.AddUint64(&i.metric_write_errors, 1)
+	} else {
+		atomic.AddUint64(&i.metric_write_time, uint64(time.Since(ctime).Nanoseconds()))
 	}
 	return n, e
 }
@@ -159,4 +178,8 @@ func (i *Metrics) Size() uint64 {
 
 func (i *Metrics) Close() error {
 	return i.prov.Close()
+}
+
+func (i *Metrics) CancelWrites(offset int64, length int64) {
+	i.prov.CancelWrites(offset, length)
 }

@@ -45,3 +45,5 @@ func (i *MemoryStorage) Size() uint64 {
 func (i *MemoryStorage) Close() error {
 	return nil
 }
+
+func (i *MemoryStorage) CancelWrites(offset int64, length int64) {}

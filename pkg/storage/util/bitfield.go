@@ -100,6 +100,20 @@ func (bf *Bitfield) BitSet(i int) bool {
 }
 
 /**
+ * Set the bit. Returns the previous state of the bit
+ *
+ */
+func (bf *Bitfield) SetBitIfClear(i int) bool {
+	f := uint64(1 << (i & 63))
+	p := i >> 6
+	old := atomic.LoadUint64(&bf.data[p])
+	for !atomic.CompareAndSwapUint64(&bf.data[p], old, old|f) {
+		old = atomic.LoadUint64(&bf.data[p])
+	}
+	return (old & f) != 0
+}
+
+/**
  * Get the length of the bitfield
  *
  */

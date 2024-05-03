@@ -1,7 +1,10 @@
 package dirtytracker
 
 import (
+	"fmt"
+	"sort"
 	"sync"
+	"time"
 
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/util"
@@ -14,13 +17,15 @@ import (
  */
 
 type DirtyTracker struct {
-	prov       storage.StorageProvider
-	size       uint64
-	block_size int
-	num_blocks int
-	dirty_log  *util.Bitfield
-	tracking   *util.Bitfield
-	write_lock sync.RWMutex
+	prov           storage.StorageProvider
+	size           uint64
+	block_size     int
+	num_blocks     int
+	dirty_log      *util.Bitfield
+	tracking       *util.Bitfield
+	tracking_times map[uint]time.Time
+	tracking_lock  sync.Mutex
+	write_lock     sync.RWMutex
 }
 
 type DirtyTrackerLocal struct {
@@ -47,6 +52,10 @@ func (dtl *DirtyTrackerLocal) Close() error {
 	return dtl.dt.prov.Close()
 }
 
+func (dtl *DirtyTrackerLocal) CancelWrites(offset int64, length int64) {
+	dtl.dt.prov.CancelWrites(offset, length)
+}
+
 type DirtyTrackerRemote struct {
 	dt *DirtyTracker
 }
@@ -71,21 +80,169 @@ func (dtl *DirtyTrackerRemote) Close() error {
 	return dtl.dt.prov.Close()
 }
 
+func (dtl *DirtyTrackerRemote) CancelWrites(offset int64, length int64) {
+	dtl.dt.prov.CancelWrites(offset, length)
+}
+
 func NewDirtyTracker(prov storage.StorageProvider, blockSize int) (*DirtyTrackerLocal, *DirtyTrackerRemote) {
 	size := int(prov.Size())
 	numBlocks := (size + blockSize - 1) / blockSize
 	dt := &DirtyTracker{
-		size:       prov.Size(),
-		block_size: blockSize,
-		num_blocks: numBlocks,
-		prov:       prov,
-		tracking:   util.NewBitfield(numBlocks),
-		dirty_log:  util.NewBitfield(numBlocks),
+		size:           prov.Size(),
+		block_size:     blockSize,
+		num_blocks:     numBlocks,
+		prov:           prov,
+		tracking:       util.NewBitfield(numBlocks),
+		dirty_log:      util.NewBitfield(numBlocks),
+		tracking_times: make(map[uint]time.Time),
 	}
 	return &DirtyTrackerLocal{dt: dt}, &DirtyTrackerRemote{dt: dt}
 }
 
-func (i *DirtyTrackerRemote) Sync() *util.Bitfield {
+func (i *DirtyTracker) trackArea(length int64, offset int64) {
+	end := uint64(offset + length)
+	if end > i.size {
+		end = i.size
+	}
+
+	b_start := uint(offset / int64(i.block_size))
+	b_end := uint((end-1)/uint64(i.block_size)) + 1
+
+	// Enable tracking for this area
+	i.tracking.SetBits(b_start, b_end)
+}
+
+/**
+ * Start tracking at the given offset and length
+ *
+ */
+func (i *DirtyTrackerRemote) TrackAt(offset int64, length int64) {
+	i.dt.trackArea(length, offset)
+}
+
+/**
+ * Get a quick measure of how many blocks are currently dirty
+ *
+ */
+func (i *DirtyTrackerRemote) MeasureDirty() int {
+	i.dt.tracking_lock.Lock()
+	defer i.dt.tracking_lock.Unlock()
+
+	fmt.Printf("Dirty blocks=%d size=%d %d / %d\n", i.dt.num_blocks, i.dt.size, i.dt.tracking.Count(0, uint(i.dt.num_blocks)), i.dt.dirty_log.Count(0, uint(i.dt.num_blocks)))
+
+	return len(i.dt.tracking_times)
+}
+
+/**
+ * Get a quick measure of the oldest dirty block
+ *
+ */
+func (i *DirtyTrackerRemote) MeasureDirtyAge() time.Time {
+	i.dt.tracking_lock.Lock()
+	defer i.dt.tracking_lock.Unlock()
+	min_age := time.Now()
+	for _, t := range i.dt.tracking_times {
+		if t.Before(min_age) {
+			min_age = t
+		}
+	}
+	return min_age
+}
+
+/**
+ * Get some dirty blocks using the given criteria
+ *
+ * - max_age - Returns blocks older than the given duration as priority
+ * - limit -   Limits how many blocks are returned
+ * - group_by_shift - Groups subblocks into blocks using the given shift
+ * - min_changed    - Minimum subblock changes in a block
+ */
+func (i *DirtyTrackerRemote) GetDirtyBlocks(max_age time.Duration, limit int, group_by_shift int, min_changed int) []uint {
+	// Prevent any writes while we get dirty blocks
+	i.dt.write_lock.Lock()
+	defer i.dt.write_lock.Unlock()
+
+	grouped_blocks := make(map[uint][]uint)
+
+	// First look for any dirty blocks past max_age
+	i.dt.tracking_lock.Lock()
+	for b, t := range i.dt.tracking_times {
+		if time.Since(t) > max_age {
+			grouped_b := b >> group_by_shift
+			v, ok := grouped_blocks[grouped_b]
+			if ok {
+				grouped_blocks[grouped_b] = append(v, b)
+			} else {
+				grouped_blocks[grouped_b] = []uint{b}
+			}
+			if len(grouped_blocks) == limit {
+				break
+			}
+		}
+	}
+	i.dt.tracking_lock.Unlock()
+
+	// Now we look for changed blocks, and sort by how much.
+	if len(grouped_blocks) < limit {
+		grouped_blocks_changed := make(map[uint][]uint)
+		// Now we also look for extra blocks based on how much they have changed...
+		bls := i.dt.dirty_log.Collect(0, uint(i.dt.num_blocks))
+		for _, b := range bls {
+			grouped_b := b >> group_by_shift
+			v, ok := grouped_blocks_changed[grouped_b]
+			if ok {
+				grouped_blocks_changed[grouped_b] = append(v, b)
+			} else {
+				grouped_blocks_changed[grouped_b] = []uint{b}
+			}
+		}
+
+		// Now sort by how much changed
+		keys := make([]uint, 0, len(grouped_blocks_changed))
+		for key := range grouped_blocks_changed {
+			keys = append(keys, key)
+		}
+
+		// Sort the blocks by how many sub-blocks are dirty.
+		sort.SliceStable(keys, func(i, j int) bool {
+			return len(grouped_blocks_changed[keys[i]]) > len(grouped_blocks_changed[keys[j]])
+		})
+
+		// Now add them into grouped_blocks if we can...
+		for {
+			if len(grouped_blocks) == limit {
+				break
+			}
+			if len(keys) == 0 {
+				break
+			}
+			// Pick one out of grouped_blocks_changed, and try to add it
+			k := keys[0]
+			keys = keys[1:]
+
+			if len(grouped_blocks_changed[k]) >= min_changed {
+				// This may overwrite an existing entry which is max_age, but we'll have the same block + others here
+				grouped_blocks[k] = grouped_blocks_changed[k]
+			}
+		}
+	}
+
+	// Clear out the tracking data here... It'll get added for tracking again on a readAt()
+	rblocks := make([]uint, 0)
+	for rb, blocks := range grouped_blocks {
+		for _, b := range blocks {
+			i.dt.tracking.ClearBit(int(b))
+			i.dt.dirty_log.ClearBit(int(b))
+			i.dt.tracking_lock.Lock()
+			delete(i.dt.tracking_times, b)
+			i.dt.tracking_lock.Unlock()
+		}
+		rblocks = append(rblocks, rb)
+	}
+	return rblocks
+}
+
+func (i *DirtyTrackerRemote) GetAllDirtyBlocks() *util.Bitfield {
 	// Prevent any writes while we do the Sync()
 	i.dt.write_lock.Lock()
 	defer i.dt.write_lock.Unlock()
@@ -97,6 +254,19 @@ func (i *DirtyTrackerRemote) Sync() *util.Bitfield {
 
 	// Clear the dirty log.
 	i.dt.dirty_log.Clear()
+
+	blocks := info.Collect(0, info.Length())
+	i.dt.tracking_lock.Lock()
+	for _, b := range blocks {
+		delete(i.dt.tracking_times, b)
+	}
+	i.dt.tracking_lock.Unlock()
+
+	return info
+}
+
+func (i *DirtyTrackerRemote) Sync() *util.Bitfield {
+	info := i.GetAllDirtyBlocks()
 	return info
 }
 
@@ -120,6 +290,14 @@ func (i *DirtyTracker) localWriteAt(buffer []byte, offset int64) (int, error) {
 		b_end := uint((end-1)/uint64(i.block_size)) + 1
 
 		i.dirty_log.SetBitsIf(i.tracking, b_start, b_end)
+
+		// Update tracking times for last block write
+		i.tracking_lock.Lock()
+		now := time.Now()
+		for b := b_start; b < b_end; b++ {
+			i.tracking_times[b] = now
+		}
+		i.tracking_lock.Unlock()
 	}
 	return n, err
 }
@@ -133,16 +311,9 @@ func (i *DirtyTracker) localSize() uint64 {
 }
 
 func (i *DirtyTracker) remoteReadAt(buffer []byte, offset int64) (int, error) {
-	end := uint64(offset + int64(len(buffer)))
-	if end > i.size {
-		end = i.size
-	}
 
-	b_start := uint(offset / int64(i.block_size))
-	b_end := uint((end-1)/uint64(i.block_size)) + 1
-
-	// Enable tracking for this area
-	i.tracking.SetBits(b_start, b_end)
+	// Start tracking dirty on the area we read.
+	i.trackArea(int64(len(buffer)), offset)
 	// NB: A WriteAt could occur here, which would result in an incorrect dirty marking.
 	// TODO: Do something to mitigate this without affecting performance.
 	// Note though, that this is still preferable to tracking everything before it's been read for migration.

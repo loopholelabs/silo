@@ -73,6 +73,10 @@ func (i *ExposedStorageNBDNL) Close() error {
 	return i.prov.Close()
 }
 
+func (i *ExposedStorageNBDNL) CancelWrites(offset int64, length int64) {
+	i.prov.CancelWrites(offset, length)
+}
+
 func (n *ExposedStorageNBDNL) Device() string {
 	return fmt.Sprintf("nbd%d", n.device_index)
 }

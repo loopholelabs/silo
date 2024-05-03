@@ -6,10 +6,13 @@ package modules
  */
 
 type Nothing struct {
+	size uint64
 }
 
-func NewNothing() *Nothing {
-	return &Nothing{}
+func NewNothing(size uint64) *Nothing {
+	return &Nothing{
+		size: size,
+	}
 }
 
 func (i *Nothing) ReadAt(buffer []byte, offset int64) (int, error) {
@@ -25,9 +28,13 @@ func (i *Nothing) Flush() error {
 }
 
 func (i *Nothing) Size() uint64 {
-	return 0
+	return i.size
 }
 
 func (i *Nothing) Close() error {
 	return nil
+}
+
+func (i *Nothing) CancelWrites(offset int64, length int64) {
+	// TODO: Implement
 }

@@ -78,3 +78,5 @@ func (i *FileStorage) Close() error {
 	i.wg.Wait()
 	return i.fp.Close()
 }
+
+func (i *FileStorage) CancelWrites(offset int64, length int64) {}

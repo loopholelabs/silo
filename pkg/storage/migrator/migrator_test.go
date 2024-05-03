@@ -505,7 +505,7 @@ func TestMigratorWithReaderWriterWrite(t *testing.T) {
 	err = mig.WaitForCompletion()
 	assert.NoError(t, err)
 
-	assert.Equal(t, int64(num_blocks-num_local_blocks), mig.metric_blocks_moved)
+	assert.Equal(t, int64(num_blocks-num_local_blocks), mig.metric_blocks_migrated)
 }
 
 func TestMigratorSimpleCowSparse(t *testing.T) {

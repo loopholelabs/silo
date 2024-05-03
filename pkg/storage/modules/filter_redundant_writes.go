@@ -82,3 +82,7 @@ func (i *FilterRedundantWrites) Size() uint64 {
 func (i *FilterRedundantWrites) Close() error {
 	return i.prov.Close()
 }
+
+func (i *FilterRedundantWrites) CancelWrites(offset int64, length int64) {
+	i.prov.CancelWrites(offset, length)
+}

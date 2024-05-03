@@ -93,3 +93,7 @@ func (r *Raid) Close() error {
 	}
 	return err
 }
+
+func (i *Raid) CancelWrites(offset int64, length int64) {
+	// TODO: Implement
+}

@@ -250,3 +250,7 @@ func (i *CopyOnWrite) Close() error {
 	i.Close_fn()
 	return nil
 }
+
+func (i *CopyOnWrite) CancelWrites(offset int64, length int64) {
+	i.cache.CancelWrites(offset, length)
+}
