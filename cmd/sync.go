@@ -230,7 +230,7 @@ func sync_shutdown_everything() {
  * Migrate a device to S3
  *
  */
-func sync_migrate_s3(dev_id uint32, name string,
+func sync_migrate_s3(_ uint32, name string,
 	sinfo *syncStorageInfo) error {
 
 	dest_metrics := modules.NewMetrics(sinfo.dest_metrics)
@@ -276,6 +276,7 @@ func sync_migrate_s3(dev_id uint32, name string,
 		// Open up a binlog, and replay it
 		blr, err := modules.NewBinLogReplay(sinfo.replay_log, sinfo.lockable)
 		if err != nil {
+			cancelFn()
 			return err
 		}
 
@@ -291,6 +292,7 @@ func sync_migrate_s3(dev_id uint32, name string,
 				if errors.Is(err, io.EOF) {
 					break
 				} else if err != nil {
+					cancelFn()
 					panic(err)
 				}
 			}
@@ -314,6 +316,7 @@ func sync_migrate_s3(dev_id uint32, name string,
 		// Now do the initial migration...
 		err = mig.Migrate(int(num_blocks))
 		if err != nil {
+			cancelFn()
 			return err
 		}
 
@@ -322,6 +325,7 @@ func sync_migrate_s3(dev_id uint32, name string,
 		// Wait for completion.
 		err = mig.WaitForCompletion()
 		if err != nil {
+			cancelFn()
 			return err
 		}
 	}
@@ -346,6 +350,7 @@ func sync_migrate_s3(dev_id uint32, name string,
 		if blocks != nil {
 			err = mig.MigrateDirty(blocks)
 			if err != nil {
+				cancelFn()
 				return err
 			}
 		} else {
