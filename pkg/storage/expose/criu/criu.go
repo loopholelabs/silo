@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-var CRIU_PAGE_SIZE = uint32(4096)
+var PAGE_SIZE = uint32(4096)
 
 type PageServerIOV struct {
 	Cmd        uint32 // CRIU Command
