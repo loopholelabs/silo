@@ -36,6 +36,11 @@ func (iov *PageServerIOV) Command() uint16 {
 	return uint16(iov.Cmd & PS_CMD_MASK)
 }
 
+func (iov *PageServerIOV) SetCommand(cmd uint16) {
+	flags := iov.Cmd >> PS_CMD_BITS
+	iov.Cmd = flags<<PS_CMD_BITS | uint32(cmd)
+}
+
 func (iov *PageServerIOV) DstID() uint64 {
 	return iov.Dst_id >> PS_TYPE_BITS
 }
@@ -68,7 +73,7 @@ func (iov *PageServerIOV) String() string {
 	}
 
 	// Now show the iov data...
-	return fmt.Sprintf("CMD(%s) FLAGS(%s) ID(%d) TYPE(%s)", cmdString, flagsString, iov.DstID(), typeString)
+	return fmt.Sprintf("CMD(%s) FLAGS(%s) ID(%d) TYPE(%s) VADDR(0x%x)", cmdString, flagsString, iov.DstID(), typeString, iov.Vaddr)
 }
 
 const PS_CMD_BITS = 16

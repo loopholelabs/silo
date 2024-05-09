@@ -37,7 +37,14 @@ func (ps *PageServer) Handle(conn net.Conn) error {
 			databuffer := make([]byte, i.Page_count*PAGE_SIZE)
 			ps.GetPageData(i, databuffer)
 
-			_, err := conn.Write(databuffer)
+			i.SetCommand(PS_IOV_ADD_F)
+			ret := i.Encode()
+			_, err := conn.Write(ret)
+			if err != nil {
+				return err
+			}
+
+			_, err = conn.Write(databuffer)
 			if err != nil {
 				return err
 			}
