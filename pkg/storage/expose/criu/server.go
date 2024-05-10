@@ -1,6 +1,7 @@
 package criu
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"net"
@@ -23,6 +24,20 @@ func NewPageServer() *PageServer {
  *
  */
 func (ps *PageServer) Handle(conn net.Conn) error {
+
+	page_adds_parent := 0
+	page_adds_present := 0
+	page_adds_lazy := 0
+	hello_found := 0
+	world_found := 0
+
+	defer func() {
+		fmt.Printf("Handle finished for %s\n", conn.RemoteAddr().String())
+		fmt.Printf("AddPageData parent(%d) present(%d) lazy(%d) - New data = %d bytes\n", page_adds_parent, page_adds_present, page_adds_lazy, page_adds_present*int(PAGE_SIZE))
+		fmt.Printf("Grep changed data for 'HELLO'=%d 'WORLD'=%d\n", hello_found, world_found)
+		conn.Close()
+	}()
+
 	for {
 		buffer := make([]byte, 24)
 		_, err := io.ReadFull(conn, buffer)
@@ -31,7 +46,7 @@ func (ps *PageServer) Handle(conn net.Conn) error {
 		}
 
 		i := Decode(buffer)
-		fmt.Printf("-> %s\n", i.String())
+		//		fmt.Printf("-> %s\n", i.String())
 
 		if i.Command() == PS_IOV_GET {
 			databuffer := make([]byte, i.Page_count*PAGE_SIZE)
@@ -51,9 +66,32 @@ func (ps *PageServer) Handle(conn net.Conn) error {
 
 		} else if i.Command() == PS_IOV_ADD_F {
 			databuffer := make([]byte, i.Page_count*PAGE_SIZE)
-			_, err := io.ReadFull(conn, databuffer)
-			if err != nil {
-				return err
+
+			if i.FlagsParent() {
+				page_adds_parent++
+			}
+			if i.FlagsPresent() {
+				page_adds_present++
+			}
+			if i.FlagsLazy() {
+				page_adds_lazy++
+			}
+
+			if i.FlagsPresent() {
+				_, err := io.ReadFull(conn, databuffer)
+				if err != nil {
+					return err
+				}
+
+				// check if it contains our strings?
+				hello := (bytes.Index(databuffer, []byte("HELLO")) != -1)
+				world := (bytes.Index(databuffer, []byte("WORLD")) != -1)
+				if hello {
+					hello_found++
+				}
+				if world {
+					world_found++
+				}
 			}
 			ps.AddPageData(i, databuffer)
 		} else if i.Command() == PS_IOV_OPEN2 {

@@ -45,6 +45,21 @@ func (iov *PageServerIOV) DstID() uint64 {
 	return iov.Dst_id >> PS_TYPE_BITS
 }
 
+func (iov *PageServerIOV) FlagsLazy() bool {
+	flags := iov.Cmd >> PS_CMD_BITS
+	return (flags & PE_LAZY) == PE_LAZY
+}
+
+func (iov *PageServerIOV) FlagsParent() bool {
+	flags := iov.Cmd >> PS_CMD_BITS
+	return (flags & PE_PARENT) == PE_PARENT
+}
+
+func (iov *PageServerIOV) FlagsPresent() bool {
+	flags := iov.Cmd >> PS_CMD_BITS
+	return (flags & PE_PRESENT) == PE_PRESENT
+}
+
 func (iov *PageServerIOV) String() string {
 	cmd := iov.Command()
 	cmdString, ok := PS_IOV_COMMANDS[uint16(cmd)]

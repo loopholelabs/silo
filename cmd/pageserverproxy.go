@@ -9,8 +9,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var pages_serve_addr string
-var pages_connect_addr string
+var pages_proxy_serve_addr string
+var pages_proxy_connect_addr string
 
 var (
 	cmdPagesProxy = &cobra.Command{
@@ -23,14 +23,14 @@ var (
 
 func init() {
 	rootCmd.AddCommand(cmdPagesProxy)
-	cmdPagesProxy.Flags().StringVarP(&pages_serve_addr, "addr", "a", "localhost:5170", "Address to serve from")
-	cmdPagesProxy.Flags().StringVarP(&pages_connect_addr, "connect", "c", "192.168.1.120:9044", "Address to connect to")
+	cmdPagesProxy.Flags().StringVarP(&pages_proxy_serve_addr, "addr", "a", "localhost:5170", "Address to serve from")
+	cmdPagesProxy.Flags().StringVarP(&pages_proxy_connect_addr, "connect", "c", "192.168.1.120:9044", "Address to connect to")
 }
 
 func runPagesProxy(ccmd *cobra.Command, args []string) {
-	fmt.Printf("Running page server proxy listening on %s will connect to %s\n", pages_serve_addr, pages_connect_addr)
+	fmt.Printf("Running page server proxy listening on %s will connect to %s\n", pages_proxy_serve_addr, pages_proxy_connect_addr)
 
-	listener, err := net.Listen("tcp", pages_serve_addr)
+	listener, err := net.Listen("tcp", pages_proxy_serve_addr)
 	if err != nil {
 		panic(err)
 	}
@@ -52,9 +52,9 @@ func pages_serve_proxy(con net.Conn) {
 
 	// Proxy this connection to the actual page server
 
-	con2, err := net.Dial("tcp", pages_connect_addr)
+	con2, err := net.Dial("tcp", pages_proxy_connect_addr)
 	if err != nil {
-		fmt.Printf("Cannot dial to %s %v\n", pages_connect_addr, err)
+		fmt.Printf("Cannot dial to %s %v\n", pages_proxy_connect_addr, err)
 		return
 	}
 
