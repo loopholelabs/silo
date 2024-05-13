@@ -34,6 +34,31 @@ func NewMappedStorage(prov storage.StorageProvider, block_size int) *MappedStora
 	}
 }
 
+func (ms *MappedStorage) GetMap() map[uint64]uint64 {
+	ms.lock.Lock()
+	defer ms.lock.Unlock()
+	idmap := make(map[uint64]uint64)
+	for id, b := range ms.id_to_block {
+		idmap[id] = b
+	}
+	return idmap
+}
+
+func (ms *MappedStorage) SetMap(newmap map[uint64]uint64) {
+	ms.lock.Lock()
+	defer ms.lock.Unlock()
+	// Clear everything...
+	ms.block_available.SetBits(0, ms.block_available.Length())
+	ms.IDs = make([]uint64, ms.block_available.Length())
+	ms.id_to_block = make(map[uint64]uint64)
+	// Now set things...
+	for id, b := range newmap {
+		ms.IDs[b] = id
+		ms.id_to_block[id] = b
+		ms.block_available.ClearBit(int(b))
+	}
+}
+
 func (ms *MappedStorage) Size() uint64 {
 	ms.lock.Lock()
 	defer ms.lock.Unlock()
