@@ -5,6 +5,8 @@ import (
 	"net"
 
 	"github.com/loopholelabs/silo/pkg/storage/expose/criu"
+	"github.com/loopholelabs/silo/pkg/storage/modules"
+	"github.com/loopholelabs/silo/pkg/storage/sources"
 	"github.com/spf13/cobra"
 )
 
@@ -26,7 +28,7 @@ func init() {
 	cmdPages.Flags().StringVarP(&pages_serve_addr, "addr", "a", ":5170", "Address to serve from")
 }
 
-var global_page_data = criu.NewPageStore()
+var page_data map[uint64]*modules.MappedStorage
 
 func runPages(ccmd *cobra.Command, args []string) {
 	fmt.Printf("Running page server listening on %s\n", pages_serve_addr)
@@ -42,34 +44,45 @@ func runPages(ccmd *cobra.Command, args []string) {
 			panic(err)
 		}
 
-		//		fmt.Printf("Connection from %s\n", con.RemoteAddr().String())
+		fmt.Printf("Connection from %s\n", con.RemoteAddr().String())
 
 		ps := criu.NewPageServer()
 
 		ps.AddPageData = func(iov *criu.PageServerIOV, buffer []byte) {
-			//			fmt.Printf("AddPageData %s %d\n", iov.String(), len(buffer))
-			global_page_data.AddPageData(iov, buffer)
-			//			global_page_data.ShowAll()
+			fmt.Printf("AddPageData %s %d\n", iov.String(), len(buffer))
+			maps, ok := page_data[iov.DstID()]
+			if !ok {
+				// Create a new one
+				store := sources.NewMemoryStorage(1 * 1024 * 1024 * 1024)
+				m := modules.NewMappedStorage(store, int(criu.PAGE_SIZE))
+				maps = m
+				page_data[iov.DstID()] = maps
+			}
+
+			maps.WriteBlocks(iov.Vaddr, buffer)
 		}
 
 		ps.GetPageData = func(iov *criu.PageServerIOV, buffer []byte) {
-			//			fmt.Printf("GetPageData %s %d\n", iov.String(), len(buffer))
-			global_page_data.GetPageData(iov, buffer)
+			fmt.Printf("GetPageData %s %d\n", iov.String(), len(buffer))
+			maps, ok := page_data[iov.DstID()]
+			if ok {
+				maps.ReadBlocks(iov.Vaddr, buffer)
+			}
 		}
 
 		ps.Open2 = func(iov *criu.PageServerIOV) bool {
-			//			fmt.Printf("Open2 %s\n", iov.String())
+			fmt.Printf("Open2 %s\n", iov.String())
 			return false
 		}
 
 		ps.Parent = func(iov *criu.PageServerIOV) bool {
-			exists := global_page_data.IDExists(iov)
-			//			fmt.Printf("Parent %s %t\n", iov.String(), exists)
+			_, exists := page_data[iov.DstID()]
+			fmt.Printf("Parent %s %t\n", iov.String(), exists)
 			return exists
 		}
 
 		ps.Close = func(iov *criu.PageServerIOV) {
-			//			fmt.Printf("Close %s\n", iov.String())
+			fmt.Printf("Close %s\n", iov.String())
 		}
 
 		go ps.Handle(con)

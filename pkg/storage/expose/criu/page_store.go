@@ -5,6 +5,8 @@ import (
 	"sync"
 )
 
+// This is a simple in memory store for memory pages
+
 type PageStore struct {
 	pages_lock sync.Mutex
 	pages      map[uint64]*PageMap
