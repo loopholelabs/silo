@@ -28,7 +28,7 @@ func init() {
 	cmdPages.Flags().StringVarP(&pages_serve_addr, "addr", "a", ":5170", "Address to serve from")
 }
 
-var page_data map[uint64]*modules.MappedStorage
+var page_data = make(map[uint64]*modules.MappedStorage)
 
 func runPages(ccmd *cobra.Command, args []string) {
 	fmt.Printf("Running page server listening on %s\n", pages_serve_addr)
@@ -60,6 +60,7 @@ func runPages(ccmd *cobra.Command, args []string) {
 			}
 
 			maps.WriteBlocks(iov.Vaddr, buffer)
+			fmt.Printf(" Size - %d\n", maps.Size())
 		}
 
 		ps.GetPageData = func(iov *criu.PageServerIOV, buffer []byte) {
