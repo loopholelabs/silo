@@ -174,16 +174,19 @@ func Import_image(mapfile string, pagefile string, data_cb func(uint64, []byte, 
 
 		data_len := (int(*pagemap_entry.NrPages) * os.Getpagesize())
 		pagedata := make([]byte, data_len)
-		_, err = pages.ReadAt(pagedata, int64(data_ptr))
-		if err != nil {
-			return err
+
+		if *pagemap_entry.Flags&PE_PRESENT == PE_PRESENT {
+			_, err = pages.ReadAt(pagedata, int64(data_ptr))
+			if err != nil {
+				return err
+			}
+			data_ptr += data_len
 		}
 
 		// TODO: Check flags
 
 		data_cb(*pagemap_entry.Vaddr, pagedata, *pagemap_entry.Flags)
 
-		data_ptr += data_len
 	}
 
 	return nil

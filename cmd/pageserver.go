@@ -18,6 +18,8 @@ var pages_import_map string
 var pages_import_pages string
 var pages_import_id int
 
+var pages_import_lazy_addr string
+
 var pages_export_map string
 var pages_export_pages string
 
@@ -36,6 +38,7 @@ func init() {
 	cmdPages.Flags().StringVarP(&pages_import_map, "importmap", "m", "", "Import map")
 	cmdPages.Flags().StringVarP(&pages_import_pages, "importpages", "p", "", "Import pages")
 	cmdPages.Flags().IntVarP(&pages_import_id, "importid", "i", 0, "Import pid")
+	cmdPages.Flags().StringVarP(&pages_import_lazy_addr, "lazyaddr", "l", ":5171", "Address to get lazy pages from")
 
 	cmdPages.Flags().StringVarP(&pages_export_map, "exportmap", "e", "", "Export map")
 	cmdPages.Flags().StringVarP(&pages_export_pages, "exportpages", "f", "", "Export pages")
@@ -86,6 +89,8 @@ func runPages(ccmd *cobra.Command, args []string) {
 	}()
 
 	if pages_import_map != "" {
+		lazy_requests := make([]*criu.PageRequest, 0)
+
 		// Import some existing data
 		cb := func(vaddr uint64, data []byte, flags uint32) {
 			fmt.Printf("Page data %x - %d Flags %d\n", vaddr, len(data), flags)
@@ -105,11 +110,38 @@ func runPages(ccmd *cobra.Command, args []string) {
 				page_flags[uint64(pages_import_id)][vaddr+uint64(ptr)] = flags
 			}
 
-			maps.WriteBlocks(vaddr, data)
+			if flags&criu.PE_PRESENT == criu.PE_PRESENT {
+				maps.WriteBlocks(vaddr, data)
+			} else {
+				lazy_requests = append(lazy_requests, &criu.PageRequest{
+					Vaddr: vaddr,
+					Pages: uint32(len(data)) / criu.PAGE_SIZE,
+				})
+			}
 		}
 		err := criu.Import_image(pages_import_map, pages_import_pages, cb)
 		if err != nil {
 			panic(err)
+		}
+
+		// Now go get the lazy pages
+		if pages_import_lazy_addr != "" {
+
+			client, err := criu.NewPageClient()
+			if err != nil {
+				panic(err)
+			}
+
+			cb := func(addr uint64, data []byte) {
+				// Fill it in...
+				maps, ok := page_data[uint64(pages_import_id)]
+				if ok {
+					fmt.Printf("Writing from lazy - %x\n", addr)
+					maps.WriteBlocks(addr, data)
+				}
+			}
+
+			client.Connect(pages_import_lazy_addr, pages_import_id, lazy_requests, cb)
 		}
 	}
 

@@ -62,11 +62,11 @@ func pages_serve_proxy(con net.Conn) {
 		con2.Close()
 	}()
 
-	psProxy(con, con2)
+	//psProxy(con, con2)
 
-	//go simpleProxy(con2, con2.RemoteAddr().String(), con, con.RemoteAddr().String())
+	go simpleProxy(con2, con2.RemoteAddr().String(), con, con.RemoteAddr().String())
 
-	//simpleProxy(con, con.RemoteAddr().String(), con2, con2.RemoteAddr().String())
+	simpleProxy(con, con.RemoteAddr().String(), con2, con2.RemoteAddr().String())
 }
 
 func simpleProxy(from io.Reader, fromAddr string, to io.Writer, toAddr string) {
@@ -189,4 +189,5 @@ func psProxy(client net.Conn, server net.Conn) {
 
 func showData(from string, to string, data []byte) {
 	fmt.Printf("DATA %s -> %s : %d\n", from, to, len(data))
+	fmt.Printf("%x\n", data)
 }
