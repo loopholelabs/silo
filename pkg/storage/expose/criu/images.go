@@ -5,7 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
+	"path/filepath"
 	"slices"
+	"strconv"
+	"strings"
 
 	"google.golang.org/protobuf/proto"
 
@@ -109,17 +113,80 @@ func Export_image(mapfile string, pagefile string, id uint32, pages map[uint64][
 	return nil
 }
 
-func Import_image(mapfile string, pagefile string, data_cb func(uint64, []byte, uint32)) error {
+func Import_images(dir string, cb func(uint32, uint64, []byte, uint32)) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+
+	for _, ent := range entries {
+		if !ent.IsDir() && strings.HasPrefix(ent.Name(), "pagemap-") && strings.HasSuffix(ent.Name(), ".img") {
+			d := ent.Name()
+			id, err := strconv.ParseInt(d[8:len(d)-4], 10, 32)
+			if err != nil {
+				return err
+			}
+			// Now import the image...
+			Import_image(path.Join(dir, ent.Name()), uint32(id), cb)
+		}
+	}
+	return nil
+}
+
+func Get_next_page_id(mapdir string) uint32 {
+	id := uint32(1)
+	for {
+		n := path.Join(mapdir, fmt.Sprintf("pages-%d.img", id))
+		_, err := os.Stat(n)
+		if errors.Is(err, os.ErrNotExist) {
+			return id
+		}
+		id++
+	}
+}
+
+func Remove_image(mapfile string) error {
 	data, err := os.ReadFile(mapfile)
 	if err != nil {
 		return err
 	}
 
-	pages, err := os.Open(pagefile)
+	// Check the first 8 bytes are correct
+	for i := 0; i < len(pagemap_magic); i++ {
+		if pagemap_magic[i] != data[i] {
+			return errors.New("Invalid pagemap")
+		}
+	}
+
+	ptr := 8
+	header_len := binary.LittleEndian.Uint32(data[ptr:])
+	ptr += 4
+	header_data := data[ptr : ptr+int(header_len)]
+	ptr += int(header_len)
+
+	pagemap_header := &criuproto.PagemapHead{}
+
+	// Now read the data out...
+	err = proto.Unmarshal(header_data, pagemap_header)
 	if err != nil {
 		return err
 	}
-	defer pages.Close()
+
+	// Open the page data
+	pagefile := path.Join(filepath.Dir(mapfile), fmt.Sprintf("pages-%d.img", *pagemap_header.PagesId))
+
+	err = os.Remove(pagefile)
+	if err != nil {
+		return err
+	}
+	return os.Remove(mapfile)
+}
+
+func Import_image(mapfile string, id uint32, data_cb func(uint32, uint64, []byte, uint32)) error {
+	data, err := os.ReadFile(mapfile)
+	if err != nil {
+		return err
+	}
 
 	// Check the first 8 bytes are correct
 	for i := 0; i < len(pagemap_magic); i++ {
@@ -142,6 +209,15 @@ func Import_image(mapfile string, pagefile string, data_cb func(uint64, []byte, 
 		return err
 	}
 	fmt.Printf("PageMap header %v\n", pagemap_header)
+
+	// Open the page data
+	pagefile := path.Join(filepath.Dir(mapfile), fmt.Sprintf("pages-%d.img", *pagemap_header.PagesId))
+
+	pages, err := os.Open(pagefile)
+	if err != nil {
+		return err
+	}
+	defer pages.Close()
 
 	data_ptr := 0
 	for {
@@ -183,10 +259,7 @@ func Import_image(mapfile string, pagefile string, data_cb func(uint64, []byte, 
 			data_ptr += data_len
 		}
 
-		// TODO: Check flags
-
-		data_cb(*pagemap_entry.Vaddr, pagedata, *pagemap_entry.Flags)
-
+		data_cb(id, *pagemap_entry.Vaddr, pagedata, *pagemap_entry.Flags)
 	}
 
 	return nil

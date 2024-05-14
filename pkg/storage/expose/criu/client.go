@@ -7,6 +7,7 @@ import (
 )
 
 type PageRequest struct {
+	Pid   uint32
 	Vaddr uint64
 	Pages uint32
 }
@@ -20,7 +21,7 @@ func NewPageClient() (*PageClient, error) {
 }
 
 // This can be used to connect to a LAZY PAGES server to get missing pages
-func (pc *PageClient) Connect(addr string, id int, requests []*PageRequest, cb func(uint64, []byte)) error {
+func (pc *PageClient) Connect(addr string, requests []*PageRequest, cb func(uint32, uint64, []byte)) error {
 	con, err := net.Dial("tcp", addr)
 	if err != nil {
 		return err
@@ -32,7 +33,7 @@ func (pc *PageClient) Connect(addr string, id int, requests []*PageRequest, cb f
 	for _, req := range requests {
 		iov_get := PageServerIOV{
 			Cmd:        PS_IOV_GET,
-			Dst_id:     uint64(id), // FIXME
+			Dst_id:     uint64(req.Pid), // NOTE: Different to page server
 			Vaddr:      req.Vaddr,
 			Page_count: req.Pages,
 		}
@@ -60,7 +61,7 @@ func (pc *PageClient) Connect(addr string, id int, requests []*PageRequest, cb f
 			return err
 		}
 
-		cb(req.Vaddr, databuffer)
+		cb(req.Pid, req.Vaddr, databuffer)
 	}
 
 	iov_close := PageServerIOV{

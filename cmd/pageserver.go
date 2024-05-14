@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path"
 
 	"github.com/loopholelabs/silo/pkg/storage/expose/criu"
 	"github.com/loopholelabs/silo/pkg/storage/modules"
@@ -14,14 +15,9 @@ import (
 var PAGE_SIZE = uint32(4096)
 
 var pages_serve_addr string
-var pages_import_map string
-var pages_import_pages string
-var pages_import_id int
-
+var pages_import_dir string
+var pages_export_dir string
 var pages_import_lazy_addr string
-
-var pages_export_map string
-var pages_export_pages string
 
 var (
 	cmdPages = &cobra.Command{
@@ -35,13 +31,10 @@ var (
 func init() {
 	rootCmd.AddCommand(cmdPages)
 	cmdPages.Flags().StringVarP(&pages_serve_addr, "addr", "a", ":5170", "Address to serve from")
-	cmdPages.Flags().StringVarP(&pages_import_map, "importmap", "m", "", "Import map")
-	cmdPages.Flags().StringVarP(&pages_import_pages, "importpages", "p", "", "Import pages")
-	cmdPages.Flags().IntVarP(&pages_import_id, "importid", "i", 0, "Import pid")
+	cmdPages.Flags().StringVarP(&pages_import_dir, "importdir", "i", "", "Import maps")
 	cmdPages.Flags().StringVarP(&pages_import_lazy_addr, "lazyaddr", "l", ":5171", "Address to get lazy pages from")
 
-	cmdPages.Flags().StringVarP(&pages_export_map, "exportmap", "e", "", "Export map")
-	cmdPages.Flags().StringVarP(&pages_export_pages, "exportpages", "f", "", "Export pages")
+	cmdPages.Flags().StringVarP(&pages_export_dir, "exportdir", "e", "", "Export maps")
 }
 
 var page_data = make(map[uint64]*modules.MappedStorage)
@@ -88,38 +81,40 @@ func runPages(ccmd *cobra.Command, args []string) {
 		}
 	}()
 
-	if pages_import_map != "" {
+	if pages_import_dir != "" {
 		lazy_requests := make([]*criu.PageRequest, 0)
 
 		// Import some existing data
-		cb := func(vaddr uint64, data []byte, flags uint32) {
+		cb := func(pid uint32, vaddr uint64, data []byte, flags uint32) {
 			fmt.Printf("Page data %x - %d Flags %d\n", vaddr, len(data), flags)
 			// Send it to the thing
-			maps, ok := page_data[uint64(pages_import_id)]
+			maps, ok := page_data[uint64(pid)]
 			if !ok {
 				// Create a new one
 				store := sources.NewMemoryStorage(1 * 1024 * 1024 * 1024)
 				m := modules.NewMappedStorage(store, int(criu.PAGE_SIZE))
 				maps = m
-				page_data[uint64(pages_import_id)] = maps
-				page_flags[uint64(pages_import_id)] = make(map[uint64]uint32)
+				page_data[uint64(pid)] = maps
+				page_flags[uint64(pid)] = make(map[uint64]uint32)
 			}
 
 			// Store the page flags...
 			for ptr := 0; ptr < len(data); ptr += int(criu.PAGE_SIZE) {
-				page_flags[uint64(pages_import_id)][vaddr+uint64(ptr)] = flags
+				page_flags[uint64(pid)][vaddr+uint64(ptr)] = flags
 			}
 
 			if flags&criu.PE_PRESENT == criu.PE_PRESENT {
 				maps.WriteBlocks(vaddr, data)
 			} else {
 				lazy_requests = append(lazy_requests, &criu.PageRequest{
+					Pid:   pid,
 					Vaddr: vaddr,
 					Pages: uint32(len(data)) / criu.PAGE_SIZE,
 				})
 			}
 		}
-		err := criu.Import_image(pages_import_map, pages_import_pages, cb)
+
+		err := criu.Import_images(pages_import_dir, cb)
 		if err != nil {
 			panic(err)
 		}
@@ -132,24 +127,23 @@ func runPages(ccmd *cobra.Command, args []string) {
 				panic(err)
 			}
 
-			cb := func(addr uint64, data []byte) {
+			cb := func(pid uint32, addr uint64, data []byte) {
 				// Fill it in...
-				maps, ok := page_data[uint64(pages_import_id)]
+				maps, ok := page_data[uint64(pid)]
 				if ok {
-					fmt.Printf("Writing from lazy - %x\n", addr)
+					fmt.Printf("Writing from lazy - %d %x\n", pid, addr)
 					maps.WriteBlocks(addr, data)
 				}
 			}
 
-			client.Connect(pages_import_lazy_addr, pages_import_id, lazy_requests, cb)
+			client.Connect(pages_import_lazy_addr, lazy_requests, cb)
 		}
 	}
 
 	// Export it
-	if pages_export_map != "" {
-		// Need to know the PID here...
-		maps, ok := page_data[uint64(pages_import_id)]
-		if ok {
+
+	if pages_export_dir != "" {
+		for pid, maps := range page_data {
 			m := maps.GetMap()
 			pages := make(map[uint64][]byte, 0)
 			for id, _ := range m {
@@ -160,7 +154,13 @@ func runPages(ccmd *cobra.Command, args []string) {
 				}
 				pages[id] = buffer
 			}
-			criu.Export_image(pages_export_map, pages_export_pages, 1, pages, page_flags[uint64(pages_import_id)])
+
+			exp_map := path.Join(pages_export_dir, fmt.Sprintf("pagemap-%d.img", pid))
+			criu.Remove_image(exp_map) // Remove it if there's an existing version
+			id := criu.Get_next_page_id(pages_export_dir)
+			exp_pages := path.Join(pages_export_dir, fmt.Sprintf("pages-%d.img", id))
+			fmt.Printf("Export pages to %s %s %d\n", exp_map, exp_pages, id)
+			criu.Export_image(exp_map, exp_pages, id, pages, page_flags[pid])
 		}
 	}
 
@@ -200,7 +200,7 @@ func runPages(ccmd *cobra.Command, args []string) {
 			fmt.Printf(" Size - %d\n", maps.Size())
 
 			// Export it
-			if pages_export_map != "" {
+			if pages_export_dir != "" {
 				m := maps.GetMap()
 				pages := make(map[uint64][]byte, 0)
 				for id, _ := range m {
@@ -211,7 +211,11 @@ func runPages(ccmd *cobra.Command, args []string) {
 					}
 					pages[id] = buffer
 				}
-				criu.Export_image(pages_export_map, pages_export_pages, 1, pages, page_flags[iov.DstID()])
+				exp_map := path.Join(pages_export_dir, fmt.Sprintf("pagemap-%d.img", iov.DstID()))
+				criu.Remove_image(exp_map) // Remove it if there's an existing version
+				id := criu.Get_next_page_id(pages_export_dir)
+				exp_pages := path.Join(pages_export_dir, fmt.Sprintf("pages-%d.img", id))
+				criu.Export_image(exp_map, exp_pages, id, pages, page_flags[iov.DstID()])
 			}
 
 		}
