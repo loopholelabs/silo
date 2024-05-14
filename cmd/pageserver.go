@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"net"
+	"os"
 
 	"github.com/loopholelabs/silo/pkg/storage/expose/criu"
 	"github.com/loopholelabs/silo/pkg/storage/modules"
@@ -13,6 +14,9 @@ import (
 var PAGE_SIZE = uint32(4096)
 
 var pages_serve_addr string
+var pages_import_map string
+var pages_import_pages string
+var pages_import_id int
 
 var (
 	cmdPages = &cobra.Command{
@@ -26,12 +30,75 @@ var (
 func init() {
 	rootCmd.AddCommand(cmdPages)
 	cmdPages.Flags().StringVarP(&pages_serve_addr, "addr", "a", ":5170", "Address to serve from")
+	cmdPages.Flags().StringVarP(&pages_import_map, "importmap", "m", "", "Import map")
+	cmdPages.Flags().StringVarP(&pages_import_pages, "importpages", "p", "", "Import pages")
+	cmdPages.Flags().IntVarP(&pages_import_id, "importid", "i", 0, "Import pid")
 }
 
 var page_data = make(map[uint64]*modules.MappedStorage)
 
 func runPages(ccmd *cobra.Command, args []string) {
 	fmt.Printf("Running page server listening on %s\n", pages_serve_addr)
+
+	// Handle userfaults
+	init := func(pid uint32, provide criu.ProvideData) error {
+		fmt.Printf("Init %d\n", pid)
+		return nil
+	}
+
+	fault := func(pid uint32, addr uint64, provide criu.ProvideData) error {
+		fmt.Printf("Fault for %d address %x\n", pid, addr)
+		// Look it up in page_data...
+		maps, ok := page_data[uint64(pid)]
+		if !ok {
+			panic("We do not have such a page for that pid!")
+		}
+		data := make([]byte, os.Getpagesize())
+		err := maps.ReadBlock(addr, data)
+		if err == modules.Err_not_found {
+			fmt.Printf("WARN: No data found for this block!\n")
+		} else if err != nil {
+			panic(err)
+		}
+
+		provide(addr, data)
+		return nil
+	}
+
+	uf, err := criu.NewUserFaultHandler("lazy-pages.socket", init, fault)
+	if err != nil {
+		panic(err)
+	}
+
+	// Handle any userfault stuff...
+	go func() {
+		err = uf.Handle()
+		if err != nil {
+			panic(err)
+		}
+	}()
+
+	if pages_import_map != "" {
+		// Import some existing data
+		cb := func(vaddr uint64, data []byte) {
+			fmt.Printf("Page data %x - %d\n", vaddr, len(data))
+			// Send it to the thing
+			maps, ok := page_data[uint64(pages_import_id)]
+			if !ok {
+				// Create a new one
+				store := sources.NewMemoryStorage(1 * 1024 * 1024 * 1024)
+				m := modules.NewMappedStorage(store, int(criu.PAGE_SIZE))
+				maps = m
+				page_data[uint64(pages_import_id)] = maps
+			}
+
+			maps.WriteBlocks(vaddr, data)
+		}
+		err := criu.Import_image(pages_import_map, pages_import_pages, cb)
+		if err != nil {
+			panic(err)
+		}
+	}
 
 	listener, err := net.Listen("tcp", pages_serve_addr)
 	if err != nil {
