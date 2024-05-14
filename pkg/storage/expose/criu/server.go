@@ -24,7 +24,6 @@ func NewPageServer() *PageServer {
  *
  */
 func (ps *PageServer) Handle(conn net.Conn) error {
-
 	page_adds_parent := 0
 	page_adds_present := 0
 	page_adds_lazy := 0

@@ -18,6 +18,9 @@ var pages_import_map string
 var pages_import_pages string
 var pages_import_id int
 
+var pages_export_map string
+var pages_export_pages string
+
 var (
 	cmdPages = &cobra.Command{
 		Use:   "pages",
@@ -33,9 +36,13 @@ func init() {
 	cmdPages.Flags().StringVarP(&pages_import_map, "importmap", "m", "", "Import map")
 	cmdPages.Flags().StringVarP(&pages_import_pages, "importpages", "p", "", "Import pages")
 	cmdPages.Flags().IntVarP(&pages_import_id, "importid", "i", 0, "Import pid")
+
+	cmdPages.Flags().StringVarP(&pages_export_map, "exportmap", "e", "", "Export map")
+	cmdPages.Flags().StringVarP(&pages_export_pages, "exportpages", "f", "", "Export pages")
 }
 
 var page_data = make(map[uint64]*modules.MappedStorage)
+var page_flags = make(map[uint64]map[uint64]uint32)
 
 func runPages(ccmd *cobra.Command, args []string) {
 	fmt.Printf("Running page server listening on %s\n", pages_serve_addr)
@@ -80,8 +87,8 @@ func runPages(ccmd *cobra.Command, args []string) {
 
 	if pages_import_map != "" {
 		// Import some existing data
-		cb := func(vaddr uint64, data []byte) {
-			fmt.Printf("Page data %x - %d\n", vaddr, len(data))
+		cb := func(vaddr uint64, data []byte, flags uint32) {
+			fmt.Printf("Page data %x - %d Flags %d\n", vaddr, len(data), flags)
 			// Send it to the thing
 			maps, ok := page_data[uint64(pages_import_id)]
 			if !ok {
@@ -90,6 +97,12 @@ func runPages(ccmd *cobra.Command, args []string) {
 				m := modules.NewMappedStorage(store, int(criu.PAGE_SIZE))
 				maps = m
 				page_data[uint64(pages_import_id)] = maps
+				page_flags[uint64(pages_import_id)] = make(map[uint64]uint32)
+			}
+
+			// Store the page flags...
+			for ptr := 0; ptr < len(data); ptr += int(criu.PAGE_SIZE) {
+				page_flags[uint64(pages_import_id)][vaddr+uint64(ptr)] = flags
 			}
 
 			maps.WriteBlocks(vaddr, data)
@@ -97,6 +110,25 @@ func runPages(ccmd *cobra.Command, args []string) {
 		err := criu.Import_image(pages_import_map, pages_import_pages, cb)
 		if err != nil {
 			panic(err)
+		}
+	}
+
+	// Export it
+	if pages_export_map != "" {
+		// Need to know the PID here...
+		maps, ok := page_data[uint64(pages_import_id)]
+		if ok {
+			m := maps.GetMap()
+			pages := make(map[uint64][]byte, 0)
+			for id, _ := range m {
+				buffer := make([]byte, int(criu.PAGE_SIZE))
+				err = maps.ReadBlock(id, buffer)
+				if err != nil {
+					panic(err)
+				}
+				pages[id] = buffer
+			}
+			criu.Export_image(pages_export_map, pages_export_pages, 1, pages, page_flags[uint64(pages_import_id)])
 		}
 	}
 
@@ -124,10 +156,32 @@ func runPages(ccmd *cobra.Command, args []string) {
 				m := modules.NewMappedStorage(store, int(criu.PAGE_SIZE))
 				maps = m
 				page_data[iov.DstID()] = maps
+				page_flags[iov.DstID()] = make(map[uint64]uint32)
+			}
+
+			// Store the page flags...
+			for ptr := 0; ptr < len(buffer); ptr += int(criu.PAGE_SIZE) {
+				page_flags[iov.DstID()][iov.Vaddr+uint64(ptr)] = iov.Flags()
 			}
 
 			maps.WriteBlocks(iov.Vaddr, buffer)
 			fmt.Printf(" Size - %d\n", maps.Size())
+
+			// Export it
+			if pages_export_map != "" {
+				m := maps.GetMap()
+				pages := make(map[uint64][]byte, 0)
+				for id, _ := range m {
+					buffer := make([]byte, int(criu.PAGE_SIZE))
+					err = maps.ReadBlock(id, buffer)
+					if err != nil {
+						panic(err)
+					}
+					pages[id] = buffer
+				}
+				criu.Export_image(pages_export_map, pages_export_pages, 1, pages, page_flags[iov.DstID()])
+			}
+
 		}
 
 		ps.GetPageData = func(iov *criu.PageServerIOV, buffer []byte) {
