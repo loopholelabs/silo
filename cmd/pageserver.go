@@ -220,10 +220,7 @@ func runPages(ccmd *cobra.Command, args []string) {
 
 			exp_map := path.Join(pages_export_dir, fmt.Sprintf("pagemap-%d.img", pid))
 			criu.Remove_image(exp_map) // Remove it if there's an existing version
-			id := criu.Get_next_page_id(pages_export_dir)
-			exp_pages := path.Join(pages_export_dir, fmt.Sprintf("pages-%d.img", id))
-			fmt.Printf("Export pages to %s %s %d\n", exp_map, exp_pages, id)
-			criu.Export_image(exp_map, exp_pages, id, pages, page_flags[pid])
+			criu.Export_image(exp_map, pages, page_flags[pid])
 		}
 	}
 
@@ -276,9 +273,7 @@ func runPages(ccmd *cobra.Command, args []string) {
 				}
 				exp_map := path.Join(pages_export_dir, fmt.Sprintf("pagemap-%d.img", iov.DstID()))
 				criu.Remove_image(exp_map) // Remove it if there's an existing version
-				id := criu.Get_next_page_id(pages_export_dir)
-				exp_pages := path.Join(pages_export_dir, fmt.Sprintf("pages-%d.img", id))
-				criu.Export_image(exp_map, exp_pages, id, pages, page_flags[iov.DstID()])
+				criu.Export_image(exp_map, pages, page_flags[iov.DstID()])
 			}
 
 		}

@@ -94,10 +94,11 @@ func runPagemap(ccmd *cobra.Command, args []string) {
 
 			exp_map := path.Join(pagemap_export_dir, fmt.Sprintf("pagemap-%d.img", pid))
 			criu.Remove_image(exp_map) // Remove it if there's an existing version
-			id := criu.Get_next_page_id(pagemap_export_dir)
-			exp_pages := path.Join(pagemap_export_dir, fmt.Sprintf("pages-%d.img", id))
-			fmt.Printf("Export pages to %s %s %d\n", exp_map, exp_pages, id)
-			criu.Export_image(exp_map, exp_pages, id, pages, pagemap_flags[pid])
+			fmt.Printf("Export pages to %s\n", exp_map)
+			err := criu.Export_image(exp_map, pages, pagemap_flags[pid])
+			if err != nil {
+				panic(err)
+			}
 		}
 	}
 }

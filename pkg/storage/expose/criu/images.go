@@ -18,9 +18,18 @@ import (
 
 var pagemap_magic = []byte{0x19, 0x43, 0x56, 0x54, 0x25, 0x40, 0x08, 0x56}
 
-func Export_image(mapfile string, pagefile string, id uint32, pages map[uint64][]byte, page_flags map[uint64]uint32) error {
-	// First compress the data...
+/**
+ * Export a pagemap / pages image
+ *
+ */
+func Export_image(mapfile string, pages map[uint64][]byte, page_flags map[uint64]uint32) error {
 
+	// Figure out a pages-%d.img file to use...
+	pages_dir := filepath.Dir(mapfile)
+	id := Get_next_page_id(pages_dir)
+	pagefile := path.Join(pages_dir, fmt.Sprintf("pages-%d.img", id))
+
+	// First compress the pages...
 	MAX_PAGES := 1024
 
 	new_pages := make(map[uint64][]byte)
@@ -38,11 +47,11 @@ func Export_image(mapfile string, pagefile string, id uint32, pages map[uint64][
 		if ok {
 			compressed_pages[a] = p
 			// Now try to add on...
-			ptr := PAGE_SIZE
+			ptr := os.Getpagesize()
 			for {
 				morea := a + uint64(ptr)
 				morep, kk := new_pages[morea]
-				if len(compressed_pages[a]) >= MAX_PAGES*int(PAGE_SIZE) {
+				if len(compressed_pages[a]) >= MAX_PAGES*os.Getpagesize() {
 					break
 				}
 				if kk && (page_flags[a] == page_flags[morea]) { // Only compress if flags are the same...
@@ -51,17 +60,12 @@ func Export_image(mapfile string, pagefile string, id uint32, pages map[uint64][
 				} else {
 					break
 				}
-				ptr += PAGE_SIZE
+				ptr += os.Getpagesize()
 			}
 		}
 	}
 
 	pages = compressed_pages
-
-	fmt.Printf("Compressed pages\n")
-	for a, b := range compressed_pages {
-		fmt.Printf(" %x -> %d bytes\n", a, len(b))
-	}
 
 	data := make([]byte, 0)
 	data = append(data, pagemap_magic...)
@@ -77,13 +81,16 @@ func Export_image(mapfile string, pagefile string, id uint32, pages map[uint64][
 	data = binary.LittleEndian.AppendUint32(data, uint32(len(pagemap_header_encoded)))
 	data = append(data, pagemap_header_encoded...)
 
-	pagedata := make([]byte, 0)
-
 	page_addresses := make([]uint64, 0)
 	for addr := range pages {
 		page_addresses = append(page_addresses, addr)
 	}
 	slices.Sort(page_addresses)
+
+	pagefilefp, err := os.Create(pagefile)
+	if err != nil {
+		return err
+	}
 
 	// Now go through entries...
 	for _, addr := range page_addresses {
@@ -107,8 +114,16 @@ func Export_image(mapfile string, pagefile string, id uint32, pages map[uint64][
 		data = append(data, pagemap_entry_encoded...)
 
 		if flags&PE_PRESENT == PE_PRESENT {
-			pagedata = append(pagedata, mapdata...)
+			_, err = pagefilefp.Write(mapdata)
+			if err != nil {
+				return err
+			}
 		}
+	}
+
+	err = pagefilefp.Close()
+	if err != nil {
+		return err
 	}
 
 	err = os.WriteFile(mapfile, data, 0777)
@@ -116,14 +131,13 @@ func Export_image(mapfile string, pagefile string, id uint32, pages map[uint64][
 		return err
 	}
 
-	err = os.WriteFile(pagefile, pagedata, 0777)
-	if err != nil {
-		return err
-	}
-
 	return nil
 }
 
+/**
+ * Import all pagemap / pages-%d.img images in a directory
+ *
+ */
 func Import_images(dir string, cb func(uint32, uint64, []byte, uint32)) error {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -144,6 +158,10 @@ func Import_images(dir string, cb func(uint32, uint64, []byte, uint32)) error {
 	return nil
 }
 
+/**
+ * Find a free pages-%d.img ID in a directory.
+ *
+ */
 func Get_next_page_id(mapdir string) uint32 {
 	id := uint32(1)
 	for {
@@ -156,6 +174,10 @@ func Get_next_page_id(mapdir string) uint32 {
 	}
 }
 
+/**
+ * Remove a pagemap file, and the associated pages-%d.img file.
+ *
+ */
 func Remove_image(mapfile string) error {
 	data, err := os.ReadFile(mapfile)
 	if err != nil {
@@ -193,6 +215,10 @@ func Remove_image(mapfile string) error {
 	return os.Remove(mapfile)
 }
 
+/**
+ * Import a pagemap and associated pages-%d.img file.
+ *
+ */
 func Import_image(mapfile string, id uint32, data_cb func(uint32, uint64, []byte, uint32)) error {
 	data, err := os.ReadFile(mapfile)
 	if err != nil {
@@ -219,7 +245,6 @@ func Import_image(mapfile string, id uint32, data_cb func(uint32, uint64, []byte
 	if err != nil {
 		return err
 	}
-	fmt.Printf("PageMap header %v\n", pagemap_header)
 
 	// Open the page data
 	pagefile := path.Join(filepath.Dir(mapfile), fmt.Sprintf("pages-%d.img", *pagemap_header.PagesId))
@@ -257,7 +282,6 @@ func Import_image(mapfile string, id uint32, data_cb func(uint32, uint64, []byte
 		if *pagemap_entry.Flags&PE_PRESENT == PE_PRESENT {
 			flags = flags + " PRESENT"
 		}
-		fmt.Printf("Pagemap entry Vaddr %x pages %d flags %s\n", *pagemap_entry.Vaddr, *pagemap_entry.NrPages, flags)
 
 		data_len := (int(*pagemap_entry.NrPages) * os.Getpagesize())
 		pagedata := make([]byte, data_len)
@@ -269,7 +293,6 @@ func Import_image(mapfile string, id uint32, data_cb func(uint32, uint64, []byte
 			}
 			data_ptr += data_len
 		}
-
 		data_cb(id, *pagemap_entry.Vaddr, pagedata, *pagemap_entry.Flags)
 	}
 
