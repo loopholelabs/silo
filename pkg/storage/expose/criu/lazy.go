@@ -32,11 +32,9 @@ var (
 
 const LAZY_PAGES_RESTORE_FINISHED = 0x52535446 /* ReSTore Finished */
 const UFFDIO_COPY = 3223890435                 // From <linux/userfaultfd.h>
-const UFFDIO_COPY_MODE_DONTWAKE = 1
+const UFFDIO_COPY_MODE_DONTWAKE = 1            // From <linux/userfaultfd.h>
 
 type UFFD uintptr
-
-type ProvideData func(address uint64, data []byte) error
 
 type UserFaultHandler struct {
 	listener       *net.UnixListener
@@ -48,10 +46,8 @@ type UserFaultHandler struct {
 }
 
 func NewUserFaultHandler(socket string, faultHandler func(uint32, uint64, []uint64) error) (*UserFaultHandler, error) {
-	err := os.Remove(socket)
-	if err != nil {
-		return nil, err
-	}
+	// If it exists, remove the socket
+	os.Remove(socket)
 
 	addr, err := net.ResolveUnixAddr("unix", socket)
 	if err != nil {
@@ -73,7 +69,7 @@ func NewUserFaultHandler(socket string, faultHandler func(uint32, uint64, []uint
 }
 
 /**
- * Handle any incoming requests to the unix socket
+ * Handle any incoming requests to the unix socket and service them.
  *
  */
 func (u *UserFaultHandler) Handle() error {
@@ -119,9 +115,7 @@ func (u *UserFaultHandler) Handle() error {
 				// Now handle the userfault stuff
 				go u.HandleUFFD(pid)
 			}
-
 		}(con)
-
 	}
 }
 
