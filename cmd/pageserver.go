@@ -3,9 +3,7 @@ package main
 import (
 	"fmt"
 	"net"
-	"os"
 	"path"
-	"slices"
 	"time"
 
 	"github.com/loopholelabs/silo/pkg/storage/expose/criu"
@@ -71,87 +69,33 @@ func runPages(ccmd *cobra.Command, args []string) {
 			panic("We do not have such a page for that pid!")
 		}
 
-		/*
-			data := make([]byte, os.Getpagesize())
-			err := maps.ReadBlock(addr, data)
-			if err == modules.Err_not_found {
-				fmt.Printf("WARN: No data found for this block! %x\n", addr)
-			} else if err != nil {
-				panic(err)
-			}
-
-			// Hash the data
-			hasher := crypto.SHA256.New()
-			hasher.Write(data)
-			hash := hasher.Sum(nil)
-
-			fmt.Printf("Provide page at %x data is %x\n", addr, hash)
-			uf.WriteData(uint64(pid), addr, data)
-			num_syscalls++
-		*/
-
 		go func() {
 			// TRY TO SEND ALL OUR LAZY DATA IN ONE SHOT (atm)...
 
-			amap := maps.GetMap()
-
-			send_pages := make(map[uint64][]byte)
-
-			for addr := range amap {
-				flag := page_flags[uint64(pid)][addr]
+			all_addresses := maps.GetBlockAddresses()
+			addresses := make([]uint64, 0)
+			// Just the lazy pages
+			for _, a := range all_addresses {
+				flag := page_flags[uint64(pid)][a]
 				if (flag & criu.PE_LAZY) == criu.PE_LAZY {
-					data := make([]byte, os.Getpagesize())
-					err := maps.ReadBlock(addr, data)
-					if err != nil {
-						panic(err)
-					}
-
-					send_pages[addr] = data
+					addresses = append(addresses, a)
 				}
 			}
 
-			MAX_DATA := 1024 * 1024 * 1024
+			max_size := uint64(256 * 1024)
 
-			// Sample data is
-			// 4k	2.391s	11 faults, 263207 syscalls
-			// 64k 0.679s 12 faults, 16498 syscalls
-			// 256k 0.630s 12 faults, 4168 syscalls
-			// 1m 0.610s 9 faults, 1087 syscalls
+			ranges := maps.GetRegions(addresses, max_size)
 
-			if MAX_DATA > 4096 {
-				// Compress
-				new_send_pages := make(map[uint64][]byte)
-				addresses := make([]uint64, 0)
-				for addr := range send_pages {
-					addresses = append(addresses, addr)
+			send_pages := make(map[uint64][]byte)
+
+			// Read the data into memory so its ready to send in one shot...
+			for a, l := range ranges {
+				data := make([]byte, l)
+				err := maps.ReadBlocks(a, data)
+				if err != nil {
+					panic(err)
 				}
-
-				slices.Sort(addresses)
-
-				for _, a := range addresses {
-					data, ok := send_pages[a]
-					if ok {
-						delete(send_pages, a)
-						new_send_pages[a] = data
-						// Try to combine some more...
-						ptr := os.Getpagesize()
-						for {
-							if len(new_send_pages[a]) >= MAX_DATA {
-								break
-							}
-							mored, mok := send_pages[a+uint64(ptr)]
-							if mok {
-								delete(send_pages, a+uint64(ptr))
-								new_send_pages[a] = append(new_send_pages[a], mored...)
-								ptr += os.Getpagesize()
-							} else {
-								break
-							}
-						}
-					}
-				}
-
-				send_pages = new_send_pages
+				send_pages[a] = data
 			}
 
 			ctime := time.Now()
@@ -177,7 +121,6 @@ func runPages(ccmd *cobra.Command, args []string) {
 
 			// Allow more faults now if it's being reused...
 			delete(faults_served, uint64(pid))
-
 		}()
 
 		return nil
