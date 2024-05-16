@@ -2,6 +2,7 @@ package modules
 
 import (
 	"errors"
+	"slices"
 	"sync"
 
 	"github.com/loopholelabs/silo/pkg/storage"
@@ -147,4 +148,61 @@ func (ms *MappedStorage) RemoveBlock(id uint64) error {
 	delete(ms.id_to_block, id)
 	ms.block_available.ClearBit(int(b))
 	return nil
+}
+
+/**
+ * Get a list of all addresses in the mapped storage
+ *
+ */
+func (ms *MappedStorage) GetBlockAddresses() []uint64 {
+	ms.lock.Lock()
+	defer ms.lock.Unlock()
+	addrs := make([]uint64, 0)
+	for id := range ms.id_to_block {
+		addrs = append(addrs, id)
+	}
+	return addrs
+}
+
+/**
+ * Given a list of addresses, get a map of continuous ranges
+ *
+ */
+func (ms *MappedStorage) GetRegions(addresses []uint64, max_size uint64) map[uint64]uint64 {
+	ranges := make(map[uint64]uint64)
+
+	exists := make(map[uint64]bool)
+	slices.Sort(addresses)
+	for _, a := range addresses {
+		exists[a] = true
+	}
+
+	// Go through selecting ranges to use...
+	for _, a := range addresses {
+		_, ok := exists[a]
+		if ok {
+			delete(exists, a)
+
+			ranges[a] = uint64(ms.block_size)
+			// Try to combine some more...
+			ptr := ms.block_size
+			for {
+				if ranges[a] >= max_size {
+					break
+				}
+				// Make sure it exists
+				_, mok := exists[a+uint64(ptr)]
+				if mok {
+					delete(exists, a+uint64(ptr))
+
+					ranges[a] += uint64(ms.block_size)
+					ptr += ms.block_size
+				} else {
+					break
+				}
+			}
+		}
+	}
+
+	return ranges
 }
