@@ -20,6 +20,9 @@ var pagemap_magic = []byte{0x19, 0x43, 0x56, 0x54, 0x25, 0x40, 0x08, 0x56}
 
 func Export_image(mapfile string, pagefile string, id uint32, pages map[uint64][]byte, page_flags map[uint64]uint32) error {
 	// First compress the data...
+
+	MAX_PAGES := 1024
+
 	new_pages := make(map[uint64][]byte)
 	addresses := make([]uint64, 0)
 	for addr, data := range pages {
@@ -39,6 +42,9 @@ func Export_image(mapfile string, pagefile string, id uint32, pages map[uint64][
 			for {
 				morea := a + uint64(ptr)
 				morep, kk := new_pages[morea]
+				if len(compressed_pages[a]) >= MAX_PAGES*int(PAGE_SIZE) {
+					break
+				}
 				if kk && (page_flags[a] == page_flags[morea]) { // Only compress if flags are the same...
 					compressed_pages[a] = append(compressed_pages[a], morep...)
 					delete(new_pages, morea)
@@ -51,6 +57,11 @@ func Export_image(mapfile string, pagefile string, id uint32, pages map[uint64][
 	}
 
 	pages = compressed_pages
+
+	fmt.Printf("Compressed pages\n")
+	for a, b := range compressed_pages {
+		fmt.Printf(" %x -> %d bytes\n", a, len(b))
+	}
 
 	data := make([]byte, 0)
 	data = append(data, pagemap_magic...)

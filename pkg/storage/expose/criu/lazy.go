@@ -19,6 +19,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"sync"
 	"syscall"
 	"unsafe"
 
@@ -31,17 +32,22 @@ var (
 
 const LAZY_PAGES_RESTORE_FINISHED = 0x52535446 /* ReSTore Finished */
 const UFFDIO_COPY = 3223890435                 // From <linux/userfaultfd.h>
+const UFFDIO_COPY_MODE_DONTWAKE = 1
+
 type UFFD uintptr
 
 type ProvideData func(address uint64, data []byte) error
 
 type UserFaultHandler struct {
-	listener     *net.UnixListener
-	initHandler  func(uint32, ProvideData) error
-	faultHandler func(uint32, uint64, ProvideData) error
+	listener       *net.UnixListener
+	uffds          map[uint64]UFFD
+	pending_faults map[uint64]map[uint64]bool
+	uffds_lock     sync.Mutex
+	DONTWAKE       bool
+	faultHandler   func(uint32, uint64, []uint64) error
 }
 
-func NewUserFaultHandler(socket string, initHandler func(uint32, ProvideData) error, faultHandler func(uint32, uint64, ProvideData) error) (*UserFaultHandler, error) {
+func NewUserFaultHandler(socket string, faultHandler func(uint32, uint64, []uint64) error) (*UserFaultHandler, error) {
 	err := os.Remove(socket)
 	if err != nil {
 		return nil, err
@@ -58,12 +64,18 @@ func NewUserFaultHandler(socket string, initHandler func(uint32, ProvideData) er
 	}
 
 	return &UserFaultHandler{
-		listener:     l,
-		initHandler:  initHandler,
-		faultHandler: faultHandler,
+		listener:       l,
+		faultHandler:   faultHandler,
+		uffds:          make(map[uint64]UFFD),
+		pending_faults: make(map[uint64]map[uint64]bool, 0),
+		DONTWAKE:       true,
 	}, nil
 }
 
+/**
+ * Handle any incoming requests to the unix socket
+ *
+ */
 func (u *UserFaultHandler) Handle() error {
 	for {
 		con, err := u.listener.AcceptUnix()
@@ -71,9 +83,7 @@ func (u *UserFaultHandler) Handle() error {
 			return err
 		}
 
-		fmt.Printf("Got connection...%s\n", con.RemoteAddr().String())
 		// Now handle the individual connection we got...
-
 		go func(c *net.UnixConn) {
 			defer func() {
 				c.Close()
@@ -89,16 +99,25 @@ func (u *UserFaultHandler) Handle() error {
 
 				pid := binary.LittleEndian.Uint32(pid_data)
 				if pid == LAZY_PAGES_RESTORE_FINISHED {
-					break // All done on this connection
+					return // All done on this connection
 				}
 
-				fds, err := ReceiveFds(c, 1)
+				fds, err := receiveFds(c, 1)
 				if err != nil {
 					// TODO: Log this somewhere...
 					return
 				}
 
-				go u.HandleUFFD(pid, UFFD(fds[0]))
+				// Store it here so we can use it later...
+				u.uffds_lock.Lock()
+				// TODO: What if there's an existing one here for the same PID?
+				// Should we close the existing one, or reject the new one?
+				u.uffds[uint64(pid)] = UFFD(fds[0])
+				u.pending_faults[uint64(pid)] = make(map[uint64]bool)
+				u.uffds_lock.Unlock()
+
+				// Now handle the userfault stuff
+				go u.HandleUFFD(pid)
 			}
 
 		}(con)
@@ -111,30 +130,37 @@ func (u *UserFaultHandler) Close() {
 }
 
 /**
- * Handle faults as they come in
+ * Handle faults as they come in to us
  *
  */
-func (u *UserFaultHandler) HandleUFFD(pid uint32, uffd UFFD) error {
-	pagesize := os.Getpagesize()
-	provideData := func(addr uint64, data []byte) error {
-		return u.pushData(uffd, addr, data)
+func (u *UserFaultHandler) HandleUFFD(pid uint32) error {
+	u.uffds_lock.Lock()
+	uffd, ok := u.uffds[uint64(pid)]
+	u.uffds_lock.Unlock()
+
+	if !ok {
+		return errors.New("PID not known yet")
 	}
 
-	err := u.initHandler(pid, provideData)
-	if err != nil {
-		return err
-	}
+	pagesize := os.Getpagesize()
 
 	for {
 		fds := []unix.PollFd{{Fd: int32(uffd), Events: unix.POLLIN}}
-		_, err = unix.Poll(fds, -1)
 
-		if err != nil {
-			return err
+		for {
+			n, err := unix.Poll(fds, 500)
+
+			if err != nil {
+				return err
+			}
+			if n != 0 {
+				break
+			}
 		}
 
+		// Read the event
 		buf := make([]byte, unsafe.Sizeof(C.struct_uffd_msg{}))
-		_, err = syscall.Read(int(uffd), buf)
+		_, err := syscall.Read(int(uffd), buf)
 
 		if err != nil {
 			return err
@@ -151,14 +177,59 @@ func (u *UserFaultHandler) HandleUFFD(pid uint32, uffd UFFD) error {
 
 		addr := uint64(pagefault.address) & ^uint64(pagesize-1)
 
-		err = u.faultHandler(pid, addr, provideData)
+		// Add it onto any pending faults...
+		u.uffds_lock.Lock()
+		u.pending_faults[uint64(pid)][addr] = true
+		faults := make([]uint64, 0)
+		for f := range u.pending_faults[uint64(pid)] {
+			faults = append(faults, f)
+		}
+		u.uffds_lock.Unlock()
+
+		err = u.faultHandler(pid, addr, faults)
 		if err != nil {
 			return err
 		}
 	}
 }
 
-func (u *UserFaultHandler) pushData(uffd UFFD, address uint64, data []byte) error {
+func (u *UserFaultHandler) ClosePID(pid uint64) error {
+	u.uffds_lock.Lock()
+	defer u.uffds_lock.Unlock()
+	uffd, ok := u.uffds[pid]
+
+	if !ok {
+		return errors.New("PID not known yet")
+	}
+	delete(u.uffds, pid)
+	delete(u.pending_faults, pid)
+	return syscall.Close(int(uffd))
+}
+
+/**
+ * WriteData
+ *
+ */
+func (u *UserFaultHandler) WriteData(pid uint64, address uint64, data []byte) error {
+	u.uffds_lock.Lock()
+	uffd, ok := u.uffds[pid]
+	new_pending_faults := make(map[uint64]bool)
+	for a := range u.pending_faults[pid] {
+		new_pending_faults[a] = true
+	}
+	// Clear the ones we're providing data for...
+	for ptr := 0; ptr < len(data); ptr += os.Getpagesize() {
+		a := address + uint64(ptr)
+		// Clear the fault
+		delete(new_pending_faults, a)
+	}
+
+	u.uffds_lock.Unlock()
+
+	if !ok {
+		return errors.New("PID not known yet")
+	}
+
 	cpy := C.struct_uffdio_copy{
 		src:  C.ulonglong(uintptr(unsafe.Pointer(&data[0]))),
 		dst:  C.ulonglong(address),
@@ -167,11 +238,23 @@ func (u *UserFaultHandler) pushData(uffd UFFD, address uint64, data []byte) erro
 		copy: C.longlong(0),
 	}
 
+	if u.DONTWAKE && len(new_pending_faults) > 0 {
+		// Don't bother resuming the process yet, there's still outstanding faults to fix...
+		cpy.mode = C.UFFDIO_COPY_MODE_DONTWAKE
+	}
+
 	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uintptr(uffd), UFFDIO_COPY, uintptr(unsafe.Pointer(&cpy)))
 	if errno != 0 {
 		return fmt.Errorf("COPY errno: %d", errno)
 	}
-	fmt.Printf("pushData %x %d\n", address, len(data))
+
+	// The write was successful, clear the associated faults.
+	u.uffds_lock.Lock()
+	u.pending_faults[pid] = new_pending_faults
+	u.uffds_lock.Unlock()
+
+	fmt.Printf("WriteData %d - %x\n", pid, address)
+
 	return nil
 }
 
@@ -179,7 +262,7 @@ func (u *UserFaultHandler) pushData(uffd UFFD, address uint64, data []byte) erro
  * Receive FDs through unix socket
  *
  */
-func ReceiveFds(conn *net.UnixConn, num int) ([]uintptr, error) {
+func receiveFds(conn *net.UnixConn, num int) ([]uintptr, error) {
 	if num <= 0 {
 		return nil, nil
 	}

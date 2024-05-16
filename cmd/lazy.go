@@ -33,19 +33,17 @@ func runLazy(ccmd *cobra.Command, args []string) {
 	   Fault for 484544 address 770c5b64b000
 	*/
 
-	init := func(pid uint32, provide criu.ProvideData) error {
-		fmt.Printf("Init %d\n", pid)
-		return nil
-	}
+	var uf *criu.UserFaultHandler
+	var err error
 
-	fault := func(pid uint32, addr uint64, provide criu.ProvideData) error {
+	fault := func(pid uint32, addr uint64, pending []uint64) error {
 		fmt.Printf("Fault for %d address %x\n", pid, addr)
 		data := make([]byte, os.Getpagesize())
-		provide(addr, data)
+		uf.WriteData(uint64(pid), addr, data)
 		return nil
 	}
 
-	uf, err := criu.NewUserFaultHandler("lazy-pages.socket", init, fault)
+	uf, err = criu.NewUserFaultHandler("lazy-pages.socket", fault)
 	if err != nil {
 		panic(err)
 	}
