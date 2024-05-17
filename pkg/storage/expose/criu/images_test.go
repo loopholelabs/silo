@@ -3,12 +3,14 @@ package criu
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
 
-func TestReadImages(t *testing.T) {
+func readImages(t *testing.T, dir string) (map[uint32]map[uint64][]byte, map[uint32]map[uint64]string, map[uint32]map[uint64]uint32) {
 	page_data := make(map[uint32]map[uint64][]byte)
 	page_data_hashes := make(map[uint32]map[uint64]string)
 	page_flags := make(map[uint32]map[uint64]uint32)
@@ -31,8 +33,13 @@ func TestReadImages(t *testing.T) {
 		page_flags[pid][address] = flags
 	}
 
-	err := Import_images("testdata/images_1", cb)
+	err := Import_images(dir, cb)
 	assert.NoError(t, err)
+	return page_data, page_data_hashes, page_flags
+}
+
+func TestReadImages(t *testing.T) {
+	_, page_data_hashes, page_flags := readImages(t, "testdata/images_1")
 
 	// Check the data is all correct...
 	expected_flags := map[uint32]map[uint64]uint32{0x52873: map[uint64]uint32{
@@ -65,7 +72,6 @@ func TestReadImages(t *testing.T) {
 	assert.Equal(t, expected_flags, page_flags)
 
 	// Check the hashed the page data
-
 	expected_hashes := map[uint32]map[uint64]string{
 		0x52873: map[uint64]string{
 			0x645427ef0000: "f4698a999f8239624fc5ac01a1ee8dbf77b53c04022316aa154412c608be79f6",
@@ -96,4 +102,35 @@ func TestReadImages(t *testing.T) {
 			0x7fff60162000: "bf6ce2c00fd2f7ef9b942a3faf51929f1ceb926d9b62611b4b38437cace67044"}}
 
 	assert.Equal(t, expected_hashes, page_data_hashes)
+}
+
+func TestWriteImages(t *testing.T) {
+	page_data, _, page_flags := readImages(t, "testdata/images_2")
+
+	// Now remove any LAZY data, and write it out. Then read it back and verify it's as expected...
+
+	os.RemoveAll("testdata/images_tmp")
+	os.Mkdir("testdata/images_tmp", 0777)
+
+	t.Cleanup(func() {
+		os.RemoveAll("testdata/images_tmp")
+	})
+
+	// Remove any lazy pages that are present, and export to images
+	for pid, s := range page_flags {
+		for addr, flag := range s {
+			if (flag & PE_LAZY) == PE_LAZY {
+				s[addr] = s[addr] & ^uint32(PE_PRESENT)
+			}
+		}
+		err := Export_image(fmt.Sprintf("testdata/images_tmp/pagemap-%d.img", pid), page_data[pid], s)
+		assert.NoError(t, err)
+	}
+
+	// Now read it back and check it's as expected...
+	_, page_data_hashes_ref, page_flags_ref := readImages(t, "testdata/images_1")
+	_, page_data_hashes_tmp, page_flags_tmp := readImages(t, "testdata/images_tmp")
+
+	assert.Equal(t, page_data_hashes_ref, page_data_hashes_tmp)
+	assert.Equal(t, page_flags_ref, page_flags_tmp)
 }
