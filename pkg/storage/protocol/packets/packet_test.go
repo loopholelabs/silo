@@ -266,3 +266,28 @@ func TestWriteAtComp(t *testing.T) {
 	assert.Equal(t, int64(12345), off)
 	assert.Equal(t, buff, data)
 }
+
+func TestWriteAtWithMap(t *testing.T) {
+
+	b := EncodeWriteAtWithMap(12345, []byte{1, 2, 3, 4, 5}, map[uint64]uint64{
+		1: 7,
+		5: 80,
+	})
+
+	off, data, idmap, err := DecodeWriteAtWithMap(b)
+
+	assert.NoError(t, err)
+	assert.Equal(t, int64(12345), off)
+	assert.Equal(t, []byte{1, 2, 3, 4, 5}, data)
+	assert.Equal(t, map[uint64]uint64{1: 7, 5: 80}, idmap)
+
+	// Make sure we can't decode silly things
+	_, _, err = DecodeWriteAt(nil)
+	assert.Error(t, err)
+
+	_, _, err = DecodeWriteAt([]byte{
+		99,
+	})
+	assert.Error(t, err)
+
+}
