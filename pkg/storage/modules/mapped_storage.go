@@ -35,6 +35,41 @@ func NewMappedStorage(prov storage.StorageProvider, block_size int) *MappedStora
 	}
 }
 
+func (ms *MappedStorage) AppendMap(data map[uint64]uint64) {
+	ms.lock.Lock()
+	defer ms.lock.Unlock()
+	for k, v := range data {
+		ms.id_to_block[k] = v
+		// Set the other bits as well
+		ms.block_available.ClearBit(int(v))
+		ms.IDs[v] = k
+	}
+}
+
+func (ms *MappedStorage) GetMapForSourceRange(offset int64, length int) map[uint64]uint64 {
+	ms.lock.Lock()
+	defer ms.lock.Unlock()
+
+	idmap := make(map[uint64]uint64)
+	end := uint64(offset + int64(length))
+	if end > ms.prov.Size() {
+		end = ms.prov.Size()
+	}
+
+	b_start := uint(offset / int64(ms.block_size))
+	b_end := uint((end-1)/uint64(ms.block_size)) + 1
+
+	// Now we have the blocks, lets find the IDs...
+	for b := b_start; b < b_end; b++ {
+		if !ms.block_available.BitSet(int(b)) {
+			id := ms.IDs[b]
+			idmap[id] = uint64(b)
+		}
+	}
+
+	return idmap
+}
+
 func (ms *MappedStorage) GetMap() map[uint64]uint64 {
 	ms.lock.Lock()
 	defer ms.lock.Unlock()

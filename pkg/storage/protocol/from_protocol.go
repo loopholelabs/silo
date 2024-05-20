@@ -179,6 +179,33 @@ func (fp *FromProtocol) HandleWriteAt() error {
 	}
 }
 
+// Handle any WriteAt commands, and send to provider
+func (fp *FromProtocol) HandleWriteAtWithMap(cb func(offset int64, data []byte, idmap map[uint64]uint64) error) error {
+	fp.init.Wait()
+
+	for {
+		id, data, err := fp.protocol.WaitForCommand(fp.dev, packets.COMMAND_WRITE_AT_WITH_MAP)
+		if err != nil {
+			return err
+		}
+
+		offset, write_data, id_map, err := packets.DecodeWriteAtWithMap(data)
+		if err != nil {
+			return err
+		}
+
+		err = cb(offset, write_data, id_map)
+		war := &packets.WriteAtResponse{
+			Bytes: len(write_data),
+			Error: err,
+		}
+		_, err = fp.protocol.SendPacket(fp.dev, id, packets.EncodeWriteAtResponse(war))
+		if err != nil {
+			return err
+		}
+	}
+}
+
 // Handle any WriteAtComp commands, and send to provider
 func (fp *FromProtocol) HandleWriteAtComp() error {
 	fp.init.Wait()

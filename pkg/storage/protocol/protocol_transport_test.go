@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/loopholelabs/silo/pkg/storage"
+	"github.com/loopholelabs/silo/pkg/storage/modules"
 	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
 	"github.com/stretchr/testify/assert"
@@ -358,4 +359,86 @@ func TestProtocolEvents(t *testing.T) {
 	e = <-events
 	assert.Equal(t, packets.EventCompleted, e)
 
+}
+
+func TestProtocolWriteAtWithMap(t *testing.T) {
+	size := 1024 * 1024
+	var store storage.StorageProvider
+	var mappedStore *modules.MappedStorage
+
+	pr := NewMockProtocol()
+
+	sourceToProtocol := NewToProtocol(uint64(size), 1, pr)
+
+	storeFactory := func(di *packets.DevInfo) storage.StorageProvider {
+		store = sources.NewMemoryStorage(int(di.Size))
+		mappedStore = modules.NewMappedStorage(store, 4096)
+		return store
+	}
+
+	destFromProtocol := NewFromProtocol(1, storeFactory, pr)
+
+	// Now do some things and make sure they happen...
+
+	go func() {
+		_ = destFromProtocol.HandleDevInfo()
+	}()
+	go func() {
+		_ = destFromProtocol.HandleReadAt()
+	}()
+	go func() {
+		_ = destFromProtocol.HandleWriteAt()
+	}()
+
+	writeWithMap := func(offset int64, data []byte, idmap map[uint64]uint64) error {
+		_, err := store.WriteAt(data, offset)
+		assert.NoError(t, err)
+		// Update the map
+		mappedStore.AppendMap(idmap)
+		return nil
+	}
+
+	go func() {
+		_ = destFromProtocol.HandleWriteAtWithMap(writeWithMap)
+	}()
+
+	// Send devInfo
+	err := sourceToProtocol.SendDevInfo("test", 4096)
+	assert.NoError(t, err)
+
+	sourceStore := sources.NewMemoryStorage(int(size))
+	sourceMappedStore := modules.NewMappedStorage(sourceStore, 4096)
+
+	buff := make([]byte, 4096)
+	// Write a couple of blocks
+	_, err = rand.Read(buff)
+	assert.NoError(t, err)
+	err = sourceMappedStore.WriteBlock(123, buff)
+	assert.NoError(t, err)
+
+	_, err = rand.Read(buff)
+	assert.NoError(t, err)
+	err = sourceMappedStore.WriteBlock(789, buff)
+	assert.NoError(t, err)
+
+	// Send it
+	idmap := sourceMappedStore.GetMapForSourceRange(0, len(buff)*2)
+	senddata := make([]byte, len(buff)*2)
+	_, err = sourceStore.ReadAt(senddata, 0)
+	assert.NoError(t, err)
+
+	n, err := sourceToProtocol.WriteAtWithMap(senddata, 0, idmap)
+	assert.NoError(t, err)
+	assert.Equal(t, len(senddata), n)
+
+	// Now check it was written to the source in the right place etc...
+	for _, id := range []uint64{123, 789} {
+		buffer_local := make([]byte, 4096)
+		buffer_remote := make([]byte, 4096)
+		err = mappedStore.ReadBlock(id, buffer_local)
+		assert.NoError(t, err)
+		err = mappedStore.ReadBlock(id, buffer_remote)
+		assert.NoError(t, err)
+		assert.Equal(t, buffer_local, buffer_remote)
+	}
 }
