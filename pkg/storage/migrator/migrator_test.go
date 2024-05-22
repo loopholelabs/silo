@@ -516,11 +516,8 @@ func TestMigratorSimpleCowSparse(t *testing.T) {
 	sourceStorageMem := sources.NewMemoryStorage(size)
 	overlay, err := sources.NewFileStorageSparseCreate("test_migrate_cow", uint64(size), blockSize)
 	assert.NoError(t, err)
-	overlay_log := modules.NewLogger(overlay, "overlay")
-	sourceStorageMem_log := modules.NewLogger(sourceStorageMem, "rosource")
-	cow := modules.NewCopyOnWrite(sourceStorageMem_log, overlay_log, blockSize)
-	cow_log := modules.NewLogger(cow, "cow")
-	sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(cow_log, blockSize)
+	cow := modules.NewCopyOnWrite(sourceStorageMem, overlay, blockSize)
+	sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(cow, blockSize)
 	sourceStorage := modules.NewLockable(sourceDirtyLocal)
 
 	t.Cleanup(func() {
@@ -586,11 +583,6 @@ func TestMigratorSimpleCowSparse(t *testing.T) {
 
 	err = mig.WaitForCompletion()
 	assert.NoError(t, err)
-
-	// Don't care about the reads caused by storage.Equals...
-	cow_log.Disable()
-	overlay_log.Disable()
-	sourceStorageMem_log.Disable()
 
 	// This will end with migration completed, and consumer Locked.
 	eq, err := storage.Equals(sourceStorage, destStorage, blockSize)
