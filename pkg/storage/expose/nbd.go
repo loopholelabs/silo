@@ -1,6 +1,7 @@
 package expose
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net"
@@ -20,6 +21,8 @@ const NBD_DEFAULT_BLOCK_SIZE = 4096
  *
  */
 type ExposedStorageNBDNL struct {
+	ctx             context.Context
+	cancelfn        context.CancelFunc
 	num_connections int
 	timeout         uint64
 	size            uint64
@@ -29,6 +32,7 @@ type ExposedStorageNBDNL struct {
 	prov         storage.StorageProvider
 	device_index int
 	async        bool
+	dispatchers  []*Dispatch
 }
 
 func NewExposedStorageNBDNL(prov storage.StorageProvider, numConnections int, timeout uint64, size uint64, blockSize uint64, async bool) *ExposedStorageNBDNL {
@@ -37,7 +41,11 @@ func NewExposedStorageNBDNL(prov storage.StorageProvider, numConnections int, ti
 	alignTo := uint64(512)
 	size = alignTo * ((size + alignTo - 1) / alignTo)
 
+	ctx, cancelfn := context.WithCancel(context.TODO())
+
 	return &ExposedStorageNBDNL{
+		ctx:             ctx,
+		cancelfn:        cancelfn,
 		prov:            prov,
 		num_connections: numConnections,
 		timeout:         timeout,
@@ -87,6 +95,8 @@ func (n *ExposedStorageNBDNL) Init() error {
 
 		socks := make([]*os.File, 0)
 
+		n.dispatchers = make([]*Dispatch, 0)
+
 		// Create the socket pairs
 		for i := 0; i < n.num_connections; i++ {
 			sockPair, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_STREAM, 0)
@@ -102,7 +112,7 @@ func (n *ExposedStorageNBDNL) Init() error {
 			}
 			server.Close()
 
-			d := NewDispatch(serverc, n)
+			d := NewDispatch(n.ctx, serverc, n)
 			d.ASYNC_READS = n.async
 			d.ASYNC_WRITES = n.async
 			// Start reading commands on the socket and dispatching them to our provider
@@ -111,6 +121,7 @@ func (n *ExposedStorageNBDNL) Init() error {
 			}()
 			n.socks = append(n.socks, serverc)
 			socks = append(socks, client)
+			n.dispatchers = append(n.dispatchers, d)
 		}
 		var opts []nbdnl.ConnectOption
 		opts = append(opts, nbdnl.WithBlockSize(uint64(n.block_size)))
@@ -155,14 +166,20 @@ func (n *ExposedStorageNBDNL) Init() error {
 }
 
 func (n *ExposedStorageNBDNL) Shutdown() error {
+	// First cancel the context, which will stop waiting on pending readAt/writeAt...
+	n.cancelfn()
 
-	// Ask to disconnect
+	// Now wait for any pending responses to be sent
+	for _, d := range n.dispatchers {
+		d.Wait()
+	}
+
+	// Now ask to disconnect
 	err := nbdnl.Disconnect(uint32(n.device_index))
 	if err != nil {
 		return err
 	}
 
-	//	fmt.Printf("Closing sockets...\n")
 	// Close all the socket pairs...
 	for _, v := range n.socks {
 		err = v.Close()
@@ -171,7 +188,7 @@ func (n *ExposedStorageNBDNL) Shutdown() error {
 		}
 	}
 
-	// Wait until it's disconnected...
+	// Wait until it's completely disconnected...
 	for {
 		s, err := nbdnl.Status(uint32(n.device_index))
 		if err == nil && !s.Connected {
