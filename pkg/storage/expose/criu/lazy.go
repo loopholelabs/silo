@@ -106,14 +106,14 @@ func (u *UserFaultHandler) Handle() error {
 
 				// Store it here so we can use it later...
 				u.uffds_lock.Lock()
-				// TODO: What if there's an existing one here for the same PID?
+				// TODO: edge case - what if there's an existing one here for the same PID?
 				// Should we close the existing one, or reject the new one?
 				u.uffds[uint64(pid)] = UFFD(fds[0])
 				u.pending_faults[uint64(pid)] = make(map[uint64]bool)
 				u.uffds_lock.Unlock()
 
 				// Now handle the userfault stuff
-				go u.HandleUFFD(pid)
+				go u.handleUFFD(pid)
 			}
 		}(con)
 	}
@@ -127,7 +127,7 @@ func (u *UserFaultHandler) Close() {
  * Handle faults as they come in to us
  *
  */
-func (u *UserFaultHandler) HandleUFFD(pid uint32) error {
+func (u *UserFaultHandler) handleUFFD(pid uint32) error {
 	u.uffds_lock.Lock()
 	uffd, ok := u.uffds[uint64(pid)]
 	u.uffds_lock.Unlock()
@@ -207,6 +207,7 @@ func (u *UserFaultHandler) ClosePID(pid uint64) error {
 func (u *UserFaultHandler) WriteData(pid uint64, address uint64, data []byte) error {
 	u.uffds_lock.Lock()
 	uffd, ok := u.uffds[pid]
+	// Figure out a new pending faults
 	new_pending_faults := make(map[uint64]bool)
 	for a := range u.pending_faults[pid] {
 		new_pending_faults[a] = true
@@ -246,9 +247,6 @@ func (u *UserFaultHandler) WriteData(pid uint64, address uint64, data []byte) er
 	u.uffds_lock.Lock()
 	u.pending_faults[pid] = new_pending_faults
 	u.uffds_lock.Unlock()
-
-	fmt.Printf("WriteData %d - %x\n", pid, address)
-
 	return nil
 }
 

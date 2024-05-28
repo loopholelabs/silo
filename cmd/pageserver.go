@@ -68,7 +68,24 @@ func runPages(ccmd *cobra.Command, args []string) {
 		if !ok {
 			panic("We do not have such a page for that pid!")
 		}
+		/*
+			buffer := make([]byte, os.Getpagesize())
+			err = maps.ReadBlock(addr, buffer)
+			if err == modules.Err_not_found {
+				fmt.Printf("=== FAULT FOR PAGE NOT FOUND AT %x ===\n", addr)
+			} else if err != nil {
+				panic(err)
+			}
 
+			fmt.Printf("Write data for %x\n", addr)
+			err = uf.WriteData(uint64(pid), addr, buffer)
+			if err != nil {
+				fmt.Printf("ERROR writing data %v\n", err)
+			}
+			num_syscalls++
+		*/
+
+		// Try to send all lazy data...
 		go func() {
 			// TRY TO SEND ALL OUR LAZY DATA IN ONE SHOT (atm)...
 

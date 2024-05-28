@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/loopholelabs/silo/pkg/storage"
+	"github.com/loopholelabs/silo/pkg/storage/config"
 	"github.com/loopholelabs/silo/pkg/storage/expose"
 	"github.com/loopholelabs/silo/pkg/storage/integrity"
 	"github.com/loopholelabs/silo/pkg/storage/modules"
@@ -141,6 +142,8 @@ func handleIncomingDevice(pro protocol.Protocol, dev uint32) {
 	var destMonitorStorage *modules.Hooks
 	var dest *protocol.FromProtocol
 
+	var mapped *modules.MappedStorage
+
 	var bar *mpb.Bar
 
 	var blockSize uint
@@ -157,7 +160,7 @@ func handleIncomingDevice(pro protocol.Protocol, dev uint32) {
 
 	// This is a storage factory which will be called when we recive DevInfo.
 	storageFactory := func(di *packets.DevInfo) storage.StorageProvider {
-		// fmt.Printf("= %d = Received DevInfo name=%s size=%d blocksize=%d\n", dev, di.Name, di.Size, di.BlockSize)
+		fmt.Printf("= %d = Received DevInfo name=%s size=%d blocksize=%d schema=%s\n", dev, di.Name, di.Size, di.Block_size, di.Schema)
 
 		blockSize = uint(di.Block_size)
 
@@ -235,6 +238,14 @@ func handleIncomingDevice(pro protocol.Protocol, dev uint32) {
 			_ = dest.DontNeedAt(offset, length)
 		}
 
+		conf := &config.DeviceSchema{}
+		conf.Decode(di.Schema)
+
+		if conf.PageServerPID != 0 {
+			fmt.Printf("Setting up mapped storage\n")
+			mapped = modules.NewMappedStorage(destWaitingRemote, os.Getpagesize())
+		}
+
 		// Expose this storage as a device if requested
 		if connect_expose_dev {
 			p, err := dst_device_setup(destWaitingLocal)
@@ -258,6 +269,14 @@ func handleIncomingDevice(pro protocol.Protocol, dev uint32) {
 	}()
 	go func() {
 		_ = dest.HandleDevInfo()
+	}()
+	go func() {
+		writer := func(offset int64, data []byte, idmap map[uint64]uint64) error {
+			mapped.AppendMap(idmap)
+			_, err := destWaitingRemote.WriteAt(data, offset)
+			return err
+		}
+		_ = dest.HandleWriteAtWithMap(writer)
 	}()
 
 	// Handle events from the source
@@ -289,18 +308,20 @@ func handleIncomingDevice(pro protocol.Protocol, dev uint32) {
 
 	go func() {
 		_ = dest.HandleHashes(func(hashes map[uint][sha256.Size]byte) {
-			//		fmt.Printf("[%d] Got %d hashes...\n", dev, len(hashes))
-			in := integrity.NewIntegrityChecker(int64(destStorage.Size()), int(blockSize))
-			in.SetHashes(hashes)
-			correct, err := in.Check(destStorage)
-			if err != nil {
-				panic(err)
-			}
-			//		fmt.Printf("[%d] Verification result %t\n", dev, correct)
-			if correct {
-				statusVerify = "\u2611"
-			} else {
-				statusVerify = "\u2612"
+			//fmt.Printf("[%d] Got %d hashes...\n", dev, len(hashes))
+			if len(hashes) > 0 {
+				in := integrity.NewIntegrityChecker(int64(destStorage.Size()), int(blockSize))
+				in.SetHashes(hashes)
+				correct, err := in.Check(destStorage)
+				if err != nil {
+					panic(err)
+				}
+				//		fmt.Printf("[%d] Verification result %t\n", dev, correct)
+				if correct {
+					statusVerify = "\u2611"
+				} else {
+					statusVerify = "\u2612"
+				}
 			}
 		})
 	}()

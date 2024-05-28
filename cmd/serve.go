@@ -17,6 +17,7 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/config"
 	"github.com/loopholelabs/silo/pkg/storage/device"
 	"github.com/loopholelabs/silo/pkg/storage/dirtytracker"
+	"github.com/loopholelabs/silo/pkg/storage/expose/criu"
 	"github.com/loopholelabs/silo/pkg/storage/migrator"
 	"github.com/loopholelabs/silo/pkg/storage/modules"
 	"github.com/loopholelabs/silo/pkg/storage/protocol"
@@ -41,6 +42,7 @@ var serve_conf string
 var serve_progress bool
 var serve_continuous bool
 var serve_any_order bool
+var serve_pageserve_addr string
 
 var src_exposed []storage.ExposedStorage
 var src_storage []*storageInfo
@@ -55,6 +57,7 @@ func init() {
 	cmdServe.Flags().BoolVarP(&serve_progress, "progress", "p", false, "Show progress")
 	cmdServe.Flags().BoolVarP(&serve_continuous, "continuous", "C", false, "Continuous sync")
 	cmdServe.Flags().BoolVarP(&serve_any_order, "order", "o", false, "Any order (faster)")
+	cmdServe.Flags().StringVarP(&serve_pageserve_addr, "pagesaddr", "A", ":5171", "Address to accept criu page data from")
 }
 
 type storageInfo struct {
@@ -64,6 +67,8 @@ type storageInfo struct {
 	num_blocks int
 	block_size int
 	name       string
+	mapped     *modules.MappedStorage
+	schema     string
 }
 
 func runServe(ccmd *cobra.Command, args []string) {
@@ -92,15 +97,71 @@ func runServe(ccmd *cobra.Command, args []string) {
 		panic(err)
 	}
 
-	for i, s := range siloConf.Device {
+	page_mapped := make(map[int]*modules.MappedStorage)
 
+	for i, s := range siloConf.Device {
 		fmt.Printf("Setup storage %d [%s] size %s - %d\n", i, s.Name, s.Size, s.ByteSize())
 		sinfo, err := setupStorageDevice(s)
 		if err != nil {
 			panic(fmt.Sprintf("Could not setup storage. %v", err))
 		}
+
+		// Put it in the map for pageserver here...
+		if s.PageServerPID != 0 {
+			page_mapped[s.PageServerPID] = sinfo.mapped
+		}
+
 		src_storage = append(src_storage, sinfo)
 	}
+
+	// Setup page-server for receiving memory data...
+	fmt.Printf("Waiting for page server connection on %s\n", serve_pageserve_addr)
+
+	listener, err := net.Listen("tcp", serve_pageserve_addr)
+	if err != nil {
+		panic(err)
+	}
+
+	// Handle any incoming page server data...
+	go func() {
+		for {
+			con, err := listener.Accept()
+			if err != nil {
+				panic(err)
+			}
+
+			fmt.Printf("Page server connection from %s\n", con.RemoteAddr().String())
+
+			ps := criu.NewPageServer()
+			ps.Close = func(iov *criu.PageServerIOV) {
+				fmt.Printf("PageServer Close")
+			}
+			ps.Open2 = func(iov *criu.PageServerIOV) bool {
+				fmt.Printf("Open2\n")
+				return false
+			}
+			ps.Parent = func(iov *criu.PageServerIOV) bool {
+				ms := page_mapped[int(iov.DstID())]
+				fmt.Printf("Parent %t\n", ms.Size())
+				return ms.Size() > 0
+			}
+			ps.GetPageData = func(iov *criu.PageServerIOV, buffer []byte) {
+				// Unimplemented for now...
+				fmt.Printf("GetPageData %v\n", iov)
+			}
+			ps.AddPageData = func(iov *criu.PageServerIOV, buffer []byte) {
+				fmt.Printf("AddPageData %s %d\n", iov.String(), len(buffer))
+				maps, ok := page_mapped[int(iov.DstID())]
+				if !ok {
+					// The destination PID is unknown or unconfigured...
+					fmt.Printf("Destination PID unknown %d\n", iov.DstID())
+				}
+
+				maps.WriteBlocks(iov.Vaddr, buffer)
+			}
+			go ps.Handle(con)
+		}
+	}()
 
 	// Setup listener here. When client connects, migrate data to it.
 
@@ -200,14 +261,24 @@ func setupStorageDevice(conf *config.DeviceSchema) (*storageInfo, error) {
 	orderer := blocks.NewPriorityBlockOrder(num_blocks, primary_orderer)
 	orderer.AddAll()
 
-	return &storageInfo{
+	schema := string(conf.Encode())
+
+	sinfo := &storageInfo{
 		tracker:    sourceDirtyRemote,
 		lockable:   sourceStorage,
 		orderer:    orderer,
 		block_size: block_size,
 		num_blocks: num_blocks,
 		name:       conf.Name,
-	}, nil
+		schema:     schema,
+	}
+
+	if conf.PageServerPID != 0 {
+		// This is going to be used for page server stuff...
+		sinfo.mapped = modules.NewMappedStorage(sourceStorage, os.Getpagesize())
+	}
+
+	return sinfo, nil
 }
 
 // Migrate a device
@@ -217,7 +288,7 @@ func migrateDevice(dev_id uint32, name string,
 	size := sinfo.lockable.Size()
 	dest := protocol.NewToProtocol(uint64(size), dev_id, pro)
 
-	err := dest.SendDevInfo(name, uint32(sinfo.block_size))
+	err := dest.SendDevInfo(name, uint32(sinfo.block_size), sinfo.schema)
 	if err != nil {
 		return err
 	}
@@ -333,8 +404,24 @@ func migrateDevice(dev_id uint32, name string,
 		return err
 	}
 
+	migrate_blocks := sinfo.num_blocks
+
+	// If it's a mapped, configure the migrator for that...
+	if sinfo.mapped != nil {
+		fmt.Printf("Configuring mapped migrator...\n")
+		// Route mapped writes over to WriteAtWithMap
+		writer := func(data []byte, offset int64, idmap map[uint64]uint64) (int, error) {
+			return dest.WriteAtWithMap(data, offset, idmap)
+		}
+		mig.SetSourceMapped(sinfo.mapped, writer)
+
+		migrate_blocks = int((uint64(sinfo.mapped.Size()) + uint64(conf.Block_size) - 1) / uint64(conf.Block_size))
+	}
+
+	fmt.Printf("Migrating %d blocks\n", migrate_blocks)
+
 	// Now do the migration...
-	err = mig.Migrate(sinfo.num_blocks)
+	err = mig.Migrate(migrate_blocks)
 	if err != nil {
 		return err
 	}
