@@ -42,7 +42,7 @@ func TestTestProtocolBandwidth(t *testing.T) {
 	}()
 
 	// Send devInfo
-	err := sourceToProtocol.SendDevInfo("test", 4096)
+	err := sourceToProtocol.SendDevInfo("test", 4096, "")
 	if err != nil {
 		panic(err)
 	}

@@ -206,7 +206,7 @@ func BenchmarkMigrationPipe(mb *testing.B) {
 				destination.Compressed_writes = true
 			}
 
-			err = destination.SendDevInfo("test", uint32(blockSize))
+			err = destination.SendDevInfo("test", uint32(blockSize), "")
 			if err != nil {
 				panic(err)
 			}

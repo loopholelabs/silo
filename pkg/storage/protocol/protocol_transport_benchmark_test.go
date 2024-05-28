@@ -73,7 +73,7 @@ func setup(num int) *ToProtocol {
 		_ = prDest.Handle()
 	}()
 
-	err := sourceToProtocol.SendDevInfo("test", 1024*1024)
+	err := sourceToProtocol.SendDevInfo("test", 1024*1024, "")
 	if err != nil {
 		panic(err)
 	}

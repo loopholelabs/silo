@@ -68,7 +68,7 @@ func TestProtocolRWCancel(t *testing.T) {
 
 	// Now do some things and make sure they happen...
 
-	err := sourceToProtocol.SendDevInfo("test", 4096)
+	err := sourceToProtocol.SendDevInfo("test", 4096, "")
 	assert.NoError(t, err)
 
 	// Should know the dev now...
@@ -119,7 +119,7 @@ func TestProtocolRWCancelFromHandler(t *testing.T) {
 
 	// Now do some things and make sure they happen...
 
-	err := sourceToProtocol.SendDevInfo("test", 4096)
+	err := sourceToProtocol.SendDevInfo("test", 4096, "")
 	assert.NoError(t, err)
 
 	/*
@@ -164,7 +164,7 @@ func TestProtocolRWSendAfterCancel(t *testing.T) {
 
 	// Now do some things and make sure they happen...
 
-	err := sourceToProtocol.SendDevInfo("test", 4096)
+	err := sourceToProtocol.SendDevInfo("test", 4096, "")
 	assert.NoError(t, err)
 	wg.Wait()
 

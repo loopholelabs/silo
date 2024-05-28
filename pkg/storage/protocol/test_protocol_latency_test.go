@@ -44,7 +44,7 @@ func TestTestProtocolLatency(t *testing.T) {
 	ctime := time.Now()
 
 	// Send devInfo
-	err := sourceToProtocol.SendDevInfo("test", 4096)
+	err := sourceToProtocol.SendDevInfo("test", 4096, "")
 	assert.NoError(t, err)
 
 	buff := make([]byte, 4096)

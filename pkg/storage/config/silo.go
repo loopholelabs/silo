@@ -13,25 +13,19 @@ import (
 )
 
 type SiloSchema struct {
-	Device   []*DeviceSchema   `hcl:"device,block"`
-	Location []*LocationSchema `hcl:"location,block"`
+	Device []*DeviceSchema `hcl:"device,block"`
 }
 
 type DeviceSchema struct {
-	Name      string        `hcl:"name,label"`
-	Size      string        `hcl:"size,attr"`
-	System    string        `hcl:"system,attr"`
-	BlockSize string        `hcl:"blocksize,optional"`
-	Expose    bool          `hcl:"expose,optional"`
-	Location  string        `hcl:"location,optional"`
-	ROSource  *DeviceSchema `hcl:"source,block"`
-	Binlog    string        `hcl:"binlog,optional"`
-}
-
-type LocationSchema struct {
-	Name     string `hcl:"name,label"`
-	System   string `hcl:"system,optional"`
-	Location string `hcl:"location,optional"`
+	Name          string        `hcl:"name,label"`
+	Size          string        `hcl:"size,attr"`
+	System        string        `hcl:"system,attr"`
+	BlockSize     string        `hcl:"blocksize,optional"`
+	Expose        bool          `hcl:"expose,optional"`
+	Location      string        `hcl:"location,optional"`
+	ROSource      *DeviceSchema `hcl:"source,block"`
+	Binlog        string        `hcl:"binlog,optional"`
+	PageServerPID int           `hcl:"pid,optional"`
 }
 
 func parseByteValue(val string) int64 {
@@ -97,4 +91,24 @@ func (s *SiloSchema) Encode() ([]byte, error) {
 	f := hclwrite.NewEmptyFile()
 	gohcl.EncodeIntoBody(s, f.Body())
 	return f.Bytes(), nil
+}
+
+func (ds *DeviceSchema) Encode() []byte {
+	f := hclwrite.NewEmptyFile()
+	gohcl.EncodeIntoBody(ds, f.Body())
+	return f.Bytes()
+}
+
+func (ds *DeviceSchema) Decode(schema string) error {
+	file, diag := hclsyntax.ParseConfig([]byte(schema), "", hcl.Pos{Line: 1, Column: 1})
+	if diag.HasErrors() {
+		return diag.Errs()[0]
+	}
+
+	diag = gohcl.DecodeBody(file.Body, nil, ds)
+	if diag.HasErrors() {
+		return diag.Errs()[0]
+	}
+
+	return nil
 }

@@ -58,11 +58,12 @@ func (i *ToProtocol) SendHashes(hashes map[uint][sha256.Size]byte) error {
 	return packets.DecodeHashesResponse(r)
 }
 
-func (i *ToProtocol) SendDevInfo(name string, block_size uint32) error {
+func (i *ToProtocol) SendDevInfo(name string, block_size uint32, schema string) error {
 	di := &packets.DevInfo{
 		Size:       i.size,
 		Block_size: block_size,
 		Name:       name,
+		Schema:     schema,
 	}
 	b := packets.EncodeDevInfo(di)
 	_, err := i.protocol.SendPacket(i.dev, ID_PICK_ANY, b)

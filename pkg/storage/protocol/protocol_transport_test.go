@@ -43,7 +43,7 @@ func TestProtocolWriteAt(t *testing.T) {
 	}()
 
 	// Send devInfo
-	err := sourceToProtocol.SendDevInfo("test", 4096)
+	err := sourceToProtocol.SendDevInfo("test", 4096, "")
 	assert.NoError(t, err)
 
 	buff := make([]byte, 4096)
@@ -98,7 +98,7 @@ func TestProtocolWriteAtComp(t *testing.T) {
 	}()
 
 	// Send devInfo
-	err := sourceToProtocol.SendDevInfo("test", 4096)
+	err := sourceToProtocol.SendDevInfo("test", 4096, "")
 	assert.NoError(t, err)
 
 	buff := make([]byte, 4096)
@@ -158,7 +158,7 @@ func TestProtocolReadAt(t *testing.T) {
 		_ = destFromProtocol.HandleWriteAt()
 	}()
 
-	err = sourceToProtocol.SendDevInfo("test", 4096)
+	err = sourceToProtocol.SendDevInfo("test", 4096, "")
 	assert.NoError(t, err)
 
 	// Now check it was written to the source
@@ -215,7 +215,7 @@ func TestProtocolRWWriteAt(t *testing.T) {
 
 	// Now do some things and make sure they happen...
 
-	err := sourceToProtocol.SendDevInfo("test", 4096)
+	err := sourceToProtocol.SendDevInfo("test", 4096, "")
 	assert.NoError(t, err)
 
 	// Should know the dev now...
@@ -291,7 +291,7 @@ func TestProtocolRWReadAt(t *testing.T) {
 	}()
 
 	// Now do some things and make sure they happen...
-	err = sourceToProtocol.SendDevInfo("test", 4096)
+	err = sourceToProtocol.SendDevInfo("test", 4096, "")
 	assert.NoError(t, err)
 
 	// Now check it was written to the source
@@ -331,7 +331,7 @@ func TestProtocolEvents(t *testing.T) {
 	}()
 
 	// Send devInfo
-	err := sourceToProtocol.SendDevInfo("test", 4096)
+	err := sourceToProtocol.SendDevInfo("test", 4096, "")
 	assert.NoError(t, err)
 
 	// Send some events and make sure they happen at the other end...
@@ -403,7 +403,7 @@ func TestProtocolWriteAtWithMap(t *testing.T) {
 	}()
 
 	// Send devInfo
-	err := sourceToProtocol.SendDevInfo("test", 4096)
+	err := sourceToProtocol.SendDevInfo("test", 4096, "")
 	assert.NoError(t, err)
 
 	sourceStore := sources.NewMemoryStorage(int(size))

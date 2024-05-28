@@ -194,7 +194,7 @@ func TestMigratorSimplePipe(t *testing.T) {
 	// Pipe a destination to the protocol
 	destination := protocol.NewToProtocol(sourceDirtyRemote.Size(), 17, prSource)
 
-	err = destination.SendDevInfo("test", uint32(blockSize))
+	err = destination.SendDevInfo("test", uint32(blockSize), "")
 	assert.NoError(t, err)
 
 	conf := NewMigratorConfig().WithBlockSize(blockSize)
