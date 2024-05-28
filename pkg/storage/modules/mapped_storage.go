@@ -111,14 +111,86 @@ func (ms *MappedStorage) ReadBlocks(id uint64, data []byte) error {
 	return nil
 }
 
+// Optimized where we can for large blocks
 func (ms *MappedStorage) WriteBlocks(id uint64, data []byte) error {
-	for ptr := 0; ptr < len(data); ptr += ms.block_size {
-		err := ms.WriteBlock(id+uint64(ptr), data[ptr:ptr+ms.block_size])
-		if err != nil {
+	// First lets check if we have seen this id before, and if the blocks are continuous
+	ms.lock.Lock()
+
+	//first_block := uint64(0)
+	//ok := false
+	//can_do_bulk := false
+
+	first_block, ok := ms.id_to_block[id]
+	can_do_bulk := true
+	if ok {
+		// The first block exists. Make sure all the others exist and are in a line.
+		bptr := uint64(0)
+		for ptr := 0; ptr < len(data); ptr += ms.block_size {
+			bptr++
+			block, sok := ms.id_to_block[id+uint64(ptr)]
+			if !sok || block != (first_block+bptr) {
+				can_do_bulk = false
+				break
+			}
+		}
+	} else {
+		// The first block doesn't exist. Make sure none of the others do
+		for ptr := 0; ptr < len(data); ptr += ms.block_size {
+			_, sok := ms.id_to_block[id+uint64(ptr)]
+			if sok {
+				can_do_bulk = false
+			}
+		}
+	}
+
+	if !can_do_bulk {
+		ms.lock.Unlock()
+		// We can't do a bulk write
+		for ptr := 0; ptr < len(data); ptr += ms.block_size {
+			err := ms.WriteBlock(id+uint64(ptr), data[ptr:ptr+ms.block_size])
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	// Do a bulk write here...
+	if ok {
+		ms.lock.Unlock()
+		// Write some data for this block
+		// NB: We can do this outside the lock
+		offset := first_block * uint64(ms.block_size)
+		_, err := ms.prov.WriteAt(data, int64(offset))
+		return err
+	}
+
+	// We have no record of any of this data yet. Find some space to store it.
+	num_blocks := len(data) / ms.block_size
+
+	for b := 0; b < int(ms.block_available.Length())-num_blocks; b++ {
+		// Check if we have some space
+		if ms.block_available.BitsSet(uint(b), uint(b+num_blocks)) {
+
+			ms.block_available.ClearBits(uint(b), uint(b+num_blocks))
+			// Now do the write outside the lock...
+
+			ptr := uint64(0)
+			for i := b; i < b+num_blocks; i++ {
+				ms.id_to_block[id+ptr] = uint64(i)
+				ms.IDs[i] = id + ptr
+				ptr += uint64(ms.block_size)
+			}
+
+			ms.lock.Unlock()
+			offset := uint64(b) * uint64(ms.block_size)
+			_, err := ms.prov.WriteAt(data, int64(offset))
 			return err
 		}
 	}
-	return nil
+
+	ms.lock.Unlock()
+	return Err_out_of_space
 }
 
 /**
@@ -147,12 +219,12 @@ func (ms *MappedStorage) ReadBlock(id uint64, data []byte) error {
 func (ms *MappedStorage) WriteBlock(id uint64, data []byte) error {
 	// First lets check if we have seen this id before...
 	ms.lock.Lock()
-	defer ms.lock.Unlock()
 
 	b, ok := ms.id_to_block[id]
 	if !ok {
 		newb, err := ms.block_available.CollectFirstAndClear(0, ms.block_available.Length())
 		if err != nil {
+			ms.lock.Unlock()
 			return Err_out_of_space
 		}
 		// Init the block
@@ -161,7 +233,10 @@ func (ms *MappedStorage) WriteBlock(id uint64, data []byte) error {
 		ms.IDs[b] = id
 	}
 
+	ms.lock.Unlock()
+
 	// Write some data for this block
+	// NB: We can do this outside the lock
 	offset := b * uint64(ms.block_size)
 	_, err := ms.prov.WriteAt(data, int64(offset))
 	return err

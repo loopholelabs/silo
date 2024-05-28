@@ -383,7 +383,7 @@ func (bf *Bitfield) Collect(start uint, end uint) []uint {
 }
 
 /**
- * Collect the positions of all 1 bits
+ * Collect the first set bit, and clear it
  *
  */
 func (bf *Bitfield) CollectFirstAndClear(start uint, end uint) (uint, error) {

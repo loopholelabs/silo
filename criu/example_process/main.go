@@ -10,6 +10,8 @@ var somedata = []byte("HELLO")
 
 var big_data = make([]byte, 1*1024*1024*1024)
 
+var little_data = make([]byte, 8192)
+
 func main() {
 	READ_DATA := true
 	WRITE_DATA := false
@@ -55,6 +57,10 @@ func main() {
 					copy(big_data[ptr:], zerodata)
 				}
 			}
+
+			rand.Read(little_data)
+			fmt.Printf("Randomized little data...\n")
+
 		}
 	}
 }

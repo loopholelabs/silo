@@ -26,10 +26,11 @@ func (ps *PageServer) Handle(conn net.Conn) error {
 	page_adds_parent := 0
 	page_adds_present := 0
 	page_adds_lazy := 0
+	page_added_data := 0
 
 	defer func() {
-		fmt.Printf("Handle finished for %s\n", conn.RemoteAddr().String())
-		fmt.Printf("AddPageData parent(%d) present(%d) lazy(%d) - New data = %d bytes\n", page_adds_parent, page_adds_present, page_adds_lazy, page_adds_present*int(PAGE_SIZE))
+		//		fmt.Printf("Handle finished for %s\n", conn.RemoteAddr().String())
+		fmt.Printf("AddPageData parent(%d) present(%d) lazy(%d) - New data = %d bytes\n", page_adds_parent, page_adds_present, page_adds_lazy, page_added_data)
 		conn.Close()
 	}()
 
@@ -59,7 +60,7 @@ func (ps *PageServer) Handle(conn net.Conn) error {
 			}
 
 		} else if i.Command() == PS_IOV_ADD_F {
-			databuffer := make([]byte, i.Page_count*PAGE_SIZE)
+			var databuffer []byte
 
 			if i.FlagsParent() {
 				page_adds_parent++
@@ -72,11 +73,12 @@ func (ps *PageServer) Handle(conn net.Conn) error {
 			}
 
 			if i.FlagsPresent() {
+				databuffer = make([]byte, i.Page_count*PAGE_SIZE)
+				page_added_data += len(databuffer)
 				_, err := io.ReadFull(conn, databuffer)
 				if err != nil {
 					return err
 				}
-
 			}
 			ps.AddPageData(i, databuffer)
 		} else if i.Command() == PS_IOV_OPEN2 {

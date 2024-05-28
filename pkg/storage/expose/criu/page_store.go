@@ -2,6 +2,7 @@ package criu
 
 import (
 	"fmt"
+	"path"
 	"sync"
 )
 
@@ -90,4 +91,21 @@ func (ps *PageStore) ShowAll() {
 		}
 		pmap.pages_lock.Unlock()
 	}
+}
+
+func (ps *PageStore) Dump(dir string) error {
+	for id, pmap := range ps.pages {
+		pages := make(map[uint64][]byte)
+		flags := make(map[uint64]uint32)
+		for vaddr, page := range pmap.pages {
+			pages[vaddr] = page.data
+			flags[vaddr] = PE_PRESENT
+		}
+		mapfile := path.Join(dir, fmt.Sprintf("pagemap-%d.img", id))
+		err := Export_image(mapfile, pages, flags)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }

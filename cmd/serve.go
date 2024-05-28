@@ -61,14 +61,15 @@ func init() {
 }
 
 type storageInfo struct {
-	tracker    storage.TrackingStorageProvider
-	lockable   storage.LockableStorageProvider
-	orderer    *blocks.PriorityBlockOrder
-	num_blocks int
-	block_size int
-	name       string
-	mapped     *modules.MappedStorage
-	schema     string
+	tracker       storage.TrackingStorageProvider
+	lockable      storage.LockableStorageProvider
+	orderer       *blocks.PriorityBlockOrder
+	num_blocks    int
+	block_size    int
+	name          string
+	mapped        *modules.MappedStorage
+	schema        string
+	data_complete func()
 }
 
 func runServe(ccmd *cobra.Command, args []string) {
@@ -97,7 +98,9 @@ func runServe(ccmd *cobra.Command, args []string) {
 		panic(err)
 	}
 
-	page_mapped := make(map[int]*modules.MappedStorage)
+	page_mapped := make(map[int]*storageInfo)
+
+	static_page_data := criu.NewPageStore()
 
 	for i, s := range siloConf.Device {
 		fmt.Printf("Setup storage %d [%s] size %s - %d\n", i, s.Name, s.Size, s.ByteSize())
@@ -108,7 +111,7 @@ func runServe(ccmd *cobra.Command, args []string) {
 
 		// Put it in the map for pageserver here...
 		if s.PageServerPID != 0 {
-			page_mapped[s.PageServerPID] = sinfo.mapped
+			page_mapped[s.PageServerPID] = sinfo
 		}
 
 		src_storage = append(src_storage, sinfo)
@@ -130,36 +133,75 @@ func runServe(ccmd *cobra.Command, args []string) {
 				panic(err)
 			}
 
-			fmt.Printf("Page server connection from %s\n", con.RemoteAddr().String())
+			is_pre := false
+			pids := make(map[int]*storageInfo)
+			var pending_writes sync.WaitGroup
 
 			ps := criu.NewPageServer()
 			ps.Close = func(iov *criu.PageServerIOV) {
-				fmt.Printf("PageServer Close")
+				// Wait for any pending writes
+				pending_writes.Wait()
+
+				if !is_pre {
+					for _, sinfo := range pids {
+						// Here we mark that the data for these pids as FINAL, and migration can complete safely
+						sinfo.data_complete()
+					}
+
+					// Dump the static pagemap data to files (outputs dir). This will be needed in a restore.
+					// TODO: Send it over along with the rest of the dump data...
+					static_page_data.Dump("outputs")
+				}
+
 			}
 			ps.Open2 = func(iov *criu.PageServerIOV) bool {
-				fmt.Printf("Open2\n")
-				return false
+				sinfo, ok := page_mapped[int(iov.DstID())]
+				if !ok {
+					return false
+				}
+				pids[int(iov.DstID())] = sinfo
+				return sinfo.mapped.Size() > 0
 			}
 			ps.Parent = func(iov *criu.PageServerIOV) bool {
-				ms := page_mapped[int(iov.DstID())]
-				fmt.Printf("Parent %t\n", ms.Size())
-				return ms.Size() > 0
+				is_pre = true
+				sinfo, ok := page_mapped[int(iov.DstID())]
+				if !ok {
+					return false
+				}
+				return sinfo.mapped.Size() > 0
 			}
 			ps.GetPageData = func(iov *criu.PageServerIOV, buffer []byte) {
 				// Unimplemented for now...
-				fmt.Printf("GetPageData %v\n", iov)
+				fmt.Printf("[Unimplemented] GetPageData %v\n", iov)
 			}
 			ps.AddPageData = func(iov *criu.PageServerIOV, buffer []byte) {
-				fmt.Printf("AddPageData %s %d\n", iov.String(), len(buffer))
-				maps, ok := page_mapped[int(iov.DstID())]
-				if !ok {
-					// The destination PID is unknown or unconfigured...
-					fmt.Printf("Destination PID unknown %d\n", iov.DstID())
-				}
+				//				fmt.Printf("AddPageData %s %d\n", iov.String(), len(buffer))
+				if iov.FlagsPresent() {
+					maps, ok := page_mapped[int(iov.DstID())]
+					if !ok {
+						// The destination PID is unknown or unconfigured...
+						fmt.Printf("Destination PID unknown %d\n", iov.DstID())
+					}
 
-				maps.WriteBlocks(iov.Vaddr, buffer)
+					if iov.FlagsLazy() {
+						pending_writes.Add(1)
+						go func() {
+							err := maps.mapped.WriteBlocks(iov.Vaddr, buffer)
+							if err != nil {
+								panic(err)
+							}
+							pending_writes.Done()
+						}()
+					} else {
+						// Write it to the static in mem store instead...
+						static_page_data.AddPageData(iov, buffer)
+					}
+				}
 			}
-			go ps.Handle(con)
+			go func() {
+				ps.Handle(con)
+				// All done...
+			}()
 		}
 	}()
 
@@ -271,6 +313,9 @@ func setupStorageDevice(conf *config.DeviceSchema) (*storageInfo, error) {
 		num_blocks: num_blocks,
 		name:       conf.Name,
 		schema:     schema,
+		data_complete: func() {
+			fmt.Printf("Data %s is complete\n", conf.Name)
+		},
 	}
 
 	if conf.PageServerPID != 0 {
@@ -415,7 +460,9 @@ func migrateDevice(dev_id uint32, name string,
 		}
 		mig.SetSourceMapped(sinfo.mapped, writer)
 
-		migrate_blocks = int((uint64(sinfo.mapped.Size()) + uint64(conf.Block_size) - 1) / uint64(conf.Block_size))
+		//		migrate_blocks = int((uint64(sinfo.mapped.Size()) + uint64(conf.Block_size) - 1) / uint64(conf.Block_size))
+		// Since we're not migrating all the blocks, we'll explicitly monitor them all for dirty...
+
 	}
 
 	fmt.Printf("Migrating %d blocks\n", migrate_blocks)
@@ -438,30 +485,73 @@ func migrateDevice(dev_id uint32, name string,
 		return err
 	}
 
-	// Optional: Enter a loop looking for more dirty blocks to migrate...
+	if sinfo.mapped != nil {
+		// Continuous migration until data_complete called...
+		ticker := time.NewTicker(100 * time.Millisecond)
+		ctx, cancelfn := context.WithCancel(context.TODO())
 
-	for {
-		blocks := mig.GetLatestDirty() //
-		if !serve_continuous && blocks == nil {
-			break
+		sinfo.data_complete = func() {
+			fmt.Printf("Cancelling continuous migration.\n")
+			cancelfn()
 		}
 
-		if blocks != nil {
-			// Optional: Send the list of dirty blocks over...
-			err := dest.DirtyList(blocks)
-			if err != nil {
-				return err
+	cmig:
+		for {
+			select {
+			case <-ticker.C:
+				blocks := mig.GetLatestDirty()
+
+				if blocks != nil {
+					// Optional: Send the list of dirty blocks over...
+					err := dest.DirtyList(blocks)
+					if err != nil {
+						return err
+					}
+
+					fmt.Printf("[%s] Migrating dirty blocks %d\n", name, len(blocks))
+					err = mig.MigrateDirty(blocks)
+					if err != nil {
+						return err
+					}
+				} else {
+					select {
+					case <-ctx.Done():
+						fmt.Printf("Continuous migration cancelled.\n")
+						break cmig
+					default:
+						break
+					}
+					mig.Unlock()
+				}
+			}
+		}
+
+	} else {
+
+		// Optional: Enter a loop looking for more dirty blocks to migrate...
+		for {
+			blocks := mig.GetLatestDirty() //
+			if !serve_continuous && blocks == nil {
+				break
 			}
 
-			//		fmt.Printf("[%s] Migrating dirty blocks %d\n", name, len(blocks))
-			err = mig.MigrateDirty(blocks)
-			if err != nil {
-				return err
+			if blocks != nil {
+				// Optional: Send the list of dirty blocks over...
+				err := dest.DirtyList(blocks)
+				if err != nil {
+					return err
+				}
+
+				//		fmt.Printf("[%s] Migrating dirty blocks %d\n", name, len(blocks))
+				err = mig.MigrateDirty(blocks)
+				if err != nil {
+					return err
+				}
+			} else {
+				mig.Unlock()
 			}
-		} else {
-			mig.Unlock()
+			time.Sleep(100 * time.Millisecond)
 		}
-		time.Sleep(100 * time.Millisecond)
 	}
 
 	err = mig.WaitForCompletion()
@@ -469,7 +559,8 @@ func migrateDevice(dev_id uint32, name string,
 		return err
 	}
 
-	//	fmt.Printf("[%s] Migration completed\n", name)
+	fmt.Printf("[%s] Migration completed\n", name)
+
 	err = dest.SendEvent(&packets.Event{Type: packets.EventCompleted})
 	if err != nil {
 		return err
