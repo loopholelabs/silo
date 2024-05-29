@@ -61,7 +61,8 @@ func init() {
 }
 
 type storageInfo struct {
-	tracker       storage.TrackingStorageProvider
+	//	tracker       storage.TrackingStorageProvider
+	tracker       *dirtytracker.DirtyTrackerRemote
 	lockable      storage.LockableStorageProvider
 	orderer       *blocks.PriorityBlockOrder
 	num_blocks    int
@@ -460,12 +461,15 @@ func migrateDevice(dev_id uint32, name string,
 		}
 		mig.SetSourceMapped(sinfo.mapped, writer)
 
-		//		migrate_blocks = int((uint64(sinfo.mapped.Size()) + uint64(conf.Block_size) - 1) / uint64(conf.Block_size))
-		// Since we're not migrating all the blocks, we'll explicitly monitor them all for dirty...
-
+		migrate_blocks = int((uint64(sinfo.mapped.Size()) + uint64(conf.Block_size) - 1) / uint64(conf.Block_size))
+		// Since we're not migrating all the blocks, we need to monitor the latter blocks in case there's new data there...
+		offset := migrate_blocks * conf.Block_size
+		length := (sinfo.num_blocks - migrate_blocks) * conf.Block_size
+		sinfo.tracker.TrackAt(int64(offset), int64(length))
+		fmt.Printf("Migrating %d/%d blocks. Tracking data at offset %d length %d. Size is %d.\n", migrate_blocks, sinfo.num_blocks, offset, length, sinfo.lockable.Size())
+	} else {
+		fmt.Printf("Migrating %d blocks\n", migrate_blocks)
 	}
-
-	fmt.Printf("Migrating %d blocks\n", migrate_blocks)
 
 	// Now do the migration...
 	err = mig.Migrate(migrate_blocks)
