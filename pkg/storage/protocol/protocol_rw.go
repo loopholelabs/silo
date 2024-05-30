@@ -61,7 +61,7 @@ func (p *ProtocolRW) SetNewDevProtocol(proto Protocol) {
 	p.newdev_protocol = proto
 }
 
-func (p *ProtocolRW) initDev(dev uint32) {
+func (p *ProtocolRW) InitDev(dev uint32) {
 	p.active_devs_lock.Lock()
 	_, ok := p.active_devs[dev]
 	if !ok {
@@ -91,7 +91,7 @@ func (p *ProtocolRW) SendPacketWriter(dev uint32, id uint32, length uint32, data
 		break
 	}
 
-	p.initDev(dev)
+	p.InitDev(dev)
 
 	// Encode and send it down the writer...
 	if id == ID_PICK_ANY {
@@ -125,7 +125,7 @@ func (p *ProtocolRW) SendPacket(dev uint32, id uint32, data []byte) (uint32, err
 		break
 	}
 
-	p.initDev(dev)
+	p.InitDev(dev)
 
 	// Encode and send it down the writer...
 	if id == ID_PICK_ANY {
@@ -202,7 +202,7 @@ func (p *ProtocolRW) Handle() error {
 }
 
 func (p *ProtocolRW) handlePacket(dev uint32, id uint32, data []byte) error {
-	p.initDev(dev)
+	p.InitDev(dev)
 
 	if data == nil || len(data) < 1 {
 		return errors.New("Invalid data packet")
