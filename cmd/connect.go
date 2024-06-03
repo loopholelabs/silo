@@ -109,7 +109,9 @@ func runConnect(ccmd *cobra.Command, args []string) {
 	dst_wg_first = true
 	dst_wg.Add(1) // We need to at least wait for one to complete.
 
-	pro := protocol.NewProtocolRW(context.TODO(), []io.Reader{con}, []io.Writer{con}, handleIncomingDevice)
+	proto_ctx, proto_cancelfn := context.WithCancel(context.TODO())
+
+	pro := protocol.NewProtocolRW(proto_ctx, []io.Reader{con}, []io.Writer{con}, handleIncomingDevice)
 
 	// Let the protocol do its thing.
 	go func() {
@@ -119,6 +121,8 @@ func runConnect(ccmd *cobra.Command, args []string) {
 			return
 		}
 		// We should get an io.EOF here once the migrations have all completed.
+		// We should cancel the context, to cancel anything that is waiting for packets.
+		proto_cancelfn()
 	}()
 
 	dst_wg.Wait() // Wait until the migrations have completed...
@@ -273,15 +277,24 @@ func handleIncomingDevice(pro protocol.Protocol, dev uint32) {
 
 	dest = protocol.NewFromProtocol(dev, storageFactory, pro)
 
+	var handler_wg sync.WaitGroup
+
+	handler_wg.Add(1)
 	go func() {
 		_ = dest.HandleReadAt()
+		handler_wg.Done()
 	}()
+	handler_wg.Add(1)
 	go func() {
 		_ = dest.HandleWriteAt()
+		handler_wg.Done()
 	}()
+	handler_wg.Add(1)
 	go func() {
 		_ = dest.HandleDevInfo()
+		handler_wg.Done()
 	}()
+	handler_wg.Add(1)
 	go func() {
 		writer := func(offset int64, data []byte, idmap map[uint64]uint64) error {
 			mapped.AppendMap(idmap)
@@ -289,8 +302,10 @@ func handleIncomingDevice(pro protocol.Protocol, dev uint32) {
 			return err
 		}
 		_ = dest.HandleWriteAtWithMap(writer)
+		handler_wg.Done()
 	}()
 
+	handler_wg.Add(1)
 	// Handle events from the source
 	go func() {
 		_ = dest.HandleEvent(func(e *packets.Event) {
@@ -311,8 +326,12 @@ func handleIncomingDevice(pro protocol.Protocol, dev uint32) {
 					userfault_add(uint64(dev_schema.PageServerPID), mapped)
 				}
 
-				// We completed the migration...
-				dst_wg.Done()
+				// We completed the migration, but we should wait for handlers to finish before we ok things...
+				fmt.Printf("Completed, now wait for handlers...\n")
+				go func() {
+					handler_wg.Wait()
+					dst_wg.Done()
+				}()
 				//			available, total := destWaitingLocal.Availability()
 				//			fmt.Printf("= %d = Availability (%d/%d)\n", dev, available, total)
 				// Set bar to completed
@@ -321,8 +340,10 @@ func handleIncomingDevice(pro protocol.Protocol, dev uint32) {
 				}
 			}
 		})
+		handler_wg.Done()
 	}()
 
+	handler_wg.Add(1)
 	go func() {
 		_ = dest.HandleHashes(func(hashes map[uint][sha256.Size]byte) {
 			//fmt.Printf("[%d] Got %d hashes...\n", dev, len(hashes))
@@ -341,14 +362,17 @@ func handleIncomingDevice(pro protocol.Protocol, dev uint32) {
 				}
 			}
 		})
+		handler_wg.Done()
 	}()
 
 	// Handle dirty list by invalidating local waiting cache
+	handler_wg.Add(1)
 	go func() {
 		_ = dest.HandleDirtyList(func(dirty []uint) {
 			//	fmt.Printf("= %d = LIST OF DIRTY BLOCKS %v\n", dev, dirty)
 			destWaitingLocal.DirtyBlocks(dirty)
 		})
+		handler_wg.Done()
 	}()
 }
 
