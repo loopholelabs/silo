@@ -70,8 +70,8 @@ func (i *ToProtocol) SendDevInfo(name string, block_size uint32, schema string) 
 	return err
 }
 
-func (i *ToProtocol) DirtyList(blocks []uint) error {
-	b := packets.EncodeDirtyList(blocks)
+func (i *ToProtocol) DirtyList(block_size int, blocks []uint) error {
+	b := packets.EncodeDirtyList(block_size, blocks)
 	_, err := i.protocol.SendPacket(i.dev, ID_PICK_ANY, b)
 	return err
 }

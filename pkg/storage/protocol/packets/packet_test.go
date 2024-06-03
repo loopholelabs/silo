@@ -155,17 +155,18 @@ func TestDontNeedAt(t *testing.T) {
 func TestDirtyList(t *testing.T) {
 
 	blocks := []uint{1, 7, 100}
-	b := EncodeDirtyList(blocks)
+	b := EncodeDirtyList(4096, blocks)
 
-	blocks2, err := DecodeDirtyList(b)
+	bs, blocks2, err := DecodeDirtyList(b)
 	assert.NoError(t, err)
+	assert.Equal(t, 4096, bs)
 	assert.Equal(t, blocks, blocks2)
 
 	// Make sure we can't decode silly things
-	_, err = DecodeDirtyList(nil)
+	_, _, err = DecodeDirtyList(nil)
 	assert.Error(t, err)
 
-	_, err = DecodeDirtyList([]byte{
+	_, _, err = DecodeDirtyList([]byte{
 		99,
 	})
 	assert.Error(t, err)

@@ -6,6 +6,7 @@ import (
 
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
+	"github.com/loopholelabs/silo/pkg/storage/util"
 )
 
 type FromProtocol struct {
@@ -14,17 +15,89 @@ type FromProtocol struct {
 	prov_factory func(*packets.DevInfo) storage.StorageProvider
 	protocol     Protocol
 	init         sync.WaitGroup
+
+	present_lock       sync.Mutex
+	present            *util.Bitfield
+	present_block_size int
 }
 
 func NewFromProtocol(dev uint32, provFactory func(*packets.DevInfo) storage.StorageProvider, protocol Protocol) *FromProtocol {
 	fp := &FromProtocol{
-		dev:          dev,
-		prov_factory: provFactory,
-		protocol:     protocol,
+		dev:                dev,
+		prov_factory:       provFactory,
+		protocol:           protocol,
+		present_block_size: 1024,
 	}
 	// We need to wait for the DevInfo before allowing any reads/writes.
 	fp.init.Add(1)
 	return fp
+}
+
+func (fp *FromProtocol) GetDataPresent() int {
+	fp.present_lock.Lock()
+	defer fp.present_lock.Unlock()
+	blocks := fp.present.Count(0, fp.present.Length())
+	size := blocks * fp.present_block_size
+	if size > int(fp.prov.Size()) {
+		size = int(fp.prov.Size())
+	}
+	return size
+}
+
+func (fp *FromProtocol) mark_range_present(offset int, length int) {
+	fp.init.Wait()
+
+	// Translate to full blocks...
+	end := uint64(offset + length)
+	if end > fp.prov.Size() {
+		end = fp.prov.Size()
+	}
+
+	b_start := uint(offset / fp.present_block_size)
+	b_end := uint((end-1)/uint64(fp.present_block_size)) + 1
+
+	// First block is incomplete. Ignore it.
+	if offset > (int(b_start) * fp.present_block_size) {
+		b_start++
+	}
+
+	// Last block is incomplete AND is not the last block. Ignore it.
+	if offset+length < int(b_end*uint(fp.present_block_size)) && offset+length < int(fp.prov.Size()) {
+		b_end--
+	}
+
+	// Mark the blocks
+	fp.present_lock.Lock()
+	fp.present.SetBits(b_start, b_end)
+	fp.present_lock.Unlock()
+}
+
+func (fp *FromProtocol) mark_range_missing(offset int, length int) {
+	fp.init.Wait()
+
+	// Translate to full blocks...
+	end := uint64(offset + length)
+	if end > fp.prov.Size() {
+		end = fp.prov.Size()
+	}
+
+	b_start := uint(offset / fp.present_block_size)
+	b_end := uint((end-1)/uint64(fp.present_block_size)) + 1
+
+	// First block is incomplete. Ignore it.
+	if offset > (int(b_start) * fp.present_block_size) {
+		b_start++
+	}
+
+	// Last block is incomplete AND is not the last block. Ignore it.
+	if offset+length < int(b_end*uint(fp.present_block_size)) && offset+length < int(fp.prov.Size()) {
+		b_end--
+	}
+
+	// Mark the blocks
+	fp.present_lock.Lock()
+	fp.present.ClearBits(b_start, b_end)
+	fp.present_lock.Unlock()
 }
 
 // Handle any Events
@@ -88,6 +161,9 @@ func (fp *FromProtocol) HandleDevInfo() error {
 
 	// Create storage
 	fp.prov = fp.prov_factory(di)
+	num_blocks := (int(fp.prov.Size()) + fp.present_block_size - 1) / fp.present_block_size
+	fp.present = util.NewBitfield(num_blocks)
+
 	fp.init.Done() // Allow reads/writes
 	return nil
 }
@@ -169,6 +245,9 @@ func (fp *FromProtocol) HandleWriteAt() error {
 				Bytes: n,
 				Error: err,
 			}
+			if err == nil {
+				fp.mark_range_present(int(goffset), len(gdata))
+			}
 			_, err = fp.protocol.SendPacket(fp.dev, gid, packets.EncodeWriteAtResponse(war))
 			if err != nil {
 				errLock.Lock()
@@ -195,6 +274,9 @@ func (fp *FromProtocol) HandleWriteAtWithMap(cb func(offset int64, data []byte, 
 		}
 
 		err = cb(offset, write_data, id_map)
+		if err == nil {
+			fp.mark_range_present(int(offset), len(write_data))
+		}
 		war := &packets.WriteAtResponse{
 			Bytes: len(write_data),
 			Error: err,
@@ -235,6 +317,9 @@ func (fp *FromProtocol) HandleWriteAtComp() error {
 		// Handle in a goroutine
 		go func(goffset int64, gdata []byte, gid uint32) {
 			n, err := fp.prov.WriteAt(gdata, goffset)
+			if err == nil {
+				fp.mark_range_present(int(goffset), len(gdata))
+			}
 			war := &packets.WriteAtResponse{
 				Bytes: n,
 				Error: err,
@@ -256,9 +341,15 @@ func (fp *FromProtocol) HandleDirtyList(cb func(blocks []uint)) error {
 		if err != nil {
 			return err
 		}
-		blocks, err := packets.DecodeDirtyList(data)
+		block_size, blocks, err := packets.DecodeDirtyList(data)
 		if err != nil {
 			return err
+		}
+
+		// Mark these as non-present (useful for debugging issues)
+		for _, b := range blocks {
+			offset := int(b) * block_size
+			fp.mark_range_missing(offset, block_size)
 		}
 
 		cb(blocks)

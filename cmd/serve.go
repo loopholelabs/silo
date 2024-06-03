@@ -507,7 +507,7 @@ func migrateDevice(dev_id uint32, name string,
 
 				if blocks != nil {
 					// Optional: Send the list of dirty blocks over...
-					err := dest.DirtyList(blocks)
+					err := dest.DirtyList(conf.Block_size, blocks)
 					if err != nil {
 						return err
 					}
@@ -541,7 +541,7 @@ func migrateDevice(dev_id uint32, name string,
 
 			if blocks != nil {
 				// Optional: Send the list of dirty blocks over...
-				err := dest.DirtyList(blocks)
+				err := dest.DirtyList(conf.Block_size, blocks)
 				if err != nil {
 					return err
 				}
