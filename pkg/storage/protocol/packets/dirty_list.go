@@ -31,3 +31,16 @@ func DecodeDirtyList(buff []byte) (int, []uint, error) {
 	}
 	return int(block_size), blocks, nil
 }
+
+func EncodeDirtyListResponse() []byte {
+	buff := make([]byte, 1)
+	buff[0] = COMMAND_DIRTY_LIST_RESPONSE
+	return buff
+}
+
+func DecodeDirtyListResponse(buff []byte) error {
+	if buff == nil || len(buff) < 1 || buff[0] != COMMAND_DIRTY_LIST_RESPONSE {
+		return errors.New("Invalid packet")
+	}
+	return nil
+}

@@ -72,7 +72,19 @@ func (i *ToProtocol) SendDevInfo(name string, block_size uint32, schema string) 
 
 func (i *ToProtocol) DirtyList(block_size int, blocks []uint) error {
 	b := packets.EncodeDirtyList(block_size, blocks)
-	_, err := i.protocol.SendPacket(i.dev, ID_PICK_ANY, b)
+	id, err := i.protocol.SendPacket(i.dev, ID_PICK_ANY, b)
+	if err != nil {
+		return err
+	}
+
+	// Wait for the response...
+	r, err := i.protocol.WaitForPacket(i.dev, id)
+	if err != nil {
+		return err
+	}
+
+	// Decode the response and use it...
+	err = packets.DecodeDirtyListResponse(r)
 	return err
 }
 

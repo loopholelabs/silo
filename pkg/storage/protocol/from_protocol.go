@@ -337,7 +337,7 @@ func (fp *FromProtocol) HandleWriteAtComp() error {
 // Handle any DirtyList commands
 func (fp *FromProtocol) HandleDirtyList(cb func(blocks []uint)) error {
 	for {
-		_, data, err := fp.protocol.WaitForCommand(fp.dev, packets.COMMAND_DIRTY_LIST)
+		gid, data, err := fp.protocol.WaitForCommand(fp.dev, packets.COMMAND_DIRTY_LIST)
 		if err != nil {
 			return err
 		}
@@ -353,6 +353,12 @@ func (fp *FromProtocol) HandleDirtyList(cb func(blocks []uint)) error {
 		}
 
 		cb(blocks)
+
+		// Send a response / ack, to signify that the DirtyList has been actioned.
+		_, err = fp.protocol.SendPacket(fp.dev, gid, packets.EncodeDirtyListResponse())
+		if err != nil {
+			return err
+		}
 	}
 }
 
