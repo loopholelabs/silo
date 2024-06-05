@@ -12,8 +12,8 @@ import (
 
 // TODO: Context, and handle fatal errors
 
-const READ_POOL_BUFFER_SIZE = 256 * 1024
-const READ_POOL_SIZE = 128
+//const READ_POOL_BUFFER_SIZE = 256 * 1024
+//const READ_POOL_SIZE = 128
 
 /**
  * Exposes a storage provider as an nbd device
@@ -76,7 +76,7 @@ type Dispatch struct {
 	pending_responses  sync.WaitGroup
 	metric_packets_in  uint64
 	metric_packets_out uint64
-	read_buffers       chan []byte
+	// read_buffers       chan []byte
 }
 
 func NewDispatch(ctx context.Context, fp io.ReadWriteCloser, prov storage.StorageProvider) *Dispatch {
@@ -90,11 +90,12 @@ func NewDispatch(ctx context.Context, fp io.ReadWriteCloser, prov storage.Storag
 		prov:            prov,
 		ctx:             ctx,
 	}
-	d.read_buffers = make(chan []byte, READ_POOL_SIZE)
-	for i := 0; i < READ_POOL_SIZE; i++ {
-		d.read_buffers <- make([]byte, READ_POOL_BUFFER_SIZE)
-	}
-
+	/*
+		d.read_buffers = make(chan []byte, READ_POOL_SIZE)
+		for i := 0; i < READ_POOL_SIZE; i++ {
+			d.read_buffers <- make([]byte, READ_POOL_BUFFER_SIZE)
+		}
+	*/
 	binary.BigEndian.PutUint32(d.response_header, NBD_RESPONSE_MAGIC)
 	return d
 }
@@ -246,19 +247,20 @@ func (d *Dispatch) cmdRead(cmd_handle uint64, cmd_from uint64, cmd_length uint32
 
 	performRead := func(handle uint64, from uint64, length uint32) error {
 		var b []byte
-		var from_pool = false
-		if length <= READ_POOL_BUFFER_SIZE {
-			// Try to get a buffer from pool
-			select {
-			case b = <-d.read_buffers:
-				from_pool = true
-				b = b[:length]
-				break
-			default:
-				break
+		/*
+			var from_pool = false
+			if length <= READ_POOL_BUFFER_SIZE {
+				// Try to get a buffer from pool
+				select {
+				case b = <-d.read_buffers:
+					from_pool = true
+					b = b[:length]
+					break
+				default:
+					break
+				}
 			}
-		}
-
+		*/
 		// Couldn't get one from the pool
 		if b == nil {
 			// We'll have to alloc it
@@ -289,9 +291,11 @@ func (d *Dispatch) cmdRead(cmd_handle uint64, cmd_from uint64, cmd_length uint32
 		}
 		err := d.writeResponse(errorValue, handle, data)
 		// Return it to pool if need to
-		if from_pool {
-			d.read_buffers <- b[:READ_POOL_BUFFER_SIZE]
-		}
+		/*
+			if from_pool {
+				d.read_buffers <- b[:READ_POOL_BUFFER_SIZE]
+			}
+		*/
 		return err
 	}
 
