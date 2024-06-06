@@ -101,14 +101,19 @@ func (ms *MappedStorage) Size() uint64 {
 	return uint64(len(ms.id_to_block)) * uint64(ms.block_size)
 }
 
-func (ms *MappedStorage) ReadBlocks(id uint64, data []byte) error {
-	for ptr := 0; ptr < len(data); ptr += ms.block_size {
-		err := ms.ReadBlock(id+uint64(ptr), data[ptr:ptr+ms.block_size])
-		if err != nil {
-			return err
+func (ms *MappedStorage) ProviderUsedSize() uint64 {
+	ms.lock.Lock()
+	defer ms.lock.Unlock()
+	maxb := uint64(0)
+	if len(ms.id_to_block) == 0 {
+		return 0
+	}
+	for _, b := range ms.id_to_block {
+		if b > maxb {
+			maxb = b
 		}
 	}
-	return nil
+	return (maxb + 1) * uint64(ms.block_size)
 }
 
 // Optimized where we can for large blocks
@@ -212,6 +217,30 @@ func (ms *MappedStorage) ReadBlock(id uint64, data []byte) error {
 	return err
 }
 
+func (ms *MappedStorage) ReadBlocks(id uint64, data []byte) error {
+	ms.lock.Lock()
+	defer ms.lock.Unlock()
+
+	return ms.readBlocksInt(id, data)
+}
+
+// TODO: Optimize when the data is continuous
+func (ms *MappedStorage) readBlocksInt(id uint64, data []byte) error {
+	for ptr := 0; ptr < len(data); ptr += ms.block_size {
+		b, ok := ms.id_to_block[id+uint64(ptr)]
+		if !ok {
+			return Err_not_found
+		}
+
+		offset := b * uint64(ms.block_size)
+		_, err := ms.prov.ReadAt(data[ptr:ptr+ms.block_size], int64(offset))
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 /**
  * Write a single block
  *
@@ -276,7 +305,7 @@ func (ms *MappedStorage) GetBlockAddresses() []uint64 {
 
 /**
  * Given a list of addresses, get a map of continuous ranges
- *
+ * max_size of 0 means unlimited.
  */
 func (ms *MappedStorage) GetRegions(addresses []uint64, max_size uint64) map[uint64]uint64 {
 	ranges := make(map[uint64]uint64)
@@ -297,7 +326,7 @@ func (ms *MappedStorage) GetRegions(addresses []uint64, max_size uint64) map[uin
 			// Try to combine some more...
 			ptr := ms.block_size
 			for {
-				if ranges[a] >= max_size {
+				if max_size != 0 && ranges[a] >= max_size {
 					break
 				}
 				// Make sure it exists
@@ -315,4 +344,45 @@ func (ms *MappedStorage) GetRegions(addresses []uint64, max_size uint64) map[uin
 	}
 
 	return ranges
+}
+
+/**
+ * Defrag into an empty destination
+ */
+func (ms *MappedStorage) DefragTo(dest *MappedStorage) error {
+	ms.lock.Lock()
+	defer ms.lock.Unlock()
+
+	// First get list of USED IDs, and then get regions...
+	ids := make([]uint64, 0)
+	for id := range ms.id_to_block {
+		ids = append(ids, id)
+	}
+
+	all_regions := ms.GetRegions(ids, 0)
+
+	region_ids := make([]uint64, 0)
+	for id := range all_regions {
+		region_ids = append(region_ids, id)
+	}
+
+	slices.Sort(region_ids)
+
+	// Now read+write all data to the destination
+	for _, id := range region_ids {
+		length := all_regions[id]
+		data := make([]byte, length)
+
+		// Read the source blocks...
+		err := ms.readBlocksInt(id, data)
+		if err != nil {
+			return err
+		}
+
+		err = dest.WriteBlocks(id, data)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }

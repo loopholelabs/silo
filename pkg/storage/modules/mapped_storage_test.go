@@ -171,3 +171,82 @@ func TestMappedStorageGetRegions(t *testing.T) {
 	}, regions)
 
 }
+
+func TestMappedStorageReadWriteBlocks(t *testing.T) {
+	block_size := 4096
+	store := sources.NewMemoryStorage(64 * block_size)
+
+	ms := NewMappedStorage(store, block_size)
+	// Write some blocks, then read them back
+
+	data := make([]byte, block_size*2)
+	_, err := rand.Read(data)
+	assert.NoError(t, err)
+
+	err = ms.WriteBlocks(0x12345678, data)
+	assert.NoError(t, err)
+
+	buffer := make([]byte, block_size)
+
+	err = ms.ReadBlock(0x12345678, buffer)
+	assert.NoError(t, err)
+
+	assert.Equal(t, buffer, data[:block_size])
+
+	err = ms.ReadBlock(uint64(0x12345678+block_size), buffer)
+	assert.Equal(t, buffer, data[block_size:])
+
+	buffer2 := make([]byte, block_size*2)
+	err = ms.ReadBlocks(0x12345678, buffer2)
+	assert.NoError(t, err)
+
+	assert.Equal(t, data, buffer2)
+}
+
+func TestDefrag(t *testing.T) {
+	block_size := 4096
+	store1 := sources.NewMemoryStorage(64 * block_size)
+	store2 := sources.NewMemoryStorage(64 * block_size)
+
+	ms1 := NewMappedStorage(store1, block_size)
+	ms2 := NewMappedStorage(store2, block_size)
+
+	// Here's some data we're going to write
+	data := make([]byte, block_size*2)
+	_, err := rand.Read(data)
+	assert.NoError(t, err)
+
+	err = ms1.WriteBlock(0x12345678, data[:block_size])
+	assert.NoError(t, err)
+
+	other := make([]byte, block_size)
+	_, err = rand.Read(other)
+	assert.NoError(t, err)
+
+	err = ms1.WriteBlock(0xdead, other)
+	assert.NoError(t, err)
+
+	err = ms1.WriteBlock(uint64(0x12345678+block_size), data[block_size:])
+	assert.NoError(t, err)
+
+	// Now delete the 'other'
+
+	err = ms1.RemoveBlock(0xdead)
+	assert.NoError(t, err)
+
+	// We now have 2 blocks, and a hole in the middle...
+
+	assert.Equal(t, uint64(3*block_size), ms1.ProviderUsedSize()) // It's occupying 3 blocks in the storage.
+
+	err = ms1.DefragTo(ms2)
+	assert.NoError(t, err)
+
+	assert.Equal(t, uint64(2*block_size), ms2.ProviderUsedSize()) // It's defragged to 2 blocks.
+
+	// Make sure the data is there
+	buffer := make([]byte, block_size*2)
+
+	err = ms2.ReadBlocks(0x12345678, buffer)
+
+	assert.Equal(t, data, buffer)
+}
