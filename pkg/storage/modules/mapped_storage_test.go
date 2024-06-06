@@ -37,6 +37,28 @@ func TestMappedStorage(t *testing.T) {
 
 }
 
+func TestMappedStorageRemove(t *testing.T) {
+	block_size := 4096
+	store := sources.NewMemoryStorage(64 * block_size)
+
+	ms := NewMappedStorage(store, block_size)
+	// Write some blocks, then read them back
+
+	data := make([]byte, block_size)
+	_, err := rand.Read(data)
+	assert.NoError(t, err)
+
+	id := uint64(0x12345678)
+	err = ms.WriteBlock(id, data)
+	assert.NoError(t, err)
+
+	assert.Equal(t, uint64(block_size), ms.Size())
+
+	ms.RemoveBlock(id)
+
+	assert.Equal(t, uint64(0), ms.Size())
+}
+
 func TestMappedStorageOutOfSpace(t *testing.T) {
 	block_size := 4096
 	store := sources.NewMemoryStorage(2 * block_size)

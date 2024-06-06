@@ -244,7 +244,7 @@ func (ms *MappedStorage) WriteBlock(id uint64, data []byte) error {
 
 /**
  * Remove a single block from this MappedStorage device
- *
+ * NB: This will create a HOLE in the storage.
  */
 func (ms *MappedStorage) RemoveBlock(id uint64) error {
 	ms.lock.Lock()
@@ -256,7 +256,7 @@ func (ms *MappedStorage) RemoveBlock(id uint64) error {
 	}
 
 	delete(ms.id_to_block, id)
-	ms.block_available.ClearBit(int(b))
+	ms.block_available.SetBit(int(b))
 	return nil
 }
 
