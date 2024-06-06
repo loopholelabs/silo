@@ -247,6 +247,14 @@ func TestDefrag(t *testing.T) {
 	buffer := make([]byte, block_size*2)
 
 	err = ms2.ReadBlocks(0x12345678, buffer)
+	assert.NoError(t, err)
 
 	assert.Equal(t, data, buffer)
+
+	// Delete it...
+	err = ms2.RemoveBlocks(0x12345678, uint64(len(buffer)))
+	assert.NoError(t, err)
+
+	assert.Equal(t, uint64(0), ms2.Size())
+	assert.Equal(t, uint64(0), ms2.ProviderUsedSize())
 }

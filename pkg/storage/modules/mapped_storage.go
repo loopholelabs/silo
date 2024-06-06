@@ -290,6 +290,26 @@ func (ms *MappedStorage) RemoveBlock(id uint64) error {
 }
 
 /**
+ * Remove blocks from this MappedStorage device
+ * NB: This will create HOLEs in the storage.
+ */
+func (ms *MappedStorage) RemoveBlocks(id uint64, length uint64) error {
+	ms.lock.Lock()
+	defer ms.lock.Unlock()
+
+	for ptr := uint64(0); ptr < length; ptr += uint64(ms.block_size) {
+		b, ok := ms.id_to_block[id+ptr]
+		if !ok {
+			return Err_not_found
+		}
+
+		delete(ms.id_to_block, id+ptr)
+		ms.block_available.SetBit(int(b))
+	}
+	return nil
+}
+
+/**
  * Get a list of all addresses in the mapped storage
  *
  */
