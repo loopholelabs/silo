@@ -19,7 +19,7 @@ func TestProtocolWriteAt(t *testing.T) {
 
 	// Setup a protocol in the middle, and make sure our reads/writes get through ok
 
-	pr := NewMockProtocol()
+	pr := NewMockProtocol(context.TODO())
 
 	sourceToProtocol := NewToProtocol(uint64(size), 1, pr)
 
@@ -28,7 +28,7 @@ func TestProtocolWriteAt(t *testing.T) {
 		return store
 	}
 
-	destFromProtocol := NewFromProtocol(1, storeFactory, pr)
+	destFromProtocol := NewFromProtocol(context.TODO(), 1, storeFactory, pr)
 
 	// Now do some things and make sure they happen...
 
@@ -69,7 +69,7 @@ func TestProtocolWriteAtComp(t *testing.T) {
 
 	// Setup a protocol in the middle, and make sure our reads/writes get through ok
 
-	pr := NewMockProtocol()
+	pr := NewMockProtocol(context.TODO())
 
 	sourceToProtocol := NewToProtocol(uint64(size), 1, pr)
 
@@ -80,7 +80,7 @@ func TestProtocolWriteAtComp(t *testing.T) {
 		return store
 	}
 
-	destFromProtocol := NewFromProtocol(1, storeFactory, pr)
+	destFromProtocol := NewFromProtocol(context.TODO(), 1, storeFactory, pr)
 
 	// Now do some things and make sure they happen...
 
@@ -129,7 +129,7 @@ func TestProtocolReadAt(t *testing.T) {
 	_, err := rand.Read(buff)
 	assert.NoError(t, err)
 
-	pr := NewMockProtocol()
+	pr := NewMockProtocol(context.TODO())
 
 	sourceToProtocol := NewToProtocol(uint64(size), 1, pr)
 
@@ -144,7 +144,7 @@ func TestProtocolReadAt(t *testing.T) {
 		return store
 	}
 
-	destFromProtocol := NewFromProtocol(1, storeFactory, pr)
+	destFromProtocol := NewFromProtocol(context.TODO(), 1, storeFactory, pr)
 
 	// Now do some things and make sure they happen...
 
@@ -188,9 +188,9 @@ func TestProtocolRWWriteAt(t *testing.T) {
 	}
 
 	prSource := NewProtocolRW(context.TODO(), []io.Reader{r1}, []io.Writer{w2}, nil)
-	prDest := NewProtocolRW(context.TODO(), []io.Reader{r2}, []io.Writer{w1}, func(p Protocol, dev uint32) {
+	prDest := NewProtocolRW(context.TODO(), []io.Reader{r2}, []io.Writer{w1}, func(ctx context.Context, p Protocol, dev uint32) {
 		destDev <- dev
-		destFromProtocol := NewFromProtocol(dev, storeFactory, p)
+		destFromProtocol := NewFromProtocol(ctx, dev, storeFactory, p)
 
 		go func() {
 			_ = destFromProtocol.HandleDevInfo()
@@ -263,8 +263,8 @@ func TestProtocolRWReadAt(t *testing.T) {
 		return store
 	}
 
-	initDev := func(p Protocol, dev uint32) {
-		destFromProtocol := NewFromProtocol(dev, storeFactory, p)
+	initDev := func(ctx context.Context, p Protocol, dev uint32) {
+		destFromProtocol := NewFromProtocol(ctx, dev, storeFactory, p)
 
 		go func() {
 			_ = destFromProtocol.HandleDevInfo()
@@ -307,7 +307,7 @@ func TestProtocolEvents(t *testing.T) {
 	size := 1024 * 1024
 	var store storage.StorageProvider
 
-	pr := NewMockProtocol()
+	pr := NewMockProtocol(context.TODO())
 
 	sourceToProtocol := NewToProtocol(uint64(size), 1, pr)
 
@@ -316,7 +316,7 @@ func TestProtocolEvents(t *testing.T) {
 		return store
 	}
 
-	destFromProtocol := NewFromProtocol(1, storeFactory, pr)
+	destFromProtocol := NewFromProtocol(context.TODO(), 1, storeFactory, pr)
 
 	events := make(chan packets.EventType, 10)
 
@@ -366,7 +366,7 @@ func TestProtocolWriteAtWithMap(t *testing.T) {
 	var store storage.StorageProvider
 	var mappedStore *modules.MappedStorage
 
-	pr := NewMockProtocol()
+	pr := NewMockProtocol(context.TODO())
 
 	sourceToProtocol := NewToProtocol(uint64(size), 1, pr)
 
@@ -376,7 +376,7 @@ func TestProtocolWriteAtWithMap(t *testing.T) {
 		return store
 	}
 
-	destFromProtocol := NewFromProtocol(1, storeFactory, pr)
+	destFromProtocol := NewFromProtocol(context.TODO(), 1, storeFactory, pr)
 
 	// Now do some things and make sure they happen...
 

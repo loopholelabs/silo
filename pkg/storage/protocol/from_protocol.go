@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"crypto/sha256"
 	"sync"
 
@@ -14,22 +15,23 @@ type FromProtocol struct {
 	prov         storage.StorageProvider
 	prov_factory func(*packets.DevInfo) storage.StorageProvider
 	protocol     Protocol
-	init         sync.WaitGroup
+	init         chan bool
+	ctx          context.Context
 
 	present_lock       sync.Mutex
 	present            *util.Bitfield
 	present_block_size int
 }
 
-func NewFromProtocol(dev uint32, provFactory func(*packets.DevInfo) storage.StorageProvider, protocol Protocol) *FromProtocol {
+func NewFromProtocol(ctx context.Context, dev uint32, provFactory func(*packets.DevInfo) storage.StorageProvider, protocol Protocol) *FromProtocol {
 	fp := &FromProtocol{
 		dev:                dev,
 		prov_factory:       provFactory,
 		protocol:           protocol,
 		present_block_size: 1024,
+		init:               make(chan bool, 1),
+		ctx:                ctx,
 	}
-	// We need to wait for the DevInfo before allowing any reads/writes.
-	fp.init.Add(1)
 	return fp
 }
 
@@ -45,8 +47,6 @@ func (fp *FromProtocol) GetDataPresent() int {
 }
 
 func (fp *FromProtocol) mark_range_present(offset int, length int) {
-	fp.init.Wait()
-
 	// Translate to full blocks...
 	end := uint64(offset + length)
 	if end > fp.prov.Size() {
@@ -73,8 +73,6 @@ func (fp *FromProtocol) mark_range_present(offset int, length int) {
 }
 
 func (fp *FromProtocol) mark_range_missing(offset int, length int) {
-	fp.init.Wait()
-
 	// Translate to full blocks...
 	end := uint64(offset + length)
 	if end > fp.prov.Size() {
@@ -100,9 +98,23 @@ func (fp *FromProtocol) mark_range_missing(offset int, length int) {
 	fp.present_lock.Unlock()
 }
 
+func (fp *FromProtocol) wait_init_or_cancel() error {
+	// Wait until init, or until context cancelled.
+	select {
+	case <-fp.init:
+		fp.init <- true
+		return nil
+	case <-fp.ctx.Done():
+		return fp.ctx.Err()
+	}
+}
+
 // Handle any Events
 func (fp *FromProtocol) HandleEvent(cb func(*packets.Event)) error {
-	fp.init.Wait()
+	err := fp.wait_init_or_cancel()
+	if err != nil {
+		return err
+	}
 
 	for {
 		id, data, err := fp.protocol.WaitForCommand(fp.dev, packets.COMMAND_EVENT)
@@ -126,7 +138,10 @@ func (fp *FromProtocol) HandleEvent(cb func(*packets.Event)) error {
 
 // Handle hashes
 func (fp *FromProtocol) HandleHashes(cb func(map[uint][sha256.Size]byte)) error {
-	fp.init.Wait()
+	err := fp.wait_init_or_cancel()
+	if err != nil {
+		return err
+	}
 
 	for {
 		id, data, err := fp.protocol.WaitForCommand(fp.dev, packets.COMMAND_HASHES)
@@ -164,13 +179,16 @@ func (fp *FromProtocol) HandleDevInfo() error {
 	num_blocks := (int(fp.prov.Size()) + fp.present_block_size - 1) / fp.present_block_size
 	fp.present = util.NewBitfield(num_blocks)
 
-	fp.init.Done() // Allow reads/writes
+	fp.init <- true // Confirm things have been initialized for this device.
 	return nil
 }
 
 // Handle any ReadAt commands, and send to provider
 func (fp *FromProtocol) HandleReadAt() error {
-	fp.init.Wait()
+	err := fp.wait_init_or_cancel()
+	if err != nil {
+		return err
+	}
 
 	var errLock sync.Mutex
 	var errValue error
@@ -214,7 +232,10 @@ func (fp *FromProtocol) HandleReadAt() error {
 
 // Handle any WriteAt commands, and send to provider
 func (fp *FromProtocol) HandleWriteAt() error {
-	fp.init.Wait()
+	err := fp.wait_init_or_cancel()
+	if err != nil {
+		return err
+	}
 
 	var errLock sync.Mutex
 	var errValue error
@@ -260,7 +281,10 @@ func (fp *FromProtocol) HandleWriteAt() error {
 
 // Handle any WriteAt commands, and send to provider
 func (fp *FromProtocol) HandleWriteAtWithMap(cb func(offset int64, data []byte, idmap map[uint64]uint64) error) error {
-	fp.init.Wait()
+	err := fp.wait_init_or_cancel()
+	if err != nil {
+		return err
+	}
 
 	for {
 		id, data, err := fp.protocol.WaitForCommand(fp.dev, packets.COMMAND_WRITE_AT_WITH_MAP)
@@ -290,7 +314,10 @@ func (fp *FromProtocol) HandleWriteAtWithMap(cb func(offset int64, data []byte, 
 
 // Handle any WriteAtComp commands, and send to provider
 func (fp *FromProtocol) HandleWriteAtComp() error {
-	fp.init.Wait()
+	err := fp.wait_init_or_cancel()
+	if err != nil {
+		return err
+	}
 
 	var errLock sync.Mutex
 	var errValue error
@@ -336,6 +363,11 @@ func (fp *FromProtocol) HandleWriteAtComp() error {
 
 // Handle any DirtyList commands
 func (fp *FromProtocol) HandleDirtyList(cb func(blocks []uint)) error {
+	err := fp.wait_init_or_cancel()
+	if err != nil {
+		return err
+	}
+
 	for {
 		gid, data, err := fp.protocol.WaitForCommand(fp.dev, packets.COMMAND_DIRTY_LIST)
 		if err != nil {

@@ -164,14 +164,14 @@ func TestMigratorSimplePipe(t *testing.T) {
 	r1, w1 := io.Pipe()
 	r2, w2 := io.Pipe()
 
-	initDev := func(p protocol.Protocol, dev uint32) {
+	initDev := func(ctx context.Context, p protocol.Protocol, dev uint32) {
 		destStorageFactory := func(di *packets.DevInfo) storage.StorageProvider {
 			destStorage = sources.NewMemoryStorage(int(di.Size))
 			return destStorage
 		}
 
 		// Pipe from the protocol to destWaiting
-		destFrom = protocol.NewFromProtocol(dev, destStorageFactory, p)
+		destFrom = protocol.NewFromProtocol(ctx, dev, destStorageFactory, p)
 		go func() {
 			_ = destFrom.HandleReadAt()
 		}()
@@ -259,14 +259,14 @@ func TestMigratorSimplePipeDirtySent(t *testing.T) {
 	r1, w1 := io.Pipe()
 	r2, w2 := io.Pipe()
 
-	initDev := func(p protocol.Protocol, dev uint32) {
+	initDev := func(ctx context.Context, p protocol.Protocol, dev uint32) {
 		destStorageFactory := func(di *packets.DevInfo) storage.StorageProvider {
 			destStorage = sources.NewMemoryStorage(int(di.Size))
 			return destStorage
 		}
 
 		// Pipe from the protocol to destWaiting
-		destFrom = protocol.NewFromProtocol(dev, destStorageFactory, p)
+		destFrom = protocol.NewFromProtocol(ctx, dev, destStorageFactory, p)
 		go func() {
 			_ = destFrom.HandleReadAt()
 		}()
@@ -368,14 +368,14 @@ func TestMigratorSimplePipeDirtyMissing(t *testing.T) {
 
 	var dest_wg sync.WaitGroup
 
-	initDev := func(p protocol.Protocol, dev uint32) {
+	initDev := func(ctx context.Context, p protocol.Protocol, dev uint32) {
 		destStorageFactory := func(di *packets.DevInfo) storage.StorageProvider {
 			destStorage = sources.NewMemoryStorage(int(di.Size))
 			return destStorage
 		}
 
 		// Pipe from the protocol to destWaiting
-		destFrom = protocol.NewFromProtocol(dev, destStorageFactory, p)
+		destFrom = protocol.NewFromProtocol(ctx, dev, destStorageFactory, p)
 		dest_wg.Add(4)
 		go func() {
 			_ = destFrom.HandleReadAt()

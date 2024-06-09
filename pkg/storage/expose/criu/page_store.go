@@ -28,6 +28,12 @@ func NewPageStore() *PageStore {
 	}
 }
 
+func (ps *PageStore) RemoveID(id uint64) {
+	ps.pages_lock.Lock()
+	defer ps.pages_lock.Unlock()
+	delete(ps.pages, id)
+}
+
 func (ps *PageStore) AddPageData(iov *PageServerIOV, data []byte) {
 	id := iov.DstID()
 	ps.pages_lock.Lock()
@@ -47,6 +53,32 @@ func (ps *PageStore) AddPageData(iov *PageServerIOV, data []byte) {
 		pmap.pages[vaddr+uint64(ptr)] = &Page{data: data[ptr : ptr+int(PAGE_SIZE)]}
 	}
 	pmap.pages_lock.Unlock()
+}
+
+func (ps *PageStore) GetPageList(pid uint64) []uint64 {
+	ps.pages_lock.Lock()
+	info := ps.pages[pid]
+	ps.pages_lock.Unlock()
+
+	pages := make([]uint64, 0)
+
+	info.pages_lock.Lock()
+	for id := range info.pages {
+		pages = append(pages, id)
+	}
+	info.pages_lock.Unlock()
+
+	return pages
+}
+
+func (ps *PageStore) RemovePageData(pid uint64, vaddr uint64) {
+	ps.pages_lock.Lock()
+	info := ps.pages[pid]
+	ps.pages_lock.Unlock()
+
+	info.pages_lock.Lock()
+	delete(info.pages, vaddr)
+	info.pages_lock.Unlock()
 }
 
 func (ps *PageStore) IDExists(iov *PageServerIOV) bool {

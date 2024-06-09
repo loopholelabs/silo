@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"crypto/rand"
 	"testing"
 	"time"
@@ -18,7 +19,7 @@ func TestTestProtocolLatency(t *testing.T) {
 
 	// Setup a protocol in the middle, and make sure our reads/writes get through ok
 
-	prm := NewMockProtocol()
+	prm := NewMockProtocol(context.TODO())
 	// Add some recv latency
 	pr := NewTestProtocolLatency(prm, 50*time.Millisecond)
 
@@ -29,7 +30,7 @@ func TestTestProtocolLatency(t *testing.T) {
 		return store
 	}
 
-	destFromProtocol := NewFromProtocol(1, storeFactory, pr)
+	destFromProtocol := NewFromProtocol(context.TODO(), 1, storeFactory, pr)
 
 	go func() {
 		_ = destFromProtocol.HandleDevInfo()

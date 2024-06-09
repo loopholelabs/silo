@@ -35,9 +35,9 @@ func TestProtocolRWCancel(t *testing.T) {
 	var wg sync.WaitGroup
 
 	prSource := NewProtocolRW(ctx, []io.Reader{r1}, []io.Writer{w2}, nil)
-	prDest := NewProtocolRW(ctx, []io.Reader{r2}, []io.Writer{w1}, func(p Protocol, dev uint32) {
+	prDest := NewProtocolRW(ctx, []io.Reader{r2}, []io.Writer{w1}, func(ctx context.Context, p Protocol, dev uint32) {
 		destDev <- dev
-		destFromProtocol := NewFromProtocol(dev, storeFactory, p)
+		destFromProtocol := NewFromProtocol(ctx, dev, storeFactory, p)
 
 		go func() {
 			_ = destFromProtocol.HandleDevInfo()
@@ -97,7 +97,7 @@ func TestProtocolRWCancelFromHandler(t *testing.T) {
 	var wg sync.WaitGroup
 
 	prSource := NewProtocolRW(ctx, []io.Reader{r1}, []io.Writer{w2}, nil)
-	prDest := NewProtocolRW(ctx, []io.Reader{r2}, []io.Writer{w1}, func(p Protocol, dev uint32) {
+	prDest := NewProtocolRW(ctx, []io.Reader{r2}, []io.Writer{w1}, func(ctx context.Context, p Protocol, dev uint32) {
 		cancelFn()
 	})
 
@@ -142,7 +142,7 @@ func TestProtocolRWSendAfterCancel(t *testing.T) {
 	var wg sync.WaitGroup
 
 	prSource := NewProtocolRW(ctx, []io.Reader{r1}, []io.Writer{w2}, nil)
-	prDest := NewProtocolRW(ctx, []io.Reader{r2}, []io.Writer{w1}, func(p Protocol, dev uint32) {
+	prDest := NewProtocolRW(ctx, []io.Reader{r2}, []io.Writer{w1}, func(ctx context.Context, p Protocol, dev uint32) {
 		cancelFn()
 	})
 

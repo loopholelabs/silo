@@ -47,8 +47,8 @@ func setup(num int) *ToProtocol {
 	}
 
 	prSource := NewProtocolRW(context.TODO(), readers1, writers2, nil)
-	prDest := NewProtocolRW(context.TODO(), readers2, writers1, func(p Protocol, dev uint32) {
-		destFromProtocol := NewFromProtocol(dev, storeFactory, p)
+	prDest := NewProtocolRW(context.TODO(), readers2, writers1, func(ctx context.Context, p Protocol, dev uint32) {
+		destFromProtocol := NewFromProtocol(ctx, dev, storeFactory, p)
 		go func() {
 			_ = destFromProtocol.HandleDevInfo()
 		}()

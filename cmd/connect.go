@@ -143,7 +143,7 @@ func runConnect(ccmd *cobra.Command, args []string) {
 }
 
 // Handle a new incoming device. This is called when a packet is received for a device we haven't heard about before.
-func handleIncomingDevice(pro protocol.Protocol, dev uint32) {
+func handleIncomingDevice(ctx context.Context, pro protocol.Protocol, dev uint32) {
 	var destStorage storage.StorageProvider
 	var destWaitingLocal *waitingcache.WaitingCacheLocal
 	var destWaitingRemote *waitingcache.WaitingCacheRemote
@@ -275,7 +275,7 @@ func handleIncomingDevice(pro protocol.Protocol, dev uint32) {
 		return destWaitingRemote
 	}
 
-	dest = protocol.NewFromProtocol(dev, storageFactory, pro)
+	dest = protocol.NewFromProtocol(ctx, dev, storageFactory, pro)
 
 	var handler_wg sync.WaitGroup
 
