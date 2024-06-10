@@ -397,6 +397,26 @@ func (ms *MappedStorage) GetBlockAddresses() []uint64 {
 }
 
 /**
+ * Keep only these ids within the MappedStorage
+ *
+ */
+func (ms *MappedStorage) KeepOnly(ids map[uint64]bool) int {
+	removed := 0
+	ms.lock.Lock()
+	defer ms.lock.Unlock()
+	for id, b := range ms.id_to_block {
+		_, ok := ids[id]
+		if !ok {
+			// Remove the block and make it available again
+			delete(ms.id_to_block, id)
+			ms.block_available.SetBit(int(b))
+			removed++
+		}
+	}
+	return removed
+}
+
+/**
  * Given a list of addresses, get a map of continuous ranges
  * max_size of 0 means unlimited.
  */
