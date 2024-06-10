@@ -4,6 +4,8 @@ import (
 	"errors"
 	"slices"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/util"
@@ -19,6 +21,25 @@ type MappedStorage struct {
 	block_available util.Bitfield
 	lock            sync.Mutex
 	block_size      int
+
+	// Track some metrics here...
+	metric_WriteBlock                uint64
+	metric_WriteBlock_time           uint64
+	metric_WriteBlocks               uint64
+	metric_WriteBlocks_data          uint64
+	metric_WriteBlocks_time          uint64
+	metric_WriteBlocks_bulk_new      uint64
+	metric_WriteBlocks_bulk_existing uint64
+}
+
+type MappedStorageStats struct {
+	WriteBlock                uint64
+	WriteBlock_time           time.Duration
+	WriteBlocks               uint64
+	WriteBlocks_data          uint64
+	WriteBlocks_time          time.Duration
+	WriteBlocks_bulk_new      uint64
+	WriteBlocks_bulk_existing uint64
 }
 
 func NewMappedStorage(prov storage.StorageProvider, block_size int) *MappedStorage {
@@ -33,6 +54,28 @@ func NewMappedStorage(prov storage.StorageProvider, block_size int) *MappedStora
 		block_available: available,
 		block_size:      block_size,
 	}
+}
+
+func (ms *MappedStorage) Stats() *MappedStorageStats {
+	return &MappedStorageStats{
+		WriteBlock:                ms.metric_WriteBlock,
+		WriteBlock_time:           time.Duration(ms.metric_WriteBlock_time),
+		WriteBlocks:               ms.metric_WriteBlocks,
+		WriteBlocks_data:          ms.metric_WriteBlocks_data,
+		WriteBlocks_time:          time.Duration(ms.metric_WriteBlocks_time),
+		WriteBlocks_bulk_new:      ms.metric_WriteBlocks_bulk_new,
+		WriteBlocks_bulk_existing: ms.metric_WriteBlocks_bulk_existing,
+	}
+}
+
+func (ms *MappedStorage) ResetStats() {
+	atomic.StoreUint64(&ms.metric_WriteBlock, 0)
+	atomic.StoreUint64(&ms.metric_WriteBlock_time, 0)
+	atomic.StoreUint64(&ms.metric_WriteBlocks, 0)
+	atomic.StoreUint64(&ms.metric_WriteBlocks_data, 0)
+	atomic.StoreUint64(&ms.metric_WriteBlocks_time, 0)
+	atomic.StoreUint64(&ms.metric_WriteBlocks_bulk_new, 0)
+	atomic.StoreUint64(&ms.metric_WriteBlocks_bulk_existing, 0)
 }
 
 func (ms *MappedStorage) AppendMap(data map[uint64]uint64) {
@@ -118,6 +161,13 @@ func (ms *MappedStorage) ProviderUsedSize() uint64 {
 
 // Optimized where we can for large blocks
 func (ms *MappedStorage) WriteBlocks(id uint64, data []byte) error {
+	ctime := time.Now()
+	defer func() {
+		atomic.AddUint64(&ms.metric_WriteBlocks, 1)
+		atomic.AddUint64(&ms.metric_WriteBlocks_data, uint64(len(data)))
+		atomic.AddUint64(&ms.metric_WriteBlocks_time, uint64(time.Since(ctime)))
+	}()
+
 	// First lets check if we have seen this id before, and if the blocks are continuous
 	ms.lock.Lock()
 
@@ -127,46 +177,61 @@ func (ms *MappedStorage) WriteBlocks(id uint64, data []byte) error {
 
 	first_block, ok := ms.id_to_block[id]
 	can_do_bulk := true
-	if ok {
-		// The first block exists. Make sure all the others exist and are in a line.
-		bptr := uint64(0)
-		for ptr := 0; ptr < len(data); ptr += ms.block_size {
-			bptr++
-			block, sok := ms.id_to_block[id+uint64(ptr)]
-			if !sok || block != (first_block+bptr) {
-				can_do_bulk = false
-				break
+	if len(data) > ms.block_size {
+		if ok {
+			// The first block exists. Make sure all the others exist and are in a line.
+			bptr := uint64(0)
+			for ptr := ms.block_size; ptr < len(data); ptr += ms.block_size {
+				bptr++
+				block, sok := ms.id_to_block[id+uint64(ptr)]
+				if !sok || block != (first_block+bptr) {
+					can_do_bulk = false
+					break
+				}
 			}
-		}
-	} else {
-		// The first block doesn't exist. Make sure none of the others do
-		for ptr := 0; ptr < len(data); ptr += ms.block_size {
-			_, sok := ms.id_to_block[id+uint64(ptr)]
-			if sok {
-				can_do_bulk = false
+		} else {
+			// The first block doesn't exist. Make sure none of the others do
+			for ptr := ms.block_size; ptr < len(data); ptr += ms.block_size {
+				_, sok := ms.id_to_block[id+uint64(ptr)]
+				if sok {
+					can_do_bulk = false
+				}
 			}
 		}
 	}
 
 	if !can_do_bulk {
 		ms.lock.Unlock()
-		// We can't do a bulk write
+		// We can't do a bulk write. Fallback on writing blocks individually
+
+		num_blocks := (len(data) + ms.block_size - 1) / ms.block_size
+		errchan := make(chan error, num_blocks)
+
 		for ptr := 0; ptr < len(data); ptr += ms.block_size {
-			err := ms.WriteBlock(id+uint64(ptr), data[ptr:ptr+ms.block_size])
+			go func(write_ptr uint64) {
+				errchan <- ms.WriteBlock(id+write_ptr, data[write_ptr:write_ptr+uint64(ms.block_size)])
+			}(uint64(ptr))
+		}
+
+		// Wait, and read any errors...
+		for n := 0; n < num_blocks; n++ {
+			err := <-errchan
 			if err != nil {
 				return err
 			}
 		}
+
 		return nil
 	}
 
 	// Do a bulk write here...
 	if ok {
 		ms.lock.Unlock()
-		// Write some data for this block
+		// Write some data for these blocks
 		// NB: We can do this outside the lock
 		offset := first_block * uint64(ms.block_size)
 		_, err := ms.prov.WriteAt(data, int64(offset))
+		atomic.AddUint64(&ms.metric_WriteBlocks_bulk_existing, 1)
 		return err
 	}
 
@@ -178,7 +243,6 @@ func (ms *MappedStorage) WriteBlocks(id uint64, data []byte) error {
 		if ms.block_available.BitsSet(uint(b), uint(b+num_blocks)) {
 
 			ms.block_available.ClearBits(uint(b), uint(b+num_blocks))
-			// Now do the write outside the lock...
 
 			ptr := uint64(0)
 			for i := b; i < b+num_blocks; i++ {
@@ -187,9 +251,12 @@ func (ms *MappedStorage) WriteBlocks(id uint64, data []byte) error {
 				ptr += uint64(ms.block_size)
 			}
 
+			// Now do the write outside the lock...
+
 			ms.lock.Unlock()
 			offset := uint64(b) * uint64(ms.block_size)
 			_, err := ms.prov.WriteAt(data, int64(offset))
+			atomic.AddUint64(&ms.metric_WriteBlocks_bulk_new, 1)
 			return err
 		}
 	}
@@ -246,6 +313,12 @@ func (ms *MappedStorage) readBlocksInt(id uint64, data []byte) error {
  *
  */
 func (ms *MappedStorage) WriteBlock(id uint64, data []byte) error {
+	ctime := time.Now()
+	defer func() {
+		atomic.AddUint64(&ms.metric_WriteBlock, 1)
+		atomic.AddUint64(&ms.metric_WriteBlock_time, uint64(time.Since(ctime)))
+	}()
+
 	// First lets check if we have seen this id before...
 	ms.lock.Lock()
 
