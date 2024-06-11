@@ -16,7 +16,6 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/config"
 	"github.com/loopholelabs/silo/pkg/storage/expose"
-	"github.com/loopholelabs/silo/pkg/storage/expose/criu"
 	"github.com/loopholelabs/silo/pkg/storage/integrity"
 	"github.com/loopholelabs/silo/pkg/storage/modules"
 	"github.com/loopholelabs/silo/pkg/storage/protocol"
@@ -79,9 +78,6 @@ func runConnect(ccmd *cobra.Command, args []string) {
 
 		dst_bars = make([]*mpb.Bar, 0)
 	}
-
-	fmt.Printf("Starting userfaultd\n")
-	handle_page_faults()
 
 	fmt.Printf("Starting silo connect from source %s\n", connect_addr)
 
@@ -150,7 +146,6 @@ func handleIncomingDevice(ctx context.Context, pro protocol.Protocol, dev uint32
 	var destMonitorStorage *modules.Hooks
 	var dest *protocol.FromProtocol
 
-	var mapped *modules.MappedStorage
 	var dev_schema *config.DeviceSchema
 
 	var bar *mpb.Bar
@@ -169,7 +164,7 @@ func handleIncomingDevice(ctx context.Context, pro protocol.Protocol, dev uint32
 
 	// This is a storage factory which will be called when we recive DevInfo.
 	storageFactory := func(di *packets.DevInfo) storage.StorageProvider {
-		fmt.Printf("= %d = Received DevInfo name=%s size=%d blocksize=%d schema=%s\n", dev, di.Name, di.Size, di.Block_size, di.Schema)
+		//		fmt.Printf("= %d = Received DevInfo name=%s size=%d blocksize=%d schema=%s\n", dev, di.Name, di.Size, di.Block_size, di.Schema)
 
 		// Decode the schema
 		dev_schema = &config.DeviceSchema{}
@@ -257,11 +252,6 @@ func handleIncomingDevice(ctx context.Context, pro protocol.Protocol, dev uint32
 		conf := &config.DeviceSchema{}
 		conf.Decode(di.Schema)
 
-		if conf.PageServerPID != 0 {
-			fmt.Printf("Setting up mapped storage\n")
-			mapped = modules.NewMappedStorage(destWaitingLocal, os.Getpagesize())
-		}
-
 		// Expose this storage as a device if requested
 		if connect_expose_dev {
 			p, err := dst_device_setup(destWaitingLocal)
@@ -294,16 +284,6 @@ func handleIncomingDevice(ctx context.Context, pro protocol.Protocol, dev uint32
 		_ = dest.HandleDevInfo()
 		handler_wg.Done()
 	}()
-	handler_wg.Add(1)
-	go func() {
-		writer := func(offset int64, data []byte, idmap map[uint64]uint64) error {
-			mapped.AppendMap(idmap)
-			_, err := destWaitingRemote.WriteAt(data, offset)
-			return err
-		}
-		_ = dest.HandleWriteAtWithMap(writer)
-		handler_wg.Done()
-	}()
 
 	handler_wg.Add(1)
 	// Handle events from the source
@@ -321,13 +301,9 @@ func handleIncomingDevice(ctx context.Context, pro protocol.Protocol, dev uint32
 			//fmt.Printf("= %d = Event %s\n", dev, protocol.EventsByType[e.Type])
 			// Check we have all data...
 			if e.Type == packets.EventCompleted {
-				if mapped != nil {
-					// If it's a mapped type, add it to the userfault handler
-					userfault_add(uint64(dev_schema.PageServerPID), mapped)
-				}
 
 				// We completed the migration, but we should wait for handlers to finish before we ok things...
-				fmt.Printf("Completed, now wait for handlers...\n")
+				//				fmt.Printf("Completed, now wait for handlers...\n")
 				go func() {
 					handler_wg.Wait()
 					dst_wg.Done()
@@ -351,10 +327,10 @@ func handleIncomingDevice(ctx context.Context, pro protocol.Protocol, dev uint32
 				in := integrity.NewIntegrityChecker(int64(destStorage.Size()), int(blockSize))
 				in.SetHashes(hashes)
 				correct, err := in.Check(destStorage)
-				//if err != nil {
-				//	panic(err)
-				//}
-				fmt.Printf("[%d] Verification result %t %v\n", dev, correct, err)
+				if err != nil {
+					panic(err)
+				}
+				//				fmt.Printf("[%d] Verification result %t %v\n", dev, correct, err)
 				if correct {
 					statusVerify = "\u2611"
 				} else {
@@ -383,7 +359,7 @@ func dst_device_setup(prov storage.StorageProvider) (storage.ExposedStorage, err
 
 	err = p.Init()
 	if err != nil {
-		fmt.Printf("\n\n\np.Init returned %v\n\n\n", err)
+		//		fmt.Printf("\n\n\np.Init returned %v\n\n\n", err)
 		return nil, err
 	}
 
@@ -434,101 +410,4 @@ func dst_device_shutdown(p storage.ExposedStorage) error {
 		return err
 	}
 	return nil
-}
-
-var userfault_map map[uint64]*modules.MappedStorage
-
-func userfault_add(pid uint64, mapped *modules.MappedStorage) {
-	fmt.Printf("Add device to userfault availability pid [%d]... size %d", pid, mapped.Size())
-
-	userfault_map[pid] = mapped
-}
-
-func handle_page_faults() {
-	userfault_map = make(map[uint64]*modules.MappedStorage)
-
-	faults_served := make(map[uint64]bool)
-	// TODO: Mutex etc
-
-	var err error
-	var uf *criu.UserFaultHandler
-
-	num_faults := 0
-	num_syscalls := 0
-
-	fault := func(pid uint32, addr uint64, pending []uint64) error {
-		num_faults++
-		// Look it up in page_data...
-		maps, ok := userfault_map[uint64(pid)]
-
-		fmt.Printf("Fault for %d address %x, with pending %v\n", pid, addr, pending)
-
-		_, served := faults_served[uint64(pid)]
-		if served {
-			return nil
-		}
-		faults_served[uint64(pid)] = true
-
-		if !ok {
-			panic("We do not have such a page for that pid!")
-		}
-
-		// Try to send all lazy data...
-		go func() {
-			// TRY TO SEND ALL OUR LAZY DATA IN ONE SHOT (atm)...
-
-			addresses := maps.GetBlockAddresses()
-			max_size := uint64(256 * 1024)
-
-			ranges := maps.GetRegions(addresses, max_size)
-
-			send_pages := make(map[uint64][]byte)
-
-			// Read the data into memory so its ready to send in one shot...
-			for a, l := range ranges {
-				data := make([]byte, l)
-				err := maps.ReadBlocks(a, data)
-				if err != nil {
-					panic(err)
-				}
-				send_pages[a] = data
-			}
-
-			ctime := time.Now()
-
-			// Send all the data over...
-			for addr, data := range send_pages {
-				uf.WriteData(uint64(pid), addr, data)
-				num_syscalls++
-			}
-
-			// We've sent everything, we can quit now!
-			fmt.Printf("All Data Sent %dms faults=%d syscalls=%d\n", time.Since(ctime).Milliseconds(), num_faults, num_syscalls)
-
-			err = uf.ClosePID(uint64(pid))
-			fmt.Printf("Close uffd %v\n", err)
-			if err != nil {
-				panic(err)
-			}
-
-			// Allow more faults now if it's being reused...
-			delete(faults_served, uint64(pid))
-		}()
-
-		return nil
-	}
-
-	uf, err = criu.NewUserFaultHandler("lazy-pages.socket", fault)
-	if err != nil {
-		panic(err)
-	}
-
-	// Handle any userfault stuff...
-	go func() {
-		err = uf.Handle()
-		if err != nil {
-			panic(err)
-		}
-	}()
-
 }

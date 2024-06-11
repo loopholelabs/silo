@@ -17,7 +17,6 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/config"
 	"github.com/loopholelabs/silo/pkg/storage/device"
 	"github.com/loopholelabs/silo/pkg/storage/dirtytracker"
-	"github.com/loopholelabs/silo/pkg/storage/expose/criu"
 	"github.com/loopholelabs/silo/pkg/storage/migrator"
 	"github.com/loopholelabs/silo/pkg/storage/modules"
 	"github.com/loopholelabs/silo/pkg/storage/protocol"
@@ -42,7 +41,6 @@ var serve_conf string
 var serve_progress bool
 var serve_continuous bool
 var serve_any_order bool
-var serve_pageserve_addr string
 
 var src_exposed []storage.ExposedStorage
 var src_storage []*storageInfo
@@ -57,20 +55,17 @@ func init() {
 	cmdServe.Flags().BoolVarP(&serve_progress, "progress", "p", false, "Show progress")
 	cmdServe.Flags().BoolVarP(&serve_continuous, "continuous", "C", false, "Continuous sync")
 	cmdServe.Flags().BoolVarP(&serve_any_order, "order", "o", false, "Any order (faster)")
-	cmdServe.Flags().StringVarP(&serve_pageserve_addr, "pagesaddr", "A", ":5171", "Address to accept criu page data from")
 }
 
 type storageInfo struct {
 	//	tracker       storage.TrackingStorageProvider
-	tracker       *dirtytracker.DirtyTrackerRemote
-	lockable      storage.LockableStorageProvider
-	orderer       *blocks.PriorityBlockOrder
-	num_blocks    int
-	block_size    int
-	name          string
-	mapped        *modules.MappedStorage
-	schema        string
-	data_complete func()
+	tracker    *dirtytracker.DirtyTrackerRemote
+	lockable   storage.LockableStorageProvider
+	orderer    *blocks.PriorityBlockOrder
+	num_blocks int
+	block_size int
+	name       string
+	schema     string
 }
 
 func runServe(ccmd *cobra.Command, args []string) {
@@ -99,10 +94,6 @@ func runServe(ccmd *cobra.Command, args []string) {
 		panic(err)
 	}
 
-	page_mapped := make(map[int]*storageInfo)
-
-	static_page_data := criu.NewPageStore()
-
 	for i, s := range siloConf.Device {
 		fmt.Printf("Setup storage %d [%s] size %s - %d\n", i, s.Name, s.Size, s.ByteSize())
 		sinfo, err := setupStorageDevice(s)
@@ -110,101 +101,8 @@ func runServe(ccmd *cobra.Command, args []string) {
 			panic(fmt.Sprintf("Could not setup storage. %v", err))
 		}
 
-		// Put it in the map for pageserver here...
-		if s.PageServerPID != 0 {
-			page_mapped[s.PageServerPID] = sinfo
-		}
-
 		src_storage = append(src_storage, sinfo)
 	}
-
-	// Setup page-server for receiving memory data...
-	fmt.Printf("Waiting for page server connection on %s\n", serve_pageserve_addr)
-
-	listener, err := net.Listen("tcp", serve_pageserve_addr)
-	if err != nil {
-		panic(err)
-	}
-
-	// Handle any incoming page server data...
-	go func() {
-		for {
-			con, err := listener.Accept()
-			if err != nil {
-				panic(err)
-			}
-
-			is_pre := false
-			pids := make(map[int]*storageInfo)
-			var pending_writes sync.WaitGroup
-
-			ps := criu.NewPageServer()
-			ps.Close = func(iov *criu.PageServerIOV) {
-				// Wait for any pending writes
-				pending_writes.Wait()
-
-				if !is_pre {
-					for _, sinfo := range pids {
-						// Here we mark that the data for these pids as FINAL, and migration can complete safely
-						sinfo.data_complete()
-					}
-
-					// Dump the static pagemap data to files (outputs dir). This will be needed in a restore.
-					// TODO: Send it over along with the rest of the dump data...
-					static_page_data.Dump("outputs")
-				}
-
-			}
-			ps.Open2 = func(iov *criu.PageServerIOV) bool {
-				sinfo, ok := page_mapped[int(iov.DstID())]
-				if !ok {
-					return false
-				}
-				pids[int(iov.DstID())] = sinfo
-				return sinfo.mapped.Size() > 0
-			}
-			ps.Parent = func(iov *criu.PageServerIOV) bool {
-				is_pre = true
-				sinfo, ok := page_mapped[int(iov.DstID())]
-				if !ok {
-					return false
-				}
-				return sinfo.mapped.Size() > 0
-			}
-			ps.GetPageData = func(iov *criu.PageServerIOV, buffer []byte) {
-				// Unimplemented for now...
-				fmt.Printf("[Unimplemented] GetPageData %v\n", iov)
-			}
-			ps.AddPageData = func(iov *criu.PageServerIOV, buffer []byte) {
-				//				fmt.Printf("AddPageData %s %d\n", iov.String(), len(buffer))
-				if iov.FlagsPresent() {
-					maps, ok := page_mapped[int(iov.DstID())]
-					if !ok {
-						// The destination PID is unknown or unconfigured...
-						fmt.Printf("Destination PID unknown %d\n", iov.DstID())
-					}
-
-					if iov.FlagsLazy() {
-						pending_writes.Add(1)
-						go func() {
-							err := maps.mapped.WriteBlocks(iov.Vaddr, buffer)
-							if err != nil {
-								panic(err)
-							}
-							pending_writes.Done()
-						}()
-					} else {
-						// Write it to the static in mem store instead...
-						static_page_data.AddPageData(iov, buffer)
-					}
-				}
-			}
-			go func() {
-				ps.Handle(con)
-				// All done...
-			}()
-		}
-	}()
 
 	// Setup listener here. When client connects, migrate data to it.
 
@@ -314,14 +212,6 @@ func setupStorageDevice(conf *config.DeviceSchema) (*storageInfo, error) {
 		num_blocks: num_blocks,
 		name:       conf.Name,
 		schema:     schema,
-		data_complete: func() {
-			fmt.Printf("Data %s is complete\n", conf.Name)
-		},
-	}
-
-	if conf.PageServerPID != 0 {
-		// This is going to be used for page server stuff...
-		sinfo.mapped = modules.NewMappedStorage(sourceStorage, os.Getpagesize())
 	}
 
 	return sinfo, nil
@@ -452,25 +342,6 @@ func migrateDevice(dev_id uint32, name string,
 
 	migrate_blocks := sinfo.num_blocks
 
-	// If it's a mapped, configure the migrator for that...
-	if sinfo.mapped != nil {
-		fmt.Printf("Configuring mapped migrator...\n")
-		// Route mapped writes over to WriteAtWithMap
-		writer := func(data []byte, offset int64, idmap map[uint64]uint64) (int, error) {
-			return dest.WriteAtWithMap(data, offset, idmap)
-		}
-		mig.SetSourceMapped(sinfo.mapped, writer)
-
-		migrate_blocks = int((uint64(sinfo.mapped.Size()) + uint64(conf.Block_size) - 1) / uint64(conf.Block_size))
-		// Since we're not migrating all the blocks, we need to monitor the latter blocks in case there's new data there...
-		offset := migrate_blocks * conf.Block_size
-		length := (sinfo.num_blocks - migrate_blocks) * conf.Block_size
-		sinfo.tracker.TrackAt(int64(offset), int64(length))
-		fmt.Printf("Migrating %d/%d blocks. Tracking data at offset %d length %d. Size is %d.\n", migrate_blocks, sinfo.num_blocks, offset, length, sinfo.lockable.Size())
-	} else {
-		fmt.Printf("Migrating %d blocks\n", migrate_blocks)
-	}
-
 	// Now do the migration...
 	err = mig.Migrate(migrate_blocks)
 	if err != nil {
@@ -489,73 +360,29 @@ func migrateDevice(dev_id uint32, name string,
 		return err
 	}
 
-	if sinfo.mapped != nil {
-		// Continuous migration until data_complete called...
-		ticker := time.NewTicker(100 * time.Millisecond)
-		ctx, cancelfn := context.WithCancel(context.TODO())
-
-		sinfo.data_complete = func() {
-			fmt.Printf("Cancelling continuous migration.\n")
-			cancelfn()
+	// Optional: Enter a loop looking for more dirty blocks to migrate...
+	for {
+		blocks := mig.GetLatestDirty() //
+		if !serve_continuous && blocks == nil {
+			break
 		}
 
-	cmig:
-		for {
-			select {
-			case <-ticker.C:
-				blocks := mig.GetLatestDirty()
-
-				if blocks != nil {
-					// Optional: Send the list of dirty blocks over...
-					err := dest.DirtyList(conf.Block_size, blocks)
-					if err != nil {
-						return err
-					}
-
-					fmt.Printf("[%s] Migrating dirty blocks %d\n", name, len(blocks))
-					err = mig.MigrateDirty(blocks)
-					if err != nil {
-						return err
-					}
-				} else {
-					select {
-					case <-ctx.Done():
-						fmt.Printf("Continuous migration cancelled.\n")
-						break cmig
-					default:
-						break
-					}
-					mig.Unlock()
-				}
+		if blocks != nil {
+			// Optional: Send the list of dirty blocks over...
+			err := dest.DirtyList(conf.Block_size, blocks)
+			if err != nil {
+				return err
 			}
+
+			//		fmt.Printf("[%s] Migrating dirty blocks %d\n", name, len(blocks))
+			err = mig.MigrateDirty(blocks)
+			if err != nil {
+				return err
+			}
+		} else {
+			mig.Unlock()
 		}
-
-	} else {
-
-		// Optional: Enter a loop looking for more dirty blocks to migrate...
-		for {
-			blocks := mig.GetLatestDirty() //
-			if !serve_continuous && blocks == nil {
-				break
-			}
-
-			if blocks != nil {
-				// Optional: Send the list of dirty blocks over...
-				err := dest.DirtyList(conf.Block_size, blocks)
-				if err != nil {
-					return err
-				}
-
-				//		fmt.Printf("[%s] Migrating dirty blocks %d\n", name, len(blocks))
-				err = mig.MigrateDirty(blocks)
-				if err != nil {
-					return err
-				}
-			} else {
-				mig.Unlock()
-			}
-			time.Sleep(100 * time.Millisecond)
-		}
+		time.Sleep(100 * time.Millisecond)
 	}
 
 	err = mig.WaitForCompletion()
@@ -563,7 +390,7 @@ func migrateDevice(dev_id uint32, name string,
 		return err
 	}
 
-	fmt.Printf("[%s] Migration completed\n", name)
+	//	fmt.Printf("[%s] Migration completed\n", name)
 
 	err = dest.SendEvent(&packets.Event{Type: packets.EventCompleted})
 	if err != nil {
