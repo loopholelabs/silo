@@ -70,6 +70,12 @@ func (i *ToProtocol) SendDevInfo(name string, block_size uint32, schema string) 
 	return err
 }
 
+func (i *ToProtocol) RemoveDev() error {
+	f := packets.EncodeRemoveDev()
+	_, err := i.protocol.SendPacket(i.dev, ID_PICK_ANY, f)
+	return err
+}
+
 func (i *ToProtocol) DirtyList(block_size int, blocks []uint) error {
 	b := packets.EncodeDirtyList(block_size, blocks)
 	id, err := i.protocol.SendPacket(i.dev, ID_PICK_ANY, b)
@@ -172,6 +178,12 @@ func (i *ToProtocol) WriteAtWithMap(buffer []byte, offset int64, id_map map[uint
 		return int(binary.LittleEndian.Uint32(r[1:])), nil
 	}
 	return 0, ErrInvalidPacket
+}
+
+func (i *ToProtocol) RemoveFromMap(ids []uint64) error {
+	f := packets.EncodeRemoveFromMap(ids)
+	_, err := i.protocol.SendPacket(i.dev, ID_PICK_ANY, f)
+	return err
 }
 
 func (i *ToProtocol) Flush() error {

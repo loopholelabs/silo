@@ -296,7 +296,7 @@ func TestWriteAtWithMap(t *testing.T) {
 
 func TestRemoveFromMap(t *testing.T) {
 
-	blocks := []uint{1, 7, 100}
+	blocks := []uint64{1, 7, 100}
 	b := EncodeRemoveFromMap(blocks)
 
 	blocks2, err := DecodeRemoveFromMap(b)
