@@ -293,3 +293,41 @@ func TestWriteAtWithMap(t *testing.T) {
 	assert.Error(t, err)
 
 }
+
+func TestRemoveFromMap(t *testing.T) {
+
+	blocks := []uint{1, 7, 100}
+	b := EncodeRemoveFromMap(blocks)
+
+	blocks2, err := DecodeRemoveFromMap(b)
+	assert.NoError(t, err)
+	assert.Equal(t, blocks, blocks2)
+
+	// Make sure we can't decode silly things
+	_, err = DecodeRemoveFromMap(nil)
+	assert.Error(t, err)
+
+	_, err = DecodeRemoveFromMap([]byte{
+		99,
+	})
+	assert.Error(t, err)
+
+}
+
+func TestRemoveDev(t *testing.T) {
+
+	b := EncodeRemoveDev()
+
+	err := DecodeRemoveDev(b)
+	assert.NoError(t, err)
+
+	// Make sure we can't decode silly things
+	err = DecodeRemoveDev(nil)
+	assert.Error(t, err)
+
+	err = DecodeRemoveDev([]byte{
+		99,
+	})
+	assert.Error(t, err)
+
+}
