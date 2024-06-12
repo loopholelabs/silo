@@ -312,6 +312,55 @@ func (fp *FromProtocol) HandleWriteAtWithMap(cb func(offset int64, data []byte, 
 	}
 }
 
+// Handle any RemoveFromMap
+func (fp *FromProtocol) HandleRemoveFromMap(cb func(ids []uint64)) error {
+	err := fp.wait_init_or_cancel()
+	if err != nil {
+		return err
+	}
+
+	for {
+		_, data, err := fp.protocol.WaitForCommand(fp.dev, packets.COMMAND_REMOVE_FROM_MAP)
+		if err != nil {
+			return err
+		}
+
+		ids, err := packets.DecodeRemoveFromMap(data)
+		if err != nil {
+			return err
+		}
+
+		cb(ids)
+		/*
+			// Should probably do this
+			if err == nil {
+				fp.mark_range_present(int(offset), len(write_data))
+			}
+		*/
+	}
+}
+
+// Handle any RemoveDev. Can only trigger once.
+func (fp *FromProtocol) HandleRemoveDev(cb func()) error {
+	err := fp.wait_init_or_cancel()
+	if err != nil {
+		return err
+	}
+
+	_, data, err := fp.protocol.WaitForCommand(fp.dev, packets.COMMAND_REMOVE_DEV)
+	if err != nil {
+		return err
+	}
+
+	err = packets.DecodeRemoveDev(data)
+	if err != nil {
+		return err
+	}
+
+	cb()
+	return nil
+}
+
 // Handle any WriteAtComp commands, and send to provider
 func (fp *FromProtocol) HandleWriteAtComp() error {
 	err := fp.wait_init_or_cancel()
