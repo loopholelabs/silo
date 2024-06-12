@@ -58,12 +58,14 @@ func init() {
 }
 
 type storageInfo struct {
-	tracker    storage.TrackingStorageProvider
+	//	tracker       storage.TrackingStorageProvider
+	tracker    *dirtytracker.DirtyTrackerRemote
 	lockable   storage.LockableStorageProvider
 	orderer    *blocks.PriorityBlockOrder
 	num_blocks int
 	block_size int
 	name       string
+	schema     string
 }
 
 func runServe(ccmd *cobra.Command, args []string) {
@@ -93,12 +95,12 @@ func runServe(ccmd *cobra.Command, args []string) {
 	}
 
 	for i, s := range siloConf.Device {
-
 		fmt.Printf("Setup storage %d [%s] size %s - %d\n", i, s.Name, s.Size, s.ByteSize())
 		sinfo, err := setupStorageDevice(s)
 		if err != nil {
 			panic(fmt.Sprintf("Could not setup storage. %v", err))
 		}
+
 		src_storage = append(src_storage, sinfo)
 	}
 
@@ -200,14 +202,19 @@ func setupStorageDevice(conf *config.DeviceSchema) (*storageInfo, error) {
 	orderer := blocks.NewPriorityBlockOrder(num_blocks, primary_orderer)
 	orderer.AddAll()
 
-	return &storageInfo{
+	schema := string(conf.Encode())
+
+	sinfo := &storageInfo{
 		tracker:    sourceDirtyRemote,
 		lockable:   sourceStorage,
 		orderer:    orderer,
 		block_size: block_size,
 		num_blocks: num_blocks,
 		name:       conf.Name,
-	}, nil
+		schema:     schema,
+	}
+
+	return sinfo, nil
 }
 
 // Migrate a device
@@ -217,7 +224,7 @@ func migrateDevice(dev_id uint32, name string,
 	size := sinfo.lockable.Size()
 	dest := protocol.NewToProtocol(uint64(size), dev_id, pro)
 
-	err := dest.SendDevInfo(name, uint32(sinfo.block_size))
+	err := dest.SendDevInfo(name, uint32(sinfo.block_size), sinfo.schema)
 	if err != nil {
 		return err
 	}
@@ -333,8 +340,10 @@ func migrateDevice(dev_id uint32, name string,
 		return err
 	}
 
+	migrate_blocks := sinfo.num_blocks
+
 	// Now do the migration...
-	err = mig.Migrate(sinfo.num_blocks)
+	err = mig.Migrate(migrate_blocks)
 	if err != nil {
 		return err
 	}
@@ -352,7 +361,6 @@ func migrateDevice(dev_id uint32, name string,
 	}
 
 	// Optional: Enter a loop looking for more dirty blocks to migrate...
-
 	for {
 		blocks := mig.GetLatestDirty() //
 		if !serve_continuous && blocks == nil {
@@ -361,7 +369,7 @@ func migrateDevice(dev_id uint32, name string,
 
 		if blocks != nil {
 			// Optional: Send the list of dirty blocks over...
-			err := dest.DirtyList(blocks)
+			err := dest.DirtyList(conf.Block_size, blocks)
 			if err != nil {
 				return err
 			}
@@ -383,6 +391,7 @@ func migrateDevice(dev_id uint32, name string,
 	}
 
 	//	fmt.Printf("[%s] Migration completed\n", name)
+
 	err = dest.SendEvent(&packets.Event{Type: packets.EventCompleted})
 	if err != nil {
 		return err

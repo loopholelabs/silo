@@ -10,6 +10,7 @@ import (
 
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/integrity"
+	"github.com/loopholelabs/silo/pkg/storage/modules"
 	"github.com/loopholelabs/silo/pkg/storage/util"
 )
 
@@ -65,6 +66,8 @@ type MigrationProgress struct {
 
 type Migrator struct {
 	source_tracker           storage.TrackingStorageProvider // Tracks writes so we know which are dirty
+	source_mapped            *modules.MappedStorage
+	dest_write_with_map      func([]byte, int64, map[uint64]uint64) (int, error)
 	dest                     storage.StorageProvider
 	source_lock_fn           func()
 	source_unlock_fn         func()
@@ -139,6 +142,15 @@ func NewMigrator(source storage.TrackingStorageProvider,
 		m.integrity = integrity.NewIntegrityChecker(int64(m.dest.Size()), m.block_size)
 	}
 	return m, nil
+}
+
+/**
+ * Set a MappedStorage for the source.
+ *
+ */
+func (m *Migrator) SetSourceMapped(ms *modules.MappedStorage, writer func([]byte, int64, map[uint64]uint64) (int, error)) {
+	m.source_mapped = ms
+	m.dest_write_with_map = writer
 }
 
 /**
@@ -345,11 +357,22 @@ func (m *Migrator) migrateBlock(block int) error {
 		return err
 	}
 
+	var idmap map[uint64]uint64
+	if m.source_mapped != nil {
+		idmap = m.source_mapped.GetMapForSourceRange(int64(offset), m.block_size)
+	}
+
+	// TODO: Need to figure out how we want to route the WriteAtWithMap here...
+
 	// If it was a partial read, truncate
 	buff = buff[:n]
 
-	// Now write it to destStorage
-	n, err = m.dest.WriteAt(buff, int64(offset))
+	if m.source_mapped != nil {
+		n, err = m.dest_write_with_map(buff, int64(offset), idmap)
+	} else {
+		// Now write it to destStorage
+		n, err = m.dest.WriteAt(buff, int64(offset))
+	}
 	if n != len(buff) || err != nil {
 		if errors.Is(err, context.Canceled) {
 			atomic.AddInt64(&m.metric_blocks_canceled, 1)

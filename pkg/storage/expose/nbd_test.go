@@ -7,7 +7,9 @@ import (
 	"os/user"
 	"sync"
 	"testing"
+	"time"
 
+	"github.com/loopholelabs/silo/pkg/storage/modules"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
 	"github.com/stretchr/testify/assert"
 )
@@ -226,4 +228,136 @@ func TestNBDNLDeviceUnalignedPartialWrite(t *testing.T) {
 
 	// Make sure the data is equal
 	assert.Equal(t, b[10:810], buffer)
+}
+
+func TestNBDNLDeviceShutdownRead(t *testing.T) {
+	currentUser, err := user.Current()
+	if err != nil {
+		panic(err)
+	}
+	if currentUser.Username != "root" {
+		fmt.Printf("Cannot run test unless we are root.\n")
+		return
+	}
+
+	var n *ExposedStorageNBDNL
+
+	size := 4096 * 1024 * 1024
+	prov := sources.NewMemoryStorage(size)
+
+	hooks := modules.NewHooks(prov)
+
+	var read_wg sync.WaitGroup
+	read_wg.Add(1)
+
+	hooks.Pre_read = func(buffer []byte, offset int64) (bool, int, error) {
+		if offset == 0x9000 {
+			read_wg.Done()
+			time.Sleep(10 * time.Second)
+		}
+		return false, 0, nil
+	}
+
+	n = NewExposedStorageNBDNL(hooks, 8, 0, uint64(size), 4096, true)
+	err = n.Init()
+	assert.NoError(t, err)
+
+	devfile, err := os.OpenFile(fmt.Sprintf("/dev/nbd%d", n.device_index), os.O_RDWR, 0666)
+	assert.NoError(t, err)
+
+	t.Cleanup(func() {
+		devfile.Close()
+	})
+
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go func() {
+		// Try doing a read...
+		off := 0x9000
+		buffer := make([]byte, 4096)
+		ctime := time.Now()
+		_, err := devfile.ReadAt(buffer, int64(off))
+		assert.Error(t, err) // input/output error
+		assert.WithinDuration(t, ctime, time.Now(), time.Second)
+		wg.Done()
+	}()
+
+	read_wg.Wait()
+	// This will be called during the ReadAt, but may take a while to completely wait for nbd subsystem to finish
+	go func() {
+		err = n.Shutdown()
+		assert.NoError(t, err)
+	}()
+
+	// Now wait for the read to finish
+	wg.Wait()
+
+}
+
+func TestNBDNLDeviceShutdownWrite(t *testing.T) {
+	currentUser, err := user.Current()
+	if err != nil {
+		panic(err)
+	}
+	if currentUser.Username != "root" {
+		fmt.Printf("Cannot run test unless we are root.\n")
+		return
+	}
+
+	var n *ExposedStorageNBDNL
+
+	size := 4096 * 1024 * 1024
+	prov := sources.NewMemoryStorage(size)
+
+	hooks := modules.NewHooks(prov)
+
+	var read_wg sync.WaitGroup
+	read_wg.Add(1)
+
+	hooks.Pre_write = func(buffer []byte, offset int64) (bool, int, error) {
+		if offset == 0x9000 {
+			read_wg.Done()
+			time.Sleep(10 * time.Second)
+		}
+		return false, 0, nil
+	}
+
+	n = NewExposedStorageNBDNL(hooks, 8, 0, uint64(size), 4096, true)
+	err = n.Init()
+	assert.NoError(t, err)
+
+	devfile, err := os.OpenFile(fmt.Sprintf("/dev/nbd%d", n.device_index), os.O_RDWR, 0666)
+	assert.NoError(t, err)
+
+	t.Cleanup(func() {
+		devfile.Close()
+	})
+
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go func() {
+		// Try doing a write...
+		off := 0x9000
+		buffer := make([]byte, 4096)
+		ctime := time.Now()
+		_, err := devfile.WriteAt(buffer, int64(off))
+		assert.NoError(t, err)
+		err = devfile.Sync()
+		assert.Error(t, err) // input/output error
+		assert.WithinDuration(t, ctime, time.Now(), time.Second)
+		wg.Done()
+	}()
+
+	read_wg.Wait()
+	// This will be called during the WriteAt, but may take a while to completely wait for nbd subsystem to finish
+	go func() {
+		err = n.Shutdown()
+		assert.NoError(t, err)
+	}()
+
+	// Now wait for the write to finish
+	wg.Wait()
+
 }

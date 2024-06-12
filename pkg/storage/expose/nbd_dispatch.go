@@ -1,6 +1,7 @@
 package expose
 
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -11,8 +12,8 @@ import (
 
 // TODO: Context, and handle fatal errors
 
-const READ_POOL_BUFFER_SIZE = 256 * 1024
-const READ_POOL_SIZE = 128
+//const READ_POOL_BUFFER_SIZE = 256 * 1024
+//const READ_POOL_SIZE = 128
 
 /**
  * Exposes a storage provider as an nbd device
@@ -64,6 +65,7 @@ type Response struct {
 }
 
 type Dispatch struct {
+	ctx                context.Context
 	ASYNC_READS        bool
 	ASYNC_WRITES       bool
 	fp                 io.ReadWriteCloser
@@ -74,10 +76,11 @@ type Dispatch struct {
 	pending_responses  sync.WaitGroup
 	metric_packets_in  uint64
 	metric_packets_out uint64
-	read_buffers       chan []byte
+	// read_buffers       chan []byte
 }
 
-func NewDispatch(fp io.ReadWriteCloser, prov storage.StorageProvider) *Dispatch {
+func NewDispatch(ctx context.Context, fp io.ReadWriteCloser, prov storage.StorageProvider) *Dispatch {
+
 	d := &Dispatch{
 		ASYNC_WRITES:    true,
 		ASYNC_READS:     true,
@@ -85,12 +88,14 @@ func NewDispatch(fp io.ReadWriteCloser, prov storage.StorageProvider) *Dispatch 
 		fatal:           make(chan error, 8),
 		fp:              fp,
 		prov:            prov,
+		ctx:             ctx,
 	}
-	d.read_buffers = make(chan []byte, READ_POOL_SIZE)
-	for i := 0; i < READ_POOL_SIZE; i++ {
-		d.read_buffers <- make([]byte, READ_POOL_BUFFER_SIZE)
-	}
-
+	/*
+		d.read_buffers = make(chan []byte, READ_POOL_SIZE)
+		for i := 0; i < READ_POOL_SIZE; i++ {
+			d.read_buffers <- make([]byte, READ_POOL_BUFFER_SIZE)
+		}
+	*/
 	binary.BigEndian.PutUint32(d.response_header, NBD_RESPONSE_MAGIC)
 	return d
 }
@@ -155,6 +160,14 @@ func (d *Dispatch) Handle() error {
 		// Now go through processing complete packets
 		rp := 0
 		for {
+
+			// If the context has been cancelled, quit
+			select {
+			case <-d.ctx.Done():
+				return d.ctx.Err()
+			default:
+			}
+
 			//			fmt.Printf("Processing data %d %d\n", rp, wp)
 			// Make sure we have a complete header
 			if wp-rp >= 28 {
@@ -223,7 +236,6 @@ func (d *Dispatch) Handle() error {
 			copy(buffer, buffer[rp:wp])
 		}
 		wp -= rp
-
 	}
 }
 
@@ -235,19 +247,20 @@ func (d *Dispatch) cmdRead(cmd_handle uint64, cmd_from uint64, cmd_length uint32
 
 	performRead := func(handle uint64, from uint64, length uint32) error {
 		var b []byte
-		var from_pool = false
-		if length <= READ_POOL_BUFFER_SIZE {
-			// Try to get a buffer from pool
-			select {
-			case b = <-d.read_buffers:
-				from_pool = true
-				b = b[:length]
-				break
-			default:
-				break
+		/*
+			var from_pool = false
+			if length <= READ_POOL_BUFFER_SIZE {
+				// Try to get a buffer from pool
+				select {
+				case b = <-d.read_buffers:
+					from_pool = true
+					b = b[:length]
+					break
+				default:
+					break
+				}
 			}
-		}
-
+		*/
 		// Couldn't get one from the pool
 		if b == nil {
 			// We'll have to alloc it
@@ -255,8 +268,22 @@ func (d *Dispatch) cmdRead(cmd_handle uint64, cmd_from uint64, cmd_length uint32
 			b = make([]byte, length)
 		}
 
+		errchan := make(chan error)
 		data := b // make([]byte, length)
-		_, e := d.prov.ReadAt(data, int64(from))
+
+		go func() {
+			_, e := d.prov.ReadAt(data, int64(from))
+			errchan <- e
+		}()
+
+		// Wait until either the ReadAt completed, or our context is cancelled...
+		var e error
+		select {
+		case <-d.ctx.Done():
+			e = d.ctx.Err()
+		case e = <-errchan:
+		}
+
 		errorValue := uint32(0)
 		if e != nil {
 			errorValue = 1
@@ -264,9 +291,11 @@ func (d *Dispatch) cmdRead(cmd_handle uint64, cmd_from uint64, cmd_length uint32
 		}
 		err := d.writeResponse(errorValue, handle, data)
 		// Return it to pool if need to
-		if from_pool {
-			d.read_buffers <- b[:READ_POOL_BUFFER_SIZE]
-		}
+		/*
+			if from_pool {
+				d.read_buffers <- b[:READ_POOL_BUFFER_SIZE]
+			}
+		*/
 		return err
 	}
 
@@ -280,7 +309,10 @@ func (d *Dispatch) cmdRead(cmd_handle uint64, cmd_from uint64, cmd_length uint32
 			d.pending_responses.Done()
 		}()
 	} else {
-		return performRead(cmd_handle, cmd_from, cmd_length)
+		d.pending_responses.Add(1)
+		err := performRead(cmd_handle, cmd_from, cmd_length)
+		d.pending_responses.Done()
+		return err
 	}
 	return nil
 }
@@ -291,7 +323,20 @@ func (d *Dispatch) cmdRead(cmd_handle uint64, cmd_from uint64, cmd_length uint32
  */
 func (d *Dispatch) cmdWrite(cmd_handle uint64, cmd_from uint64, cmd_length uint32, cmd_data []byte) error {
 	performWrite := func(handle uint64, from uint64, length uint32, data []byte) error {
-		_, e := d.prov.WriteAt(data, int64(from))
+		errchan := make(chan error)
+		go func() {
+			_, e := d.prov.WriteAt(data, int64(from))
+			errchan <- e
+		}()
+
+		// Wait until either the WriteAt completed, or our context is cancelled...
+		var e error
+		select {
+		case <-d.ctx.Done():
+			e = d.ctx.Err()
+		case e = <-errchan:
+		}
+
 		errorValue := uint32(0)
 		if e != nil {
 			errorValue = 1
@@ -309,7 +354,10 @@ func (d *Dispatch) cmdWrite(cmd_handle uint64, cmd_from uint64, cmd_length uint3
 			d.pending_responses.Done()
 		}()
 	} else {
-		return performWrite(cmd_handle, cmd_from, cmd_length, cmd_data)
+		d.pending_responses.Add(1)
+		err := performWrite(cmd_handle, cmd_from, cmd_length, cmd_data)
+		d.pending_responses.Done()
+		return err
 	}
 	return nil
 }

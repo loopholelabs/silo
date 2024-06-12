@@ -150,7 +150,7 @@ func BenchmarkMigrationPipe(mb *testing.B) {
 				writers2 = append(writers2, w2)
 			}
 
-			initDev := func(p protocol.Protocol, dev uint32) {
+			initDev := func(ctx context.Context, p protocol.Protocol, dev uint32) {
 				destStorageFactory := func(di *packets.DevInfo) storage.StorageProvider {
 					// Do some sharding here...
 					cr := func(index int, size int) (storage.StorageProvider, error) {
@@ -164,7 +164,7 @@ func BenchmarkMigrationPipe(mb *testing.B) {
 				}
 
 				// Pipe from the protocol to destWaiting
-				destFrom := protocol.NewFromProtocol(dev, destStorageFactory, p)
+				destFrom := protocol.NewFromProtocol(ctx, dev, destStorageFactory, p)
 				go func() {
 					_ = destFrom.HandleReadAt()
 				}()
@@ -206,7 +206,7 @@ func BenchmarkMigrationPipe(mb *testing.B) {
 				destination.Compressed_writes = true
 			}
 
-			err = destination.SendDevInfo("test", uint32(blockSize))
+			err = destination.SendDevInfo("test", uint32(blockSize), "")
 			if err != nil {
 				panic(err)
 			}

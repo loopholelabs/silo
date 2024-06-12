@@ -48,16 +48,6 @@ func TestSiloConfig(t *testing.T) {
 		size = "72M"
 		system = "memory"
 	}
-
-	location Here {
-		system = "silo"
-		location = "127.0.0.1:5170"
-	}
-
-	location There {
-		system = "s3"
-		location = "s3://silo/there"
-	}	
 	`
 
 	s := new(SiloSchema)
@@ -66,7 +56,6 @@ func TestSiloConfig(t *testing.T) {
 
 	// Check things look ok...
 	assert.Equal(t, 8, len(s.Device))
-	assert.Equal(t, 2, len(s.Location))
 
 	_, err = s.Encode()
 	assert.NoError(t, err)

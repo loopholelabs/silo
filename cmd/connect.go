@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/loopholelabs/silo/pkg/storage"
+	"github.com/loopholelabs/silo/pkg/storage/config"
 	"github.com/loopholelabs/silo/pkg/storage/expose"
 	"github.com/loopholelabs/silo/pkg/storage/integrity"
 	"github.com/loopholelabs/silo/pkg/storage/modules"
@@ -104,7 +105,9 @@ func runConnect(ccmd *cobra.Command, args []string) {
 	dst_wg_first = true
 	dst_wg.Add(1) // We need to at least wait for one to complete.
 
-	pro := protocol.NewProtocolRW(context.TODO(), []io.Reader{con}, []io.Writer{con}, handleIncomingDevice)
+	proto_ctx, proto_cancelfn := context.WithCancel(context.TODO())
+
+	pro := protocol.NewProtocolRW(proto_ctx, []io.Reader{con}, []io.Writer{con}, handleIncomingDevice)
 
 	// Let the protocol do its thing.
 	go func() {
@@ -114,6 +117,8 @@ func runConnect(ccmd *cobra.Command, args []string) {
 			return
 		}
 		// We should get an io.EOF here once the migrations have all completed.
+		// We should cancel the context, to cancel anything that is waiting for packets.
+		proto_cancelfn()
 	}()
 
 	dst_wg.Wait() // Wait until the migrations have completed...
@@ -134,12 +139,14 @@ func runConnect(ccmd *cobra.Command, args []string) {
 }
 
 // Handle a new incoming device. This is called when a packet is received for a device we haven't heard about before.
-func handleIncomingDevice(pro protocol.Protocol, dev uint32) {
+func handleIncomingDevice(ctx context.Context, pro protocol.Protocol, dev uint32) {
 	var destStorage storage.StorageProvider
 	var destWaitingLocal *waitingcache.WaitingCacheLocal
 	var destWaitingRemote *waitingcache.WaitingCacheRemote
 	var destMonitorStorage *modules.Hooks
 	var dest *protocol.FromProtocol
+
+	var dev_schema *config.DeviceSchema
 
 	var bar *mpb.Bar
 
@@ -157,7 +164,14 @@ func handleIncomingDevice(pro protocol.Protocol, dev uint32) {
 
 	// This is a storage factory which will be called when we recive DevInfo.
 	storageFactory := func(di *packets.DevInfo) storage.StorageProvider {
-		// fmt.Printf("= %d = Received DevInfo name=%s size=%d blocksize=%d\n", dev, di.Name, di.Size, di.BlockSize)
+		//		fmt.Printf("= %d = Received DevInfo name=%s size=%d blocksize=%d schema=%s\n", dev, di.Name, di.Size, di.Block_size, di.Schema)
+
+		// Decode the schema
+		dev_schema = &config.DeviceSchema{}
+		err := dev_schema.Decode(di.Schema)
+		if err != nil {
+			panic(err)
+		}
 
 		blockSize = uint(di.Block_size)
 
@@ -196,7 +210,7 @@ func handleIncomingDevice(pro protocol.Protocol, dev uint32) {
 		if di.Size > 64*1024 {
 			shard_size = di.Size / 1024
 		}
-		var err error
+
 		destStorage, err = modules.NewShardedStorage(int(di.Size), int(shard_size), cr)
 		if err != nil {
 			panic(err) // FIXME
@@ -235,6 +249,9 @@ func handleIncomingDevice(pro protocol.Protocol, dev uint32) {
 			_ = dest.DontNeedAt(offset, length)
 		}
 
+		conf := &config.DeviceSchema{}
+		_ = conf.Decode(di.Schema)
+
 		// Expose this storage as a device if requested
 		if connect_expose_dev {
 			p, err := dst_device_setup(destWaitingLocal)
@@ -248,18 +265,27 @@ func handleIncomingDevice(pro protocol.Protocol, dev uint32) {
 		return destWaitingRemote
 	}
 
-	dest = protocol.NewFromProtocol(dev, storageFactory, pro)
+	dest = protocol.NewFromProtocol(ctx, dev, storageFactory, pro)
 
+	var handler_wg sync.WaitGroup
+
+	handler_wg.Add(1)
 	go func() {
 		_ = dest.HandleReadAt()
+		handler_wg.Done()
 	}()
+	handler_wg.Add(1)
 	go func() {
 		_ = dest.HandleWriteAt()
+		handler_wg.Done()
 	}()
+	handler_wg.Add(1)
 	go func() {
 		_ = dest.HandleDevInfo()
+		handler_wg.Done()
 	}()
 
+	handler_wg.Add(1)
 	// Handle events from the source
 	go func() {
 		_ = dest.HandleEvent(func(e *packets.Event) {
@@ -275,8 +301,13 @@ func handleIncomingDevice(pro protocol.Protocol, dev uint32) {
 			//fmt.Printf("= %d = Event %s\n", dev, protocol.EventsByType[e.Type])
 			// Check we have all data...
 			if e.Type == packets.EventCompleted {
-				// We completed the migration...
-				dst_wg.Done()
+
+				// We completed the migration, but we should wait for handlers to finish before we ok things...
+				//				fmt.Printf("Completed, now wait for handlers...\n")
+				go func() {
+					handler_wg.Wait()
+					dst_wg.Done()
+				}()
 				//			available, total := destWaitingLocal.Availability()
 				//			fmt.Printf("= %d = Availability (%d/%d)\n", dev, available, total)
 				// Set bar to completed
@@ -285,32 +316,39 @@ func handleIncomingDevice(pro protocol.Protocol, dev uint32) {
 				}
 			}
 		})
+		handler_wg.Done()
 	}()
 
+	handler_wg.Add(1)
 	go func() {
 		_ = dest.HandleHashes(func(hashes map[uint][sha256.Size]byte) {
-			//		fmt.Printf("[%d] Got %d hashes...\n", dev, len(hashes))
-			in := integrity.NewIntegrityChecker(int64(destStorage.Size()), int(blockSize))
-			in.SetHashes(hashes)
-			correct, err := in.Check(destStorage)
-			if err != nil {
-				panic(err)
-			}
-			//		fmt.Printf("[%d] Verification result %t\n", dev, correct)
-			if correct {
-				statusVerify = "\u2611"
-			} else {
-				statusVerify = "\u2612"
+			//fmt.Printf("[%d] Got %d hashes...\n", dev, len(hashes))
+			if len(hashes) > 0 {
+				in := integrity.NewIntegrityChecker(int64(destStorage.Size()), int(blockSize))
+				in.SetHashes(hashes)
+				correct, err := in.Check(destStorage)
+				if err != nil {
+					panic(err)
+				}
+				//				fmt.Printf("[%d] Verification result %t %v\n", dev, correct, err)
+				if correct {
+					statusVerify = "\u2611"
+				} else {
+					statusVerify = "\u2612"
+				}
 			}
 		})
+		handler_wg.Done()
 	}()
 
 	// Handle dirty list by invalidating local waiting cache
+	handler_wg.Add(1)
 	go func() {
 		_ = dest.HandleDirtyList(func(dirty []uint) {
 			//	fmt.Printf("= %d = LIST OF DIRTY BLOCKS %v\n", dev, dirty)
 			destWaitingLocal.DirtyBlocks(dirty)
 		})
+		handler_wg.Done()
 	}()
 }
 
@@ -321,7 +359,7 @@ func dst_device_setup(prov storage.StorageProvider) (storage.ExposedStorage, err
 
 	err = p.Init()
 	if err != nil {
-		fmt.Printf("\n\n\np.Init returned %v\n\n\n", err)
+		//		fmt.Printf("\n\n\np.Init returned %v\n\n\n", err)
 		return nil, err
 	}
 

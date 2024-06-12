@@ -155,17 +155,18 @@ func TestDontNeedAt(t *testing.T) {
 func TestDirtyList(t *testing.T) {
 
 	blocks := []uint{1, 7, 100}
-	b := EncodeDirtyList(blocks)
+	b := EncodeDirtyList(4096, blocks)
 
-	blocks2, err := DecodeDirtyList(b)
+	bs, blocks2, err := DecodeDirtyList(b)
 	assert.NoError(t, err)
+	assert.Equal(t, 4096, bs)
 	assert.Equal(t, blocks, blocks2)
 
 	// Make sure we can't decode silly things
-	_, err = DecodeDirtyList(nil)
+	_, _, err = DecodeDirtyList(nil)
 	assert.Error(t, err)
 
-	_, err = DecodeDirtyList([]byte{
+	_, _, err = DecodeDirtyList([]byte{
 		99,
 	})
 	assert.Error(t, err)
@@ -173,13 +174,14 @@ func TestDirtyList(t *testing.T) {
 }
 
 func TestDevInfo(t *testing.T) {
-	b := EncodeDevInfo(&DevInfo{Size: 12345, Block_size: 55, Name: "hello"})
+	b := EncodeDevInfo(&DevInfo{Size: 12345, Block_size: 55, Name: "hello", Schema: "1234"})
 
 	di, err := DecodeDevInfo(b)
 	assert.NoError(t, err)
 	assert.Equal(t, uint64(12345), di.Size)
 	assert.Equal(t, uint32(55), di.Block_size)
 	assert.Equal(t, "hello", di.Name)
+	assert.Equal(t, "1234", di.Schema)
 
 	// Make sure we can't decode silly things
 	_, err = DecodeDevInfo(nil)
@@ -265,4 +267,67 @@ func TestWriteAtComp(t *testing.T) {
 
 	assert.Equal(t, int64(12345), off)
 	assert.Equal(t, buff, data)
+}
+
+func TestWriteAtWithMap(t *testing.T) {
+
+	b := EncodeWriteAtWithMap(12345, []byte{1, 2, 3, 4, 5}, map[uint64]uint64{
+		1: 7,
+		5: 80,
+	})
+
+	off, data, idmap, err := DecodeWriteAtWithMap(b)
+
+	assert.NoError(t, err)
+	assert.Equal(t, int64(12345), off)
+	assert.Equal(t, []byte{1, 2, 3, 4, 5}, data)
+	assert.Equal(t, map[uint64]uint64{1: 7, 5: 80}, idmap)
+
+	// Make sure we can't decode silly things
+	_, _, err = DecodeWriteAt(nil)
+	assert.Error(t, err)
+
+	_, _, err = DecodeWriteAt([]byte{
+		99,
+	})
+	assert.Error(t, err)
+
+}
+
+func TestRemoveFromMap(t *testing.T) {
+
+	blocks := []uint64{1, 7, 100}
+	b := EncodeRemoveFromMap(blocks)
+
+	blocks2, err := DecodeRemoveFromMap(b)
+	assert.NoError(t, err)
+	assert.Equal(t, blocks, blocks2)
+
+	// Make sure we can't decode silly things
+	_, err = DecodeRemoveFromMap(nil)
+	assert.Error(t, err)
+
+	_, err = DecodeRemoveFromMap([]byte{
+		99,
+	})
+	assert.Error(t, err)
+
+}
+
+func TestRemoveDev(t *testing.T) {
+
+	b := EncodeRemoveDev()
+
+	err := DecodeRemoveDev(b)
+	assert.NoError(t, err)
+
+	// Make sure we can't decode silly things
+	err = DecodeRemoveDev(nil)
+	assert.Error(t, err)
+
+	err = DecodeRemoveDev([]byte{
+		99,
+	})
+	assert.Error(t, err)
+
 }

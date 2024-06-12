@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"sync"
 	"sync/atomic"
@@ -10,13 +11,15 @@ import (
 )
 
 type MockProtocol struct {
+	ctx          context.Context
 	waiters      map[uint32]Waiters
 	waiters_lock sync.Mutex
 	tid          uint32
 }
 
-func NewMockProtocol() *MockProtocol {
+func NewMockProtocol(ctx context.Context) *MockProtocol {
 	return &MockProtocol{
+		ctx:     ctx,
 		waiters: make(map[uint32]Waiters),
 		tid:     0,
 	}
@@ -102,11 +105,14 @@ func (mp *MockProtocol) WaitForPacket(dev uint32, id uint32) ([]byte, error) {
 	mp.waiters_lock.Unlock()
 
 	// Wait for the packet to appear on the channel
-	p := <-wq
-
+	select {
+	case p := <-wq:
+		return p.data, nil
+	case <-mp.ctx.Done():
+		return nil, mp.ctx.Err()
+	}
 	// TODO: Could remove the channel now idk... we'll see...
 
-	return p.data, nil
 }
 
 func (mp *MockProtocol) WaitForCommand(dev uint32, cmd byte) (uint32, []byte, error) {
@@ -127,6 +133,10 @@ func (mp *MockProtocol) WaitForCommand(dev uint32, cmd byte) (uint32, []byte, er
 	mp.waiters_lock.Unlock()
 
 	// Wait for the packet to appear on the channel
-	p := <-wq
-	return p.id, p.data, nil
+	select {
+	case p := <-wq:
+		return p.id, p.data, nil
+	case <-mp.ctx.Done():
+		return 0, nil, mp.ctx.Err()
+	}
 }

@@ -7,6 +7,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -157,19 +158,20 @@ func TestMigratorSimplePipe(t *testing.T) {
 	// START moving data from sourceStorage to destStorage
 
 	var destStorage storage.StorageProvider
+	var destFrom *protocol.FromProtocol
 
 	// Create a simple pipe
 	r1, w1 := io.Pipe()
 	r2, w2 := io.Pipe()
 
-	initDev := func(p protocol.Protocol, dev uint32) {
+	initDev := func(ctx context.Context, p protocol.Protocol, dev uint32) {
 		destStorageFactory := func(di *packets.DevInfo) storage.StorageProvider {
 			destStorage = sources.NewMemoryStorage(int(di.Size))
 			return destStorage
 		}
 
 		// Pipe from the protocol to destWaiting
-		destFrom := protocol.NewFromProtocol(dev, destStorageFactory, p)
+		destFrom = protocol.NewFromProtocol(ctx, dev, destStorageFactory, p)
 		go func() {
 			_ = destFrom.HandleReadAt()
 		}()
@@ -194,7 +196,7 @@ func TestMigratorSimplePipe(t *testing.T) {
 	// Pipe a destination to the protocol
 	destination := protocol.NewToProtocol(sourceDirtyRemote.Size(), 17, prSource)
 
-	err = destination.SendDevInfo("test", uint32(blockSize))
+	err = destination.SendDevInfo("test", uint32(blockSize), "")
 	assert.NoError(t, err)
 
 	conf := NewMigratorConfig().WithBlockSize(blockSize)
@@ -218,6 +220,238 @@ func TestMigratorSimplePipe(t *testing.T) {
 	eq, err := storage.Equals(sourceStorageMem, destStorage, blockSize)
 	assert.NoError(t, err)
 	assert.True(t, eq)
+
+	assert.Equal(t, int(sourceStorageMem.Size()), destFrom.GetDataPresent())
+}
+
+/**
+ * Test a simple migration through a pipe. No writer no reader.
+ * We will tell it we have dirty data and send it.
+ */
+func TestMigratorSimplePipeDirtySent(t *testing.T) {
+	size := 1024 * 1024
+	blockSize := 4096
+	num_blocks := (size + blockSize - 1) / blockSize
+
+	sourceStorageMem := sources.NewMemoryStorage(size)
+	sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(sourceStorageMem, blockSize)
+	sourceStorage := modules.NewLockable(sourceDirtyLocal)
+
+	// Set up some data here.
+	buffer := make([]byte, size)
+	for i := 0; i < size; i++ {
+		buffer[i] = 9
+	}
+
+	n, err := sourceStorage.WriteAt(buffer, 0)
+	assert.NoError(t, err)
+	assert.Equal(t, len(buffer), n)
+
+	orderer := blocks.NewAnyBlockOrder(num_blocks, nil)
+	orderer.AddAll()
+
+	// START moving data from sourceStorage to destStorage
+
+	var destStorage storage.StorageProvider
+	var destFrom *protocol.FromProtocol
+
+	// Create a simple pipe
+	r1, w1 := io.Pipe()
+	r2, w2 := io.Pipe()
+
+	initDev := func(ctx context.Context, p protocol.Protocol, dev uint32) {
+		destStorageFactory := func(di *packets.DevInfo) storage.StorageProvider {
+			destStorage = sources.NewMemoryStorage(int(di.Size))
+			return destStorage
+		}
+
+		// Pipe from the protocol to destWaiting
+		destFrom = protocol.NewFromProtocol(ctx, dev, destStorageFactory, p)
+		go func() {
+			_ = destFrom.HandleReadAt()
+		}()
+		go func() {
+			_ = destFrom.HandleWriteAt()
+		}()
+		go func() {
+			_ = destFrom.HandleDevInfo()
+		}()
+		go func() {
+			_ = destFrom.HandleDirtyList(func(blocks []uint) {})
+		}()
+	}
+
+	prSource := protocol.NewProtocolRW(context.TODO(), []io.Reader{r1}, []io.Writer{w2}, nil)
+	prDest := protocol.NewProtocolRW(context.TODO(), []io.Reader{r2}, []io.Writer{w1}, initDev)
+
+	go func() {
+		_ = prSource.Handle()
+	}()
+	go func() {
+		_ = prDest.Handle()
+	}()
+
+	// Pipe a destination to the protocol
+	destination := protocol.NewToProtocol(sourceDirtyRemote.Size(), 17, prSource)
+
+	err = destination.SendDevInfo("test", uint32(blockSize), "")
+	assert.NoError(t, err)
+
+	conf := NewMigratorConfig().WithBlockSize(blockSize)
+	conf.Locker_handler = sourceStorage.Lock
+	conf.Unlocker_handler = sourceStorage.Unlock
+
+	mig, err := NewMigrator(sourceDirtyRemote,
+		destination,
+		orderer,
+		conf)
+
+	assert.NoError(t, err)
+
+	err = mig.Migrate(num_blocks)
+	assert.NoError(t, err)
+
+	err = mig.WaitForCompletion()
+	assert.NoError(t, err)
+
+	blocks := []uint{0, 6, 7}
+
+	// Send some dirty blocks
+	err = destination.DirtyList(conf.Block_size, blocks)
+	assert.NoError(t, err)
+
+	err = mig.MigrateDirty(blocks)
+	assert.NoError(t, err)
+
+	err = mig.WaitForCompletion()
+	assert.NoError(t, err)
+
+	// This will end with migration completed, and consumer Locked.
+	eq, err := storage.Equals(sourceStorageMem, destStorage, blockSize)
+	assert.NoError(t, err)
+	assert.True(t, eq)
+
+	assert.Equal(t, int(sourceStorageMem.Size()), destFrom.GetDataPresent())
+}
+
+/**
+ * Test a simple migration through a pipe. No writer no reader.
+ * We will tell it we have dirty data and send it.
+ */
+func TestMigratorSimplePipeDirtyMissing(t *testing.T) {
+	size := 1024 * 1024
+	blockSize := 4096
+	num_blocks := (size + blockSize - 1) / blockSize
+
+	sourceStorageMem := sources.NewMemoryStorage(size)
+	sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(sourceStorageMem, blockSize)
+	sourceStorage := modules.NewLockable(sourceDirtyLocal)
+
+	// Set up some data here.
+	buffer := make([]byte, size)
+	for i := 0; i < size; i++ {
+		buffer[i] = 9
+	}
+
+	n, err := sourceStorage.WriteAt(buffer, 0)
+	assert.NoError(t, err)
+	assert.Equal(t, len(buffer), n)
+
+	orderer := blocks.NewAnyBlockOrder(num_blocks, nil)
+	orderer.AddAll()
+
+	// START moving data from sourceStorage to destStorage
+
+	var destStorage storage.StorageProvider
+	var destFrom *protocol.FromProtocol
+
+	// Create a simple pipe
+	r1, w1 := io.Pipe()
+	r2, w2 := io.Pipe()
+
+	var dest_wg sync.WaitGroup
+
+	initDev := func(ctx context.Context, p protocol.Protocol, dev uint32) {
+		destStorageFactory := func(di *packets.DevInfo) storage.StorageProvider {
+			destStorage = sources.NewMemoryStorage(int(di.Size))
+			return destStorage
+		}
+
+		// Pipe from the protocol to destWaiting
+		destFrom = protocol.NewFromProtocol(ctx, dev, destStorageFactory, p)
+		dest_wg.Add(4)
+		go func() {
+			_ = destFrom.HandleReadAt()
+			dest_wg.Done()
+		}()
+		go func() {
+			_ = destFrom.HandleWriteAt()
+			dest_wg.Done()
+		}()
+		go func() {
+			_ = destFrom.HandleDevInfo()
+			dest_wg.Done()
+		}()
+		go func() {
+			_ = destFrom.HandleDirtyList(func(blocks []uint) {
+			})
+			dest_wg.Done()
+		}()
+	}
+
+	ctx, cancelfn := context.WithCancel(context.TODO())
+
+	prSource := protocol.NewProtocolRW(ctx, []io.Reader{r1}, []io.Writer{w2}, nil)
+	prDest := protocol.NewProtocolRW(ctx, []io.Reader{r2}, []io.Writer{w1}, initDev)
+
+	go func() {
+		_ = prSource.Handle()
+	}()
+	go func() {
+		_ = prDest.Handle()
+	}()
+
+	// Pipe a destination to the protocol
+	destination := protocol.NewToProtocol(sourceDirtyRemote.Size(), 17, prSource)
+
+	err = destination.SendDevInfo("test", uint32(blockSize), "")
+	assert.NoError(t, err)
+
+	conf := NewMigratorConfig().WithBlockSize(blockSize)
+	conf.Locker_handler = sourceStorage.Lock
+	conf.Unlocker_handler = sourceStorage.Unlock
+
+	mig, err := NewMigrator(sourceDirtyRemote,
+		destination,
+		orderer,
+		conf)
+
+	assert.NoError(t, err)
+
+	err = mig.Migrate(num_blocks)
+	assert.NoError(t, err)
+
+	err = mig.WaitForCompletion()
+	assert.NoError(t, err)
+
+	blocks := []uint{0, 6, 7}
+
+	// Send some dirty blocks
+	err = destination.DirtyList(conf.Block_size, blocks)
+	assert.NoError(t, err)
+
+	// Wait for stuff
+	cancelfn()
+	dest_wg.Wait()
+
+	// This will end with migration completed, and consumer Locked.
+	eq, err := storage.Equals(sourceStorageMem, destStorage, blockSize)
+	assert.NoError(t, err)
+	assert.True(t, eq)
+
+	// There should be blocks missing, which equate to len(blocks)*conf.Block_size bytes.
+
+	assert.Equal(t, int(sourceStorageMem.Size())-len(blocks)*conf.Block_size, destFrom.GetDataPresent())
 }
 
 /**
@@ -516,11 +750,8 @@ func TestMigratorSimpleCowSparse(t *testing.T) {
 	sourceStorageMem := sources.NewMemoryStorage(size)
 	overlay, err := sources.NewFileStorageSparseCreate("test_migrate_cow", uint64(size), blockSize)
 	assert.NoError(t, err)
-	overlay_log := modules.NewLogger(overlay, "overlay")
-	sourceStorageMem_log := modules.NewLogger(sourceStorageMem, "rosource")
-	cow := modules.NewCopyOnWrite(sourceStorageMem_log, overlay_log, blockSize)
-	cow_log := modules.NewLogger(cow, "cow")
-	sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(cow_log, blockSize)
+	cow := modules.NewCopyOnWrite(sourceStorageMem, overlay, blockSize)
+	sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(cow, blockSize)
 	sourceStorage := modules.NewLockable(sourceDirtyLocal)
 
 	t.Cleanup(func() {
@@ -586,11 +817,6 @@ func TestMigratorSimpleCowSparse(t *testing.T) {
 
 	err = mig.WaitForCompletion()
 	assert.NoError(t, err)
-
-	// Don't care about the reads caused by storage.Equals...
-	cow_log.Disable()
-	overlay_log.Disable()
-	sourceStorageMem_log.Disable()
 
 	// This will end with migration completed, and consumer Locked.
 	eq, err := storage.Equals(sourceStorage, destStorage, blockSize)
