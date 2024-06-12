@@ -276,6 +276,9 @@ func TestMigratorSimplePipeDirtySent(t *testing.T) {
 		go func() {
 			_ = destFrom.HandleDevInfo()
 		}()
+		go func() {
+			_ = destFrom.HandleDirtyList(func(blocks []uint) {})
+		}()
 	}
 
 	prSource := protocol.NewProtocolRW(context.TODO(), []io.Reader{r1}, []io.Writer{w2}, nil)
