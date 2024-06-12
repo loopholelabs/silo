@@ -250,7 +250,7 @@ func handleIncomingDevice(ctx context.Context, pro protocol.Protocol, dev uint32
 		}
 
 		conf := &config.DeviceSchema{}
-		conf.Decode(di.Schema)
+		_ = conf.Decode(di.Schema)
 
 		// Expose this storage as a device if requested
 		if connect_expose_dev {

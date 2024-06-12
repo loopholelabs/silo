@@ -25,13 +25,13 @@ func TestFromProtocol(t *testing.T) {
 
 	wg.Add(1)
 	go func() {
-		from.HandleReadAt()
+		_ = from.HandleReadAt()
 		wg.Done()
 	}()
 
 	wg.Add(1)
 	go func() {
-		from.HandleWriteAt()
+		_ = from.HandleWriteAt()
 		wg.Done()
 	}()
 

@@ -54,7 +54,8 @@ func TestMappedStorageRemove(t *testing.T) {
 
 	assert.Equal(t, uint64(block_size), ms.Size())
 
-	ms.RemoveBlock(id)
+	err = ms.RemoveBlock(id)
+	assert.NoError(t, err)
 
 	assert.Equal(t, uint64(0), ms.Size())
 }
@@ -194,6 +195,7 @@ func TestMappedStorageReadWriteBlocks(t *testing.T) {
 	assert.Equal(t, buffer, data[:block_size])
 
 	err = ms.ReadBlock(uint64(0x12345678+block_size), buffer)
+	assert.NoError(t, err)
 	assert.Equal(t, buffer, data[block_size:])
 
 	buffer2 := make([]byte, block_size*2)
