@@ -400,8 +400,8 @@ func (ms *MappedStorage) GetBlockAddresses() []uint64 {
  * Keep only these ids within the MappedStorage
  *
  */
-func (ms *MappedStorage) KeepOnly(ids map[uint64]bool) int {
-	removed := 0
+func (ms *MappedStorage) KeepOnly(ids map[uint64]bool) []uint64 {
+	removed := make([]uint64, 0)
 	ms.lock.Lock()
 	defer ms.lock.Unlock()
 	for id, b := range ms.id_to_block {
@@ -410,7 +410,7 @@ func (ms *MappedStorage) KeepOnly(ids map[uint64]bool) int {
 			// Remove the block and make it available again
 			delete(ms.id_to_block, id)
 			ms.block_available.SetBit(int(b))
-			removed++
+			removed = append(removed, id)
 		}
 	}
 	return removed

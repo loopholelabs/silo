@@ -260,3 +260,32 @@ func TestDefrag(t *testing.T) {
 	assert.Equal(t, uint64(0), ms2.Size())
 	assert.Equal(t, uint64(0), ms2.ProviderUsedSize())
 }
+
+func TestMappedStorageKeepOnly(t *testing.T) {
+	block_size := 4096
+	store := sources.NewMemoryStorage(64 * block_size)
+
+	ms := NewMappedStorage(store, block_size)
+	// Write some blocks, then read them back
+
+	data := make([]byte, block_size)
+	_, err := rand.Read(data)
+	assert.NoError(t, err)
+
+	id1 := uint64(0x12345678)
+	err = ms.WriteBlock(id1, data)
+	assert.NoError(t, err)
+
+	id2 := uint64(0x80084004)
+	err = ms.WriteBlock(id2, data)
+	assert.NoError(t, err)
+
+	// Now keep only
+	removed := ms.KeepOnly(map[uint64]bool{
+		id1: true,
+	})
+
+	assert.Equal(t, removed, []uint64{id2})
+
+	assert.Equal(t, uint64(block_size), ms.Size())
+}
