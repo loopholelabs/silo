@@ -1,23 +1,21 @@
-<br/>
 <div align="center">
-  <a href="https://github.com/loopholelabs/silo">
-    <img src="images/icon.svg" alt="Logo" height="130">
-  </a>
-  <h3 align="center">Silo</h3>
-  <h4 align="center">
-    A Storage Primitive Designed for Live Migration. 
-  </h4>
 
-[![License: AGPL 3.0](https://img.shields.io/github/license/loopholelabs/silo)]([https://www.apache.org/licenses/LICENSE-2.0](https://www.gnu.org/licenses/agpl-3.0.en.html))
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./docs/logo-dark.svg">
+  <img alt="Logo" src="./docs/logo-light.svg">
+</picture>
+
+[![License: AGPL 3.0](https://img.shields.io/github/license/loopholelabs/silo)](<[https://www.apache.org/licenses/LICENSE-2.0](https://www.gnu.org/licenses/agpl-3.0.en.html)>)
 [![Discord](https://dcbadge.vercel.app/api/server/JYmFhtdPeu?style=flat)](https://loopholelabs.io/discord)
 ![Go Version](https://img.shields.io/badge/go%20version-%3E=1.21-61CFDD.svg)
 [![Go Reference](https://pkg.go.dev/badge/github.com/loopholelabs/silo.svg)](https://pkg.go.dev/github.com/loopholelabs/silo)
+
 </div>
 
 ## Overview
 
-Silo is a Storage primitive designed to support live migration. 
-One of the core functionalities within Silo is the ability to 
+Silo is a storage primitive designed to support live migration.
+One of the core functionalities within Silo is the ability to
 migrate/sync storage to various `backends` while it is still in use (without affecting performance).
 
 ## Sources
@@ -71,5 +69,3 @@ Everyone interacting in the Silo project’s codebases, issue trackers, chat roo
 [gitrepo]: https://github.com/loopholelabs/silo
 [loopholelabs]: https://cdn.loopholelabs.io/loopholelabs/LoopholeLabsLogo.svg
 [loophomepage]: https://loopholelabs.io
-
-
