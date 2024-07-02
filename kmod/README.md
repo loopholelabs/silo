@@ -1,4 +1,10 @@
+<br />
 <div align="center">
+<div align="center">
+ <a href="https://loopholelabs.io">
+    <img src="https://cdn.loopholelabs.io/loopholelabs/LoopholeLabsLogo.svg" alt="Logo" height="30">
+  </a></div>
+<br />
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../docs/kmod-logo-dark.svg">
   <img alt="Logo" src="../docs/kmod-logo-light.svg">
