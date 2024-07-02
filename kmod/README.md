@@ -9,6 +9,7 @@
   <source media="(prefers-color-scheme: dark)" srcset="../docs/kmod-logo-dark.svg">
   <img alt="Logo" src="../docs/kmod-logo-light.svg">
 </picture>
+<br />
 
 [![License: AGPL 3.0](https://img.shields.io/github/license/loopholelabs/silo)](https://www.gnu.org/licenses/agpl-3.0.en.html)
 [![Discord](https://dcbadge.vercel.app/api/server/JYmFhtdPeu?style=flat)](https://loopholelabs.io/discord)
