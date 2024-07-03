@@ -26,7 +26,7 @@ jobs:
 
       - name: Generate Test Data
         working-directory: kmod/pagefault
-        run: make test-generate
+        run: make tests-generate
         shell: bash
 
       - name: Set 'vm.max_map_count' parameter
@@ -50,7 +50,7 @@ jobs:
 
       - name: Run Userspace Test
         working-directory: kmod/pagefault
-        run: make test-userspace
+        run: make tests-userspace
         shell: bash
 
       - name: Build Module with Benchmarking
