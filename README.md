@@ -5,7 +5,7 @@
   <img alt="Logo" src="./docs/logo-light.svg">
 </picture>
 
-[![License: AGPL 3.0](https://img.shields.io/github/license/loopholelabs/silo)](<[https://www.apache.org/licenses/LICENSE-2.0](https://www.gnu.org/licenses/agpl-3.0.en.html)>)
+[![License: AGPL 3.0](https://img.shields.io/github/license/loopholelabs/silo)](https://www.gnu.org/licenses/agpl-3.0.en.html)
 [![Discord](https://dcbadge.vercel.app/api/server/JYmFhtdPeu?style=flat)](https://loopholelabs.io/discord)
 ![Go Version](https://img.shields.io/badge/go%20version-%3E=1.21-61CFDD.svg)
 [![Go Reference](https://pkg.go.dev/badge/github.com/loopholelabs/silo.svg)](https://pkg.go.dev/github.com/loopholelabs/silo)

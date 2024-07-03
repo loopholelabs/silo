@@ -1,0 +1,78 @@
+name: Pagefault Kernel Module Tests
+
+on:
+  pull_request:
+    paths:
+      - "kmod/pagefault/**"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: "1.22"
+          check-latest: true
+          cache: false
+
+      - name: Build Module
+        working-directory: kmod/pagefault
+        run: make module
+        shell: bash
+
+      - name: Generate Test Data
+        working-directory: kmod/pagefault
+        run: make tests-generate
+        shell: bash
+
+      - name: Set 'vm.max_map_count' parameter
+        run: sudo sysctl -w vm.max_map_count=262144
+        shell: bash
+
+      - name: Load Module
+        working-directory: kmod/pagefault
+        run: sudo make load
+        shell: bash
+
+      - name: Run Kernel Module Test
+        working-directory: kmod/pagefault
+        run: make tests
+        shell: bash
+
+      - name: Unload Module
+        working-directory: kmod/pagefault
+        run: sudo make unload
+        shell: bash
+
+      - name: Build Module with Benchmarking
+        working-directory: kmod/pagefault
+        run: BENCHMARK=true make module
+        shell: bash
+
+      - name: Load Module
+        working-directory: kmod/pagefault
+        run: sudo make load
+        shell: bash
+
+      - name: Run Kernel Module Test (With Benchmarking)
+        working-directory: kmod/pagefault
+        run: make tests
+        shell: bash
+
+      - name: Print last 30 dmesg logs
+        run: sudo dmesg | tail -n 30 | grep silo_pagefault
+        shell: bash
+
+      - name: Unload Module
+        working-directory: kmod/pagefault
+        run: sudo make unload
+        shell: bash
+
+      - name: Cleanup Module
+        working-directory: kmod/pagefault
+        run: make clean
+        shell: bash

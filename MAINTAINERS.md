@@ -1,1 +1,3 @@
 - James Moore <jamesmoore@loopholelabs.io> @jimmyaxod
+- Shivansh Vij <shivanshvij@loopholelabs.io> @shivanshvij
+- Luiz Aoqui <luizaoqui@loopholelabs.io> @lgfa29
