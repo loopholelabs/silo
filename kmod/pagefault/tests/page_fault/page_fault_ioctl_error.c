@@ -181,6 +181,8 @@ int main()
 		printf("== ERROR: could not call 'IOCTL_MMAP_CMD': %s\n",
 		       strerror(errno));
 		res = EXIT_FAILURE;
+		goto close_syscall_dev;
+
 	}
 	printf("== OK: called IOCTL_OVERLAY_CLEANUP_CMD successfully!\n");
 

@@ -234,6 +234,7 @@ cleanup:
 	if (ret) {
 		printf("ERROR: could not call 'IOCTL_MMAP_CMD': %s\n", strerror(errno));
 		res = EXIT_FAILURE;
+		goto close_syscall_dev;
 	}
 	res = EXIT_SUCCESS;
 close_syscall_dev:
