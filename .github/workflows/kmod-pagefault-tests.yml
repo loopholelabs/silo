@@ -65,7 +65,7 @@ jobs:
 
       - name: Run Kernel Module Test (With Benchmarking)
         working-directory: kmod/pagefault
-        run: make test
+        run: make tests
         shell: bash
 
       - name: Print last 30 dmesg logs
