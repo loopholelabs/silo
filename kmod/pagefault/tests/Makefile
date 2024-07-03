@@ -27,6 +27,11 @@ page_fault_multithread: page_fault_multithread.out
 	sudo sysctl -w vm.max_map_count=8388608
 	sudo ./page_fault_multithread.out
 
+.PHONY: page_fault_multithread_ioctl
+page_fault_multithread_ioctl: page_fault_multithread_ioctl.out
+	sudo sysctl -w vm.max_map_count=8388608
+	sudo ./page_fault_multithread_ioctl.out
+
 .PHONY: page_fault_fork
 page_fault_fork: page_fault_fork.out
 	sudo sysctl -w vm.max_map_count=8388608

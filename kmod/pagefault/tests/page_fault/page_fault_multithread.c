@@ -181,9 +181,9 @@ cleanup:
 		printf("ERROR: could not call 'IOCTL_MMAP_CMD': %s\n",
 		       strerror(errno));
 		res = EXIT_FAILURE;
+		goto close_syscall_dev;
 	}
 	printf("called IOCTL_OVERLAY_CLEANUP_CMD\n");
-
 close_syscall_dev:
 	close(syscall_dev);
 	printf("closed device driver\n");
