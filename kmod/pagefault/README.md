@@ -69,16 +69,16 @@ path `/dev/memory_overlay`. You can interact with the kernel module by sending
 [`ioctl`][man_ioctl] commands to this device.
 
 ```c
-int syscall_dev = open("/dev/memory_overlay", O_WRONLY);
+int syscall_dev = open("/dev/silo_pagefault", O_WRONLY);
 if (syscall_dev < 0) {
-	printf("ERROR: failed to open /dev/memory_overlay: %s\n", strerror(errno));
+	printf("ERROR: failed to open /dev/silo_pagefault: %s\n", strerror(errno));
 	return EXIT_FAILURE;
 }
 
-struct mem_overlay_req req;
+struct overlay_req req;
 // ...generate request...
 
-int ret = ioctl(syscall_dev, IOCTL_MEM_OVERLAY_REQ_CMD, &req);
+int ret = ioctl(syscall_dev, IOCTL_OVERLAY_REQ_CMD, &req);
 if (ret) {
 	printf("ERROR: failed not call 'IOCTL_MMAP_CMD': %s\n", strerror(errno));
   close(syscall_dev);
@@ -87,10 +87,10 @@ if (ret) {
 
 // ...before exit...
 
-struct mem_overlay_cleanup_req cleanup_req = {
+struct overlay_cleanup_req cleanup_req = {
 	.id = req.id,
 };
-int ret = ioctl(syscall_dev, IOCTL_MEM_OVERLAY_CLEANUP_CMD, &cleanup_req);
+int ret = ioctl(syscall_dev, IOCTL_OVERLAY_CLEANUP_CMD, &cleanup_req);
 if (ret) {
 	printf("ERROR: could not call 'IOCTL_MMAP_CMD': %s\n", strerror(errno));
   close(syscall_dev);
@@ -99,26 +99,26 @@ if (ret) {
 ```
 
 The device driver uses the following commands, which are defined in the
-[`common.h`](common.h) file.
+[`device.h`](device.h) file.
 
-### `IOCTL_MEM_OVERLAY_REQ_CMD` Command
+### `IOCTL_OVERLAY_REQ_CMD` Command
 
-The `IOCTL_MEM_OVERLAY_REQ_CMD` takes a `mem_overlay_req` as input and is used
+The `IOCTL_OVERLAY_REQ_CMD` takes a `overlay_req` as input and is used
 to register a new set of memory overlays for a base memory area.
 
 Each base memory can only be registered once.
 
-#### `mem_overlay_req` Fields
+#### `overlay_req` Fields
 
 ```c
-struct mem_overlay_req {
+struct overlay_req {
 	unsigned long id;
 
 	unsigned long base_addr;
 	unsigned long overlay_addr;
 
 	unsigned int segments_size;
-	struct mem_overlay_segment_req *segments;
+	struct overlay_segment_req *segments;
 };
 ```
 
@@ -129,10 +129,10 @@ struct mem_overlay_req {
 * `segments_size`: The number of memory segments to overlay.
 * `segments`: Array of memory segments to overlay.
 
-#### `mem_overlay_segment_req` Fields
+#### `overlay_segment_req` Fields
 
 ```c
-struct mem_overlay_segment_req {
+struct overlay_segment_req {
 	unsigned long start_pgoff;
 	unsigned long end_pgoff;
 };
@@ -154,24 +154,24 @@ On success, a `0` is returned. On error, `-1` is returned, and
 * `EEXIST`: Base file is already registered.
 * `ENOMEM`: Failed to allocate memory.
 
-### `IOCTL_MEM_OVERLAY_CLEANUP_CMD` Command
+### `IOCTL_OVERLAY_CLEANUP_CMD` Command
 
-The `IOCTL_MEM_OVERLAY_CLEANUP_CMD` takes a `mem_overlay_cleanup_req` as input
+The `IOCTL_OVERLAY_CLEANUP_CMD` takes a `overlay_cleanup_req` as input
 and is used to remove a previous memory overlay request from the kernel module.
 
-Every call to `IOCTL_MEM_OVERLAY_REQ_CMD` MUST be have a corresponding
-`IOCTL_MEM_OVERLAY_CLEANUP_CMD` before the program exits. Fail to do so may
+Every call to `IOCTL_OVERLAY_REQ_CMD` MUST be have a corresponding
+`IOCTL_OVERLAY_CLEANUP_CMD` before the program exits. Fail to do so may
 result kernel panics due to invalid memory pages left in the system.
 
-#### `mem_overlay_cleanup_req` fields
+#### `overlay_cleanup_req` fields
 
 ```c
-struct mem_overlay_cleanup_req {
+struct overlay_cleanup_req {
 	unsigned long id;
 };
 ```
 
-* `id`: Request identifier returned from a call to `IOCTL_MEM_OVERLAY_REQ_CMD`.
+* `id`: Request identifier returned from a call to `IOCTL_OVERLAY_REQ_CMD`.
 
 #### Return value
 

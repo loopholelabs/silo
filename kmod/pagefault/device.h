@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-3.0
 
 #ifndef SILO_DEVICE_H
 #define SILO_DEVICE_H

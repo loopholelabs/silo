@@ -1,36 +1,17 @@
-/*
-    Copyright (C) 2024 Loophole Labs
-
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with this program. If not, see <https://www.gnu.org/licenses/>.
-*/
+// SPDX-License-Identifier: GPL-3.0
 
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
 #include <unistd.h>
 #include <stdbool.h>
 
-#include <bits/time.h>
-
 #include <sys/ioctl.h>
 #include <sys/mman.h>
-#include <sys/stat.h>
 
-#include "../../common.h"
+#include "../../device.h"
 
 struct test_case {
 	unsigned long pgoff;
@@ -40,8 +21,7 @@ struct test_case {
 
 size_t PAGE_SIZE, TOTAL_SIZE;
 
-bool verify_test_cases(struct test_case *tcs, int tcs_nr, int base_fd,
-		       char *base_map)
+bool verify_test_cases(struct test_case *tcs, int tcs_nr, int base_fd, char *base_map)
 {
 	char *buffer = malloc(PAGE_SIZE);
 	memset(buffer, 0, PAGE_SIZE);
@@ -62,11 +42,9 @@ bool verify_test_cases(struct test_case *tcs, int tcs_nr, int base_fd,
 		if (tc != NULL) {
 			if (tc->fd > 0) {
 				fd = tc->fd;
-				printf("checking if page %lu is from overlay\n",
-				       pgoff);
+				printf("checking if page %lu is from overlay\n", pgoff);
 			} else if (tc->data) {
-				printf("checking if page %lu has expected data\n",
-				       pgoff);
+				printf("checking if page %lu has expected data\n", pgoff);
 				memcpy(buffer, tc->data, PAGE_SIZE);
 				fd = -1;
 			}
@@ -78,8 +56,7 @@ bool verify_test_cases(struct test_case *tcs, int tcs_nr, int base_fd,
 		}
 
 		if (memcmp(base_map + offset, buffer, PAGE_SIZE)) {
-			printf("== ERROR: base memory does not match the file contents at page %lu\n",
-			       pgoff);
+			printf("== ERROR: base memory does not match the file contents at page %lu\n", pgoff);
 			valid = false;
 			break;
 		}
@@ -102,16 +79,13 @@ int mmap_file(char *filename, size_t size, int *fd, char **mmap_addr)
 {
 	*fd = open(filename, O_RDONLY);
 	if (*fd < 0) {
-		printf("ERROR: could not open file %s: %s\n", filename,
-		       strerror(errno));
+		printf("ERROR: could not open file %s: %s\n", filename, strerror(errno));
 		return EXIT_FAILURE;
 	}
 
-	*mmap_addr =
-		mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE, *fd, 0);
+	*mmap_addr = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE, *fd, 0);
 	if (*mmap_addr == MAP_FAILED) {
-		printf("ERROR: could not mmap file %s: %s\n", filename,
-		       strerror(errno));
+		printf("ERROR: could not mmap file %s: %s\n", filename, strerror(errno));
 		close(*fd);
 		return EXIT_FAILURE;
 	}
@@ -120,17 +94,15 @@ int mmap_file(char *filename, size_t size, int *fd, char **mmap_addr)
 
 int call_kmod(unsigned long cmd, void *req)
 {
-	int syscall_dev = open(kmod_device_path, O_WRONLY);
+	int syscall_dev = open(device_path, O_WRONLY);
 	if (syscall_dev < 0) {
-		printf("ERROR: could not open %s: %s\n", kmod_device_path,
-		       strerror(errno));
+		printf("ERROR: could not open %s: %s\n", device_path, strerror(errno));
 		return EXIT_FAILURE;
 	}
 
 	int result = ioctl(syscall_dev, cmd, req);
 	if (result) {
-		printf("ERROR: could not call command %lu: %s\n", cmd,
-		       strerror(errno));
+		printf("ERROR: could not call command %lu: %s\n", cmd, strerror(errno));
 		close(syscall_dev);
 		return EXIT_FAILURE;
 	}
@@ -142,7 +114,6 @@ int call_kmod(unsigned long cmd, void *req)
 int test_memory_read()
 {
 	clear_cache();
-	int res = EXIT_SUCCESS;
 
 	// Read base.bin test file and map it into memory.
 	int base_fd;
@@ -151,12 +122,11 @@ int test_memory_read()
 		return EXIT_FAILURE;
 	}
 
+	int res = EXIT_SUCCESS;
 	// mmap base.bin test file again in an area that will not be modified.
-	char *clean_base_mmap =
-		mmap(NULL, TOTAL_SIZE, PROT_READ, MAP_PRIVATE, base_fd, 0);
+	char *clean_base_mmap = mmap(NULL, TOTAL_SIZE, PROT_READ, MAP_PRIVATE, base_fd, 0);
 	if (clean_base_mmap == MAP_FAILED) {
-		printf("ERROR: could not map clean base file %s: %s\n",
-		       "base.bin", strerror(errno));
+		printf("ERROR: could not map clean base file %s: %s\n", "base.bin", strerror(errno));
 		res = EXIT_FAILURE;
 		goto unmap_base;
 	}
@@ -175,8 +145,7 @@ int test_memory_read()
 	req.base_addr = *(unsigned long *)(&base_mmap);
 	req.overlay_addr = *(unsigned long *)(&overlay_mmap);
 	req.segments_size = 6;
-	req.segments = calloc(sizeof(struct mem_overlay_segment_req),
-			      req.segments_size);
+	req.segments = calloc(sizeof(struct overlay_segment_req), req.segments_size);
 
 	// Overlay single page.
 	req.segments[0].start_pgoff = 0;
@@ -200,10 +169,10 @@ int test_memory_read()
 	req.segments[5].start_pgoff = 80;
 	req.segments[5].end_pgoff = 140;
 
-	if (call_kmod(IOCTL_MEM_OVERLAY_REQ_CMD, &req)) {
+	if (call_kmod(IOCTL_OVERLAY_REQ_CMD, &req)) {
 		res = EXIT_FAILURE;
 		goto free_segments;
-	};
+	}
 
 	// Create expected read results.
 	// Every page in a segment range should have data from the overlay file.
@@ -216,10 +185,9 @@ int test_memory_read()
 	struct test_case *tcs = calloc(sizeof(struct test_case), tcs_nr);
 	int tcs_n = 0;
 	for (int i = 0; i < req.segments_size; i++) {
-		struct mem_overlay_segment_req seg = req.segments[i];
+		struct overlay_segment_req seg = req.segments[i];
 
-		for (int pgoff = seg.start_pgoff; pgoff <= seg.end_pgoff;
-		     pgoff++) {
+		for (int pgoff = seg.start_pgoff; pgoff <= seg.end_pgoff; pgoff++) {
 			tcs[tcs_n].pgoff = pgoff;
 			tcs[tcs_n].fd = overlay_fd;
 			tcs_n++;
@@ -245,10 +213,10 @@ int test_memory_read()
 free_tcs:
 	free(tcs);
 
-	struct mem_overlay_cleanup_req cleanup_req = {
+	struct overlay_cleanup_req cleanup_req = {
 		.id = req.id,
 	};
-	if (call_kmod(IOCTL_MEM_OVERLAY_CLEANUP_CMD, &cleanup_req))
+	if (call_kmod(IOCTL_OVERLAY_CLEANUP_CMD, &cleanup_req))
 		res = EXIT_FAILURE;
 free_segments:
 	free(req.segments);
@@ -284,17 +252,16 @@ int test_memory_write()
 
 	// Create test memory overlay request with an overlay that covers multiple
 	// pages so we can write in the middle of the area.
-	struct mem_overlay_req req;
+	struct overlay_req req;
 	req.base_addr = *(unsigned long *)(&base_mmap);
 	req.overlay_addr = *(unsigned long *)(&overlay_mmap);
 	req.segments_size = 1;
-	req.segments = calloc(sizeof(struct mem_overlay_segment_req),
-			      req.segments_size);
+	req.segments = calloc(sizeof(struct overlay_segment_req), req.segments_size);
 
 	req.segments[0].start_pgoff = 4;
 	req.segments[0].end_pgoff = 6;
 
-	if (call_kmod(IOCTL_MEM_OVERLAY_REQ_CMD, &req)) {
+	if (call_kmod(IOCTL_OVERLAY_REQ_CMD, &req)) {
 		res = EXIT_FAILURE;
 		goto free_segments;
 	};
@@ -309,8 +276,7 @@ int test_memory_write()
 
 	char *rand = calloc(PAGE_SIZE, 1);
 	if (read(rand_fd, rand, PAGE_SIZE) < 0) {
-		printf("ERROR: failed to read /dev/random: %s\n",
-		       strerror(errno));
+		printf("ERROR: failed to read /dev/random: %s\n", strerror(errno));
 		res = EXIT_FAILURE;
 		goto close_rand;
 	}
@@ -347,10 +313,10 @@ free_tcs:
 close_rand:
 	close(rand_fd);
 cleanup_kmod:;
-	struct mem_overlay_cleanup_req cleanup_req = {
+	struct overlay_cleanup_req cleanup_req = {
 		.id = req.id,
 	};
-	if (call_kmod(IOCTL_MEM_OVERLAY_CLEANUP_CMD, &cleanup_req))
+	if (call_kmod(IOCTL_OVERLAY_CLEANUP_CMD, &cleanup_req))
 		res = EXIT_FAILURE;
 free_segments:
 	free(req.segments);
@@ -366,8 +332,7 @@ int main()
 {
 	PAGE_SIZE = sysconf(_SC_PAGESIZE);
 	TOTAL_SIZE = PAGE_SIZE * 1024;
-	printf("Using pagesize %lu with total size %lu\n", PAGE_SIZE,
-	       TOTAL_SIZE);
+	printf("Using pagesize %lu with total size %lu\n", PAGE_SIZE, TOTAL_SIZE);
 
 	if (test_memory_read())
 		return EXIT_FAILURE;

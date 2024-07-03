@@ -1,19 +1,4 @@
-/*
-    Copyright (C) 2024 Loophole Labs
-
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with this program. If not, see <https://www.gnu.org/licenses/>.
-*/
+// SPDX-License-Identifier: GPL-3.0
 
 #include <linux/module.h>
 #include <linux/init.h>
@@ -347,10 +332,8 @@ static struct class *device_class;
 
 static int __init init_mod(void)
 {
-	log_debug("called init_module");
-
+	START_FOLLOW;
 	overlays = hashtable_setup(&cleanup_overlay);
-
 	log_info("registering device with major %u and ID '%s'", (unsigned int)MAJOR_DEV, DEVICE_ID);
 	int ret = register_chrdev(MAJOR_DEV, DEVICE_ID, &file_ops);
 	if (!ret) {
@@ -382,24 +365,23 @@ static int __init init_mod(void)
 		unregister_chrdev(major, DEVICE_ID);
 		return -EINVAL;
 	}
-
+	END_FOLLOW;
 	return 0;
 }
 
 static void __exit exit_mod(void)
 {
-	log_debug("called exit_module");
-
+	START_FOLLOW;
 	if (overlays) {
 		log_info("cleaning up overlays hashtable");
 		hashtable_cleanup(overlays);
 		overlays = NULL;
 	}
-
 	log_info("unregistering device with major %u and ID '%s'", (unsigned int)major, DEVICE_ID);
 	device_destroy(device_class, device_number);
 	class_destroy(device_class);
 	unregister_chrdev(major, DEVICE_ID);
+	END_FOLLOW;
 }
 
 module_init(init_mod);

@@ -1,37 +1,18 @@
-/*
-    Copyright (C) 2024 Loophole Labs
-
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with this program. If not, see <https://www.gnu.org/licenses/>.
-*/
+// SPDX-License-Identifier: GPL-3.0
 
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
 #include <unistd.h>
 #include <stdbool.h>
 
-#include <bits/time.h>
-
 #include <sys/ioctl.h>
 #include <sys/mman.h>
-#include <sys/stat.h>
 #include <sys/wait.h>
 
-#include "../../common.h"
+#include "../../device.h"
 
 struct test_case {
 	unsigned long pgoff;
@@ -169,18 +150,18 @@ int main()
 	}
 	printf("[%d] mapped overlay file %s\n", pid, overlay_file);
 
-	struct mem_overlay_req req;
+	struct overlay_req req;
 	req.base_addr = *(unsigned long *)(&base_mmap);
 	req.overlay_addr = *(unsigned long *)(&overlay_map);
 	req.segments_size = 5;
-	req.segments = malloc(sizeof(struct mem_overlay_segment_req) *
+	req.segments = malloc(sizeof(struct overlay_segment_req) *
 			      req.segments_size);
 	memset(req.segments, 0,
-	       sizeof(struct mem_overlay_segment_req) * req.segments_size);
+	       sizeof(struct overlay_segment_req) * req.segments_size);
 
 	printf("[%d] requesting %u operations and sending %lu bytes worth of mmap segments\n",
 	       pid, req.segments_size,
-	       sizeof(struct mem_overlay_segment_req) * req.segments_size);
+	       sizeof(struct overlay_segment_req) * req.segments_size);
 
 	// Overlay single page.
 	req.segments[0].start_pgoff = 0;
@@ -201,16 +182,16 @@ int main()
 	req.segments[4].end_pgoff = 50;
 
 	// Call kernel module with ioctl call to the character device.
-	int syscall_dev = open(kmod_device_path, O_WRONLY);
+	int syscall_dev = open(device_path, O_WRONLY);
 	if (syscall_dev < 0) {
 		printf("[%d] ERROR: could not open %s: %d\n", pid,
-		       kmod_device_path, syscall_dev);
+		       device_path, syscall_dev);
 		res = EXIT_FAILURE;
 		goto free_segments;
 	}
 
 	int ret;
-	ret = ioctl(syscall_dev, IOCTL_MEM_OVERLAY_REQ_CMD, &req);
+	ret = ioctl(syscall_dev, IOCTL_OVERLAY_REQ_CMD, &req);
 	if (ret) {
 		printf("[%d] ERROR: could not call 'IOCTL_MMAP_CMD': %s\n", pid,
 		       strerror(errno));
@@ -313,11 +294,11 @@ int main()
 
 cleanup:
 	// Clean up memory overlay.
-	printf("[%d] calling IOCTL_MEM_OVERLAY_CLEANUP_CMD\n", pid);
-	struct mem_overlay_cleanup_req cleanup_req = {
+	printf("[%d] calling IOCTL_OVERLAY_CLEANUP_CMD\n", pid);
+	struct overlay_cleanup_req cleanup_req = {
 		.id = req.id,
 	};
-	ret = ioctl(syscall_dev, IOCTL_MEM_OVERLAY_CLEANUP_CMD, &cleanup_req);
+	ret = ioctl(syscall_dev, IOCTL_OVERLAY_CLEANUP_CMD, &cleanup_req);
 	if (ret) {
 		printf("[%d] ERROR: could not call 'IOCTL_MMAP_CMD': %s\n", pid,
 		       strerror(errno));

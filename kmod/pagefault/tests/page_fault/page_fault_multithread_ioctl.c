@@ -1,19 +1,4 @@
-/*
-    Copyright (C) 2024 Loophole Labs
-
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with this program. If not, see <https://www.gnu.org/licenses/>.
-*/
+// SPDX-License-Identifier: GPL-3.0
 
 #include <errno.h>
 #include <stdio.h>
@@ -27,7 +12,7 @@
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 
-#include "../../common.h"
+#include "../../device.h"
 
 const static int nr_threads = 2000;
 size_t page_size, total_size;
@@ -88,29 +73,26 @@ out:
 	return (void *)(long)ret;
 }
 
-void *ioctl_mem_overlay(void *args)
+void *ioctl_overlay(void *args)
 {
 	pid_t tid = syscall(SYS_gettid);
 	int res = EXIT_SUCCESS;
-	struct mem_overlay_req *req = args;
+	struct overlay_req *req = args;
 
-	int syscall_dev = open(kmod_device_path, O_WRONLY);
+	int syscall_dev = open(device_path, O_WRONLY);
 	if (syscall_dev < 0) {
 		printf("[%d] ERROR: could not open %s: %d\n", tid,
-		       kmod_device_path, syscall_dev);
+		       device_path, syscall_dev);
 		res = EXIT_FAILURE;
 		goto out;
 	}
 
-	int ret = ioctl(syscall_dev, IOCTL_MEM_OVERLAY_REQ_CMD, req);
+	int ret = ioctl(syscall_dev, IOCTL_OVERLAY_REQ_CMD, req);
 	if (ret) {
 		printf("[%d] ERROR: could not call 'IOCTL_MMAP_CMD': %s\n", tid,
 		       strerror(errno));
 		res = EXIT_FAILURE;
-		goto close_syscall_dev;
 	}
-
-close_syscall_dev:
 	close(syscall_dev);
 out:
 	return (void *)(long)res;
@@ -120,9 +102,9 @@ void *ioctl_cleanup(void *args)
 {
 	pid_t tid = syscall(SYS_gettid);
 	int res = EXIT_SUCCESS;
-	struct mem_overlay_cleanup_req *req = args;
+	struct overlay_cleanup_req *req = args;
 
-	int syscall_dev = open(kmod_device_path, O_WRONLY);
+	int syscall_dev = open(device_path, O_WRONLY);
 	if (syscall_dev < 0) {
 		printf("[%d] ERROR: could not open %s: %d\n", tid,
 		       device_path, syscall_dev);
@@ -130,14 +112,12 @@ void *ioctl_cleanup(void *args)
 		goto out;
 	}
 
-	int ret = ioctl(syscall_dev, IOCTL_MEM_OVERLAY_CLEANUP_CMD, req);
+	int ret = ioctl(syscall_dev, IOCTL_OVERLAY_CLEANUP_CMD, req);
 	if (ret) {
 		printf("[%d] ERROR: could not call 'IOCTL_MMAP_CMD': %s\n", tid,
 		       strerror(errno));
 		res = EXIT_FAILURE;
 	}
-
-close_syscall_dev:
 	close(syscall_dev);
 out:
 	return (void *)(long)res;
@@ -186,14 +166,14 @@ int main()
 	}
 	printf("overlay file %s mapped\n", overlay_file);
 
-	struct mem_overlay_req req;
+	struct overlay_req req;
 	req.base_addr = *(unsigned long *)(&base_mmap);
 	req.overlay_addr = *(unsigned long *)(&overlay_map);
 	req.segments_size = total_size / (page_size * 2);
-	req.segments = malloc(sizeof(struct mem_overlay_segment_req) *
+	req.segments = malloc(sizeof(struct overlay_segment_req) *
 			      req.segments_size);
 	memset(req.segments, 0,
-	       sizeof(struct mem_overlay_segment_req) * req.segments_size);
+	       sizeof(struct overlay_segment_req) * req.segments_size);
 
 	// Overlay half of the pages.
 	for (int i = 0; i < req.segments_size; i++) {
@@ -203,9 +183,9 @@ int main()
 	printf("generated memory overlay request\n");
 
 	// Call memory overlay ioctl multiple times.
-	printf("= TEST: call IOCTL_MEM_OVERLAY_REQ_CMD multiple times\n");
+	printf("= TEST: call IOCTL_OVERLAY_REQ_CMD multiple times\n");
 	for (long i = 0; i < nr_threads; i++) {
-		pthread_create(&tid[i], NULL, ioctl_mem_overlay, (void *)&req);
+		pthread_create(&tid[i], NULL, ioctl_overlay, (void *)&req);
 	}
 
 	int success = 0, fail = 0;
@@ -222,17 +202,17 @@ int main()
 		}
 	}
 	if (success != 1) {
-		printf("== ERROR: expected one thread to succeed in calling IOCTL_MEM_OVERLAY_REQ_CMD, got %d\n",
+		printf("== ERROR: expected one thread to succeed in calling IOCTL_OVERLAY_REQ_CMD, got %d\n",
 		       success);
 		res = EXIT_FAILURE;
 		goto free_segments;
 	}
-	printf("== OK: calls to IOCTL_MEM_OVERLAY_REQ_CMD completed successfully! success=%d fail=%d\n",
+	printf("== OK: calls to IOCTL_OVERLAY_REQ_CMD completed successfully! success=%d fail=%d\n",
 	       success, fail);
 
 	// Call cleanup ioctl multiple times.
-	printf("= TEST: call IOCTL_MEM_OVERLAY_CLEANUP_CMD multiple times\n");
-	struct mem_overlay_cleanup_req cleanup_req = {
+	printf("= TEST: call IOCTL_OVERLAY_CLEANUP_CMD multiple times\n");
+	struct overlay_cleanup_req cleanup_req = {
 		.id = req.id,
 	};
 	for (long i = 0; i < nr_threads; i++) {
@@ -254,12 +234,12 @@ int main()
 		}
 	}
 	if (success != 1) {
-		printf("ERROR: expected one thread to succeed in calling IOCTL_MEM_OVERLAY_CLEANUP_CMD success=%d fail=%d\n",
+		printf("ERROR: expected one thread to succeed in calling IOCTL_OVERLAY_CLEANUP_CMD success=%d fail=%d\n",
 		       success, fail);
 		res = EXIT_FAILURE;
 		goto free_segments;
 	}
-	printf("== OK: calls to IOCTL_MEM_OVERLAY_CLEANUP_CMD completed successfully! success=%d fail=%d\n",
+	printf("== OK: calls to IOCTL_OVERLAY_CLEANUP_CMD completed successfully! success=%d fail=%d\n",
 	       success, fail);
 
 free_segments:
