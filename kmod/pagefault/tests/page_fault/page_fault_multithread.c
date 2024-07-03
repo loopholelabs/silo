@@ -171,8 +171,8 @@ int main()
 	}
 	printf("== OK: all threads completed successfully! success=%d fail=%d\n",
 	       success, fail);
-
-cleanup:;
+	res = EXIT_SUCCESS;
+cleanup:
 	struct overlay_cleanup_req cleanup_req = {
 		.id = req.id,
 	};
@@ -201,7 +201,6 @@ unmap_base:
 close_base:
 	close(base_fd);
 	printf("closed base\n");
-
 	printf("done\n");
 	return res;
 }

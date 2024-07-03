@@ -193,7 +193,7 @@ int main()
 		goto close_syscall_dev;
 	}
 	printf("== OK: called IOCTL_OVERLAY_CLEANUP_CMD successfully!\n");
-
+	res = EXIT_SUCCESS;
 close_syscall_dev:
 	close(syscall_dev);
 	printf("closed device driver\n");
@@ -210,7 +210,6 @@ unmap_base:
 close_base:
 	close(base_fd);
 	printf("closed base file\n");
-
 	printf("done\n");
 	return res;
 }

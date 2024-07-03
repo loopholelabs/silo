@@ -304,6 +304,7 @@ cleanup:
 		       strerror(errno));
 		res = EXIT_FAILURE;
 	}
+	res = EXIT_SUCCESS;
 close_syscall_dev:
 	close(syscall_dev);
 	printf("[%d] closed device driver\n", pid);
@@ -322,8 +323,7 @@ unmap_base:
 close_base:
 	close(base_fd);
 	printf("[%d] closed base file\n", pid);
-
-wait:;
+wait:
 	// Wait for child processes results if parent.
 	if (child_pid != 0) {
 		int child_rc;

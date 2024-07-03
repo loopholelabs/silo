@@ -241,7 +241,7 @@ int main()
 	}
 	printf("== OK: calls to IOCTL_OVERLAY_CLEANUP_CMD completed successfully! success=%d fail=%d\n",
 	       success, fail);
-
+	res = EXIT_SUCCESS;
 free_segments:
 	free(req.segments);
 	printf("freed segments\n");
@@ -256,7 +256,6 @@ unmap_base:
 close_base:
 	close(base_fd);
 	printf("closed base\n");
-
 	printf("done\n");
 	return res;
 }

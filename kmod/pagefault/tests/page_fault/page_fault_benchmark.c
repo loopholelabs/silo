@@ -65,14 +65,12 @@ bool verify_test_cases(int overlay_fd, int base_fd, char *base_map)
 
 	struct timespec before, after;
 	if (clock_gettime(CLOCK_MONOTONIC, &before) < 0) {
-		printf("ERROR: could not measure 'before' time for base mmap: %s\n",
-		       strerror(errno));
+		printf("ERROR: could not measure 'before' time for base mmap: %s\n", strerror(errno));
 		valid = false;
 		goto out;
 	}
 
-	printf("%ld.%.9ld: starting memory check\n", before.tv_sec,
-	       before.tv_nsec);
+	printf("%ld.%.9ld: starting memory check\n", before.tv_sec, before.tv_nsec);
 
 	for (unsigned long pgoff = 0; pgoff < TOTAL_PAGES; pgoff++) {
 		size_t offset = pgoff * PAGE_SIZE;
@@ -86,8 +84,7 @@ bool verify_test_cases(int overlay_fd, int base_fd, char *base_map)
 		read(fd, buffer, PAGE_SIZE);
 
 		if (memcmp(base_map + offset, buffer, PAGE_SIZE)) {
-			printf("== ERROR: base memory does not match the file contents at page %lu\n",
-			       pgoff);
+			printf("== ERROR: base memory does not match the file contents at page %lu\n", pgoff);
 			valid = false;
 			break;
 		}
@@ -95,14 +92,12 @@ bool verify_test_cases(int overlay_fd, int base_fd, char *base_map)
 	}
 
 	if (clock_gettime(CLOCK_MONOTONIC, &after) < 0) {
-		printf("ERROR: could not measure 'after' time for base mmap: %s\n",
-		       strerror(errno));
+		printf("ERROR: could not measure 'after' time for base mmap: %s\n", strerror(errno));
 		valid = false;
 		goto out;
 	}
 
-	printf("%ld.%.9ld: finished memory check\n", after.tv_sec,
-	       after.tv_nsec);
+	printf("%ld.%.9ld: finished memory check\n", after.tv_sec, after.tv_nsec);
 
 	long secs_diff = after.tv_sec - before.tv_sec;
 	long nsecs_diff = after.tv_nsec;
@@ -139,33 +134,27 @@ int main()
 	// Read base.bin test file and mmap it into memory.
 	int base_fd = open(BASE_FILE, O_RDONLY);
 	if (base_fd < 0) {
-		printf("ERROR: could not open base file %s: %s\n", BASE_FILE,
-		       strerror(errno));
+		printf("ERROR: could not open base file %s: %s\n", BASE_FILE, strerror(errno));
 		return EXIT_FAILURE;
 	}
 
 	int clean_base_fd = open(CLEAN_BASE_FILE, O_RDONLY);
 	if (clean_base_fd < 0) {
-		printf("ERROR: could not open clean base file %s: %s\n",
-		       CLEAN_BASE_FILE, strerror(errno));
+		printf("ERROR: could not open clean base file %s: %s\n", CLEAN_BASE_FILE, strerror(errno));
 		close(base_fd);
 		return EXIT_FAILURE;
 	}
 
-	char *base_mmap = mmap(NULL, TOTAL_SIZE, PROT_READ | PROT_WRITE,
-			       MAP_PRIVATE, base_fd, 0);
+	char *base_mmap = mmap(NULL, TOTAL_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE, base_fd, 0);
 	if (base_mmap == MAP_FAILED) {
-		printf("ERROR: could not mmap base file %s: %s\n", BASE_FILE,
-		       strerror(errno));
+		printf("ERROR: could not mmap base file %s: %s\n", BASE_FILE, strerror(errno));
 		res = EXIT_FAILURE;
 		goto close_base;
 	}
 
-	char *clean_base_mmap = mmap(NULL, TOTAL_SIZE, PROT_READ, MAP_PRIVATE,
-				     clean_base_fd, 0);
+	char *clean_base_mmap = mmap(NULL, TOTAL_SIZE, PROT_READ, MAP_PRIVATE, clean_base_fd, 0);
 	if (clean_base_mmap == MAP_FAILED) {
-		printf("ERROR: could not mmap second base file %s: %s\n",
-		       CLEAN_BASE_FILE, strerror(errno));
+		printf("ERROR: could not mmap second base file %s: %s\n", CLEAN_BASE_FILE, strerror(errno));
 		res = EXIT_FAILURE;
 		goto close_base;
 	}
@@ -173,17 +162,14 @@ int main()
 	// Read overlay test file and create memory overlay request.
 	int overlay_fd = open(OVERLAY_FILE, O_RDONLY);
 	if (overlay_fd < 0) {
-		printf("ERROR: could not open overlay file %s: %s\n",
-		       OVERLAY_FILE, strerror(errno));
+		printf("ERROR: could not open overlay file %s: %s\n", OVERLAY_FILE, strerror(errno));
 		res = EXIT_FAILURE;
 		goto unmap_base;
 	}
 
-	char *overlay_map =
-		mmap(NULL, TOTAL_SIZE, PROT_READ, MAP_PRIVATE, overlay_fd, 0);
+	char *overlay_map = mmap(NULL, TOTAL_SIZE, PROT_READ, MAP_PRIVATE, overlay_fd, 0);
 	if (overlay_map == MAP_FAILED) {
-		printf("ERROR: could not mmap overlay file %s: %s\n",
-		       OVERLAY_FILE, strerror(errno));
+		printf("ERROR: could not mmap overlay file %s: %s\n", OVERLAY_FILE, strerror(errno));
 		res = EXIT_FAILURE;
 		goto close_overlay;
 	}
@@ -192,11 +178,9 @@ int main()
 	req.base_addr = *(unsigned long *)(&base_mmap);
 	req.overlay_addr = *(unsigned long *)(&overlay_map);
 	req.segments_size = (TOTAL_PAGES + (2 * N - 1)) / (2 * N);
-	req.segments = calloc(sizeof(struct overlay_segment_req),
-			      req.segments_size);
+	req.segments = calloc(sizeof(struct overlay_segment_req), req.segments_size);
 
-	printf("Requesting %u operations and sending %lu bytes worth of mmap segments\n",
-	       req.segments_size,
+	printf("Requesting %u operations and sending %lu bytes worth of mmap segments\n", req.segments_size,
 	       sizeof(struct overlay_segment_req) * req.segments_size);
 
 	// Overlay every other N pages.
@@ -212,16 +196,14 @@ int main()
 	// Call kernel module with ioctl call to the character device.
 	int syscall_dev = open(device_path, O_WRONLY);
 	if (syscall_dev < 0) {
-		printf("ERROR: could not open %s: %s\n", device_path,
-		       strerror(errno));
+		printf("ERROR: could not open %s: %s\n", device_path, strerror(errno));
 		res = EXIT_FAILURE;
 		goto free_segments;
 	}
 
 	int ret = ioctl(syscall_dev, IOCTL_OVERLAY_REQ_CMD, &req);
 	if (ret) {
-		printf("ERROR: could not call 'IOCTL_MMAP_CMD': %s\n",
-		       strerror(errno));
+		printf("ERROR: could not call 'IOCTL_MMAP_CMD': %s\n", strerror(errno));
 		res = EXIT_FAILURE;
 		goto close_syscall_dev;
 	}
@@ -250,10 +232,10 @@ cleanup:
 	};
 	ret = ioctl(syscall_dev, IOCTL_OVERLAY_CLEANUP_CMD, &cleanup_req);
 	if (ret) {
-		printf("ERROR: could not call 'IOCTL_MMAP_CMD': %s\n",
-		       strerror(errno));
+		printf("ERROR: could not call 'IOCTL_MMAP_CMD': %s\n", strerror(errno));
 		res = EXIT_FAILURE;
 	}
+	res = EXIT_SUCCESS;
 close_syscall_dev:
 	close(syscall_dev);
 free_segments:
@@ -267,7 +249,6 @@ unmap_base:
 close_base:
 	close(clean_base_fd);
 	close(base_fd);
-
 	printf("done\n");
 	return res;
 }
