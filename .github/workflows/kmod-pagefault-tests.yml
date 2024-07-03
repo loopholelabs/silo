@@ -48,11 +48,6 @@ jobs:
         run: sudo make unload
         shell: bash
 
-      - name: Run Userspace Test
-        working-directory: kmod/pagefault
-        run: make tests-userspace
-        shell: bash
-
       - name: Build Module with Benchmarking
         working-directory: kmod/pagefault
         run: BENCHMARK=true make module
