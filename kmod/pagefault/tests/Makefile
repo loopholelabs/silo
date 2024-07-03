@@ -42,6 +42,11 @@ page_fault_benchmark: page_fault_benchmark.out
 	sudo sysctl -w vm.max_map_count=8388608
 	sudo ./page_fault_benchmark.out
 
+.PHONY: page_fault_ioctl_error
+page_fault_ioctl_error: page_fault_ioctl_error.out
+	sudo sysctl -w vm.max_map_count=8388608
+	sudo ./page_fault_ioctl_error.out
+
 .PHONY: page_fault_userspace
 page_fault_userspace:
 	sudo sysctl -w vm.max_map_count=8388608
