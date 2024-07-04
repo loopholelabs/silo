@@ -27,5 +27,5 @@ jobs:
         with:
           path-to-signatures: .github/signatures/v1/cla.json
           path-to-document: https://github.com/loopholelabs/silo/blob/main/CLA.md
-          branch: master
+          branch: main
           allowlist: bot*
