@@ -89,7 +89,6 @@ func (i *WaitingCache) markAvailableRemoteBlock(b uint) {
 	if !avail {
 		i.remote.available.SetBit(int(b))
 	}
-	i.lockersLock.Unlock()
 
 	// If we have waiters for it, we can go ahead and unlock to allow them to read it.
 	if !avail && ok {
@@ -97,7 +96,6 @@ func (i *WaitingCache) markAvailableRemoteBlock(b uint) {
 	}
 
 	// Now we can get rid of the lock on this block...
-	i.lockersLock.Lock()
 	delete(i.lockers, b)
 	i.lockersLock.Unlock()
 }
