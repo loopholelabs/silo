@@ -26,7 +26,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PERSONAL_ACCESS_TOKEN: ${{ secrets.CLA_TOKEN }}
         with:
-          path-to-document: https://github.com/loopholelabs/silo/blob/main/CLA.md
+          path-to-document: https://github.com/loopholelabs/contributor-signatures/blob/main/CLA.md
           allowlist: bot*
           branch: v1-signatures
           path-to-signatures: v1-cla.json
