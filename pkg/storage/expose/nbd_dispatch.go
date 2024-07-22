@@ -12,9 +12,6 @@ import (
 
 // TODO: Context, and handle fatal errors
 
-//const READ_POOL_BUFFER_SIZE = 256 * 1024
-//const READ_POOL_SIZE = 128
-
 /**
  * Exposes a storage provider as an nbd device
  *
@@ -76,7 +73,6 @@ type Dispatch struct {
 	pending_responses  sync.WaitGroup
 	metric_packets_in  uint64
 	metric_packets_out uint64
-	// read_buffers       chan []byte
 }
 
 func NewDispatch(ctx context.Context, fp io.ReadWriteCloser, prov storage.StorageProvider) *Dispatch {
@@ -85,17 +81,12 @@ func NewDispatch(ctx context.Context, fp io.ReadWriteCloser, prov storage.Storag
 		ASYNC_WRITES:    true,
 		ASYNC_READS:     true,
 		response_header: make([]byte, 16),
-		fatal:           make(chan error, 8),
+		fatal:           make(chan error, 1),
 		fp:              fp,
 		prov:            prov,
 		ctx:             ctx,
 	}
-	/*
-		d.read_buffers = make(chan []byte, READ_POOL_SIZE)
-		for i := 0; i < READ_POOL_SIZE; i++ {
-			d.read_buffers <- make([]byte, READ_POOL_BUFFER_SIZE)
-		}
-	*/
+
 	binary.BigEndian.PutUint32(d.response_header, NBD_RESPONSE_MAGIC)
 	return d
 }
@@ -112,8 +103,6 @@ func (d *Dispatch) Wait() {
 func (d *Dispatch) writeResponse(respError uint32, respHandle uint64, chunk []byte) error {
 	d.write_lock.Lock()
 	defer d.write_lock.Unlock()
-
-	//	fmt.Printf("WriteResponse %v %x -> %d\n", d.fp, respHandle, len(chunk))
 
 	binary.BigEndian.PutUint32(d.response_header[4:], respError)
 	binary.BigEndian.PutUint64(d.response_header[8:], respHandle)
@@ -138,9 +127,6 @@ func (d *Dispatch) writeResponse(respError uint32, respHandle uint64, chunk []by
  *
  */
 func (d *Dispatch) Handle() error {
-	//	defer func() {
-	//		fmt.Printf("Handle %d in %d out\n", d.packets_in, d.packets_out)
-	//	}()
 	// Speed read and dispatch...
 
 	BUFFER_SIZE := 4 * 1024 * 1024
@@ -150,9 +136,15 @@ func (d *Dispatch) Handle() error {
 	request := Request{}
 
 	for {
-		//		fmt.Printf("Read from [%d in, %d out] %v\n", d.packets_in, d.packets_out, d.fp)
+		select {
+		case e := <-d.fatal:
+			return e
+		default:
+		}
+
 		n, err := d.fp.Read(buffer[wp:])
 		if err != nil {
+			// Some error reading from the nbd device
 			return err
 		}
 		wp += n
@@ -168,7 +160,6 @@ func (d *Dispatch) Handle() error {
 			default:
 			}
 
-			//			fmt.Printf("Processing data %d %d\n", rp, wp)
 			// Make sure we have a complete header
 			if wp-rp >= 28 {
 				// We can read the neader...
@@ -180,8 +171,6 @@ func (d *Dispatch) Handle() error {
 				request.From = binary.BigEndian.Uint64(header[16:24])
 				request.Length = binary.BigEndian.Uint32(header[24:28])
 
-				//fmt.Printf("REQ %v %v\n", d.fp, request)
-
 				if request.Magic != NBD_REQUEST_MAGIC {
 					return fmt.Errorf("received invalid MAGIC")
 				}
@@ -192,7 +181,6 @@ func (d *Dispatch) Handle() error {
 				} else if request.Type == NBD_CMD_FLUSH {
 					return fmt.Errorf("not supported: Flush")
 				} else if request.Type == NBD_CMD_READ {
-					//					fmt.Printf("READ %x %d\n", request.Handle, request.Length)
 					rp += 28
 					d.metric_packets_in++
 					err := d.cmdRead(request.Handle, request.From, request.Length)
@@ -209,13 +197,11 @@ func (d *Dispatch) Handle() error {
 					data := make([]byte, request.Length)
 					copy(data, buffer[rp:rp+int(request.Length)])
 					rp += int(request.Length)
-					//					fmt.Printf("WRITE %x %d\n", request.Handle, request.Length)
 					err := d.cmdWrite(request.Handle, request.From, request.Length, data)
 					if err != nil {
 						return err
 					}
 				} else if request.Type == NBD_CMD_TRIM {
-					//					fmt.Printf("TRIM\n")
 					rp += 28
 					err = d.cmdTrim(request.Handle, request.From, request.Length)
 					if err != nil {
@@ -231,8 +217,6 @@ func (d *Dispatch) Handle() error {
 		}
 		// Now we need to move any partial to the start
 		if rp != 0 && rp != wp {
-			//			fmt.Printf("Copy partial %d %d\n", rp, wp)
-
 			copy(buffer, buffer[rp:wp])
 		}
 		wp -= rp
@@ -246,30 +230,8 @@ func (d *Dispatch) Handle() error {
 func (d *Dispatch) cmdRead(cmd_handle uint64, cmd_from uint64, cmd_length uint32) error {
 
 	performRead := func(handle uint64, from uint64, length uint32) error {
-		var b []byte
-		/*
-			var from_pool = false
-			if length <= READ_POOL_BUFFER_SIZE {
-				// Try to get a buffer from pool
-				select {
-				case b = <-d.read_buffers:
-					from_pool = true
-					b = b[:length]
-					break
-				default:
-					break
-				}
-			}
-		*/
-		// Couldn't get one from the pool
-		if b == nil {
-			// We'll have to alloc it
-			//			fmt.Printf("Alloc %d\n", length)
-			b = make([]byte, length)
-		}
-
 		errchan := make(chan error)
-		data := b // make([]byte, length)
+		data := make([]byte, length)
 
 		go func() {
 			_, e := d.prov.ReadAt(data, int64(from))
@@ -289,14 +251,8 @@ func (d *Dispatch) cmdRead(cmd_handle uint64, cmd_from uint64, cmd_length uint32
 			errorValue = 1
 			data = make([]byte, 0) // If there was an error, don't send data
 		}
-		err := d.writeResponse(errorValue, handle, data)
-		// Return it to pool if need to
-		/*
-			if from_pool {
-				d.read_buffers <- b[:READ_POOL_BUFFER_SIZE]
-			}
-		*/
-		return err
+
+		return d.writeResponse(errorValue, handle, data)
 	}
 
 	if d.ASYNC_READS {
@@ -304,7 +260,10 @@ func (d *Dispatch) cmdRead(cmd_handle uint64, cmd_from uint64, cmd_length uint32
 		go func() {
 			err := performRead(cmd_handle, cmd_from, cmd_length)
 			if err != nil {
-				d.fatal <- err
+				select {
+				case d.fatal <- err:
+				default:
+				}
 			}
 			d.pending_responses.Done()
 		}()
@@ -349,7 +308,10 @@ func (d *Dispatch) cmdWrite(cmd_handle uint64, cmd_from uint64, cmd_length uint3
 		go func() {
 			err := performWrite(cmd_handle, cmd_from, cmd_length, cmd_data)
 			if err != nil {
-				d.fatal <- err
+				select {
+				case d.fatal <- err:
+				default:
+				}
 			}
 			d.pending_responses.Done()
 		}()
@@ -364,7 +326,7 @@ func (d *Dispatch) cmdWrite(cmd_handle uint64, cmd_from uint64, cmd_length uint3
 
 /**
  * cmdTrim
- *
+ * TODO
  */
 func (d *Dispatch) cmdTrim(handle uint64, from uint64, length uint32) error {
 	// Ask the provider
