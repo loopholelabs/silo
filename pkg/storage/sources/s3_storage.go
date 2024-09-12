@@ -90,6 +90,7 @@ func NewS3StorageCreate(endpoint string,
 	b_end := (int(size) + blockSize - 1) / blockSize
 	buffer := make([]byte, blockSize)
 
+	// TODO: Do these concurrently, or switch to lazy create on read/write.
 	for b := 0; b < b_end; b++ {
 		offset := b * blockSize
 
