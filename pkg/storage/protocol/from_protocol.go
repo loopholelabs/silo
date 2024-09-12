@@ -163,6 +163,27 @@ func (fp *FromProtocol) HandleHashes(cb func(map[uint][sha256.Size]byte)) error 
 	}
 }
 
+// Handle alternate sources
+func (fp *FromProtocol) HandleAlternateSources(cb func([]packets.AlternateSource)) error {
+	err := fp.wait_init_or_cancel()
+	if err != nil {
+		return err
+	}
+
+	for {
+		_, data, err := fp.protocol.WaitForCommand(fp.dev, packets.COMMAND_ALTERNATE_SOURCES)
+		if err != nil {
+			return err
+		}
+		sources, err := packets.DecodeAlternateSources(data)
+		if err != nil {
+			return err
+		}
+
+		cb(sources)
+	}
+}
+
 // Handle a DevInfo, and create the storage
 func (fp *FromProtocol) HandleDevInfo() error {
 	_, data, err := fp.protocol.WaitForCommand(fp.dev, packets.COMMAND_DEV_INFO)
@@ -258,6 +279,74 @@ func (fp *FromProtocol) HandleWriteAt() error {
 		if err != nil {
 			return err
 		}
+
+		// Handle in a goroutine
+		go func(goffset int64, gdata []byte, gid uint32) {
+			n, err := fp.prov.WriteAt(gdata, goffset)
+			war := &packets.WriteAtResponse{
+				Bytes: n,
+				Error: err,
+			}
+			if err == nil {
+				fp.mark_range_present(int(goffset), len(gdata))
+			}
+			_, err = fp.protocol.SendPacket(fp.dev, gid, packets.EncodeWriteAtResponse(war))
+			if err != nil {
+				errLock.Lock()
+				errValue = err
+				errLock.Unlock()
+			}
+		}(offset, write_data, id)
+	}
+}
+
+func (i *FromProtocol) SendHashes(hashes map[uint][sha256.Size]byte) error {
+	h := packets.EncodeHashes(hashes)
+	id, err := i.protocol.SendPacket(i.dev, ID_PICK_ANY, h)
+	if err != nil {
+		return err
+	}
+
+	// Wait for an ack
+	r, err := i.protocol.WaitForPacket(i.dev, id)
+	if err != nil {
+		return err
+	}
+
+	return packets.DecodeHashesResponse(r)
+}
+
+// Handle any WriteAtHash commands, and send to provider
+func (fp *FromProtocol) HandleWriteAtHash(lookup_cb func(int64, int64, []byte) []byte) error {
+	err := fp.wait_init_or_cancel()
+	if err != nil {
+		return err
+	}
+
+	var errLock sync.Mutex
+	var errValue error
+
+	for {
+		// If there was an error in one of the goroutines, return it.
+		errLock.Lock()
+		if errValue != nil {
+			errLock.Unlock()
+			return errValue
+		}
+		errLock.Unlock()
+
+		id, data, err := fp.protocol.WaitForCommand(fp.dev, packets.COMMAND_WRITE_AT_HASH)
+
+		if err != nil {
+			return err
+		}
+
+		offset, length, hash_data, err := packets.DecodeWriteAtHash(data)
+		if err != nil {
+			return err
+		}
+
+		write_data := lookup_cb(offset, length, hash_data)
 
 		// Handle in a goroutine
 		go func(goffset int64, gdata []byte, gid uint32) {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"net"
@@ -41,6 +42,18 @@ var serve_conf string
 var serve_progress bool
 var serve_continuous bool
 var serve_any_order bool
+var serve_sync_s3 bool
+
+var serve_sync_dirty_block_shift int
+var serve_sync_secure bool
+var serve_sync_endpoint string
+var serve_sync_access string
+var serve_sync_secret string
+var serve_sync_bucket string
+var serve_sync_block_max_age time.Duration
+var serve_sync_dirty_limit int
+var serve_sync_dirty_min_changed int
+var serve_sync_dirty_block_period time.Duration
 
 var src_exposed []storage.ExposedStorage
 var src_storage []*storageInfo
@@ -55,10 +68,22 @@ func init() {
 	cmdServe.Flags().BoolVarP(&serve_progress, "progress", "p", false, "Show progress")
 	cmdServe.Flags().BoolVarP(&serve_continuous, "continuous", "C", false, "Continuous sync")
 	cmdServe.Flags().BoolVarP(&serve_any_order, "order", "o", false, "Any order (faster)")
+	cmdServe.Flags().BoolVarP(&serve_sync_s3, "sync", "s", false, "Continuous sync to S3")
+
+	cmdServe.Flags().BoolVar(&serve_sync_secure, "secure", true, "S3 secure")
+	cmdServe.Flags().StringVar(&serve_sync_endpoint, "s3endpoint", "", "Sync S3 endpoint")
+	cmdServe.Flags().StringVar(&serve_sync_access, "s3access", "", "Sync S3 access token")
+	cmdServe.Flags().StringVar(&serve_sync_secret, "s3secret", "", "Sync S3 secret token")
+	cmdServe.Flags().StringVar(&serve_sync_bucket, "s3bucket", "", "Sync S3 bucket")
+
+	cmdServe.Flags().DurationVar(&serve_sync_dirty_block_period, "sync-period", 1*time.Second, "Sync dirty block period")
+	cmdServe.Flags().IntVar(&serve_sync_dirty_block_shift, "sync-shift", 10, "Sync dirty block shift")
+	cmdServe.Flags().DurationVar(&serve_sync_block_max_age, "sync-maxage", 1*time.Second, "Sync dirty block maximum age")
+	cmdServe.Flags().IntVar(&serve_sync_dirty_limit, "sync-limit", 64, "Sync dirty block limit")
+	cmdServe.Flags().IntVar(&serve_sync_dirty_min_changed, "sync-min-changed", 16, "Sync dirty block min changed")
 }
 
 type storageInfo struct {
-	//	tracker       storage.TrackingStorageProvider
 	tracker    *dirtytracker.DirtyTrackerRemote
 	lockable   storage.LockableStorageProvider
 	orderer    *blocks.PriorityBlockOrder
@@ -66,6 +91,10 @@ type storageInfo struct {
 	block_size int
 	name       string
 	schema     string
+
+	s3_sync_cancel func()
+	s3_syncer      *migrator.Syncer
+	s3_order       *volatilitymonitor.VolatilityMonitor
 }
 
 func runServe(ccmd *cobra.Command, args []string) {
@@ -95,6 +124,25 @@ func runServe(ccmd *cobra.Command, args []string) {
 	}
 
 	for i, s := range siloConf.Device {
+
+		// Insert the s3 sync config bits here...
+		if serve_sync_s3 {
+			s.Sync = &config.SyncS3Schema{
+				Secure:    serve_sync_secure,
+				Endpoint:  serve_sync_endpoint,
+				AccessKey: serve_sync_access,
+				SecretKey: serve_sync_secret,
+				Bucket:    serve_sync_bucket,
+				Config: &config.SyncConfigSchema{
+					BlockShift:  serve_sync_dirty_block_shift,
+					MinChanged:  serve_sync_dirty_min_changed,
+					Limit:       serve_sync_dirty_limit,
+					MaxAge:      serve_sync_block_max_age.String(),
+					CheckPeriod: serve_sync_dirty_block_period.String(),
+				},
+			}
+		}
+
 		fmt.Printf("Setup storage %d [%s] size %s - %d\n", i, s.Name, s.Size, s.ByteSize())
 		sinfo, err := setupStorageDevice(s)
 		if err != nil {
@@ -133,6 +181,7 @@ func runServe(ccmd *cobra.Command, args []string) {
 		for i, s := range src_storage {
 			wg.Add(1)
 			go func(index int, src *storageInfo) {
+
 				err := migrateDevice(uint32(index), src.name, pro, src)
 				if err != nil {
 					fmt.Printf("There was an issue migrating the storage %d %v\n", index, err)
@@ -147,6 +196,9 @@ func runServe(ccmd *cobra.Command, args []string) {
 		}
 		fmt.Printf("\n\nMigration completed in %dms\n", time.Since(ctime).Milliseconds())
 
+		pro_metrics := pro.Metrics()
+		fmt.Printf("Protocol %d sent (%d bytes) %d recv (%d bytes)\n", pro_metrics.Sent_packets, pro_metrics.Sent_bytes, pro_metrics.Recv_packets, pro_metrics.Recv_bytes)
+
 		con.Close()
 	}
 	shutdown_everything()
@@ -158,6 +210,9 @@ func shutdown_everything() {
 	for _, i := range src_storage {
 		i.lockable.Unlock()
 		i.tracker.Close()
+
+		// Stop sync if it's still going...
+		storage.SendEvent(i.lockable, "stop_sync", nil)
 	}
 
 	fmt.Printf("Shutting down devices cleanly...\n")
@@ -178,13 +233,23 @@ func setupStorageDevice(conf *config.DeviceSchema) (*storageInfo, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// Start sync
+	if serve_sync_s3 {
+		storage.SendEvent(source, "start_sync", nil)
+	}
+
 	if ex != nil {
 		fmt.Printf("Device %s exposed as %s\n", conf.Name, ex.Device())
 		src_exposed = append(src_exposed, ex)
 	}
 	sourceMetrics := modules.NewMetrics(source)
 	sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(sourceMetrics, block_size)
-	sourceMonitor := volatilitymonitor.NewVolatilityMonitor(sourceDirtyLocal, block_size, 10*time.Second)
+
+	var sourceDirty storage.StorageProvider
+	sourceDirty = sourceDirtyLocal
+
+	sourceMonitor := volatilitymonitor.NewVolatilityMonitor(sourceDirty, block_size, 10*time.Second)
 	sourceStorage := modules.NewLockable(sourceMonitor)
 
 	if ex != nil {
@@ -220,13 +285,34 @@ func setupStorageDevice(conf *config.DeviceSchema) (*storageInfo, error) {
 // Migrate a device
 func migrateDevice(dev_id uint32, name string,
 	pro protocol.Protocol,
-	sinfo *storageInfo) error {
+	sinfo *storageInfo,
+) error {
 	size := sinfo.lockable.Size()
 	dest := protocol.NewToProtocol(uint64(size), dev_id, pro)
+
+	dest_hashes := make(map[uint][32]byte)
+	var dest_hashes_lock sync.Mutex
 
 	err := dest.SendDevInfo(name, uint32(sinfo.block_size), sinfo.schema)
 	if err != nil {
 		return err
+	}
+
+	altSources := make([]packets.AlternateSource, 0)
+	// Get the alternate sources here...
+	r := storage.SendEvent(sinfo.lockable, "stop_sync", nil)
+	for _, ret := range r {
+		as := ret.([]packets.AlternateSource)
+		altSources = append(altSources, as...)
+	}
+	fmt.Printf("Got alternateSources %v\n", altSources)
+
+	if len(altSources) > 0 {
+		// Send list of alternate sources in a good order (Least volatile first)
+		err := dest.SendAlternateSources(altSources)
+		if err != nil {
+			return err
+		}
 	}
 
 	statusString := " "
@@ -273,12 +359,25 @@ func migrateDevice(dev_id uint32, name string,
 	}()
 
 	go func() {
+		_ = dest.HandleHashes(func(hashes map[uint][32]byte) {
+			// We need to keep track of these, and not send if they already have it.
+			for b, hash := range hashes {
+				dest_hashes_lock.Lock()
+				dest_hashes[b] = hash
+				dest_hashes_lock.Unlock()
+			}
+		})
+	}()
+
+	go func() {
 		_ = dest.HandleDontNeedAt(func(offset int64, length int32) {
 			end := uint64(offset + int64(length))
 			if end > uint64(size) {
 				end = uint64(size)
 			}
 
+			// Remove the block from the orderer...
+			// NB: The block may still be sent in dirty stages, but will be ignored by a waitingCache if there were local writes.
 			b_start := int(offset / int64(sinfo.block_size))
 			b_end := int((end-1)/uint64(sinfo.block_size)) + 1
 			for b := b_start; b < b_end; b++ {
@@ -287,32 +386,62 @@ func migrateDevice(dev_id uint32, name string,
 		})
 	}()
 
-	conf := migrator.NewMigratorConfig().WithBlockSize(sinfo.block_size)
-	conf.Locker_handler = func() {
-		_ = dest.SendEvent(&packets.Event{Type: packets.EventPreLock})
-		sinfo.lockable.Lock()
-		_ = dest.SendEvent(&packets.Event{Type: packets.EventPostLock})
+	sync_config := &migrator.Sync_config{
+		Name:       "serve",
+		Tracker:    sinfo.tracker,
+		Lockable:   sinfo.lockable,
+		Block_size: sinfo.block_size,
+		Locker_handler: func() {
+			_ = dest.SendEvent(&packets.Event{Type: packets.EventPreLock})
+			sinfo.lockable.Lock()
+			_ = dest.SendEvent(&packets.Event{Type: packets.EventPostLock})
+		},
+		Unlocker_handler: func() {
+			_ = dest.SendEvent(&packets.Event{Type: packets.EventPreUnlock})
+			sinfo.lockable.Unlock()
+			_ = dest.SendEvent(&packets.Event{Type: packets.EventPostUnlock})
+		},
+		Error_handler: func(b *storage.BlockInfo, err error) {
+			// For now...
+			panic(err)
+		},
+		Destination: dest,
+		Orderer:     sinfo.orderer,
+		Destination_content_check: func(offset int, data []byte) bool {
+
+			b := uint(offset / sinfo.block_size)
+			hash := sha256.Sum256(data)
+			// Look up in destination_hashes
+			dest_hashes_lock.Lock()
+			dest_hash, ok := dest_hashes[b]
+			dest_hashes_lock.Unlock()
+
+			if !ok {
+				return false
+			}
+
+			for i := 0; i < 32; i++ {
+				if hash[i] != dest_hash[i] {
+					return false
+				}
+			}
+
+			// The destination already has the data.
+			_, err := dest.WriteAtHash(hash[:], int64(offset), int64(len(data)))
+			if err != nil {
+				panic(err)
+			}
+
+			return true
+		},
 	}
-	conf.Unlocker_handler = func() {
-		_ = dest.SendEvent(&packets.Event{Type: packets.EventPreUnlock})
-		sinfo.lockable.Unlock()
-		_ = dest.SendEvent(&packets.Event{Type: packets.EventPostUnlock})
-	}
-	conf.Concurrency = map[int]int{
-		storage.BlockTypeAny: 1000000,
-	}
-	conf.Error_handler = func(b *storage.BlockInfo, err error) {
-		// For now...
-		panic(err)
-	}
-	conf.Integrity = true
 
 	last_value := uint64(0)
 	last_time := time.Now()
 
 	if serve_progress {
 
-		conf.Progress_handler = func(p *migrator.MigrationProgress) {
+		sync_config.Progress_handler = func(p *migrator.MigrationProgress) {
 			v := uint64(p.Ready_blocks) * uint64(sinfo.block_size)
 			if v > size {
 				v = size
@@ -323,74 +452,50 @@ func migrateDevice(dev_id uint32, name string,
 			last_value = v
 		}
 	} else {
-		conf.Progress_handler = func(p *migrator.MigrationProgress) {
+		sync_config.Progress_handler = func(p *migrator.MigrationProgress) {
 			fmt.Printf("[%s] Progress Moved: %d/%d %.2f%% Clean: %d/%d %.2f%% InProgress: %d\n",
 				name, p.Migrated_blocks, p.Total_blocks, p.Migrated_blocks_perc,
 				p.Ready_blocks, p.Total_blocks, p.Ready_blocks_perc,
 				p.Active_blocks)
 		}
-		conf.Error_handler = func(b *storage.BlockInfo, err error) {
+		sync_config.Error_handler = func(b *storage.BlockInfo, err error) {
 			fmt.Printf("[%s] Error for block %d error %v\n", name, b.Block, err)
 		}
 	}
 
-	mig, err := migrator.NewMigrator(sinfo.tracker, dest, sinfo.orderer, conf)
-
-	if err != nil {
-		return err
-	}
-
-	migrate_blocks := sinfo.num_blocks
-
-	// Now do the migration...
-	err = mig.Migrate(migrate_blocks)
-	if err != nil {
-		return err
-	}
-
-	// Wait for completion.
-	err = mig.WaitForCompletion()
-	if err != nil {
-		return err
-	}
-
-	hashes := mig.GetHashes() // Get the initial hashes and send them over for verification...
-	err = dest.SendHashes(hashes)
-	if err != nil {
-		return err
-	}
-
-	// Optional: Enter a loop looking for more dirty blocks to migrate...
-	for {
-		blocks := mig.GetLatestDirty() //
-		if !serve_continuous && blocks == nil {
-			break
+	sync_config.Hashes_handler = func(hashes map[uint][32]byte) {
+		err = dest.SendHashes(hashes)
+		if err != nil {
+			panic(err) // FIXME
 		}
+	}
 
-		if blocks != nil {
-			// Optional: Send the list of dirty blocks over...
-			err := dest.DirtyList(conf.Block_size, blocks)
-			if err != nil {
-				return err
-			}
+	sync_config.Dirty_check_period = 100 * time.Millisecond
+	sync_config.Dirty_block_getter = func() []uint {
+		blocks := sinfo.tracker.Sync()
+		d := blocks.Collect(0, blocks.Length())
 
-			//		fmt.Printf("[%s] Migrating dirty blocks %d\n", name, len(blocks))
-			err = mig.MigrateDirty(blocks)
+		if d != nil {
+			err := dest.DirtyList(sinfo.block_size, d)
 			if err != nil {
-				return err
+				panic(err) // FIXME
 			}
-		} else {
-			mig.Unlock()
 		}
-		time.Sleep(100 * time.Millisecond)
+		return d
 	}
 
-	err = mig.WaitForCompletion()
+	sync_config.Concurrency = map[int]int{
+		storage.BlockTypeAny: 32,
+	}
+
+	sync_config.Integrity = true
+
+	syncer := migrator.NewSyncer(context.TODO(), sync_config)
+
+	_, err = syncer.Sync(true, serve_continuous)
 	if err != nil {
-		return err
+		panic(err)
 	}
-
-	//	fmt.Printf("[%s] Migration completed\n", name)
 
 	err = dest.SendEvent(&packets.Event{Type: packets.EventCompleted})
 	if err != nil {

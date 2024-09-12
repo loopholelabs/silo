@@ -31,6 +31,8 @@ type SyncConfig struct {
 	ProgressHandler func(p *MigrationProgress)
 	ErrorHandler    func(b *storage.BlockInfo, err error)
 
+	Destination_content_check func(offset int, data []byte) bool
+
 	Concurrency  map[int]int
 	Integrity    bool
 	CancelWrites bool
@@ -116,6 +118,8 @@ func (s *Syncer) Sync(syncAllFirst bool, continuous bool) (*MigrationProgress, e
 	conf.Integrity = s.config.Integrity
 	conf.Cancel_writes = s.config.CancelWrites
 	conf.Dedupe_writes = s.config.DedupeWrites
+
+	conf.Dest_content_check = s.config.Destination_content_check
 
 	conf.Progress_handler = func(p *MigrationProgress) {
 		if s.config.Logger != nil {

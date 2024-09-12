@@ -31,8 +31,9 @@ type sendPacketInfo struct {
 	data []byte
 }
 
-func (p *MockPro) SendPacketWriter(dev uint32, id uint32, length uint32, data func(w io.Writer) error) (uint32, error) {
+func (p *MockPro) SendPacketWriter(dev uint32, id uint32, length uint32, header []byte, data func(w io.Writer) error) (uint32, error) {
 	var buff bytes.Buffer
+	buff.Write(header)
 	err := data(&buff)
 	if err != nil {
 		return 0, err

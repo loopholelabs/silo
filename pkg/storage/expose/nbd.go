@@ -61,6 +61,7 @@ func (n *ExposedStorageNBDNL) SetProvider(prov storage.StorageProvider) {
 }
 
 // Impl StorageProvider here so we can route calls to provider
+
 func (i *ExposedStorageNBDNL) ReadAt(buffer []byte, offset int64) (int, error) {
 	return i.prov.ReadAt(buffer, offset)
 }

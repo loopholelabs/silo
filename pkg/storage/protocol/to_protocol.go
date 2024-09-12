@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 
+	"github.com/google/uuid"
 	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
 )
 
@@ -58,6 +59,12 @@ func (i *ToProtocol) SendHashes(hashes map[uint][sha256.Size]byte) error {
 	return packets.DecodeHashesResponse(r)
 }
 
+func (i *ToProtocol) SendAlternateSources(sources []packets.AlternateSource) error {
+	h := packets.EncodeAlternateSources(sources)
+	_, err := i.protocol.SendPacket(i.dev, ID_PICK_ANY, h)
+	return err
+}
+
 func (i *ToProtocol) SendDevInfo(name string, block_size uint32, schema string) error {
 	di := &packets.DevInfo{
 		Size:       i.size,
@@ -94,6 +101,11 @@ func (i *ToProtocol) DirtyList(block_size int, blocks []uint) error {
 	return err
 }
 
+// FIXME: Should this ask the other end?
+func (i *ToProtocol) UUID() []uuid.UUID {
+	return nil
+}
+
 func (i *ToProtocol) ReadAt(buffer []byte, offset int64) (int, error) {
 	b := packets.EncodeReadAt(offset, int32(len(buffer)))
 	id, err := i.protocol.SendPacket(i.dev, ID_PICK_ANY, b)
@@ -124,9 +136,36 @@ func (i *ToProtocol) WriteAt(buffer []byte, offset int64) (int, error) {
 		data := packets.EncodeWriteAtComp(offset, buffer)
 		id, err = i.protocol.SendPacket(i.dev, ID_PICK_ANY, data)
 	} else {
-		l, f := packets.EncodeWriterWriteAt(offset, buffer)
-		id, err = i.protocol.SendPacketWriter(i.dev, ID_PICK_ANY, l, f)
+		l, h, f := packets.EncodeWriterWriteAt(offset, buffer)
+		id, err = i.protocol.SendPacketWriter(i.dev, ID_PICK_ANY, l, h, f)
 	}
+	if err != nil {
+		return 0, err
+	}
+	// Wait for the response...
+	r, err := i.protocol.WaitForPacket(i.dev, id)
+	if err != nil {
+		return 0, err
+	}
+
+	// Decode the response...
+	if r == nil || len(r) < 1 {
+		return 0, ErrInvalidPacket
+	}
+	if r[0] == packets.COMMAND_WRITE_AT_RESPONSE_ERR {
+		return 0, ErrRemoteWriteError
+	} else if r[0] == packets.COMMAND_WRITE_AT_RESPONSE {
+		if len(r) < 5 {
+			return 0, ErrInvalidPacket
+		}
+		return int(binary.LittleEndian.Uint32(r[1:])), nil
+	}
+	return 0, ErrInvalidPacket
+}
+
+func (i *ToProtocol) WriteAtHash(hash []byte, offset int64, length int64) (int, error) {
+	d := packets.EncodeWriteAtHash(offset, length, hash)
+	id, err := i.protocol.SendPacket(i.dev, ID_PICK_ANY, d)
 	if err != nil {
 		return 0, err
 	}
@@ -201,6 +240,28 @@ func (i *ToProtocol) Close() error {
 
 func (i *ToProtocol) CancelWrites(offset int64, length int64) {
 	// TODO: Implement
+}
+
+// Handle any Hashes commands from the destination. These can be used to NOT send blocks if they already have them.
+func (fp *ToProtocol) HandleHashes(cb func(map[uint][sha256.Size]byte)) error {
+	for {
+		id, data, err := fp.protocol.WaitForCommand(fp.dev, packets.COMMAND_HASHES)
+		if err != nil {
+			return err
+		}
+		hashes, err := packets.DecodeHashes(data)
+		if err != nil {
+			return err
+		}
+
+		// Relay the hashes, wait and then respond
+		cb(hashes)
+
+		_, err = fp.protocol.SendPacket(fp.dev, id, packets.EncodeHashesResponse())
+		if err != nil {
+			return err
+		}
+	}
 }
 
 // Handle any NeedAt commands, and send to an orderer...

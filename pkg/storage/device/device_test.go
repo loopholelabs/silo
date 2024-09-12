@@ -2,9 +2,12 @@ package device
 
 import (
 	"os"
+	"sync"
 	"testing"
 
+	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/config"
+	"github.com/loopholelabs/silo/pkg/storage/modules"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -94,4 +97,38 @@ func TestSourcesExistingDir(t *testing.T) {
 	assert.Equal(t, buffer, buff)
 
 	devs["Test3"].Provider.Close()
+}
+
+func TestDeviceEvents(t *testing.T) {
+	devs := setup(t)
+
+	buffer := []byte("Hello world testing 1 2 3")
+	_, err := devs["TestNew"].Provider.WriteAt(buffer, 400)
+	assert.NoError(t, err)
+
+	buff := make([]byte, len(buffer))
+	_, err = devs["TestNew"].Provider.ReadAt(buff, 400)
+	assert.NoError(t, err)
+
+	assert.Equal(t, buffer, buff)
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	b := storage.AddEventNotification(devs["TestNew"].Provider, "migrating_to", func(event_type storage.EventType, event_data storage.EventData) storage.EventReturnData {
+		// The storage is transitioning to migrating_to
+		assert.Equal(t, "HELLO WORLD", event_data)
+		wg.Done()
+		return "OK"
+	})
+	assert.True(t, b)
+
+	metrics := modules.NewMetrics(devs["TestNew"].Provider)
+
+	data := storage.SendEvent(metrics, "migrating_to", "HELLO WORLD")
+	assert.Equal(t, 1, len(data))
+	assert.Equal(t, "OK", data[0].(string))
+
+	wg.Wait()
+
+	devs["TestNew"].Provider.Close()
 }
