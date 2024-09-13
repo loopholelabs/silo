@@ -230,46 +230,12 @@ func sync_shutdown_everything() {
  * Migrate a device to S3
  *
  */
-func sync_migrate_s3(_ uint32, name string,
-	sinfo *syncStorageInfo) error {
+func sync_migrate_s3(_ uint32, name string, sinfo *syncStorageInfo) error {
+	ctx, cancelFn := context.WithCancel(context.TODO())
 
 	dest_metrics := modules.NewMetrics(sinfo.dest_metrics)
-
-	conf := migrator.NewMigratorConfig().WithBlockSize(sync_block_size)
-	conf.Locker_handler = func() {
-		sinfo.lockable.Lock()
-	}
-	conf.Unlocker_handler = func() {
-		sinfo.lockable.Unlock()
-	}
-	conf.Concurrency = map[int]int{
-		storage.BlockTypeAny: 16,
-	}
-	conf.Integrity = false
-	conf.Cancel_writes = true
-	conf.Dedupe_writes = true
-
-	conf.Progress_handler = func(p *migrator.MigrationProgress) {
-		fmt.Printf("[%s] Progress Moved: %d/%d %.2f%% Clean: %d/%d %.2f%% InProgress: %d Total Mig: %d Canceled: %d Dupes: %d\n",
-			name, p.Migrated_blocks, p.Total_blocks, p.Migrated_blocks_perc,
-			p.Ready_blocks, p.Total_blocks, p.Ready_blocks_perc,
-			p.Active_blocks, p.Total_Migrated_blocks, p.Total_Canceled_blocks, p.Total_Duplicated_blocks)
-		dest_metrics.ShowStats("S3")
-	}
-	conf.Error_handler = func(b *storage.BlockInfo, err error) {
-		fmt.Printf("[%s] Error for block %d error %v\n", name, b.Block, err)
-	}
-
 	// Show logging for S3 writes
 	log_dest := modules.NewLogger(dest_metrics, "S3")
-
-	mig, err := migrator.NewMigrator(sinfo.tracker, log_dest, sinfo.orderer, conf)
-
-	if err != nil {
-		return err
-	}
-
-	ctx, cancelFn := context.WithCancel(context.TODO())
 
 	// If we are replaying a log for this device, do it here
 	if sinfo.replay_log != "" {
@@ -286,7 +252,7 @@ func sync_migrate_s3(_ uint32, name string,
 			for {
 				select {
 				case <-ctx.Done():
-					break
+					return
 				default:
 				}
 				err := blr.ExecuteNext(1)
@@ -300,76 +266,35 @@ func sync_migrate_s3(_ uint32, name string,
 		}()
 	}
 
-	num_blocks := (sinfo.tracker.Size() + uint64(sync_block_size) - 1) / uint64(sync_block_size)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		migrator.Sync(ctx, &migrator.Sync_config{
+			Name:               name,
+			Tracker:            sinfo.tracker,
+			Lockable:           sinfo.lockable,
+			Destination:        log_dest,
+			Orderer:            sinfo.orderer,
+			Dirty_check_period: sync_dirty_period,
+			Dirty_block_getter: func() []uint {
+				return sinfo.tracker.GetDirtyBlocks(sync_block_max_age, sync_dirty_limit, sync_dirty_block_shift, sync_dirty_min_changed)
+			},
+			Block_size: sinfo.block_size,
+			Progress_handler: func(p *migrator.MigrationProgress) {
+				dest_metrics.ShowStats(name)
+				ood := sinfo.tracker.MeasureDirty()
+				ood_age := sinfo.tracker.MeasureDirtyAge()
+				fmt.Printf("DIRTY STATUS %dms old, with %d blocks\n", time.Since(ood_age).Milliseconds(), ood)
+			},
+			Error_handler: func(b *storage.BlockInfo, err error) {},
+		}, false, true)
+		wg.Done()
+	}()
 
-	is_new := true
+	time.Sleep(sync_time_limit)
+	cancelFn()
 
-	if is_new {
-		// Since it's a new source, it's all zeros. We don't need to do an initial migration.
-		for b := 0; b < int(num_blocks); b++ {
-			mig.SetMigratedBlock(b)
-		}
-
-		sinfo.tracker.TrackAt(0, int64(sinfo.tracker.Size()))
-	} else {
-		fmt.Printf("Doing migration...\n")
-
-		// Now do the initial migration...
-		err = mig.Migrate(int(num_blocks))
-		if err != nil {
-			cancelFn()
-			return err
-		}
-
-		fmt.Printf("Waiting...\n")
-
-		// Wait for completion.
-		err = mig.WaitForCompletion()
-		if err != nil {
-			cancelFn()
-			return err
-		}
-	}
-
-	// Now enter a loop looking for more dirty blocks to migrate...
-
-	fmt.Printf("Dirty loop...\n")
-
-	getter := func() []uint {
-		return sinfo.tracker.GetDirtyBlocks(sync_block_max_age, sync_dirty_limit, sync_dirty_block_shift, sync_dirty_min_changed)
-	}
-
-	ctime := time.Now()
-
-	for {
-		if time.Since(ctime) > sync_time_limit {
-			break
-		}
-
-		blocks := mig.GetLatestDirtyFunc(getter)
-
-		if blocks != nil {
-			err = mig.MigrateDirty(blocks)
-			if err != nil {
-				cancelFn()
-				return err
-			}
-		} else {
-			mig.Unlock()
-		}
-		time.Sleep(sync_dirty_period)
-	}
-
-	cancelFn() // Stop the write loop
-
-	ood := sinfo.tracker.MeasureDirty()
-	ood_age := sinfo.tracker.MeasureDirtyAge()
-	fmt.Printf("DIRTY STATUS %dms old, with %d blocks\n", time.Since(ood_age).Milliseconds(), ood)
-
-	err = mig.WaitForCompletion()
-	if err != nil {
-		return err
-	}
+	wg.Wait()
 
 	return nil
 }
