@@ -12,24 +12,26 @@ import (
 )
 
 type Sync_config struct {
-	Name     string
-	Tracker  *dirtytracker.DirtyTrackerRemote // A dirty block tracker
-	Lockable storage.LockableStorageProvider  // Lockable
-	Orderer  *blocks.PriorityBlockOrder       // Block orderer
+	Name               string
+	Tracker            *dirtytracker.DirtyTrackerRemote // A dirty block tracker
+	Lockable           storage.LockableStorageProvider  // Lockable
+	Destination        storage.StorageProvider
+	Orderer            *blocks.PriorityBlockOrder // Block orderer
+	Dirty_check_period time.Duration
+	Dirty_block_getter func() []uint
+
+	//	getter := func() []uint {
+	//		return Tracker.GetDirtyBlocks(Dirty_block_max_age, Dirty_limit, Dirty_block_shift, Dirty_min_changed)
+	//	}
+	// Dirty_block_max_age time.Duration
+	// Dirty_limit         int
+	// Dirty_block_shift   int
+	// Dirty_min_changed   int
 
 	Block_size int
 
-	Destination storage.StorageProvider
-
 	Progress_handler func(p *MigrationProgress)
 	Error_handler    func(b *storage.BlockInfo, err error)
-
-	// Dirty block params
-	Dirty_check_period  time.Duration
-	Dirty_block_max_age time.Duration
-	Dirty_limit         int
-	Dirty_block_shift   int
-	Dirty_min_changed   int
 }
 
 /*
@@ -43,7 +45,7 @@ type Sync_config struct {
  *
  *
  */
-func Continuous_sync(ctx context.Context, sinfo *Sync_config, sync_all_first bool) error {
+func Sync(ctx context.Context, sinfo *Sync_config, sync_all_first bool, continuous bool) error {
 	conf := NewMigratorConfig().WithBlockSize(sinfo.Block_size)
 	conf.Locker_handler = func() {
 		sinfo.Lockable.Lock()
@@ -116,11 +118,6 @@ func Continuous_sync(ctx context.Context, sinfo *Sync_config, sync_all_first boo
 
 	// Now enter a loop looking for more dirty blocks to migrate...
 
-	// Get Dirty Blocks
-	getter := func() []uint {
-		return sinfo.Tracker.GetDirtyBlocks(sinfo.Dirty_block_max_age, sinfo.Dirty_limit, sinfo.Dirty_block_shift, sinfo.Dirty_min_changed)
-	}
-
 	for {
 		select {
 		case <-ctx.Done():
@@ -132,7 +129,7 @@ func Continuous_sync(ctx context.Context, sinfo *Sync_config, sync_all_first boo
 			return ctx.Err()
 		default:
 		}
-		blocks := mig.GetLatestDirtyFunc(getter)
+		blocks := mig.GetLatestDirtyFunc(sinfo.Dirty_block_getter)
 
 		if blocks != nil {
 			err = mig.MigrateDirty(blocks)
@@ -140,6 +137,10 @@ func Continuous_sync(ctx context.Context, sinfo *Sync_config, sync_all_first boo
 				return err
 			}
 		} else {
+			if !continuous {
+				// We are done! Everything is synced, and the source is locked.
+				return nil
+			}
 			mig.Unlock()
 		}
 		time.Sleep(sinfo.Dirty_check_period)
