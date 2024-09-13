@@ -15,6 +15,8 @@ type Sync_config struct {
 	Name               string
 	Tracker            *dirtytracker.DirtyTrackerRemote // A dirty block tracker
 	Lockable           storage.LockableStorageProvider  // Lockable
+	Locker_handler     func()
+	Unlocker_handler   func()
 	Destination        storage.StorageProvider
 	Orderer            *blocks.PriorityBlockOrder // Block orderer
 	Dirty_check_period time.Duration
@@ -30,8 +32,10 @@ type Sync_config struct {
 
 	Block_size int
 
-	Progress_handler func(p *MigrationProgress)
-	Error_handler    func(b *storage.BlockInfo, err error)
+	Dirty_block_handler func([]uint)
+	Hashes_handler      func(map[uint][32]byte)
+	Progress_handler    func(p *MigrationProgress)
+	Error_handler       func(b *storage.BlockInfo, err error)
 }
 
 /*
@@ -48,14 +52,23 @@ type Sync_config struct {
 func Sync(ctx context.Context, sinfo *Sync_config, sync_all_first bool, continuous bool) error {
 	conf := NewMigratorConfig().WithBlockSize(sinfo.Block_size)
 	conf.Locker_handler = func() {
-		sinfo.Lockable.Lock()
+		if sinfo.Locker_handler != nil {
+			sinfo.Locker_handler()
+		} else {
+			sinfo.Lockable.Lock()
+		}
 	}
 	conf.Unlocker_handler = func() {
-		sinfo.Lockable.Unlock()
+		if sinfo.Unlocker_handler != nil {
+			sinfo.Unlocker_handler()
+		} else {
+			sinfo.Lockable.Unlock()
+		}
 	}
 	conf.Concurrency = map[int]int{
 		storage.BlockTypeAny: 16,
 	}
+
 	conf.Integrity = false
 	conf.Cancel_writes = true
 	conf.Dedupe_writes = true
@@ -107,6 +120,11 @@ func Sync(ctx context.Context, sinfo *Sync_config, sync_all_first bool, continuo
 		if err != nil {
 			return err
 		}
+
+		if sinfo.Hashes_handler != nil {
+			hashes := mig.GetHashes()
+			sinfo.Hashes_handler(hashes)
+		}
 	} else {
 		// We don't need to do an initial migration.
 		for b := 0; b < int(num_blocks); b++ {
@@ -132,6 +150,9 @@ func Sync(ctx context.Context, sinfo *Sync_config, sync_all_first bool, continuo
 		blocks := mig.GetLatestDirtyFunc(sinfo.Dirty_block_getter)
 
 		if blocks != nil {
+			if sinfo.Dirty_block_handler != nil {
+				sinfo.Dirty_block_handler(blocks)
+			}
 			err = mig.MigrateDirty(blocks)
 			if err != nil {
 				return err
