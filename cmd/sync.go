@@ -271,6 +271,9 @@ func sync_migrate_s3(_ uint32, name string, sinfo *syncStorageInfo) error {
 	go func() {
 		migrator.Sync(ctx, &migrator.Sync_config{
 			Name:               name,
+			Integrity:          false,
+			Cancel_writes:      true,
+			Dedupe_writes:      true,
 			Tracker:            sinfo.tracker,
 			Lockable:           sinfo.lockable,
 			Destination:        log_dest,
