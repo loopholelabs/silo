@@ -287,32 +287,35 @@ func migrateDevice(dev_id uint32, name string,
 		})
 	}()
 
-	conf := migrator.NewMigratorConfig().WithBlockSize(sinfo.block_size)
-	conf.Locker_handler = func() {
-		_ = dest.SendEvent(&packets.Event{Type: packets.EventPreLock})
-		sinfo.lockable.Lock()
-		_ = dest.SendEvent(&packets.Event{Type: packets.EventPostLock})
+	// FIXME: Sync integration here...
+	sync_config := &migrator.Sync_config{
+		Name:     "serve",
+		Tracker:  sinfo.tracker,
+		Lockable: sinfo.lockable,
+		Locker_handler: func() {
+			_ = dest.SendEvent(&packets.Event{Type: packets.EventPreLock})
+			sinfo.lockable.Lock()
+			_ = dest.SendEvent(&packets.Event{Type: packets.EventPostLock})
+		},
+		Unlocker_handler: func() {
+			_ = dest.SendEvent(&packets.Event{Type: packets.EventPreUnlock})
+			sinfo.lockable.Unlock()
+			_ = dest.SendEvent(&packets.Event{Type: packets.EventPostUnlock})
+		},
+		Error_handler: func(b *storage.BlockInfo, err error) {
+			// For now...
+			panic(err)
+		},
+		Destination: dest,
+		Orderer:     sinfo.orderer,
 	}
-	conf.Unlocker_handler = func() {
-		_ = dest.SendEvent(&packets.Event{Type: packets.EventPreUnlock})
-		sinfo.lockable.Unlock()
-		_ = dest.SendEvent(&packets.Event{Type: packets.EventPostUnlock})
-	}
-	conf.Concurrency = map[int]int{
-		storage.BlockTypeAny: 1000000,
-	}
-	conf.Error_handler = func(b *storage.BlockInfo, err error) {
-		// For now...
-		panic(err)
-	}
-	conf.Integrity = true
 
 	last_value := uint64(0)
 	last_time := time.Now()
 
 	if serve_progress {
 
-		conf.Progress_handler = func(p *migrator.MigrationProgress) {
+		sync_config.Progress_handler = func(p *migrator.MigrationProgress) {
 			v := uint64(p.Ready_blocks) * uint64(sinfo.block_size)
 			if v > size {
 				v = size
@@ -323,74 +326,43 @@ func migrateDevice(dev_id uint32, name string,
 			last_value = v
 		}
 	} else {
-		conf.Progress_handler = func(p *migrator.MigrationProgress) {
+		sync_config.Progress_handler = func(p *migrator.MigrationProgress) {
 			fmt.Printf("[%s] Progress Moved: %d/%d %.2f%% Clean: %d/%d %.2f%% InProgress: %d\n",
 				name, p.Migrated_blocks, p.Total_blocks, p.Migrated_blocks_perc,
 				p.Ready_blocks, p.Total_blocks, p.Ready_blocks_perc,
 				p.Active_blocks)
 		}
-		conf.Error_handler = func(b *storage.BlockInfo, err error) {
+		sync_config.Error_handler = func(b *storage.BlockInfo, err error) {
 			fmt.Printf("[%s] Error for block %d error %v\n", name, b.Block, err)
 		}
 	}
 
-	mig, err := migrator.NewMigrator(sinfo.tracker, dest, sinfo.orderer, conf)
-
-	if err != nil {
-		return err
+	sync_config.Hashes_handler = func(hashes map[uint][32]byte) {
+		err = dest.SendHashes(hashes)
+		panic(err) // FIXME
 	}
 
-	migrate_blocks := sinfo.num_blocks
+	sync_config.Dirty_check_period = 100 * time.Millisecond
+	sync_config.Dirty_block_getter = func() []uint {
+		blocks := sinfo.tracker.Sync()
+		d := blocks.Collect(0, blocks.Length())
 
-	// Now do the migration...
-	err = mig.Migrate(migrate_blocks)
-	if err != nil {
-		return err
-	}
-
-	// Wait for completion.
-	err = mig.WaitForCompletion()
-	if err != nil {
-		return err
-	}
-
-	hashes := mig.GetHashes() // Get the initial hashes and send them over for verification...
-	err = dest.SendHashes(hashes)
-	if err != nil {
-		return err
-	}
-
-	// Optional: Enter a loop looking for more dirty blocks to migrate...
-	for {
-		blocks := mig.GetLatestDirty() //
-		if !serve_continuous && blocks == nil {
-			break
-		}
-
-		if blocks != nil {
-			// Optional: Send the list of dirty blocks over...
-			err := dest.DirtyList(conf.Block_size, blocks)
+		if d != nil {
+			err := dest.DirtyList(sinfo.block_size, d)
 			if err != nil {
-				return err
+				panic(err) // FIXME
 			}
-
-			//		fmt.Printf("[%s] Migrating dirty blocks %d\n", name, len(blocks))
-			err = mig.MigrateDirty(blocks)
-			if err != nil {
-				return err
-			}
-		} else {
-			mig.Unlock()
 		}
-		time.Sleep(100 * time.Millisecond)
+		return d
 	}
 
-	err = mig.WaitForCompletion()
-	if err != nil {
-		return err
+	sync_config.Concurrency = map[int]int{
+		storage.BlockTypeAny: 1000000,
 	}
 
-	//	fmt.Printf("[%s] Migration completed\n", name)
+	sync_config.Integrity = true
+
+	migrator.Sync(context.TODO(), sync_config, true, serve_continuous)
 
 	err = dest.SendEvent(&packets.Event{Type: packets.EventCompleted})
 	if err != nil {

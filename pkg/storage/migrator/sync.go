@@ -32,10 +32,14 @@ type Sync_config struct {
 
 	Block_size int
 
-	Dirty_block_handler func([]uint)
-	Hashes_handler      func(map[uint][32]byte)
-	Progress_handler    func(p *MigrationProgress)
-	Error_handler       func(b *storage.BlockInfo, err error)
+	Hashes_handler   func(map[uint][32]byte)
+	Progress_handler func(p *MigrationProgress)
+	Error_handler    func(b *storage.BlockInfo, err error)
+
+	Concurrency   map[int]int
+	Integrity     bool
+	Cancel_writes bool
+	Dedupe_writes bool
 }
 
 /*
@@ -68,10 +72,13 @@ func Sync(ctx context.Context, sinfo *Sync_config, sync_all_first bool, continuo
 	conf.Concurrency = map[int]int{
 		storage.BlockTypeAny: 16,
 	}
+	if sinfo.Concurrency != nil {
+		conf.Concurrency = sinfo.Concurrency
+	}
 
-	conf.Integrity = false
-	conf.Cancel_writes = true
-	conf.Dedupe_writes = true
+	conf.Integrity = sinfo.Integrity
+	conf.Cancel_writes = sinfo.Cancel_writes
+	conf.Dedupe_writes = sinfo.Dedupe_writes
 
 	conf.Progress_handler = func(p *MigrationProgress) {
 		log.Info().
@@ -150,9 +157,6 @@ func Sync(ctx context.Context, sinfo *Sync_config, sync_all_first bool, continuo
 		blocks := mig.GetLatestDirtyFunc(sinfo.Dirty_block_getter)
 
 		if blocks != nil {
-			if sinfo.Dirty_block_handler != nil {
-				sinfo.Dirty_block_handler(blocks)
-			}
 			err = mig.MigrateDirty(blocks)
 			if err != nil {
 				return err
