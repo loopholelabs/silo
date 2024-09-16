@@ -22,6 +22,7 @@ type Sync_config struct {
 	Dirty_check_period time.Duration
 	Dirty_block_getter func() []uint
 
+	// NB If you use dirty_block_shift here, you'll need to also shift the block size in DirtyTracker constructor
 	//	getter := func() []uint {
 	//		return Tracker.GetDirtyBlocks(Dirty_block_max_age, Dirty_limit, Dirty_block_shift, Dirty_min_changed)
 	//	}
@@ -164,7 +165,7 @@ func Sync(ctx context.Context, sinfo *Sync_config, sync_all_first bool, continuo
 		} else {
 			if !continuous {
 				// We are done! Everything is synced, and the source is locked.
-				return nil
+				return mig.WaitForCompletion()
 			}
 			mig.Unlock()
 		}
