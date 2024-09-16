@@ -362,7 +362,10 @@ func migrateDevice(dev_id uint32, name string,
 
 	sync_config.Integrity = true
 
-	migrator.Sync(context.TODO(), sync_config, true, serve_continuous)
+	_, err = migrator.Sync(context.TODO(), sync_config, true, serve_continuous)
+	if err != nil {
+		panic(err)
+	}
 
 	err = dest.SendEvent(&packets.Event{Type: packets.EventCompleted})
 	if err != nil {

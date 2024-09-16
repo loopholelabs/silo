@@ -291,7 +291,7 @@ func (m *Migrator) MigrateDirty(blocks []uint) error {
 
 func (m *Migrator) WaitForCompletion() error {
 	m.wg.Wait()
-	m.reportProgress(true)
+	m.reportProgress(true) // Force progress_fn callback to be called
 	return nil
 }
 
@@ -335,6 +335,33 @@ func (m *Migrator) reportProgress(forced bool) {
 	}
 	// Callback
 	m.progress_fn(m.progress_last_status)
+}
+
+/**
+ * Get overall status of the migration
+ *
+ */
+func (m *Migrator) Status() *MigrationProgress {
+	m.progress_lock.Lock()
+	defer m.progress_lock.Unlock()
+
+	migrated := m.migrated_blocks.Count(0, uint(m.num_blocks))
+	perc_mig := float64(migrated*100) / float64(m.num_blocks)
+
+	completed := m.clean_blocks.Count(0, uint(m.num_blocks))
+	perc_complete := float64(completed*100) / float64(m.num_blocks)
+
+	return &MigrationProgress{
+		Total_blocks:            m.num_blocks,
+		Migrated_blocks:         migrated,
+		Migrated_blocks_perc:    perc_mig,
+		Ready_blocks:            completed,
+		Ready_blocks_perc:       perc_complete,
+		Active_blocks:           m.moving_blocks.Count(0, uint(m.num_blocks)),
+		Total_Canceled_blocks:   int(atomic.LoadInt64(&m.metric_blocks_canceled)),
+		Total_Migrated_blocks:   int(atomic.LoadInt64(&m.metric_blocks_migrated)),
+		Total_Duplicated_blocks: int(atomic.LoadInt64(&m.metric_blocks_duplicates)),
+	}
 }
 
 /**

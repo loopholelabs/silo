@@ -269,7 +269,7 @@ func sync_migrate_s3(_ uint32, name string, sinfo *syncStorageInfo) error {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
-		migrator.Sync(ctx, &migrator.Sync_config{
+		status, err := migrator.Sync(ctx, &migrator.Sync_config{
 			Name:               name,
 			Integrity:          false,
 			Cancel_writes:      true,
@@ -291,6 +291,10 @@ func sync_migrate_s3(_ uint32, name string, sinfo *syncStorageInfo) error {
 			},
 			Error_handler: func(b *storage.BlockInfo, err error) {},
 		}, false, true)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Printf("Migration status %v\n", status)
 		wg.Done()
 	}()
 
