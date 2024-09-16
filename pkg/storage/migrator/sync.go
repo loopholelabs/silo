@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/loopholelabs/silo/pkg/storage"
-	"github.com/loopholelabs/silo/pkg/storage/blocks"
 	"github.com/loopholelabs/silo/pkg/storage/dirtytracker"
 
 	"github.com/rs/zerolog/log"
@@ -18,7 +17,7 @@ type Sync_config struct {
 	Locker_handler     func()
 	Unlocker_handler   func()
 	Destination        storage.StorageProvider
-	Orderer            *blocks.PriorityBlockOrder // Block orderer
+	Orderer            storage.BlockOrder
 	Dirty_check_period time.Duration
 	Dirty_block_getter func() []uint
 
@@ -50,11 +49,14 @@ type Sync_config struct {
 	fmt.Printf("DIRTY STATUS %dms old, with %d blocks\n", time.Since(ood_age).Milliseconds(), ood)
 */
 
+type Sync_summary struct {
+}
+
 /**
  *
  *
  */
-func Sync(ctx context.Context, sinfo *Sync_config, sync_all_first bool, continuous bool) error {
+func Sync(ctx context.Context, sinfo *Sync_config, sync_all_first bool, continuous bool) (*MigrationProgress, error) {
 	conf := NewMigratorConfig().WithBlockSize(sinfo.Block_size)
 	conf.Locker_handler = func() {
 		if sinfo.Locker_handler != nil {
@@ -111,7 +113,7 @@ func Sync(ctx context.Context, sinfo *Sync_config, sync_all_first bool, continuo
 
 	mig, err := NewMigrator(sinfo.Tracker, sinfo.Destination, sinfo.Orderer, conf)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	num_blocks := (sinfo.Tracker.Size() + uint64(sinfo.Block_size) - 1) / uint64(sinfo.Block_size)
@@ -120,13 +122,13 @@ func Sync(ctx context.Context, sinfo *Sync_config, sync_all_first bool, continuo
 		// Now do the initial migration...
 		err = mig.Migrate(int(num_blocks))
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		// Wait for completion.
 		err = mig.WaitForCompletion()
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		if sinfo.Hashes_handler != nil {
@@ -150,9 +152,9 @@ func Sync(ctx context.Context, sinfo *Sync_config, sync_all_first bool, continuo
 			// Context has been cancelled. We should wait for any pending migrations to complete
 			err = mig.WaitForCompletion()
 			if err != nil {
-				return err
+				return mig.Status(), err
 			}
-			return ctx.Err()
+			return mig.Status(), ctx.Err()
 		default:
 		}
 		blocks := mig.GetLatestDirtyFunc(sinfo.Dirty_block_getter)
@@ -160,12 +162,13 @@ func Sync(ctx context.Context, sinfo *Sync_config, sync_all_first bool, continuo
 		if blocks != nil {
 			err = mig.MigrateDirty(blocks)
 			if err != nil {
-				return err
+				return mig.Status(), err
 			}
 		} else {
 			if !continuous {
 				// We are done! Everything is synced, and the source is locked.
-				return mig.WaitForCompletion()
+				err = mig.WaitForCompletion()
+				return mig.Status(), err
 			}
 			mig.Unlock()
 		}

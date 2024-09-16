@@ -100,7 +100,7 @@ func TestSyncToS3(t *testing.T) {
 	time.AfterFunc(time.Second, cancel_writes)
 
 	// Sync the data for a bit
-	err = Sync(context.TODO(), sync_config, true, false)
+	_, err = Sync(context.TODO(), sync_config, true, false)
 	assert.NoError(t, err)
 
 	// This will end with migration completed, and consumer Locked.
@@ -109,6 +109,66 @@ func TestSyncToS3(t *testing.T) {
 	assert.True(t, eq)
 
 	assert.True(t, sourceStorage.IsLocked())
+}
 
-	// cancel_writes()
+func TestSyncSimple(t *testing.T) {
+	size := 1024 * 1024
+	blockSize := 4096
+	num_blocks := (size + blockSize - 1) / blockSize
+
+	sourceStorageMem := sources.NewMemoryStorage(size)
+	sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(sourceStorageMem, blockSize)
+	sourceStorage := modules.NewLockable(sourceDirtyLocal)
+
+	// Set up some data here.
+	buffer := make([]byte, size)
+	_, err := crand.Read(buffer)
+	assert.NoError(t, err)
+
+	n, err := sourceStorage.WriteAt(buffer, 0)
+	assert.NoError(t, err)
+	assert.Equal(t, len(buffer), n)
+
+	orderer := blocks.NewAnyBlockOrder(num_blocks, nil)
+	orderer.AddAll()
+
+	// START moving data from sourceStorage to destStorage
+
+	destStorage := sources.NewMemoryStorage(size)
+
+	// Use sync
+	sync_config := &Sync_config{
+		Name:               "simple",
+		Integrity:          false,
+		Cancel_writes:      true,
+		Dedupe_writes:      true,
+		Tracker:            sourceDirtyRemote,
+		Lockable:           sourceStorage,
+		Destination:        destStorage,
+		Orderer:            orderer,
+		Dirty_check_period: 1 * time.Second,
+		Dirty_block_getter: func() []uint {
+			b := sourceDirtyRemote.Sync()
+			return b.Collect(0, b.Length())
+
+			// Use some basic params here for getting dirty blocks
+			// return sourceDirtyRemote.GetDirtyBlocks(1*time.Second, 16, 10, 4)
+		},
+		Block_size: blockSize,
+		Progress_handler: func(p *MigrationProgress) {
+			// Don't need to do anything here...
+		},
+		Error_handler: func(b *storage.BlockInfo, err error) {
+			assert.Fail(t, fmt.Sprintf("Error migrating block %d: %v", b.Block, err))
+		},
+	}
+
+	// Sync the data for a bit
+	_, err = Sync(context.TODO(), sync_config, true, false)
+	assert.NoError(t, err)
+
+	// This will end with migration completed, and consumer Locked.
+	eq, err := storage.Equals(sourceStorageMem, destStorage, blockSize)
+	assert.NoError(t, err)
+	assert.True(t, eq)
 }
