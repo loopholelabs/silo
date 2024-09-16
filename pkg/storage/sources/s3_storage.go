@@ -12,11 +12,9 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
-/*
 var (
 	errNoSuchKey = errors.New("The specified key does not exist.") // Minio doesn't export errors
 )
-*/
 
 type S3Storage struct {
 	client        *minio.Client
@@ -87,18 +85,20 @@ func NewS3StorageCreate(endpoint string,
 		}
 	}
 
-	b_end := (int(size) + blockSize - 1) / blockSize
-	buffer := make([]byte, blockSize)
+	/*
+		b_end := (int(size) + blockSize - 1) / blockSize
+		buffer := make([]byte, blockSize)
 
-	// TODO: Do these concurrently, or switch to lazy create on read/write.
-	for b := 0; b < b_end; b++ {
-		offset := b * blockSize
+		// TODO: Do these concurrently, or switch to lazy create on read/write.
+		for b := 0; b < b_end; b++ {
+			offset := b * blockSize
 
-		_, err := client.PutObject(context.TODO(), bucket, fmt.Sprintf("%s-%d", prefix, offset), bytes.NewReader(buffer), int64(blockSize), minio.PutObjectOptions{})
-		if err != nil {
-			return nil, err
+			_, err := client.PutObject(context.TODO(), bucket, fmt.Sprintf("%s-%d", prefix, offset), bytes.NewReader(buffer), int64(blockSize), minio.PutObjectOptions{})
+			if err != nil {
+				return nil, err
+			}
 		}
-	}
+	*/
 
 	numBlocks := (int(size) + blockSize - 1) / blockSize
 
@@ -141,9 +141,17 @@ func (i *S3Storage) ReadAt(buffer []byte, offset int64) (int, error) {
 		obj, err := i.client.GetObject(context.TODO(), i.bucket, fmt.Sprintf("%s-%d", i.prefix, off), minio.GetObjectOptions{})
 		i.lockers[off/int64(i.block_size)].RUnlock()
 		if err != nil {
+			if err.Error() == errNoSuchKey.Error() {
+				return len(buff), nil
+			}
 			return 0, err
 		}
-		return obj.Read(buff)
+		n, err := obj.Read(buff)
+		if err.Error() == errNoSuchKey.Error() {
+			return len(buff), nil
+		}
+
+		return n, err
 	}
 
 	for b := b_start; b < b_end; b++ {
@@ -205,9 +213,16 @@ func (i *S3Storage) WriteAt(buffer []byte, offset int64) (int, error) {
 		obj, err := i.client.GetObject(ctx, i.bucket, fmt.Sprintf("%s-%d", i.prefix, off), minio.GetObjectOptions{})
 		i.lockers[off/int64(i.block_size)].RUnlock()
 		if err != nil {
+			if err.Error() == errNoSuchKey.Error() {
+				return len(buff), nil
+			}
 			return 0, err
 		}
-		return obj.Read(buff)
+		n, err := obj.Read(buff)
+		if err.Error() == errNoSuchKey.Error() {
+			return len(buff), nil
+		}
+		return n, err
 	}
 
 	putData := func(buff []byte, off int64) (int, error) {
