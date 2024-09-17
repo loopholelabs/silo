@@ -100,7 +100,8 @@ func TestSyncToS3(t *testing.T) {
 	time.AfterFunc(time.Second, cancel_writes)
 
 	// Sync the data for a bit
-	_, err = Sync(context.TODO(), sync_config, true, false)
+	syncer := NewSyncer(context.TODO(), sync_config)
+	_, err = syncer.Sync(true, false)
 	assert.NoError(t, err)
 
 	// This will end with migration completed, and consumer Locked.
@@ -164,7 +165,8 @@ func TestSyncSimple(t *testing.T) {
 	}
 
 	// Sync the data for a bit
-	_, err = Sync(context.TODO(), sync_config, true, false)
+	syncer := NewSyncer(context.TODO(), sync_config)
+	_, err = syncer.Sync(true, false)
 	assert.NoError(t, err)
 
 	// This will end with migration completed, and consumer Locked.

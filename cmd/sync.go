@@ -269,7 +269,7 @@ func sync_migrate_s3(_ uint32, name string, sinfo *syncStorageInfo) error {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
-		status, err := migrator.Sync(ctx, &migrator.Sync_config{
+		syncer := migrator.NewSyncer(ctx, &migrator.Sync_config{
 			Name:               name,
 			Integrity:          false,
 			Cancel_writes:      true,
@@ -290,7 +290,9 @@ func sync_migrate_s3(_ uint32, name string, sinfo *syncStorageInfo) error {
 				fmt.Printf("DIRTY STATUS %dms old, with %d blocks\n", time.Since(ood_age).Milliseconds(), ood)
 			},
 			Error_handler: func(b *storage.BlockInfo, err error) {},
-		}, false, true)
+		})
+
+		status, err := syncer.Sync(false, true)
 		if err != nil {
 			panic(err)
 		}

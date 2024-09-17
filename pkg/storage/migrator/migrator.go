@@ -20,6 +20,7 @@ type MigratorConfig struct {
 	Unlocker_handler func()
 	Error_handler    func(b *storage.BlockInfo, err error)
 	Progress_handler func(p *MigrationProgress)
+	Block_handler    func(b *storage.BlockInfo, id uint64)
 	Concurrency      map[int]int
 	Integrity        bool
 	Cancel_writes    bool
@@ -34,6 +35,7 @@ func NewMigratorConfig() *MigratorConfig {
 		Unlocker_handler: func() {},
 		Error_handler:    func(b *storage.BlockInfo, err error) {},
 		Progress_handler: func(p *MigrationProgress) {},
+		Block_handler:    func(b *storage.BlockInfo, id uint64) {},
 		Concurrency: map[int]int{
 			storage.BlockTypeAny:      32,
 			storage.BlockTypeStandard: 32,
@@ -73,6 +75,7 @@ type Migrator struct {
 	source_unlock_fn         func()
 	error_fn                 func(block *storage.BlockInfo, err error)
 	progress_fn              func(*MigrationProgress)
+	block_fn                 func(block *storage.BlockInfo, id uint64)
 	progress_lock            sync.Mutex
 	progress_last            time.Time
 	progress_last_status     *MigrationProgress
@@ -110,6 +113,7 @@ func NewMigrator(source storage.TrackingStorageProvider,
 		source_unlock_fn:         config.Unlocker_handler,
 		error_fn:                 config.Error_handler,
 		progress_fn:              config.Progress_handler,
+		block_fn:                 config.Block_handler,
 		block_size:               config.Block_size,
 		num_blocks:               num_blocks,
 		metric_blocks_migrated:   0,
@@ -241,6 +245,14 @@ func (m *Migrator) Unlock() {
  * An attempt is made to cancel any existing writes for the blocks first.
  */
 func (m *Migrator) MigrateDirty(blocks []uint) error {
+	return m.MigrateDirtyWithId(blocks, 0)
+}
+
+/**
+ *
+ * You can give a tracking ID which will turn up at block_fn on success
+ */
+func (m *Migrator) MigrateDirtyWithId(blocks []uint, tid uint64) error {
 	for _, pos := range blocks {
 		i := &storage.BlockInfo{Block: int(pos), Type: storage.BlockTypeDirty}
 
@@ -271,10 +283,12 @@ func (m *Migrator) MigrateDirty(blocks []uint) error {
 
 		m.clean_blocks.ClearBit(int(pos))
 
-		go func(block_no *storage.BlockInfo) {
+		go func(block_no *storage.BlockInfo, track_id uint64) {
 			err := m.migrateBlock(block_no.Block)
 			if err != nil {
 				m.error_fn(block_no, err)
+			} else {
+				m.block_fn(block_no, track_id)
 			}
 
 			m.wg.Done()
@@ -283,7 +297,7 @@ func (m *Migrator) MigrateDirty(blocks []uint) error {
 				cc = m.concurrency[storage.BlockTypeAny]
 			}
 			<-cc
-		}(i)
+		}(i, tid)
 
 	}
 	return nil

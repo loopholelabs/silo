@@ -223,7 +223,8 @@ func (i *S3Storage) WriteAt(buffer []byte, offset int64) (int, error) {
 
 		i.setContext(int(block), nil)
 		i.lockers[block].Unlock()
-		if err != nil {
+		// Currently, if the context was canceled, we ignore it.
+		if err != nil && !errors.Is(err, context.Canceled) {
 			return 0, err
 		}
 		return int(obj.Size), nil

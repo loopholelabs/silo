@@ -69,16 +69,16 @@ func init() {
 	cmdServe.Flags().BoolVarP(&serve_any_order, "order", "o", false, "Any order (faster)")
 	cmdServe.Flags().BoolVarP(&serve_sync_s3, "sync", "s", false, "Continuous sync to S3")
 
-	cmdServe.Flags().StringVar(&serve_sync_endpoint, "sync", "", "Sync S3 endpoint")
+	cmdServe.Flags().StringVar(&serve_sync_endpoint, "s3endpoint", "", "Sync S3 endpoint")
 	cmdServe.Flags().StringVar(&serve_sync_access, "s3access", "", "Sync S3 access token")
 	cmdServe.Flags().StringVar(&serve_sync_secret, "s3secret", "", "Sync S3 secret token")
 	cmdServe.Flags().StringVar(&serve_sync_bucket, "s3bucket", "", "Sync S3 bucket")
 
-	cmdServe.Flags().DurationVar(&serve_sync_dirty_block_period, "dirtyperiod", 1*time.Second, "Sync dirty block period")
-	cmdServe.Flags().IntVar(&serve_sync_dirty_block_shift, "sync", 10, "Sync dirty block shift")
-	cmdServe.Flags().DurationVar(&serve_sync_block_max_age, "sync", 1*time.Second, "Sync dirty block maximum age")
-	cmdServe.Flags().IntVar(&serve_sync_dirty_limit, "sync", 16, "Sync dirty block limit")
-	cmdServe.Flags().IntVar(&serve_sync_dirty_min_changed, "sync", 4, "Sync dirty block min changed")
+	cmdServe.Flags().DurationVar(&serve_sync_dirty_block_period, "sync-period", 1*time.Second, "Sync dirty block period")
+	cmdServe.Flags().IntVar(&serve_sync_dirty_block_shift, "sync-shift", 10, "Sync dirty block shift")
+	cmdServe.Flags().DurationVar(&serve_sync_block_max_age, "sync-maxage", 1*time.Second, "Sync dirty block maximum age")
+	cmdServe.Flags().IntVar(&serve_sync_dirty_limit, "sync-limit", 64, "Sync dirty block limit")
+	cmdServe.Flags().IntVar(&serve_sync_dirty_min_changed, "sync-min-changed", 16, "Sync dirty block min changed")
 }
 
 type storageInfo struct {
@@ -241,10 +241,10 @@ func setupStorageDevice(conf *config.DeviceSchema) (*storageInfo, error) {
 			return nil, err
 		}
 
-		// FIXME: Start syncing to S3 if it was requested of us...
+		// Start syncing to S3 if it was requested of us...
 		s3_ctx, s3_cancel = context.WithCancel(context.TODO())
 		go func() {
-			status, err := migrator.Sync(s3_ctx, &migrator.Sync_config{
+			syncer := migrator.NewSyncer(s3_ctx, &migrator.Sync_config{
 				Name:               conf.Name,
 				Integrity:          false,
 				Cancel_writes:      true,
@@ -271,7 +271,9 @@ func setupStorageDevice(conf *config.DeviceSchema) (*storageInfo, error) {
 					fmt.Printf("There was an error syncing to S3.")
 					panic(err)
 				},
-			}, false, true)
+			})
+
+			status, err := syncer.Sync(false, true)
 			fmt.Printf("S3 Migration status %v err %v\n", status, err)
 		}()
 	}
@@ -458,7 +460,8 @@ func migrateDevice(dev_id uint32, name string,
 
 	sync_config.Integrity = true
 
-	_, err = migrator.Sync(context.TODO(), sync_config, true, serve_continuous)
+	syncer := migrator.NewSyncer(context.TODO(), sync_config)
+	_, err = syncer.Sync(true, serve_continuous)
 	if err != nil {
 		panic(err)
 	}
