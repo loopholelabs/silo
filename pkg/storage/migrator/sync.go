@@ -2,13 +2,12 @@ package migrator
 
 import (
 	"context"
-	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/dirtytracker"
-	"github.com/loopholelabs/silo/pkg/storage/modules"
 
 	"github.com/rs/zerolog/log"
 )
@@ -49,17 +48,39 @@ type Syncer struct {
 	ctx               context.Context
 	config            *Sync_config
 	block_status_lock sync.Mutex
-	block_status      []uint
+	block_status      []uint64
+	block_updates     []uint64
+	current_dirty_id  uint64
 }
 
 func NewSyncer(ctx context.Context, sinfo *Sync_config) *Syncer {
 	num_blocks := (sinfo.Tracker.Size() + uint64(sinfo.Block_size) - 1) / uint64(sinfo.Block_size)
 
 	return &Syncer{
-		ctx:          ctx,
-		config:       sinfo,
-		block_status: make([]uint, num_blocks),
+		ctx:              ctx,
+		config:           sinfo,
+		block_status:     make([]uint64, num_blocks),
+		block_updates:    make([]uint64, num_blocks),
+		current_dirty_id: 0,
 	}
+}
+
+/**
+ * Get a list of blocks that are safe (On the destination)
+ *
+ */
+func (s *Syncer) GetSafeBlockMap() []uint {
+	blocks := make([]uint, 0)
+
+	//	dirty_blocks := s.config.Tracker.GetAllDirtyBlocks()
+	// FIXME: We should also ignore blocks here that are currently dirty (Check in s.config.Tracker)
+
+	for b, id := range s.block_status {
+		if id == s.block_updates[b] {
+			blocks = append(blocks, uint(b))
+		}
+	}
+	return blocks
 }
 
 /**
@@ -121,18 +142,16 @@ func (s *Syncer) Sync(sync_all_first bool, continuous bool) (*MigrationProgress,
 		}
 	}
 
+	// When a block is written, update block_status with the largest ID for that block
 	conf.Block_handler = func(b *storage.BlockInfo, id uint64) {
-		fmt.Printf(" # BLOCK IS THERE %d TRACK-ID %d\n", b.Block, id)
+		s.block_status_lock.Lock()
+		defer s.block_status_lock.Unlock()
+		if id > s.block_status[b.Block] {
+			s.block_status[b.Block] = id
+		}
 	}
 
-	hooked_destination := modules.NewHooks(s.config.Destination)
-	hooked_destination.Post_write = func(buffer []byte, offset int64, n int, err error) (int, error) {
-		fmt.Printf("Write success\n")
-		// FIXME: Set the bit(s) to show that the blocks are there in
-		return n, err
-	}
-
-	mig, err := NewMigrator(s.config.Tracker, hooked_destination, s.config.Orderer, conf)
+	mig, err := NewMigrator(s.config.Tracker, s.config.Destination, s.config.Orderer, conf)
 	if err != nil {
 		return nil, err
 	}
@@ -166,7 +185,6 @@ func (s *Syncer) Sync(sync_all_first bool, continuous bool) (*MigrationProgress,
 	}
 
 	// Now enter a loop looking for more dirty blocks to migrate...
-	dirty_loop_id := uint64(0)
 
 	for {
 		select {
@@ -182,8 +200,14 @@ func (s *Syncer) Sync(sync_all_first bool, continuous bool) (*MigrationProgress,
 		blocks := mig.GetLatestDirtyFunc(s.config.Dirty_block_getter)
 
 		if blocks != nil {
-			dirty_loop_id++
-			err = mig.MigrateDirtyWithId(blocks, dirty_loop_id)
+			id := atomic.AddUint64(&s.current_dirty_id, 1)
+			// Update block_updates with the new ID for these blocks
+			s.block_status_lock.Lock()
+			for _, b := range blocks {
+				s.block_updates[b] = id
+			}
+			s.block_status_lock.Unlock()
+			err = mig.MigrateDirtyWithId(blocks, id)
 			if err != nil {
 				return mig.Status(), err
 			}

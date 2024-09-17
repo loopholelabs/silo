@@ -203,6 +203,22 @@ func (i *ToProtocol) CancelWrites(offset int64, length int64) {
 	// TODO: Implement
 }
 
+// Handle any Hashes commands from the destination. These can be used to NOT send blocks if they already have them.
+func (i *ToProtocol) HandleHashes(cb func(hashes map[uint][32]byte)) error {
+	for {
+		_, data, err := i.protocol.WaitForCommand(i.dev, packets.COMMAND_HASHES)
+		if err != nil {
+			return err
+		}
+		hashes, err := packets.DecodeHashes(data)
+		if err != nil {
+			return err
+		}
+
+		cb(hashes)
+	}
+}
+
 // Handle any NeedAt commands, and send to an orderer...
 func (i *ToProtocol) HandleNeedAt(cb func(offset int64, length int32)) error {
 	for {
