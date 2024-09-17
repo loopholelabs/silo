@@ -1,6 +1,7 @@
 package dirtytracker
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"sync"
@@ -221,8 +222,28 @@ func (i *DirtyTrackerRemote) GetDirtyBlocks(max_age time.Duration, limit int, gr
 			keys = keys[1:]
 
 			if len(grouped_blocks_changed[k]) >= min_changed {
-				// This may overwrite an existing entry which is max_age, but we'll have the same block + others here
-				grouped_blocks[k] = grouped_blocks_changed[k]
+				pv, ok := grouped_blocks[k]
+				if !ok {
+					grouped_blocks[k] = grouped_blocks_changed[k]
+				} else {
+					// Don't overwrite a max-age entry here, they should be the same anyway...
+
+					// FIXME: Just doing a sanity check here to make sure that the data in consistent.
+					if len(pv) != len(grouped_blocks_changed[k]) {
+						panic(errors.New("data consistency error in dirty tracker"))
+					}
+					for _, v1 := range pv {
+						contained := false
+						for _, v2 := range grouped_blocks_changed[k] {
+							if v2 == v1 {
+								contained = true
+							}
+						}
+						if !contained {
+							panic(errors.New("data consistency error in dirty tracker"))
+						}
+					}
+				}
 			}
 		}
 	}
