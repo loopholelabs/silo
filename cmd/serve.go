@@ -21,6 +21,7 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/modules"
 	"github.com/loopholelabs/silo/pkg/storage/protocol"
 	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
+	"github.com/loopholelabs/silo/pkg/storage/sources"
 	"github.com/loopholelabs/silo/pkg/storage/volatilitymonitor"
 	"github.com/spf13/cobra"
 	"github.com/vbauerster/mpb/v8"
@@ -41,6 +42,17 @@ var serve_conf string
 var serve_progress bool
 var serve_continuous bool
 var serve_any_order bool
+var serve_sync_s3 bool
+
+var serve_sync_dirty_block_shift int
+var serve_sync_endpoint string
+var serve_sync_access string
+var serve_sync_secret string
+var serve_sync_bucket string
+var serve_sync_block_max_age time.Duration
+var serve_sync_dirty_limit int
+var serve_sync_dirty_min_changed int
+var serve_sync_dirty_block_period time.Duration
 
 var src_exposed []storage.ExposedStorage
 var src_storage []*storageInfo
@@ -55,10 +67,21 @@ func init() {
 	cmdServe.Flags().BoolVarP(&serve_progress, "progress", "p", false, "Show progress")
 	cmdServe.Flags().BoolVarP(&serve_continuous, "continuous", "C", false, "Continuous sync")
 	cmdServe.Flags().BoolVarP(&serve_any_order, "order", "o", false, "Any order (faster)")
+	cmdServe.Flags().BoolVarP(&serve_sync_s3, "sync", "s", false, "Continuous sync to S3")
+
+	cmdServe.Flags().StringVar(&serve_sync_endpoint, "sync", "", "Sync S3 endpoint")
+	cmdServe.Flags().StringVar(&serve_sync_access, "s3access", "", "Sync S3 access token")
+	cmdServe.Flags().StringVar(&serve_sync_secret, "s3secret", "", "Sync S3 secret token")
+	cmdServe.Flags().StringVar(&serve_sync_bucket, "s3bucket", "", "Sync S3 bucket")
+
+	cmdServe.Flags().DurationVar(&serve_sync_dirty_block_period, "dirtyperiod", 1*time.Second, "Sync dirty block period")
+	cmdServe.Flags().IntVar(&serve_sync_dirty_block_shift, "sync", 10, "Sync dirty block shift")
+	cmdServe.Flags().DurationVar(&serve_sync_block_max_age, "sync", 1*time.Second, "Sync dirty block maximum age")
+	cmdServe.Flags().IntVar(&serve_sync_dirty_limit, "sync", 16, "Sync dirty block limit")
+	cmdServe.Flags().IntVar(&serve_sync_dirty_min_changed, "sync", 4, "Sync dirty block min changed")
 }
 
 type storageInfo struct {
-	//	tracker       storage.TrackingStorageProvider
 	tracker    *dirtytracker.DirtyTrackerRemote
 	lockable   storage.LockableStorageProvider
 	orderer    *blocks.PriorityBlockOrder
@@ -66,6 +89,8 @@ type storageInfo struct {
 	block_size int
 	name       string
 	schema     string
+
+	s3_sync_cancel func()
 }
 
 func runServe(ccmd *cobra.Command, args []string) {
@@ -160,6 +185,13 @@ func shutdown_everything() {
 		i.tracker.Close()
 	}
 
+	if serve_sync_s3 {
+		fmt.Printf("Stopping S3 sync...\n")
+		for _, i := range src_storage {
+			i.s3_sync_cancel()
+		}
+	}
+
 	fmt.Printf("Shutting down devices cleanly...\n")
 	for _, p := range src_exposed {
 		device := p.Device()
@@ -184,7 +216,67 @@ func setupStorageDevice(conf *config.DeviceSchema) (*storageInfo, error) {
 	}
 	sourceMetrics := modules.NewMetrics(source)
 	sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(sourceMetrics, block_size)
-	sourceMonitor := volatilitymonitor.NewVolatilityMonitor(sourceDirtyLocal, block_size, 10*time.Second)
+
+	var sourceDirty storage.StorageProvider
+	sourceDirty = sourceDirtyLocal
+
+	var s3_cancel func()
+	var s3_ctx context.Context
+	if serve_sync_s3 {
+		s3_block_size := block_size >> serve_sync_dirty_block_shift
+		s3SourceDirtyLocal, s3SourceDirtyRemote := dirtytracker.NewDirtyTracker(sourceDirtyLocal, s3_block_size)
+		s3Lockable := modules.NewLockable(s3SourceDirtyLocal)
+		sourceDirty = s3Lockable
+
+		s3Orderer := blocks.NewAnyBlockOrder(num_blocks, nil)
+
+		dest, err := sources.NewS3StorageCreate(serve_sync_endpoint,
+			serve_sync_access,
+			serve_sync_secret,
+			serve_sync_bucket,
+			conf.Name,
+			source.Size(),
+			block_size)
+		if err != nil {
+			return nil, err
+		}
+
+		// FIXME: Start syncing to S3 if it was requested of us...
+		s3_ctx, s3_cancel = context.WithCancel(context.TODO())
+		go func() {
+			status, err := migrator.Sync(s3_ctx, &migrator.Sync_config{
+				Name:               conf.Name,
+				Integrity:          false,
+				Cancel_writes:      true,
+				Dedupe_writes:      true,
+				Tracker:            s3SourceDirtyRemote,
+				Lockable:           s3Lockable,
+				Destination:        dest,
+				Orderer:            s3Orderer,
+				Dirty_check_period: serve_sync_dirty_block_period,
+				Dirty_block_getter: func() []uint {
+					return s3SourceDirtyRemote.GetDirtyBlocks(
+						serve_sync_block_max_age,
+						serve_sync_dirty_limit,
+						serve_sync_dirty_block_shift,
+						serve_sync_dirty_min_changed)
+				},
+				Block_size: block_size,
+				Progress_handler: func(p *migrator.MigrationProgress) {
+					ood := s3SourceDirtyRemote.MeasureDirty()
+					ood_age := s3SourceDirtyRemote.MeasureDirtyAge()
+					fmt.Printf("S3 DIRTY STATUS %dms old, with %d blocks\n", time.Since(ood_age).Milliseconds(), ood)
+				},
+				Error_handler: func(b *storage.BlockInfo, err error) {
+					fmt.Printf("There was an error syncing to S3.")
+					panic(err)
+				},
+			}, false, true)
+			fmt.Printf("S3 Migration status %v err %v\n", status, err)
+		}()
+	}
+
+	sourceMonitor := volatilitymonitor.NewVolatilityMonitor(sourceDirty, block_size, 10*time.Second)
 	sourceStorage := modules.NewLockable(sourceMonitor)
 
 	if ex != nil {
@@ -205,13 +297,14 @@ func setupStorageDevice(conf *config.DeviceSchema) (*storageInfo, error) {
 	schema := string(conf.Encode())
 
 	sinfo := &storageInfo{
-		tracker:    sourceDirtyRemote,
-		lockable:   sourceStorage,
-		orderer:    orderer,
-		block_size: block_size,
-		num_blocks: num_blocks,
-		name:       conf.Name,
-		schema:     schema,
+		tracker:        sourceDirtyRemote,
+		lockable:       sourceStorage,
+		orderer:        orderer,
+		block_size:     block_size,
+		num_blocks:     num_blocks,
+		name:           conf.Name,
+		schema:         schema,
+		s3_sync_cancel: s3_cancel,
 	}
 
 	return sinfo, nil
