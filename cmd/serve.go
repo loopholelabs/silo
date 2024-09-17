@@ -91,6 +91,7 @@ type storageInfo struct {
 	schema     string
 
 	s3_sync_cancel func()
+	s3_syncer      *migrator.Syncer
 }
 
 func runServe(ccmd *cobra.Command, args []string) {
@@ -158,6 +159,13 @@ func runServe(ccmd *cobra.Command, args []string) {
 		for i, s := range src_storage {
 			wg.Add(1)
 			go func(index int, src *storageInfo) {
+
+				// TODO: Here we need to tell the other side where to get the backed up version (s3)
+				if serve_sync_s3 {
+					s3_blocks := src.s3_syncer.GetSafeBlockMap() // Get a list of blocks that are on S3 for this device...
+					fmt.Printf("TODO: Tell the other side they can get data from S3: %d\n", len(s3_blocks))
+				}
+
 				err := migrateDevice(uint32(index), src.name, pro, src)
 				if err != nil {
 					fmt.Printf("There was an issue migrating the storage %d %v\n", index, err)
@@ -222,6 +230,7 @@ func setupStorageDevice(conf *config.DeviceSchema) (*storageInfo, error) {
 
 	var s3_cancel func()
 	var s3_ctx context.Context
+	var s3_syncer *migrator.Syncer
 	if serve_sync_s3 {
 		s3_block_size := block_size >> serve_sync_dirty_block_shift
 		s3SourceDirtyLocal, s3SourceDirtyRemote := dirtytracker.NewDirtyTracker(sourceDirtyLocal, s3_block_size)
@@ -243,37 +252,38 @@ func setupStorageDevice(conf *config.DeviceSchema) (*storageInfo, error) {
 
 		// Start syncing to S3 if it was requested of us...
 		s3_ctx, s3_cancel = context.WithCancel(context.TODO())
-		go func() {
-			syncer := migrator.NewSyncer(s3_ctx, &migrator.Sync_config{
-				Name:               conf.Name,
-				Integrity:          false,
-				Cancel_writes:      true,
-				Dedupe_writes:      true,
-				Tracker:            s3SourceDirtyRemote,
-				Lockable:           s3Lockable,
-				Destination:        dest,
-				Orderer:            s3Orderer,
-				Dirty_check_period: serve_sync_dirty_block_period,
-				Dirty_block_getter: func() []uint {
-					return s3SourceDirtyRemote.GetDirtyBlocks(
-						serve_sync_block_max_age,
-						serve_sync_dirty_limit,
-						serve_sync_dirty_block_shift,
-						serve_sync_dirty_min_changed)
-				},
-				Block_size: block_size,
-				Progress_handler: func(p *migrator.MigrationProgress) {
-					ood := s3SourceDirtyRemote.MeasureDirty()
-					ood_age := s3SourceDirtyRemote.MeasureDirtyAge()
-					fmt.Printf("S3 DIRTY STATUS %dms old, with %d blocks\n", time.Since(ood_age).Milliseconds(), ood)
-				},
-				Error_handler: func(b *storage.BlockInfo, err error) {
-					fmt.Printf("There was an error syncing to S3.")
-					panic(err)
-				},
-			})
 
-			status, err := syncer.Sync(false, true)
+		s3_syncer = migrator.NewSyncer(s3_ctx, &migrator.Sync_config{
+			Name:               conf.Name,
+			Integrity:          false,
+			Cancel_writes:      true,
+			Dedupe_writes:      true,
+			Tracker:            s3SourceDirtyRemote,
+			Lockable:           s3Lockable,
+			Destination:        dest,
+			Orderer:            s3Orderer,
+			Dirty_check_period: serve_sync_dirty_block_period,
+			Dirty_block_getter: func() []uint {
+				return s3SourceDirtyRemote.GetDirtyBlocks(
+					serve_sync_block_max_age,
+					serve_sync_dirty_limit,
+					serve_sync_dirty_block_shift,
+					serve_sync_dirty_min_changed)
+			},
+			Block_size: block_size,
+			Progress_handler: func(p *migrator.MigrationProgress) {
+				ood := s3SourceDirtyRemote.MeasureDirty()
+				ood_age := s3SourceDirtyRemote.MeasureDirtyAge()
+				fmt.Printf("S3 DIRTY STATUS %dms old, with %d blocks\n", time.Since(ood_age).Milliseconds(), ood)
+			},
+			Error_handler: func(b *storage.BlockInfo, err error) {
+				fmt.Printf("There was an error syncing to S3.")
+				panic(err)
+			},
+		})
+
+		go func() {
+			status, err := s3_syncer.Sync(false, true)
 			fmt.Printf("S3 Migration status %v err %v\n", status, err)
 		}()
 	}
@@ -307,6 +317,7 @@ func setupStorageDevice(conf *config.DeviceSchema) (*storageInfo, error) {
 		name:           conf.Name,
 		schema:         schema,
 		s3_sync_cancel: s3_cancel,
+		s3_syncer:      s3_syncer,
 	}
 
 	return sinfo, nil
@@ -368,12 +379,23 @@ func migrateDevice(dev_id uint32, name string,
 	}()
 
 	go func() {
+		_ = dest.HandleHashes(func(hashes map[uint][32]byte) {
+			// TODO: We need to keep track of these, and not send if they already have it.
+			for b, hash := range hashes {
+				fmt.Printf("TODO: RECV Hash %d %x\n", b, hash)
+			}
+		})
+	}()
+
+	go func() {
 		_ = dest.HandleDontNeedAt(func(offset int64, length int32) {
 			end := uint64(offset + int64(length))
 			if end > uint64(size) {
 				end = uint64(size)
 			}
 
+			// Remove the block from the orderer...
+			// NB: The block may still be sent in dirty stages, but will be ignored by a waitingCache if there were local writes.
 			b_start := int(offset / int64(sinfo.block_size))
 			b_end := int((end-1)/uint64(sinfo.block_size)) + 1
 			for b := b_start; b < b_end; b++ {
