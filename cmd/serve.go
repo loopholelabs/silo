@@ -289,9 +289,10 @@ func migrateDevice(dev_id uint32, name string,
 
 	// FIXME: Sync integration here...
 	sync_config := &migrator.Sync_config{
-		Name:     "serve",
-		Tracker:  sinfo.tracker,
-		Lockable: sinfo.lockable,
+		Name:       "serve",
+		Tracker:    sinfo.tracker,
+		Lockable:   sinfo.lockable,
+		Block_size: sinfo.block_size,
 		Locker_handler: func() {
 			_ = dest.SendEvent(&packets.Event{Type: packets.EventPreLock})
 			sinfo.lockable.Lock()
@@ -339,7 +340,9 @@ func migrateDevice(dev_id uint32, name string,
 
 	sync_config.Hashes_handler = func(hashes map[uint][32]byte) {
 		err = dest.SendHashes(hashes)
-		panic(err) // FIXME
+		if err != nil {
+			panic(err) // FIXME
+		}
 	}
 
 	sync_config.Dirty_check_period = 100 * time.Millisecond

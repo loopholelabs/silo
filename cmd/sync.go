@@ -71,7 +71,7 @@ func init() {
 	cmdSync.Flags().StringVarP(&sync_secret, "secret", "s", "", "S3 secret")
 	cmdSync.Flags().StringVarP(&sync_bucket, "bucket", "b", "", "S3 bucket")
 	cmdSync.Flags().IntVarP(&sync_block_size, "blocksize", "l", 1*1024*1024, "S3 block size")
-	cmdSync.Flags().DurationVarP(&sync_time_limit, "timelimit", "t", 30*time.Second, "Sync time limit")
+	cmdSync.Flags().DurationVarP(&sync_time_limit, "timelimit", "t", 5*time.Minute, "Sync time limit")
 	cmdSync.Flags().BoolVarP(&sync_replay, "replay", "r", false, "Replay existing binlog(s)")
 	cmdSync.Flags().IntVarP(&sync_dirty_block_shift, "dirtyshift", "d", 10, "Dirty tracker block shift")
 	cmdSync.Flags().DurationVarP(&sync_block_max_age, "dirtymaxage", "", 1*time.Second, "Dirty block max age")
