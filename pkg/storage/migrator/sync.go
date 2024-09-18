@@ -23,6 +23,8 @@ type Sync_config struct {
 	Dirty_check_period time.Duration
 	Dirty_block_getter func() []uint
 
+	Destination_content_check func(offset int, data []byte) bool
+
 	// NB If you use dirty_block_shift here, you'll need to also shift the block size in DirtyTracker constructor
 	//	getter := func() []uint {
 	//		return Tracker.GetDirtyBlocks(Dirty_block_max_age, Dirty_limit, Dirty_block_shift, Dirty_min_changed)
@@ -114,6 +116,8 @@ func (s *Syncer) Sync(sync_all_first bool, continuous bool) (*MigrationProgress,
 	conf.Cancel_writes = s.config.Cancel_writes
 	conf.Dedupe_writes = s.config.Dedupe_writes
 
+	conf.Dest_content_check = s.config.Destination_content_check
+
 	conf.Progress_handler = func(p *MigrationProgress) {
 		log.Info().
 			Str("name", s.config.Name).
@@ -125,6 +129,7 @@ func (s *Syncer) Sync(sync_all_first bool, continuous bool) (*MigrationProgress,
 			Int("total_migrated_blocks", p.Total_Migrated_blocks).
 			Int("total_canceled_blocks", p.Total_Canceled_blocks).
 			Int("total_duplicated_blocks", p.Total_Duplicated_blocks).
+			Int("total_unrequired_blocks", p.Total_Unrequired_blocks).
 			Msg("Continuous sync progress")
 		if s.config.Progress_handler != nil {
 			s.config.Progress_handler(p)
