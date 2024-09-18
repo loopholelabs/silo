@@ -27,21 +27,21 @@ func EncodeDevInfo(di *DevInfo) []byte {
 
 func DecodeDevInfo(buff []byte) (*DevInfo, error) {
 	if buff == nil || len(buff) < 19 || buff[0] != COMMAND_DEV_INFO {
-		return nil, errors.New("Invalid packet")
+		return nil, errors.New("invalid packet")
 	}
 	size := binary.LittleEndian.Uint64(buff[1:])
 	blocksize := binary.LittleEndian.Uint32(buff[9:])
 
 	l := binary.LittleEndian.Uint16(buff[13:])
 	if int(l)+15 > len(buff) {
-		return nil, errors.New("Invalid packet")
+		return nil, errors.New("invalid packet")
 	}
 	name := string(buff[15 : 15+l])
 
 	ptr := 15 + int(l)
 	sl := binary.LittleEndian.Uint32(buff[ptr:])
 	if ptr+4+int(sl) > len(buff) {
-		return nil, errors.New("Invalid packet")
+		return nil, errors.New("invalid packet")
 	}
 	schema := string(buff[ptr+4 : ptr+4+int(sl)])
 

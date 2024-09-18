@@ -279,6 +279,57 @@ func (fp *FromProtocol) HandleWriteAt() error {
 	}
 }
 
+// Handle any WriteAtHash commands, and send to provider
+func (fp *FromProtocol) HandleWriteAtHash(lookup_cb func(int64, int64, []byte) []byte) error {
+	err := fp.wait_init_or_cancel()
+	if err != nil {
+		return err
+	}
+
+	var errLock sync.Mutex
+	var errValue error
+
+	for {
+		// If there was an error in one of the goroutines, return it.
+		errLock.Lock()
+		if errValue != nil {
+			errLock.Unlock()
+			return errValue
+		}
+		errLock.Unlock()
+
+		id, data, err := fp.protocol.WaitForCommand(fp.dev, packets.COMMAND_WRITE_AT_HASH)
+		if err != nil {
+			return err
+		}
+
+		offset, length, hash_data, err := packets.DecodeWriteAtHash(data)
+		if err != nil {
+			return err
+		}
+
+		write_data := lookup_cb(offset, length, hash_data)
+
+		// Handle in a goroutine
+		go func(goffset int64, gdata []byte, gid uint32) {
+			n, err := fp.prov.WriteAt(gdata, goffset)
+			war := &packets.WriteAtResponse{
+				Bytes: n,
+				Error: err,
+			}
+			if err == nil {
+				fp.mark_range_present(int(goffset), len(gdata))
+			}
+			_, err = fp.protocol.SendPacket(fp.dev, gid, packets.EncodeWriteAtResponse(war))
+			if err != nil {
+				errLock.Lock()
+				errValue = err
+				errLock.Unlock()
+			}
+		}(offset, write_data, id)
+	}
+}
+
 // Handle any WriteAt commands, and send to provider
 func (fp *FromProtocol) HandleWriteAtWithMap(cb func(offset int64, data []byte, idmap map[uint64]uint64) error) error {
 	err := fp.wait_init_or_cancel()

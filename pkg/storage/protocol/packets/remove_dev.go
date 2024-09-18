@@ -12,7 +12,7 @@ func EncodeRemoveDev() []byte {
 
 func DecodeRemoveDev(buff []byte) error {
 	if buff == nil || len(buff) < 1 || buff[0] != COMMAND_REMOVE_DEV {
-		return errors.New("Invalid packet")
+		return errors.New("invalid packet")
 	}
 	return nil
 }
