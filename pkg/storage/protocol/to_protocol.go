@@ -151,6 +151,33 @@ func (i *ToProtocol) WriteAt(buffer []byte, offset int64) (int, error) {
 	return 0, ErrInvalidPacket
 }
 
+func (i *ToProtocol) WriteAtHash(hash []byte, offset int64, length int64) (int, error) {
+	d := packets.EncodeWriteAtHash(offset, length, hash)
+	id, err := i.protocol.SendPacket(i.dev, ID_PICK_ANY, d)
+	if err != nil {
+		return 0, err
+	}
+	// Wait for the response...
+	r, err := i.protocol.WaitForPacket(i.dev, id)
+	if err != nil {
+		return 0, err
+	}
+
+	// Decode the response...
+	if r == nil || len(r) < 1 {
+		return 0, ErrInvalidPacket
+	}
+	if r[0] == packets.COMMAND_WRITE_AT_RESPONSE_ERR {
+		return 0, ErrRemoteWriteError
+	} else if r[0] == packets.COMMAND_WRITE_AT_RESPONSE {
+		if len(r) < 5 {
+			return 0, ErrInvalidPacket
+		}
+		return int(binary.LittleEndian.Uint32(r[1:])), nil
+	}
+	return 0, ErrInvalidPacket
+}
+
 func (i *ToProtocol) WriteAtWithMap(buffer []byte, offset int64, id_map map[uint64]uint64) (int, error) {
 	var id uint32
 	var err error
