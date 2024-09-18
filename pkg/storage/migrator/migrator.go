@@ -15,17 +15,18 @@ import (
 )
 
 type MigratorConfig struct {
-	Block_size       int
-	Locker_handler   func()
-	Unlocker_handler func()
-	Error_handler    func(b *storage.BlockInfo, err error)
-	Progress_handler func(p *MigrationProgress)
-	Block_handler    func(b *storage.BlockInfo, id uint64)
-	Concurrency      map[int]int
-	Integrity        bool
-	Cancel_writes    bool
-	Dedupe_writes    bool
-	Recent_write_age time.Duration
+	Block_size         int
+	Locker_handler     func()
+	Unlocker_handler   func()
+	Error_handler      func(b *storage.BlockInfo, err error)
+	Progress_handler   func(p *MigrationProgress)
+	Block_handler      func(b *storage.BlockInfo, id uint64)
+	Concurrency        map[int]int
+	Integrity          bool
+	Cancel_writes      bool
+	Dedupe_writes      bool
+	Recent_write_age   time.Duration
+	Dest_content_check func(offset int, buffer []byte) bool
 }
 
 func NewMigratorConfig() *MigratorConfig {
@@ -42,10 +43,11 @@ func NewMigratorConfig() *MigratorConfig {
 			storage.BlockTypeDirty:    100,
 			storage.BlockTypePriority: 16,
 		},
-		Integrity:        false,
-		Cancel_writes:    false,
-		Dedupe_writes:    false,
-		Recent_write_age: time.Minute,
+		Integrity:          false,
+		Cancel_writes:      false,
+		Dedupe_writes:      false,
+		Recent_write_age:   time.Minute,
+		Dest_content_check: nil,
 	}
 }
 
@@ -64,6 +66,7 @@ type MigrationProgress struct {
 	Total_Canceled_blocks   int // Total blocks that were cancelled
 	Total_Migrated_blocks   int // Total blocks that were migrated
 	Total_Duplicated_blocks int
+	Total_Unrequired_blocks int
 }
 
 type Migrator struct {
@@ -84,6 +87,7 @@ type Migrator struct {
 	metric_blocks_migrated   int64
 	metric_blocks_canceled   int64
 	metric_blocks_duplicates int64
+	metric_blocks_unrequired int64
 	block_locks              []sync.Mutex
 	moving_blocks            *util.Bitfield
 	migrated_blocks          *util.Bitfield
@@ -98,6 +102,7 @@ type Migrator struct {
 	cancel_writes            bool
 	dedupe_writes            bool
 	recent_write_age         time.Duration
+	dest_content_check       func(offset int, buffer []byte) bool
 }
 
 func NewMigrator(source storage.TrackingStorageProvider,
@@ -119,6 +124,7 @@ func NewMigrator(source storage.TrackingStorageProvider,
 		metric_blocks_migrated:   0,
 		metric_blocks_canceled:   0,
 		metric_blocks_duplicates: 0,
+		metric_blocks_unrequired: 0,
 		block_order:              block_order,
 		moving_blocks:            util.NewBitfield(num_blocks),
 		migrated_blocks:          util.NewBitfield(num_blocks),
@@ -131,6 +137,7 @@ func NewMigrator(source storage.TrackingStorageProvider,
 		recent_write_age:         config.Recent_write_age,
 		cancel_writes:            config.Cancel_writes,
 		dedupe_writes:            config.Dedupe_writes,
+		dest_content_check:       config.Dest_content_check,
 	}
 
 	if m.dest.Size() != m.source_tracker.Size() {
@@ -346,6 +353,7 @@ func (m *Migrator) reportProgress(forced bool) {
 		Total_Canceled_blocks:   int(atomic.LoadInt64(&m.metric_blocks_canceled)),
 		Total_Migrated_blocks:   int(atomic.LoadInt64(&m.metric_blocks_migrated)),
 		Total_Duplicated_blocks: int(atomic.LoadInt64(&m.metric_blocks_duplicates)),
+		Total_Unrequired_blocks: int(atomic.LoadInt64(&m.metric_blocks_unrequired)),
 	}
 	// Callback
 	m.progress_fn(m.progress_last_status)
@@ -375,6 +383,7 @@ func (m *Migrator) Status() *MigrationProgress {
 		Total_Canceled_blocks:   int(atomic.LoadInt64(&m.metric_blocks_canceled)),
 		Total_Migrated_blocks:   int(atomic.LoadInt64(&m.metric_blocks_migrated)),
 		Total_Duplicated_blocks: int(atomic.LoadInt64(&m.metric_blocks_duplicates)),
+		Total_Unrequired_blocks: int(atomic.LoadInt64(&m.metric_blocks_unrequired)),
 	}
 }
 
@@ -411,9 +420,15 @@ func (m *Migrator) migrateBlock(block int) error {
 	if m.source_mapped != nil {
 		n, err = m.dest_write_with_map(buff, int64(offset), idmap)
 	} else {
-		// Now write it to destStorage
-		n, err = m.dest.WriteAt(buff, int64(offset))
+		// Check if the destination has the content already. If not, WriteAt.
+		if m.dest_content_check != nil && m.dest_content_check(offset, buff) {
+			atomic.AddInt64(&m.metric_blocks_unrequired, 1)
+		} else {
+			// Now write it to destStorage
+			n, err = m.dest.WriteAt(buff, int64(offset))
+		}
 	}
+
 	if n != len(buff) || err != nil {
 		if errors.Is(err, context.Canceled) {
 			atomic.AddInt64(&m.metric_blocks_canceled, 1)
