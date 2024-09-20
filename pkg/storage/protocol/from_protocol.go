@@ -3,7 +3,6 @@ package protocol
 import (
 	"context"
 	"crypto/sha256"
-	"fmt"
 	"sync"
 
 	"github.com/loopholelabs/silo/pkg/storage"
@@ -287,11 +286,8 @@ func (i *FromProtocol) SendHashes(hashes map[uint][sha256.Size]byte) error {
 		return err
 	}
 
-	fmt.Printf("Wait Hash Response\n")
-
 	// Wait for an ack
 	r, err := i.protocol.WaitForPacket(i.dev, id)
-	fmt.Printf("Hash Response %v %v\n", r, err)
 	if err != nil {
 		return err
 	}
