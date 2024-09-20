@@ -3,6 +3,7 @@ package protocol
 import (
 	"context"
 	"crypto/sha256"
+	"fmt"
 	"sync"
 
 	"github.com/loopholelabs/silo/pkg/storage"
@@ -279,6 +280,25 @@ func (fp *FromProtocol) HandleWriteAt() error {
 	}
 }
 
+func (i *FromProtocol) SendHashes(hashes map[uint][sha256.Size]byte) error {
+	h := packets.EncodeHashes(hashes)
+	id, err := i.protocol.SendPacket(i.dev, ID_PICK_ANY, h)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Wait Hash Response\n")
+
+	// Wait for an ack
+	r, err := i.protocol.WaitForPacket(i.dev, id)
+	fmt.Printf("Hash Response %v %v\n", r, err)
+	if err != nil {
+		return err
+	}
+
+	return packets.DecodeHashesResponse(r)
+}
+
 // Handle any WriteAtHash commands, and send to provider
 func (fp *FromProtocol) HandleWriteAtHash(lookup_cb func(int64, int64, []byte) []byte) error {
 	err := fp.wait_init_or_cancel()
@@ -299,6 +319,7 @@ func (fp *FromProtocol) HandleWriteAtHash(lookup_cb func(int64, int64, []byte) [
 		errLock.Unlock()
 
 		id, data, err := fp.protocol.WaitForCommand(fp.dev, packets.COMMAND_WRITE_AT_HASH)
+
 		if err != nil {
 			return err
 		}

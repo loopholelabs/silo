@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"net"
@@ -280,6 +281,9 @@ func setupStorageDevice(conf *config.DeviceSchema) (*storageInfo, error) {
 				fmt.Printf("There was an error syncing to S3.")
 				panic(err)
 			},
+			Destination_content_check: func(offset int, data []byte) bool {
+				return false
+			},
 		})
 
 		go func() {
@@ -330,7 +334,11 @@ func migrateDevice(dev_id uint32, name string,
 	size := sinfo.lockable.Size()
 	dest := protocol.NewToProtocol(uint64(size), dev_id, pro)
 
+	dest_hashes := make(map[uint][32]byte)
+	var dest_hashes_lock sync.Mutex
+
 	err := dest.SendDevInfo(name, uint32(sinfo.block_size), sinfo.schema)
+	fmt.Printf("SendDevInfo %s\n", name)
 	if err != nil {
 		return err
 	}
@@ -378,12 +386,18 @@ func migrateDevice(dev_id uint32, name string,
 		})
 	}()
 
+	var wait_hashes sync.WaitGroup
+
+	wait_hashes.Add(1)
 	go func() {
 		_ = dest.HandleHashes(func(hashes map[uint][32]byte) {
 			// TODO: We need to keep track of these, and not send if they already have it.
 			for b, hash := range hashes {
-				fmt.Printf("TODO: RECV Hash %d %x\n", b, hash)
+				dest_hashes_lock.Lock()
+				dest_hashes[b] = hash
+				dest_hashes_lock.Unlock()
 			}
+			wait_hashes.Done()
 		})
 	}()
 
@@ -404,7 +418,6 @@ func migrateDevice(dev_id uint32, name string,
 		})
 	}()
 
-	// FIXME: Sync integration here...
 	sync_config := &migrator.Sync_config{
 		Name:       "serve",
 		Tracker:    sinfo.tracker,
@@ -426,6 +439,34 @@ func migrateDevice(dev_id uint32, name string,
 		},
 		Destination: dest,
 		Orderer:     sinfo.orderer,
+		Destination_content_check: func(offset int, data []byte) bool {
+
+			b := uint(offset / sinfo.block_size)
+			hash := sha256.Sum256(data)
+			// Look up in destination_hashes
+			dest_hashes_lock.Lock()
+			dest_hash, ok := dest_hashes[b]
+			dest_hashes_lock.Unlock()
+
+			if !ok {
+				return false
+			}
+
+			for i := 0; i < 32; i++ {
+				if hash[i] != dest_hash[i] {
+					return false
+				}
+			}
+
+			// The destination already has the data.
+			fmt.Printf("Destination already has block %d\n", b)
+			_, err := dest.WriteAtHash(hash[:], int64(offset), int64(len(data)))
+			if err != nil {
+				panic(err)
+			}
+
+			return true
+		},
 	}
 
 	last_value := uint64(0)
@@ -483,6 +524,9 @@ func migrateDevice(dev_id uint32, name string,
 	sync_config.Integrity = true
 
 	syncer := migrator.NewSyncer(context.TODO(), sync_config)
+
+	// Don't start the sync until the other side has sent us their hashes...
+	wait_hashes.Wait()
 	_, err = syncer.Sync(true, serve_continuous)
 	if err != nil {
 		panic(err)
