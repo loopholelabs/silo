@@ -10,7 +10,7 @@ func EncodeWriteAtHash(offset int64, length int64, hash []byte) []byte {
 	var buff bytes.Buffer
 
 	buff.WriteByte(COMMAND_WRITE_AT_HASH)
-	b := make([]byte, 16)
+	b := make([]byte, 8)
 	binary.LittleEndian.PutUint64(b, uint64(offset))
 	buff.Write(b)
 	binary.LittleEndian.PutUint64(b, uint64(length))
