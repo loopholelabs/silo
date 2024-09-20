@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"errors"
-	"fmt"
 
 	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
 )
@@ -68,7 +67,6 @@ func (i *ToProtocol) SendDevInfo(name string, block_size uint32, schema string) 
 	}
 	b := packets.EncodeDevInfo(di)
 	_, err := i.protocol.SendPacket(i.dev, ID_PICK_ANY, b)
-	fmt.Printf("Sent DevInfo %d %v\n", i.dev, err)
 	return err
 }
 
@@ -154,7 +152,6 @@ func (i *ToProtocol) WriteAt(buffer []byte, offset int64) (int, error) {
 }
 
 func (i *ToProtocol) WriteAtHash(hash []byte, offset int64, length int64) (int, error) {
-	fmt.Printf("Sending WriteAtHash... %x\n", hash)
 	d := packets.EncodeWriteAtHash(offset, length, hash)
 	id, err := i.protocol.SendPacket(i.dev, ID_PICK_ANY, d)
 	if err != nil {
@@ -248,10 +245,7 @@ func (fp *ToProtocol) HandleHashes(cb func(map[uint][sha256.Size]byte)) error {
 		// Relay the hashes, wait and then respond
 		cb(hashes)
 
-		fmt.Printf("Sending hash ack %d %d\n", fp.dev, id)
-
 		_, err = fp.protocol.SendPacket(fp.dev, id, packets.EncodeHashesResponse())
-		fmt.Printf("Sending hash ack %d %d %v\n", fp.dev, id, err)
 		if err != nil {
 			return err
 		}
