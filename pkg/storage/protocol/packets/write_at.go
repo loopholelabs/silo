@@ -14,16 +14,13 @@ func EncodeWriteAt(offset int64, data []byte) []byte {
 	return buff
 }
 
-func EncodeWriterWriteAt(offset int64, data []byte) (uint32, func(w io.Writer) error) {
-	return uint32(9 + len(data)), func(w io.Writer) error {
-		header := make([]byte, 1+8)
-		header[0] = COMMAND_WRITE_AT
-		binary.LittleEndian.PutUint64(header[1:], uint64(offset))
-		_, err := w.Write(header)
-		if err != nil {
-			return err
-		}
-		_, err = w.Write(data)
+func EncodeWriterWriteAt(offset int64, data []byte) (uint32, []byte, func(w io.Writer) error) {
+	header := make([]byte, 1+8)
+	header[0] = COMMAND_WRITE_AT
+	binary.LittleEndian.PutUint64(header[1:], uint64(offset))
+
+	return uint32(9 + len(data)), header, func(w io.Writer) error {
+		_, err := w.Write(data)
 		return err
 	}
 }

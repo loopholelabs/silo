@@ -173,7 +173,7 @@ func TestProtocolRWSendAfterCancel(t *testing.T) {
 	_, err = prDest.SendPacket(1, 0, []byte{1, 2, 3})
 	assert.ErrorIs(t, err, context.Canceled)
 
-	_, err = prDest.SendPacketWriter(1, 0, 0, func(w io.Writer) error { return nil })
+	_, err = prDest.SendPacketWriter(1, 0, 0, []byte{}, func(w io.Writer) error { return nil })
 	assert.ErrorIs(t, err, context.Canceled)
 
 }
