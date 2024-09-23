@@ -1,6 +1,7 @@
 package packets
 
 import (
+	"crypto/sha256"
 	"errors"
 	"testing"
 
@@ -329,5 +330,44 @@ func TestRemoveDev(t *testing.T) {
 		99,
 	})
 	assert.Error(t, err)
+
+}
+
+func TestHashes(t *testing.T) {
+
+	hashes := map[uint][32]byte{
+		1: {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31},
+		2: {2, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31},
+	}
+	b := EncodeHashes(hashes)
+
+	hashes2, err := DecodeHashes(b)
+	assert.NoError(t, err)
+	assert.Equal(t, len(hashes), len(hashes2))
+	assert.Equal(t, hashes[1], hashes2[1])
+	assert.Equal(t, hashes[2], hashes2[2])
+
+}
+
+func TestAlternateSources(t *testing.T) {
+
+	sources := []AlternateSource{
+		{
+			Offset:   0,
+			Length:   100,
+			Hash:     [sha256.Size]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31},
+			Location: "somewhere",
+		},
+	}
+	b := EncodeAlternateSources(sources)
+
+	sources2, err := DecodeAlternateSources(b)
+	assert.NoError(t, err)
+	assert.Equal(t, len(sources), len(sources2))
+
+	assert.Equal(t, sources[0].Offset, sources2[0].Offset)
+	assert.Equal(t, sources[0].Length, sources2[0].Length)
+	assert.Equal(t, sources[0].Hash, sources2[0].Hash)
+	assert.Equal(t, sources[0].Location, sources2[0].Location)
 
 }

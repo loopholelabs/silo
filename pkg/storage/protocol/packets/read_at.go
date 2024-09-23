@@ -44,18 +44,18 @@ func EncodeReadAtResponse(rar *ReadAtResponse) []byte {
 
 func DecodeReadAtResponse(buff []byte) (*ReadAtResponse, error) {
 	if buff == nil {
-		return nil, errors.New("Invalid packet")
+		return nil, errors.New("invalid packet")
 	}
 
 	if buff[0] == COMMAND_READ_AT_RESPONSE_ERR {
 		return &ReadAtResponse{
-			Error: errors.New("Remote error"),
+			Error: errors.New("remote error"),
 			Bytes: 0,
 			Data:  make([]byte, 0),
 		}, nil
 	} else if buff[0] == COMMAND_READ_AT_RESPONSE {
 		if len(buff) < 5 {
-			return nil, errors.New("Invalid packet")
+			return nil, errors.New("invalid packet")
 		}
 		return &ReadAtResponse{
 			Error: nil,
@@ -64,5 +64,5 @@ func DecodeReadAtResponse(buff []byte) (*ReadAtResponse, error) {
 		}, nil
 	}
 
-	return nil, errors.New("Unknown packet")
+	return nil, errors.New("unknown packet")
 }
