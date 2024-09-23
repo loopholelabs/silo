@@ -35,6 +35,11 @@ type ProtocolRW struct {
 	waiters_lock     sync.Mutex
 	newdev_fn        func(context.Context, Protocol, uint32)
 	newdev_protocol  Protocol
+
+	Metric_recv_bytes   uint64
+	Metric_recv_packets uint64
+	Metric_sent_bytes   uint64
+	Metric_sent_packets uint64
 }
 
 func NewProtocolRW(ctx context.Context, readers []io.Reader, writers []io.Writer, newdevFN func(context.Context, Protocol, uint32)) *ProtocolRW {
@@ -55,6 +60,22 @@ func NewProtocolRW(ctx context.Context, readers []io.Reader, writers []io.Writer
 	}
 	prw.newdev_protocol = prw // Return ourselves by default.
 	return prw
+}
+
+type ProtocolRWMetrics struct {
+	Recv_bytes   uint64
+	Recv_packets uint64
+	Sent_bytes   uint64
+	Sent_packets uint64
+}
+
+func (p *ProtocolRW) Metrics() *ProtocolRWMetrics {
+	return &ProtocolRWMetrics{
+		Recv_bytes:   atomic.LoadUint64(&p.Metric_recv_bytes),
+		Recv_packets: atomic.LoadUint64(&p.Metric_recv_packets),
+		Sent_bytes:   atomic.LoadUint64(&p.Metric_sent_bytes),
+		Sent_packets: atomic.LoadUint64(&p.Metric_sent_packets),
+	}
 }
 
 func (p *ProtocolRW) SetNewDevProtocol(proto Protocol) {
@@ -107,12 +128,18 @@ func (p *ProtocolRW) SendPacketWriter(dev uint32, id uint32, length uint32, data
 	binary.LittleEndian.PutUint32(p.writer_headers[i][4:], id)
 	binary.LittleEndian.PutUint32(p.writer_headers[i][8:], length)
 
-	_, err := p.writers[i].Write(p.writer_headers[i])
+	n, err := p.writers[i].Write(p.writer_headers[i])
+	atomic.AddUint64(&p.Metric_sent_packets, 1)
+	atomic.AddUint64(&p.Metric_sent_bytes, uint64(n))
 
 	if err != nil {
 		return 0, err
 	}
-	return id, data(p.writers[i])
+	err = data(p.writers[i])
+	if err == nil {
+		atomic.AddUint64(&p.Metric_sent_bytes, uint64(length))
+	}
+	return id, err
 }
 
 // Send a packet
@@ -141,12 +168,18 @@ func (p *ProtocolRW) SendPacket(dev uint32, id uint32, data []byte) (uint32, err
 	binary.LittleEndian.PutUint32(p.writer_headers[i][4:], id)
 	binary.LittleEndian.PutUint32(p.writer_headers[i][8:], uint32(len(data)))
 
-	_, err := p.writers[i].Write(p.writer_headers[i])
+	n, err := p.writers[i].Write(p.writer_headers[i])
 
 	if err != nil {
 		return 0, err
 	}
-	_, err = p.writers[i].Write(data)
+	atomic.AddUint64(&p.Metric_sent_packets, 1)
+	atomic.AddUint64(&p.Metric_sent_bytes, uint64(n))
+
+	n, err = p.writers[i].Write(data)
+	if err == nil {
+		atomic.AddUint64(&p.Metric_sent_bytes, uint64(n))
+	}
 	return id, err
 }
 
@@ -163,25 +196,27 @@ func (p *ProtocolRW) Handle() error {
 					errs <- p.ctx.Err()
 					return
 				default:
-					break
 				}
 
-				_, err := io.ReadFull(reader, header)
+				n, err := io.ReadFull(reader, header)
 				if err != nil {
 					errs <- err
 					return
 				}
+				atomic.AddUint64(&p.Metric_recv_packets, 1)
+				atomic.AddUint64(&p.Metric_recv_bytes, uint64(n))
 				dev := binary.LittleEndian.Uint32(header)
 				id := binary.LittleEndian.Uint32(header[4:])
 				length := binary.LittleEndian.Uint32(header[8:])
 
 				data := make([]byte, length)
-				_, err = io.ReadFull(reader, data)
+				n, err = io.ReadFull(reader, data)
 
 				if err != nil {
 					errs <- err
 					return
 				}
+				atomic.AddUint64(&p.Metric_recv_bytes, uint64(n))
 
 				err = p.handlePacket(dev, id, data)
 				if err != nil {
@@ -205,7 +240,7 @@ func (p *ProtocolRW) handlePacket(dev uint32, id uint32, data []byte) error {
 	p.InitDev(dev)
 
 	if data == nil || len(data) < 1 {
-		return errors.New("Invalid data packet")
+		return errors.New("invalid data packet")
 	}
 
 	cmd := data[0]
