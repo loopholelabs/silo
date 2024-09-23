@@ -124,8 +124,8 @@ func (i *ToProtocol) WriteAt(buffer []byte, offset int64) (int, error) {
 		data := packets.EncodeWriteAtComp(offset, buffer)
 		id, err = i.protocol.SendPacket(i.dev, ID_PICK_ANY, data)
 	} else {
-		l, f := packets.EncodeWriterWriteAt(offset, buffer)
-		id, err = i.protocol.SendPacketWriter(i.dev, ID_PICK_ANY, l, f)
+		l, h, f := packets.EncodeWriterWriteAt(offset, buffer)
+		id, err = i.protocol.SendPacketWriter(i.dev, ID_PICK_ANY, l, h, f)
 	}
 	if err != nil {
 		return 0, err

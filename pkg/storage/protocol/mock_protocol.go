@@ -25,8 +25,9 @@ func NewMockProtocol(ctx context.Context) *MockProtocol {
 	}
 }
 
-func (mp *MockProtocol) SendPacketWriter(dev uint32, id uint32, length uint32, data func(io.Writer) error) (uint32, error) {
+func (mp *MockProtocol) SendPacketWriter(dev uint32, id uint32, length uint32, header []byte, data func(io.Writer) error) (uint32, error) {
 	var buff bytes.Buffer
+	buff.Write(header)
 	err := data(&buff)
 	if err != nil {
 		return 0, err
