@@ -91,7 +91,7 @@ func (p *ProtocolRW) Metrics() *ProtocolRWMetrics {
 	for cmd, count := range p.metric_sent_packets_by_type {
 		s_by_cmd[cmd] = count
 	}
-	p.metric_recv_packets_lock.Unlock()
+	p.metric_sent_packets_lock.Unlock()
 	return &ProtocolRWMetrics{
 		Recv_bytes:          atomic.LoadUint64(&p.Metric_recv_bytes),
 		Recv_packets:        atomic.LoadUint64(&p.Metric_recv_packets),
@@ -153,6 +153,9 @@ func (p *ProtocolRW) SendPacketWriter(dev uint32, id uint32, length uint32, head
 	binary.LittleEndian.PutUint32(p.writer_headers[i][8:], length)
 
 	n, err := p.writers[i].Write(p.writer_headers[i])
+	if err != nil {
+		return 0, err
+	}
 	atomic.AddUint64(&p.Metric_sent_packets, 1)
 	atomic.AddUint64(&p.Metric_sent_bytes, uint64(n))
 

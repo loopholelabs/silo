@@ -58,6 +58,12 @@ func (i *ToProtocol) SendHashes(hashes map[uint][sha256.Size]byte) error {
 	return packets.DecodeHashesResponse(r)
 }
 
+func (i *ToProtocol) SendAlternateSources(sources []packets.AlternateSource) error {
+	h := packets.EncodeAlternateSources(sources)
+	_, err := i.protocol.SendPacket(i.dev, ID_PICK_ANY, h)
+	return err
+}
+
 func (i *ToProtocol) SendDevInfo(name string, block_size uint32, schema string) error {
 	di := &packets.DevInfo{
 		Size:       i.size,

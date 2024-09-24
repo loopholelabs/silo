@@ -93,6 +93,7 @@ type storageInfo struct {
 
 	s3_sync_cancel func()
 	s3_syncer      *migrator.Syncer
+	s3_order       *volatilitymonitor.VolatilityMonitor
 }
 
 func runServe(ccmd *cobra.Command, args []string) {
@@ -161,13 +162,35 @@ func runServe(ccmd *cobra.Command, args []string) {
 			wg.Add(1)
 			go func(index int, src *storageInfo) {
 
-				// TODO: Here we need to tell the other side where to get the backed up version (s3)
+				altSources := make([]packets.AlternateSource, 0)
+
 				if serve_sync_s3 {
 					s3_blocks := src.s3_syncer.GetSafeBlockMap() // Get a list of blocks that are on S3 for this device...
-					fmt.Printf("TODO: Tell the other side they can get data from S3: %d\n", len(s3_blocks))
+					blocks_on_s3 := make(map[uint]bool)
+					for _, b := range s3_blocks {
+						blocks_on_s3[b] = true
+					}
+
+					for {
+						block := src.s3_order.GetNext()
+						if block.Block == storage.BlockInfoFinish.Block {
+							break
+						}
+						// If the block is on S3, add it
+						on_s3, ok := blocks_on_s3[uint(block.Block)]
+						if ok && on_s3 {
+							as := packets.AlternateSource{
+								Offset:   int64(block.Block * src.block_size),
+								Length:   int64(src.block_size),
+								Hash:     [32]byte{},
+								Location: fmt.Sprintf("%s %s %s", serve_sync_endpoint, serve_sync_bucket, src.name),
+							}
+							altSources = append(altSources, as)
+						}
+					}
 				}
 
-				err := migrateDevice(uint32(index), src.name, pro, src)
+				err := migrateDevice(uint32(index), src.name, pro, src, altSources)
 				if err != nil {
 					fmt.Printf("There was an issue migrating the storage %d %v\n", index, err)
 				}
@@ -180,6 +203,9 @@ func runServe(ccmd *cobra.Command, args []string) {
 			serveProgress.Wait()
 		}
 		fmt.Printf("\n\nMigration completed in %dms\n", time.Since(ctime).Milliseconds())
+
+		pro_metrics := pro.Metrics()
+		fmt.Printf("Protocol %d sent (%d bytes) %d recv (%d bytes)\n", pro_metrics.Sent_packets, pro_metrics.Sent_bytes, pro_metrics.Recv_packets, pro_metrics.Recv_bytes)
 
 		con.Close()
 	}
@@ -232,11 +258,15 @@ func setupStorageDevice(conf *config.DeviceSchema) (*storageInfo, error) {
 	var s3_cancel func()
 	var s3_ctx context.Context
 	var s3_syncer *migrator.Syncer
+	var s3_order *volatilitymonitor.VolatilityMonitor
 	if serve_sync_s3 {
 		s3_block_size := block_size >> serve_sync_dirty_block_shift
 		s3SourceDirtyLocal, s3SourceDirtyRemote := dirtytracker.NewDirtyTracker(sourceDirtyLocal, s3_block_size)
-		s3Lockable := modules.NewLockable(s3SourceDirtyLocal)
+		s3_order = volatilitymonitor.NewVolatilityMonitor(s3SourceDirtyLocal, block_size, 10*time.Second)
+		s3Lockable := modules.NewLockable(s3_order) //s3SourceDirtyLocal)
 		sourceDirty = s3Lockable
+
+		s3_order.AddAll()
 
 		s3Orderer := blocks.NewAnyBlockOrder(num_blocks, nil)
 
@@ -322,6 +352,7 @@ func setupStorageDevice(conf *config.DeviceSchema) (*storageInfo, error) {
 		schema:         schema,
 		s3_sync_cancel: s3_cancel,
 		s3_syncer:      s3_syncer,
+		s3_order:       s3_order,
 	}
 
 	return sinfo, nil
@@ -330,7 +361,9 @@ func setupStorageDevice(conf *config.DeviceSchema) (*storageInfo, error) {
 // Migrate a device
 func migrateDevice(dev_id uint32, name string,
 	pro protocol.Protocol,
-	sinfo *storageInfo) error {
+	sinfo *storageInfo,
+	altSources []packets.AlternateSource,
+) error {
 	size := sinfo.lockable.Size()
 	dest := protocol.NewToProtocol(uint64(size), dev_id, pro)
 
@@ -338,9 +371,17 @@ func migrateDevice(dev_id uint32, name string,
 	var dest_hashes_lock sync.Mutex
 
 	err := dest.SendDevInfo(name, uint32(sinfo.block_size), sinfo.schema)
-	fmt.Printf("SendDevInfo %s\n", name)
 	if err != nil {
 		return err
+	}
+
+	if len(altSources) > 0 {
+		// Send list of alternate sources in a good order (Least volatile first)
+		fmt.Printf("send AlternateSources %d\n", len(altSources))
+		err := dest.SendAlternateSources(altSources)
+		if err != nil {
+			return err
+		}
 	}
 
 	statusString := " "
