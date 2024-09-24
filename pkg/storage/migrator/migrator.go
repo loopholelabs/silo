@@ -20,7 +20,7 @@ type MigratorConfig struct {
 	Unlocker_handler   func()
 	Error_handler      func(b *storage.BlockInfo, err error)
 	Progress_handler   func(p *MigrationProgress)
-	Block_handler      func(b *storage.BlockInfo, id uint64)
+	Block_handler      func(b *storage.BlockInfo, id uint64, block []byte)
 	Concurrency        map[int]int
 	Integrity          bool
 	Cancel_writes      bool
@@ -36,7 +36,7 @@ func NewMigratorConfig() *MigratorConfig {
 		Unlocker_handler: func() {},
 		Error_handler:    func(b *storage.BlockInfo, err error) {},
 		Progress_handler: func(p *MigrationProgress) {},
-		Block_handler:    func(b *storage.BlockInfo, id uint64) {},
+		Block_handler:    func(b *storage.BlockInfo, id uint64, data []byte) {},
 		Concurrency: map[int]int{
 			storage.BlockTypeAny:      32,
 			storage.BlockTypeStandard: 32,
@@ -78,7 +78,7 @@ type Migrator struct {
 	source_unlock_fn         func()
 	error_fn                 func(block *storage.BlockInfo, err error)
 	progress_fn              func(*MigrationProgress)
-	block_fn                 func(block *storage.BlockInfo, id uint64)
+	block_fn                 func(block *storage.BlockInfo, id uint64, data []byte)
 	progress_lock            sync.Mutex
 	progress_last            time.Time
 	progress_last_status     *MigrationProgress
@@ -200,7 +200,7 @@ func (m *Migrator) Migrate(num_blocks int) error {
 		m.wg.Add(1)
 
 		go func(block_no *storage.BlockInfo) {
-			err := m.migrateBlock(block_no.Block)
+			_, err := m.migrateBlock(block_no.Block)
 			if err != nil {
 				m.error_fn(block_no, err)
 			}
@@ -291,11 +291,11 @@ func (m *Migrator) MigrateDirtyWithId(blocks []uint, tid uint64) error {
 		m.clean_blocks.ClearBit(int(pos))
 
 		go func(block_no *storage.BlockInfo, track_id uint64) {
-			err := m.migrateBlock(block_no.Block)
+			data, err := m.migrateBlock(block_no.Block)
 			if err != nil {
 				m.error_fn(block_no, err)
 			} else {
-				m.block_fn(block_no, track_id)
+				m.block_fn(block_no, track_id, data)
 			}
 
 			m.wg.Done()
@@ -391,7 +391,7 @@ func (m *Migrator) Status() *MigrationProgress {
  * Migrate a single block to dest
  *
  */
-func (m *Migrator) migrateBlock(block int) error {
+func (m *Migrator) migrateBlock(block int) ([]byte, error) {
 	m.block_locks[block].Lock()
 	defer m.block_locks[block].Unlock()
 
@@ -404,7 +404,7 @@ func (m *Migrator) migrateBlock(block int) error {
 	// Read from source
 	n, err := m.source_tracker.ReadAt(buff, int64(offset))
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	var idmap map[uint64]uint64
@@ -433,7 +433,7 @@ func (m *Migrator) migrateBlock(block int) error {
 		if errors.Is(err, context.Canceled) {
 			atomic.AddInt64(&m.metric_blocks_canceled, 1)
 		}
-		return err
+		return nil, err
 	}
 
 	// Set the last successful write for this block
@@ -450,5 +450,5 @@ func (m *Migrator) migrateBlock(block int) error {
 	m.clean_blocks.SetBit(block)
 
 	m.reportProgress(false)
-	return nil
+	return buff, nil
 }
