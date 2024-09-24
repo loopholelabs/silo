@@ -163,6 +163,27 @@ func (fp *FromProtocol) HandleHashes(cb func(map[uint][sha256.Size]byte)) error 
 	}
 }
 
+// Handle alternate sources
+func (fp *FromProtocol) HandleAlternateSources(cb func([]packets.AlternateSource)) error {
+	err := fp.wait_init_or_cancel()
+	if err != nil {
+		return err
+	}
+
+	for {
+		_, data, err := fp.protocol.WaitForCommand(fp.dev, packets.COMMAND_ALTERNATE_SOURCES)
+		if err != nil {
+			return err
+		}
+		sources, err := packets.DecodeAlternateSources(data)
+		if err != nil {
+			return err
+		}
+
+		cb(sources)
+	}
+}
+
 // Handle a DevInfo, and create the storage
 func (fp *FromProtocol) HandleDevInfo() error {
 	_, data, err := fp.protocol.WaitForCommand(fp.dev, packets.COMMAND_DEV_INFO)

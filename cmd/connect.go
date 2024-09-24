@@ -91,64 +91,66 @@ var s3DataLock sync.Mutex
  *
  */
 func runConnect(ccmd *cobra.Command, args []string) {
-	// First connect to S3 and do sync stuff
-	siloConf, err := config.ReadSchema(connect_sync_conf)
-	if err != nil {
-		panic(err)
-	}
-
-	block_size := 128 * 1024
-
-	ctime := time.Now()
-
-	s3Data = make(map[string][]*block_info)
-
-	var wg sync.WaitGroup
-	concurrency := make(chan bool, 128)
-	for _, dev := range siloConf.Device {
-		fmt.Printf("Creating S3 dev %s\n", dev.Name)
-
-		// 128k blocks
-		s3Storage, err := sources.NewS3Storage(connect_sync_endpoint, connect_sync_access, connect_sync_secret, connect_sync_bucket, dev.Name,
-			uint64(dev.ByteSize()),
-			block_size)
+	if connect_sync_conf != "" {
+		// First connect to S3 and do sync stuff
+		siloConf, err := config.ReadSchema(connect_sync_conf)
 		if err != nil {
 			panic(err)
 		}
-		// Read the data down as far as we can...
-		num_blocks := (int(dev.ByteSize()) + block_size - 1) / block_size
 
-		s3Data[dev.Name] = make([]*block_info, num_blocks)
+		block_size := 128 * 1024
 
-		for b := 0; b < num_blocks; b++ {
-			concurrency <- true
-			wg.Add(1)
-			go func(block int, s3 *sources.S3Storage, device *config.DeviceSchema) {
-				buffer := make([]byte, block_size)
-				offset := int64(block * block_size)
-				_, err := s3.ReadAt(buffer, offset)
-				if err != nil {
-					panic(err)
-				}
-				hash := sha256.Sum256(buffer)
-				s3DataLock.Lock()
-				s3Data[device.Name][block] = &block_info{
-					data:  buffer,
-					hash:  hash,
-					block: uint(block),
-				}
-				s3DataLock.Unlock()
-				fmt.Printf("[S3 %s] Block %d Offset %d Hash %x\n", device.Name, block, offset, hash)
+		ctime := time.Now()
 
-				// FIXME: If we already have a p2p connection, we need to send new hashes here.
-				<-concurrency
-				wg.Done()
-			}(b, s3Storage, dev)
+		s3Data = make(map[string][]*block_info)
+
+		var wg sync.WaitGroup
+		concurrency := make(chan bool, 128)
+		for _, dev := range siloConf.Device {
+			fmt.Printf("Creating S3 dev %s\n", dev.Name)
+
+			// 128k blocks
+			s3Storage, err := sources.NewS3Storage(connect_sync_endpoint, connect_sync_access, connect_sync_secret, connect_sync_bucket, dev.Name,
+				uint64(dev.ByteSize()),
+				block_size)
+			if err != nil {
+				panic(err)
+			}
+			// Read the data down as far as we can...
+			num_blocks := (int(dev.ByteSize()) + block_size - 1) / block_size
+
+			s3Data[dev.Name] = make([]*block_info, num_blocks)
+
+			for b := 0; b < num_blocks; b++ {
+				concurrency <- true
+				wg.Add(1)
+				go func(block int, s3 *sources.S3Storage, device *config.DeviceSchema) {
+					buffer := make([]byte, block_size)
+					offset := int64(block * block_size)
+					_, err := s3.ReadAt(buffer, offset)
+					if err != nil {
+						panic(err)
+					}
+					hash := sha256.Sum256(buffer)
+					s3DataLock.Lock()
+					s3Data[device.Name][block] = &block_info{
+						data:  buffer,
+						hash:  hash,
+						block: uint(block),
+					}
+					s3DataLock.Unlock()
+					fmt.Printf("[S3 %s] Block %d Offset %d Hash %x\n", device.Name, block, offset, hash)
+
+					// FIXME: If we already have a p2p connection, we need to send new hashes here.
+					<-concurrency
+					wg.Done()
+				}(b, s3Storage, dev)
+			}
 		}
-	}
-	wg.Wait()
+		wg.Wait()
 
-	fmt.Printf("ALL DATA RETREIVED FROM S3 IN %dms\n", time.Since(ctime).Milliseconds())
+		fmt.Printf("ALL DATA RETREIVED FROM S3 IN %dms\n", time.Since(ctime).Milliseconds())
+	}
 
 	if connect_progress {
 		dst_progress = mpb.New(
@@ -349,11 +351,14 @@ func handleIncomingDevice(ctx context.Context, pro protocol.Protocol, dev uint32
 		go func() {
 			// Send a list of hashes we already have to the source...
 			hashes := make(map[uint][32]byte, 0)
+
 			s3DataLock.Lock()
-			h := s3Data[di.Name]
-			for _, bi := range h {
-				if bi != nil {
-					hashes[bi.block] = bi.hash
+			h, ok := s3Data[di.Name]
+			if ok {
+				for _, bi := range h {
+					if bi != nil {
+						hashes[bi.block] = bi.hash
+					}
 				}
 			}
 			s3DataLock.Unlock()
@@ -363,6 +368,7 @@ func handleIncomingDevice(ctx context.Context, pro protocol.Protocol, dev uint32
 			if err != nil {
 				panic(err)
 			}
+
 		}()
 
 		return destWaitingRemote
@@ -389,19 +395,17 @@ func handleIncomingDevice(ctx context.Context, pro protocol.Protocol, dev uint32
 	}()
 	handler_wg.Add(1)
 	go func() {
-		err := dest.HandleWriteAtHash(func(offset int64, length int64, hash []byte) []byte {
+		_ = dest.HandleWriteAtHash(func(offset int64, length int64, hash []byte) []byte {
 			block := uint(offset / int64(dev_info.Block_size))
 			// Lookup the data based on a hash...
 			s3DataLock.Lock()
 			// dev_name should be set and usable...
 			bi := s3Data[dev_info.Name][block]
-			fmt.Printf("WriteAtHash %d %x - %x\n", block, hash, bi.hash)
-			// Check the hash matches
+			// TODO: Check the hash matches, although we could just trust serve is sane.
 
 			s3DataLock.Unlock()
 			return bi.data
 		})
-		fmt.Printf("HandleWriteAtHash %v\n", err)
 		handler_wg.Done()
 	}()
 
@@ -461,6 +465,17 @@ func handleIncomingDevice(ctx context.Context, pro protocol.Protocol, dev uint32
 		handler_wg.Done()
 	}()
 
+	handler_wg.Add(1)
+	go func() {
+		_ = dest.HandleAlternateSources(func(sources []packets.AlternateSource) {
+			for _, src := range sources {
+				fmt.Printf("AlternateSource for block %d %d %s\n", src.Offset, src.Length, src.Location)
+			}
+			//fmt.Printf("[%d] Got %d hashes...\n", dev, len(hashes))
+		})
+		handler_wg.Done()
+	}()
+
 	// Handle dirty list by invalidating local waiting cache
 	handler_wg.Add(1)
 	go func() {
@@ -490,7 +505,7 @@ func dst_device_setup(prov storage.StorageProvider) (storage.ExposedStorage, err
 	if connect_mount_dev {
 		err = os.Mkdir(fmt.Sprintf("/mnt/mount%s", device), 0600)
 		if err != nil {
-			return nil, fmt.Errorf("Error mkdir %v", err)
+			return nil, fmt.Errorf("error mkdir %v", err)
 		}
 
 		go func() {
