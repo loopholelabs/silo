@@ -69,13 +69,10 @@ func NewSyncer(ctx context.Context, sinfo *Sync_config) *Syncer {
 
 /**
  * Get a list of blocks that are safe (On the destination)
- *
+ * NB This does not include the very latest dirty list, but it's a good starting point.
  */
 func (s *Syncer) GetSafeBlockMap() []uint {
 	blocks := make([]uint, 0)
-
-	//	dirty_blocks := s.config.Tracker.GetAllDirtyBlocks()
-	// FIXME: We should also ignore blocks here that are currently dirty (Check in s.config.Tracker)
 
 	for b, id := range s.block_status {
 		if id == s.block_updates[b] {
@@ -148,7 +145,8 @@ func (s *Syncer) Sync(sync_all_first bool, continuous bool) (*MigrationProgress,
 	}
 
 	// When a block is written, update block_status with the largest ID for that block
-	conf.Block_handler = func(b *storage.BlockInfo, id uint64) {
+	conf.Block_handler = func(b *storage.BlockInfo, id uint64, data []byte) {
+		// TODO: Hash the data here and store...
 		s.block_status_lock.Lock()
 		defer s.block_status_lock.Unlock()
 		if id > s.block_status[b.Block] {
