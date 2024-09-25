@@ -166,10 +166,6 @@ func runServe(ccmd *cobra.Command, args []string) {
 
 				if serve_sync_s3 {
 					s3_blocks := src.s3_syncer.GetSafeBlockMap() // Get a list of blocks that are on S3 for this device...
-					blocks_on_s3 := make(map[uint]bool)
-					for _, b := range s3_blocks {
-						blocks_on_s3[b] = true
-					}
 
 					for {
 						block := src.s3_order.GetNext()
@@ -177,12 +173,12 @@ func runServe(ccmd *cobra.Command, args []string) {
 							break
 						}
 						// If the block is on S3, add it
-						on_s3, ok := blocks_on_s3[uint(block.Block)]
-						if ok && on_s3 {
+						hash_s3, ok := s3_blocks[uint(block.Block)]
+						if ok {
 							as := packets.AlternateSource{
 								Offset:   int64(block.Block * src.block_size),
 								Length:   int64(src.block_size),
-								Hash:     [32]byte{},
+								Hash:     hash_s3,
 								Location: fmt.Sprintf("%s %s %s", serve_sync_endpoint, serve_sync_bucket, src.name),
 							}
 							altSources = append(altSources, as)

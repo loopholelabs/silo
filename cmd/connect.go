@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -49,7 +50,7 @@ var connect_mount_dev bool
 
 var connect_progress bool
 
-var connect_sync_conf string
+var connect_sync_conf bool
 var connect_sync_endpoint string
 var connect_sync_access string
 var connect_sync_secret string
@@ -70,7 +71,7 @@ func init() {
 	cmdConnect.Flags().BoolVarP(&connect_mount_dev, "mount", "m", false, "Mount the nbd devices")
 	cmdConnect.Flags().BoolVarP(&connect_progress, "progress", "p", false, "Show progress")
 
-	cmdConnect.Flags().StringVar(&connect_sync_conf, "conf", "", "Sync S3 schema config")
+	cmdConnect.Flags().BoolVar(&connect_sync_conf, "s3sync", false, "Sync S3")
 	cmdConnect.Flags().StringVar(&connect_sync_endpoint, "s3endpoint", "", "Sync S3 endpoint")
 	cmdConnect.Flags().StringVar(&connect_sync_access, "s3access", "", "Sync S3 access token")
 	cmdConnect.Flags().StringVar(&connect_sync_secret, "s3secret", "", "Sync S3 secret token")
@@ -86,70 +87,16 @@ type block_info struct {
 var s3Data map[string][]*block_info
 var s3DataLock sync.Mutex
 
+var metric_s3_blocks_retrieved uint64
+var metric_s3_blocks_used uint64
+
 /**
  * Connect to a silo source and stream whatever devices are available.
  *
  */
 func runConnect(ccmd *cobra.Command, args []string) {
 	if connect_sync_conf != "" {
-		// First connect to S3 and do sync stuff
-		siloConf, err := config.ReadSchema(connect_sync_conf)
-		if err != nil {
-			panic(err)
-		}
-
-		block_size := 128 * 1024
-
-		ctime := time.Now()
-
 		s3Data = make(map[string][]*block_info)
-
-		var wg sync.WaitGroup
-		concurrency := make(chan bool, 128)
-		for _, dev := range siloConf.Device {
-			fmt.Printf("Creating S3 dev %s\n", dev.Name)
-
-			// 128k blocks
-			s3Storage, err := sources.NewS3Storage(connect_sync_endpoint, connect_sync_access, connect_sync_secret, connect_sync_bucket, dev.Name,
-				uint64(dev.ByteSize()),
-				block_size)
-			if err != nil {
-				panic(err)
-			}
-			// Read the data down as far as we can...
-			num_blocks := (int(dev.ByteSize()) + block_size - 1) / block_size
-
-			s3Data[dev.Name] = make([]*block_info, num_blocks)
-
-			for b := 0; b < num_blocks; b++ {
-				concurrency <- true
-				wg.Add(1)
-				go func(block int, s3 *sources.S3Storage, device *config.DeviceSchema) {
-					buffer := make([]byte, block_size)
-					offset := int64(block * block_size)
-					_, err := s3.ReadAt(buffer, offset)
-					if err != nil {
-						panic(err)
-					}
-					hash := sha256.Sum256(buffer)
-					s3DataLock.Lock()
-					s3Data[device.Name][block] = &block_info{
-						data:  buffer,
-						hash:  hash,
-						block: uint(block),
-					}
-					s3DataLock.Unlock()
-					fmt.Printf("[S3 %s] Block %d Offset %d Hash %x\n", device.Name, block, offset, hash)
-
-					// FIXME: If we already have a p2p connection, we need to send new hashes here.
-					<-concurrency
-					wg.Done()
-				}(b, s3Storage, dev)
-			}
-		}
-		wg.Wait()
-
-		fmt.Printf("ALL DATA RETREIVED FROM S3 IN %dms\n", time.Since(ctime).Milliseconds())
 	}
 
 	if connect_progress {
@@ -208,6 +155,15 @@ func runConnect(ccmd *cobra.Command, args []string) {
 	if connect_progress {
 		dst_progress.Wait()
 	}
+
+	// Show some info...
+	s3_retrieved := atomic.LoadUint64(&metric_s3_blocks_retrieved)
+	s3_used := atomic.LoadUint64(&metric_s3_blocks_used)
+	metrics := pro.Metrics()
+
+	fmt.Printf("S3 retrieved=%d used=%d\n", s3_retrieved, s3_used)
+	fmt.Printf("Protocol recv packets=%d bytes=%d\n", metrics.Recv_packets, metrics.Recv_bytes)
+	fmt.Printf("Protocol sent packets=%d bytes=%d\n", metrics.Sent_packets, metrics.Sent_bytes)
 
 	fmt.Printf("\nMigrations completed. Please ctrl-c if you want to shut down, or wait an hour :)\n")
 
@@ -404,6 +360,9 @@ func handleIncomingDevice(ctx context.Context, pro protocol.Protocol, dev uint32
 			// TODO: Check the hash matches, although we could just trust serve is sane.
 
 			s3DataLock.Unlock()
+
+			atomic.AddUint64(&metric_s3_blocks_used, 1)
+
 			return bi.data
 		})
 		handler_wg.Done()
@@ -467,12 +426,30 @@ func handleIncomingDevice(ctx context.Context, pro protocol.Protocol, dev uint32
 
 	handler_wg.Add(1)
 	go func() {
-		_ = dest.HandleAlternateSources(func(sources []packets.AlternateSource) {
-			for _, src := range sources {
-				fmt.Printf("AlternateSource for block %d %d %s\n", src.Offset, src.Length, src.Location)
+		if connect_sync_conf {
+			s3Storage, err := sources.NewS3Storage(connect_sync_endpoint, connect_sync_access, connect_sync_secret, connect_sync_bucket, dev_info.Name,
+				uint64(dev_info.Size),
+				int(dev_info.Block_size))
+			if err != nil {
+				panic(err)
 			}
-			//fmt.Printf("[%d] Got %d hashes...\n", dev, len(hashes))
-		})
+
+			num_blocks := (int(dev_info.Size) + int(dev_info.Block_size) - 1) / int(dev_info.Block_size)
+
+			s3DataLock.Lock()
+			s3Data[dev_info.Name] = make([]*block_info, num_blocks)
+			s3DataLock.Unlock()
+
+			_ = dest.HandleAlternateSources(func(sources []packets.AlternateSource) {
+				for _, src := range sources {
+					grab_from_s3(src, dest, dev_info, s3Storage)
+				}
+			})
+		} else {
+			_ = dest.HandleAlternateSources(func(sources []packets.AlternateSource) {
+				// Do nothing about the alternate sources
+			})
+		}
 		handler_wg.Done()
 	}()
 
@@ -545,4 +522,39 @@ func dst_device_shutdown(p storage.ExposedStorage) error {
 		return err
 	}
 	return nil
+}
+
+/**
+ * Grab a block from S3, and verify with the source that we have it.
+ *
+ */
+func grab_from_s3(source packets.AlternateSource, dest *protocol.FromProtocol, dev_info *packets.DevInfo, s3Storage *sources.S3Storage) {
+	block_no := uint(source.Offset) / uint(dev_info.Block_size)
+	fmt.Printf("AlternateSource for block offset=%d length=%d block=%d %s\n", source.Offset, source.Length, block_no, source.Location)
+
+	// Grab the block from S3 here, and send the hash once we have it.
+	go func() {
+		data := make([]byte, source.Length)
+		_, err := s3Storage.ReadAt(data, source.Offset)
+		if err == nil {
+			hashes := make(map[uint][sha256.Size]byte)
+			// Fill in the hash for the block that we have just got...
+			hashes[block_no] = sha256.Sum256(data)
+			err := dest.SendHashes(hashes)
+			if err != nil {
+				fmt.Printf("Error sending hash %v\n", err)
+			}
+			s3DataLock.Lock()
+			s3Data[dev_info.Name][block_no] = &block_info{
+				block: block_no,
+				data:  data,
+				hash:  hashes[block_no],
+			}
+			s3DataLock.Unlock()
+
+			atomic.AddUint64(&metric_s3_blocks_retrieved, 1)
+		} else {
+			fmt.Printf("Error getting data from S3 %v\n", err)
+		}
+	}()
 }

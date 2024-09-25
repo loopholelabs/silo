@@ -2,6 +2,7 @@ package migrator
 
 import (
 	"context"
+	"crypto/sha256"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -50,19 +51,32 @@ type Syncer struct {
 	ctx               context.Context
 	config            *Sync_config
 	block_status_lock sync.Mutex
-	block_status      []uint64
-	block_updates     []uint64
+	block_status      []Block_status
 	current_dirty_id  uint64
+}
+
+type Block_status struct {
+	Updating_ID  uint64
+	Current_ID   uint64
+	Current_hash [sha256.Size]byte
 }
 
 func NewSyncer(ctx context.Context, sinfo *Sync_config) *Syncer {
 	num_blocks := (sinfo.Tracker.Size() + uint64(sinfo.Block_size) - 1) / uint64(sinfo.Block_size)
 
+	status := make([]Block_status, num_blocks)
+	for b := 0; b < int(num_blocks); b++ {
+		status[b] = Block_status{
+			Updating_ID:  0,
+			Current_ID:   0,
+			Current_hash: [32]byte{},
+		}
+	}
+
 	return &Syncer{
 		ctx:              ctx,
 		config:           sinfo,
-		block_status:     make([]uint64, num_blocks),
-		block_updates:    make([]uint64, num_blocks),
+		block_status:     status,
 		current_dirty_id: 0,
 	}
 }
@@ -71,12 +85,12 @@ func NewSyncer(ctx context.Context, sinfo *Sync_config) *Syncer {
  * Get a list of blocks that are safe (On the destination)
  * NB This does not include the very latest dirty list, but it's a good starting point.
  */
-func (s *Syncer) GetSafeBlockMap() []uint {
-	blocks := make([]uint, 0)
+func (s *Syncer) GetSafeBlockMap() map[uint][sha256.Size]byte {
+	blocks := make(map[uint][sha256.Size]byte, 0)
 
-	for b, id := range s.block_status {
-		if id == s.block_updates[b] {
-			blocks = append(blocks, uint(b))
+	for b, status := range s.block_status {
+		if status.Current_ID == status.Updating_ID {
+			blocks[uint(b)] = status.Current_hash
 		}
 	}
 	return blocks
@@ -146,11 +160,13 @@ func (s *Syncer) Sync(sync_all_first bool, continuous bool) (*MigrationProgress,
 
 	// When a block is written, update block_status with the largest ID for that block
 	conf.Block_handler = func(b *storage.BlockInfo, id uint64, data []byte) {
-		// TODO: Hash the data here and store...
+		hash := sha256.Sum256(data)
+
 		s.block_status_lock.Lock()
 		defer s.block_status_lock.Unlock()
-		if id > s.block_status[b.Block] {
-			s.block_status[b.Block] = id
+		if id > s.block_status[b.Block].Current_ID {
+			s.block_status[b.Block].Current_ID = id
+			s.block_status[b.Block].Current_hash = hash
 		}
 	}
 
@@ -207,7 +223,7 @@ func (s *Syncer) Sync(sync_all_first bool, continuous bool) (*MigrationProgress,
 			// Update block_updates with the new ID for these blocks
 			s.block_status_lock.Lock()
 			for _, b := range blocks {
-				s.block_updates[b] = id
+				s.block_status[b].Updating_ID = id
 			}
 			s.block_status_lock.Unlock()
 			err = mig.MigrateDirtyWithId(blocks, id)
