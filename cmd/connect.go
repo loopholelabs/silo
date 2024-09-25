@@ -187,6 +187,8 @@ func handleIncomingDevice(ctx context.Context, pro protocol.Protocol, dev uint32
 	var dev_schema *config.DeviceSchema
 	var dev_info *packets.DevInfo
 
+	var s3Storage *sources.S3Storage
+
 	var bar *mpb.Bar
 
 	var blockSize uint
@@ -205,6 +207,23 @@ func handleIncomingDevice(ctx context.Context, pro protocol.Protocol, dev uint32
 	storageFactory := func(di *packets.DevInfo) storage.StorageProvider {
 		//		fmt.Printf("= %d = Received DevInfo name=%s size=%d blocksize=%d schema=%s\n", dev, di.Name, di.Size, di.Block_size, di.Schema)
 		dev_info = di
+
+		if connect_sync_conf {
+			var err error
+			s3Storage, err = sources.NewS3Storage(connect_sync_endpoint, connect_sync_access, connect_sync_secret, connect_sync_bucket, dev_info.Name,
+				uint64(dev_info.Size),
+				int(dev_info.Block_size))
+			if err != nil {
+				panic(err)
+			}
+
+			num_blocks := (int(dev_info.Size) + int(dev_info.Block_size) - 1) / int(dev_info.Block_size)
+
+			s3DataLock.Lock()
+			s3Data[dev_info.Name] = make([]*block_info, num_blocks)
+			s3DataLock.Unlock()
+
+		}
 
 		// Decode the schema
 		dev_schema = &config.DeviceSchema{}
@@ -427,18 +446,6 @@ func handleIncomingDevice(ctx context.Context, pro protocol.Protocol, dev uint32
 	handler_wg.Add(1)
 	go func() {
 		if connect_sync_conf {
-			s3Storage, err := sources.NewS3Storage(connect_sync_endpoint, connect_sync_access, connect_sync_secret, connect_sync_bucket, dev_info.Name,
-				uint64(dev_info.Size),
-				int(dev_info.Block_size))
-			if err != nil {
-				panic(err)
-			}
-
-			num_blocks := (int(dev_info.Size) + int(dev_info.Block_size) - 1) / int(dev_info.Block_size)
-
-			s3DataLock.Lock()
-			s3Data[dev_info.Name] = make([]*block_info, num_blocks)
-			s3DataLock.Unlock()
 
 			_ = dest.HandleAlternateSources(func(sources []packets.AlternateSource) {
 				for _, src := range sources {
@@ -533,6 +540,7 @@ func grab_from_s3(source packets.AlternateSource, dest *protocol.FromProtocol, d
 	fmt.Printf("AlternateSource for block offset=%d length=%d block=%d %s\n", source.Offset, source.Length, block_no, source.Location)
 
 	// Grab the block from S3 here, and send the hash once we have it.
+	// NB: There's currently no limit on S3 get concurrency.
 	go func() {
 		data := make([]byte, source.Length)
 		_, err := s3Storage.ReadAt(data, source.Offset)
@@ -541,7 +549,7 @@ func grab_from_s3(source packets.AlternateSource, dest *protocol.FromProtocol, d
 			// Fill in the hash for the block that we have just got...
 			hashes[block_no] = sha256.Sum256(data)
 			err := dest.SendHashes(hashes)
-			if err != nil {
+			if err != nil && err != context.Canceled {
 				fmt.Printf("Error sending hash %v\n", err)
 			}
 			s3DataLock.Lock()

@@ -423,9 +423,6 @@ func migrateDevice(dev_id uint32, name string,
 		})
 	}()
 
-	var wait_hashes sync.WaitGroup
-
-	wait_hashes.Add(1)
 	go func() {
 		_ = dest.HandleHashes(func(hashes map[uint][32]byte) {
 			// TODO: We need to keep track of these, and not send if they already have it.
@@ -434,7 +431,6 @@ func migrateDevice(dev_id uint32, name string,
 				dest_hashes[b] = hash
 				dest_hashes_lock.Unlock()
 			}
-			wait_hashes.Done()
 		})
 	}()
 
@@ -555,15 +551,13 @@ func migrateDevice(dev_id uint32, name string,
 	}
 
 	sync_config.Concurrency = map[int]int{
-		storage.BlockTypeAny: 1000000,
+		storage.BlockTypeAny: 32,
 	}
 
 	sync_config.Integrity = true
 
 	syncer := migrator.NewSyncer(context.TODO(), sync_config)
 
-	// Don't start the sync until the other side has sent us their hashes...
-	wait_hashes.Wait()
 	_, err = syncer.Sync(true, serve_continuous)
 	if err != nil {
 		panic(err)
