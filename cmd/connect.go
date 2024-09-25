@@ -95,7 +95,7 @@ var metric_s3_blocks_used uint64
  *
  */
 func runConnect(ccmd *cobra.Command, args []string) {
-	if connect_sync_conf != "" {
+	if connect_sync_conf {
 		s3Data = make(map[string][]*block_info)
 	}
 
