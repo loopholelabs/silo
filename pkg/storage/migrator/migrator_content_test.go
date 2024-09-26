@@ -122,6 +122,9 @@ func TestMigratorSimpleAlternateSourcePipe(t *testing.T) {
 	var write_at_hash sync.WaitGroup
 	write_at_hash.Add(1)
 
+	var got_alternate_sources sync.WaitGroup
+	got_alternate_sources.Add(1)
+
 	dest_setup.Add(1)
 	initDev := func(ctx context.Context, p protocol.Protocol, dev uint32) {
 		destStorageFactory := func(di *packets.DevInfo) storage.StorageProvider {
@@ -149,6 +152,13 @@ func TestMigratorSimpleAlternateSourcePipe(t *testing.T) {
 		go func() {
 			_ = destFrom.HandleDevInfo()
 		}()
+		go func() {
+			_ = destFrom.HandleAlternateSources(func(sources []packets.AlternateSource) {
+				assert.Equal(t, 1, len(sources))
+				assert.Equal(t, "Somewhere only we know", sources[0].Location)
+				got_alternate_sources.Done()
+			})
+		}()
 	}
 
 	prSource := protocol.NewProtocolRW(context.TODO(), []io.Reader{r1}, []io.Writer{w2}, nil)
@@ -166,6 +176,21 @@ func TestMigratorSimpleAlternateSourcePipe(t *testing.T) {
 
 	err = destination.SendDevInfo("test", uint32(blockSize), "")
 	assert.NoError(t, err)
+
+	// Send a list of alternate sources for blocks
+	sources := []packets.AlternateSource{
+		{
+			Offset:   int64(blockSize),
+			Length:   int64(blockSize),
+			Hash:     sha256.Sum256(buffer[1*blockSize : 2*blockSize]),
+			Location: "Somewhere only we know",
+		},
+	}
+	err = destination.SendAlternateSources(sources)
+	assert.NoError(t, err)
+
+	// Make sure we received it
+	got_alternate_sources.Wait()
 
 	var got_hashes map[uint][32]byte
 	var wait_hashes sync.WaitGroup
