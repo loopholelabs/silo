@@ -16,7 +16,7 @@ func TestS3Storage(t *testing.T) {
 
 	size := 64 * 1024
 	blockSize := 1024
-	s3store, err := sources.NewS3StorageCreate(fmt.Sprintf("localhost:%s", PORT_9000), "silosilo", "silosilo", "silosilo", "file", uint64(size), blockSize)
+	s3store, err := sources.NewS3StorageCreate(false, fmt.Sprintf("localhost:%s", PORT_9000), "silosilo", "silosilo", "silosilo", "file", uint64(size), blockSize)
 	assert.NoError(t, err)
 
 	buffer := make([]byte, 32*1024)

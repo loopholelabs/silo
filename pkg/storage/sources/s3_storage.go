@@ -27,7 +27,7 @@ type S3Storage struct {
 	contexts_lock sync.Mutex
 }
 
-func NewS3Storage(endpoint string,
+func NewS3Storage(secure bool, endpoint string,
 	access string,
 	secretAccess string,
 	bucket string,
@@ -37,7 +37,7 @@ func NewS3Storage(endpoint string,
 
 	client, err := minio.New(endpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(access, secretAccess, ""),
-		Secure: false,
+		Secure: secure,
 	})
 
 	if err != nil {
@@ -57,7 +57,7 @@ func NewS3Storage(endpoint string,
 	}, nil
 }
 
-func NewS3StorageCreate(endpoint string,
+func NewS3StorageCreate(secure bool, endpoint string,
 	access string,
 	secretAccess string,
 	bucket string,
@@ -67,7 +67,7 @@ func NewS3StorageCreate(endpoint string,
 
 	client, err := minio.New(endpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(access, secretAccess, ""),
-		Secure: false,
+		Secure: secure,
 	})
 	if err != nil {
 		return nil, err
