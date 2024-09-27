@@ -51,6 +51,7 @@ var connect_mount_dev bool
 var connect_progress bool
 
 var connect_sync_conf bool
+var connect_sync_secure bool
 var connect_sync_endpoint string
 var connect_sync_access string
 var connect_sync_secret string
@@ -72,6 +73,7 @@ func init() {
 	cmdConnect.Flags().BoolVarP(&connect_progress, "progress", "p", false, "Show progress")
 
 	cmdConnect.Flags().BoolVar(&connect_sync_conf, "s3sync", false, "Sync S3")
+	cmdConnect.Flags().BoolVar(&connect_sync_secure, "s3secure", false, "Sync S3 secure")
 	cmdConnect.Flags().StringVar(&connect_sync_endpoint, "s3endpoint", "", "Sync S3 endpoint")
 	cmdConnect.Flags().StringVar(&connect_sync_access, "s3access", "", "Sync S3 access token")
 	cmdConnect.Flags().StringVar(&connect_sync_secret, "s3secret", "", "Sync S3 secret token")
@@ -210,7 +212,7 @@ func handleIncomingDevice(ctx context.Context, pro protocol.Protocol, dev uint32
 
 		if connect_sync_conf {
 			var err error
-			s3Storage, err = sources.NewS3Storage(connect_sync_endpoint, connect_sync_access, connect_sync_secret, connect_sync_bucket, dev_info.Name,
+			s3Storage, err = sources.NewS3Storage(connect_sync_secure, connect_sync_endpoint, connect_sync_access, connect_sync_secret, connect_sync_bucket, dev_info.Name,
 				uint64(dev_info.Size),
 				int(dev_info.Block_size))
 			if err != nil {
