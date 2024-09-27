@@ -34,6 +34,7 @@ var (
 
 // Configuration options
 var sync_conf string
+var sync_secure bool
 var sync_endpoint string
 var sync_access string
 var sync_secret string
@@ -66,6 +67,7 @@ type syncStorageInfo struct {
 func init() {
 	rootCmd.AddCommand(cmdSync)
 	cmdSync.Flags().StringVarP(&sync_conf, "conf", "c", "silo.conf", "Configuration file")
+	cmdSync.Flags().BoolVar(&sync_secure, "secure", true, "S3 secure")
 	cmdSync.Flags().StringVarP(&sync_endpoint, "endpoint", "e", "", "S3 endpoint")
 	cmdSync.Flags().StringVarP(&sync_access, "access", "a", "", "S3 access")
 	cmdSync.Flags().StringVarP(&sync_secret, "secret", "s", "", "S3 secret")
@@ -179,7 +181,7 @@ func sync_setup_device(conf *config.DeviceSchema) (*syncStorageInfo, error) {
 	if sync_dummy {
 		dest = modules.NewNothing(sourceStorage.Size())
 	} else {
-		dest, err = sources.NewS3StorageCreate(sync_endpoint,
+		dest, err = sources.NewS3StorageCreate(sync_secure, sync_endpoint,
 			sync_access,
 			sync_secret,
 			sync_bucket,

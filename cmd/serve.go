@@ -46,6 +46,7 @@ var serve_any_order bool
 var serve_sync_s3 bool
 
 var serve_sync_dirty_block_shift int
+var serve_sync_secure bool
 var serve_sync_endpoint string
 var serve_sync_access string
 var serve_sync_secret string
@@ -70,6 +71,7 @@ func init() {
 	cmdServe.Flags().BoolVarP(&serve_any_order, "order", "o", false, "Any order (faster)")
 	cmdServe.Flags().BoolVarP(&serve_sync_s3, "sync", "s", false, "Continuous sync to S3")
 
+	cmdServe.Flags().BoolVar(&serve_sync_secure, "secure", true, "S3 secure")
 	cmdServe.Flags().StringVar(&serve_sync_endpoint, "s3endpoint", "", "Sync S3 endpoint")
 	cmdServe.Flags().StringVar(&serve_sync_access, "s3access", "", "Sync S3 access token")
 	cmdServe.Flags().StringVar(&serve_sync_secret, "s3secret", "", "Sync S3 secret token")
@@ -266,7 +268,8 @@ func setupStorageDevice(conf *config.DeviceSchema) (*storageInfo, error) {
 
 		s3Orderer := blocks.NewAnyBlockOrder(num_blocks, nil)
 
-		dest, err := sources.NewS3StorageCreate(serve_sync_endpoint,
+		dest, err := sources.NewS3StorageCreate(serve_sync_secure,
+			serve_sync_endpoint,
 			serve_sync_access,
 			serve_sync_secret,
 			serve_sync_bucket,
