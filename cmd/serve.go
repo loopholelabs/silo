@@ -373,7 +373,6 @@ func migrateDevice(dev_id uint32, name string,
 
 	if len(altSources) > 0 {
 		// Send list of alternate sources in a good order (Least volatile first)
-		fmt.Printf("send AlternateSources %d\n", len(altSources))
 		err := dest.SendAlternateSources(altSources)
 		if err != nil {
 			return err
@@ -425,7 +424,7 @@ func migrateDevice(dev_id uint32, name string,
 
 	go func() {
 		_ = dest.HandleHashes(func(hashes map[uint][32]byte) {
-			// TODO: We need to keep track of these, and not send if they already have it.
+			// We need to keep track of these, and not send if they already have it.
 			for b, hash := range hashes {
 				dest_hashes_lock.Lock()
 				dest_hashes[b] = hash
@@ -492,7 +491,6 @@ func migrateDevice(dev_id uint32, name string,
 			}
 
 			// The destination already has the data.
-			fmt.Printf("Destination already has block %d\n", b)
 			_, err := dest.WriteAtHash(hash[:], int64(offset), int64(len(data)))
 			if err != nil {
 				panic(err)

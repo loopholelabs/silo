@@ -235,7 +235,8 @@ func TestMigratorSimpleAlternateSourcePipe(t *testing.T) {
 	hashes := map[uint][32]byte{
 		1: sha256.Sum256(buffer[1*blockSize : 2*blockSize]),
 	}
-	destFrom.SendHashes(hashes)
+	err = destFrom.SendHashes(hashes)
+	assert.NoError(t, err)
 	// Make sure we got the hash...
 	wait_hashes.Wait()
 	assert.Equal(t, len(hashes), len(got_hashes))
