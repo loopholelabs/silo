@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -17,14 +19,20 @@ var (
 )
 
 type S3Storage struct {
-	client        *minio.Client
-	bucket        string
-	prefix        string
-	size          uint64
-	block_size    int
-	lockers       []sync.RWMutex
-	contexts      []context.CancelFunc
-	contexts_lock sync.Mutex
+	client                   *minio.Client
+	bucket                   string
+	prefix                   string
+	size                     uint64
+	block_size               int
+	lockers                  []sync.RWMutex
+	contexts                 []context.CancelFunc
+	contexts_lock            sync.Mutex
+	metrics_blocks_w_count   uint64
+	metrics_blocks_w_bytes   uint64
+	metrics_blocks_w_time_ns uint64
+	metrics_blocks_r_count   uint64
+	metrics_blocks_r_bytes   uint64
+	metrics_blocks_r_time_ns uint64
 }
 
 func NewS3Storage(secure bool, endpoint string,
@@ -123,6 +131,7 @@ func (i *S3Storage) ReadAt(buffer []byte, offset int64) (int, error) {
 
 	getData := func(buff []byte, off int64) (int, error) {
 		i.lockers[off/int64(i.block_size)].RLock()
+		ctime := time.Now()
 		obj, err := i.client.GetObject(context.TODO(), i.bucket, fmt.Sprintf("%s-%d", i.prefix, off), minio.GetObjectOptions{})
 		i.lockers[off/int64(i.block_size)].RUnlock()
 		if err != nil {
@@ -132,8 +141,14 @@ func (i *S3Storage) ReadAt(buffer []byte, offset int64) (int, error) {
 			return 0, err
 		}
 		n, err := obj.Read(buff)
+		dtime := time.Since(ctime)
 		if err.Error() == errNoSuchKey.Error() {
 			return len(buff), nil
+		}
+		if err == nil {
+			atomic.AddUint64(&i.metrics_blocks_r_count, 1)
+			atomic.AddUint64(&i.metrics_blocks_r_bytes, uint64(n))
+			atomic.AddUint64(&i.metrics_blocks_r_time_ns, uint64(dtime.Nanoseconds()))
 		}
 
 		return n, err
@@ -195,6 +210,7 @@ func (i *S3Storage) WriteAt(buffer []byte, offset int64) (int, error) {
 	getData := func(buff []byte, off int64) (int, error) {
 		ctx := context.TODO()
 		i.lockers[off/int64(i.block_size)].RLock()
+		ctime := time.Now()
 		obj, err := i.client.GetObject(ctx, i.bucket, fmt.Sprintf("%s-%d", i.prefix, off), minio.GetObjectOptions{})
 		i.lockers[off/int64(i.block_size)].RUnlock()
 		if err != nil {
@@ -204,9 +220,17 @@ func (i *S3Storage) WriteAt(buffer []byte, offset int64) (int, error) {
 			return 0, err
 		}
 		n, err := obj.Read(buff)
+		dtime := time.Since(ctime)
 		if err.Error() == errNoSuchKey.Error() {
 			return len(buff), nil
 		}
+
+		if err == nil {
+			atomic.AddUint64(&i.metrics_blocks_r_count, 1)
+			atomic.AddUint64(&i.metrics_blocks_r_bytes, uint64(n))
+			atomic.AddUint64(&i.metrics_blocks_r_time_ns, uint64(dtime.Nanoseconds()))
+		}
+
 		return n, err
 	}
 
@@ -217,9 +241,11 @@ func (i *S3Storage) WriteAt(buffer []byte, offset int64) (int, error) {
 
 		i.setContext(int(block), cancelFn)
 
+		ctime := time.Now()
 		obj, err := i.client.PutObject(ctx, i.bucket, fmt.Sprintf("%s-%d", i.prefix, off),
 			bytes.NewReader(buff), int64(i.block_size),
 			minio.PutObjectOptions{})
+		dtime := time.Since(ctime)
 
 		i.setContext(int(block), nil)
 		i.lockers[block].Unlock()
@@ -227,6 +253,13 @@ func (i *S3Storage) WriteAt(buffer []byte, offset int64) (int, error) {
 		if err != nil && !errors.Is(err, context.Canceled) {
 			return 0, err
 		}
+
+		if err == nil {
+			atomic.AddUint64(&i.metrics_blocks_w_count, 1)
+			atomic.AddUint64(&i.metrics_blocks_w_bytes, uint64(obj.Size))
+			atomic.AddUint64(&i.metrics_blocks_w_time_ns, uint64(dtime.Nanoseconds()))
+		}
+
 		return int(obj.Size), nil
 	}
 
@@ -303,5 +336,25 @@ func (i *S3Storage) CancelWrites(offset int64, length int64) {
 	for b := b_start; b < b_end; b++ {
 		// Cancel any writes for the given block...
 		i.setContext(int(b), nil)
+	}
+}
+
+type S3Metrics struct {
+	Blocks_w_count uint64
+	Blocks_w_bytes uint64
+	Blocks_w_time  time.Duration
+	Blocks_r_count uint64
+	Blocks_r_bytes uint64
+	Blocks_r_time  time.Duration
+}
+
+func (i *S3Storage) Metrics() *S3Metrics {
+	return &S3Metrics{
+		Blocks_w_count: atomic.LoadUint64(&i.metrics_blocks_w_count),
+		Blocks_w_bytes: atomic.LoadUint64(&i.metrics_blocks_w_bytes),
+		Blocks_w_time:  time.Duration(atomic.LoadUint64(&i.metrics_blocks_w_time_ns)),
+		Blocks_r_count: atomic.LoadUint64(&i.metrics_blocks_r_count),
+		Blocks_r_bytes: atomic.LoadUint64(&i.metrics_blocks_r_bytes),
+		Blocks_r_time:  time.Duration(atomic.LoadUint64(&i.metrics_blocks_r_time_ns)),
 	}
 }
