@@ -53,6 +53,8 @@ var sync_dummy bool
 var sync_exposed []storage.ExposedStorage
 var sync_storage []*syncStorageInfo
 
+var sync_context context.Context
+
 type syncStorageInfo struct {
 	tracker      *dirtytracker.DirtyTrackerRemote
 	lockable     storage.LockableStorageProvider
@@ -88,6 +90,9 @@ func init() {
  *
  */
 func runSync(ccmd *cobra.Command, args []string) {
+	var cancel_fn context.CancelFunc
+	sync_context, cancel_fn = context.WithCancel(context.TODO())
+
 	sync_exposed = make([]storage.ExposedStorage, 0)
 	sync_storage = make([]*syncStorageInfo, 0)
 	fmt.Printf("Starting silo s3 sync\n")
@@ -109,7 +114,7 @@ func runSync(ccmd *cobra.Command, args []string) {
 	// Go through and setup each device in turn
 	for i, s := range siloConf.Device {
 		fmt.Printf("Setup storage %d [%s] size %s - %d\n", i, s.Name, s.Size, s.ByteSize())
-		sinfo, err := sync_setup_device(s)
+		sinfo, err := sync_setup_device(sync_context, s)
 		if err != nil {
 			panic(fmt.Sprintf("Could not setup storage. %v", err))
 		}
@@ -122,7 +127,7 @@ func runSync(ccmd *cobra.Command, args []string) {
 	for i, s := range sync_storage {
 		wg.Add(1)
 		go func(index int, src *syncStorageInfo) {
-			err := sync_migrate_s3(uint32(index), src.name, src)
+			err := sync_migrate_s3(sync_context, src.name, src)
 			if err != nil {
 				fmt.Printf("There was an issue migrating the storage %d %v\n", index, err)
 			}
@@ -132,13 +137,15 @@ func runSync(ccmd *cobra.Command, args []string) {
 	wg.Wait()
 
 	sync_shutdown_everything()
+
+	cancel_fn()
 }
 
 /**
  * Setup a storage device for sync command
  *
  */
-func sync_setup_device(conf *config.DeviceSchema) (*syncStorageInfo, error) {
+func sync_setup_device(ctx context.Context, conf *config.DeviceSchema) (*syncStorageInfo, error) {
 	block_size := sync_block_size // 1024 * 128
 
 	num_blocks := (int(conf.ByteSize()) + block_size - 1) / block_size
@@ -181,7 +188,7 @@ func sync_setup_device(conf *config.DeviceSchema) (*syncStorageInfo, error) {
 	if sync_dummy {
 		dest = modules.NewNothing(sourceStorage.Size())
 	} else {
-		dest, err = sources.NewS3StorageCreate(sync_secure, sync_endpoint,
+		s3dest, err := sources.NewS3StorageCreate(sync_secure, sync_endpoint,
 			sync_access,
 			sync_secret,
 			sync_bucket,
@@ -191,6 +198,26 @@ func sync_setup_device(conf *config.DeviceSchema) (*syncStorageInfo, error) {
 		if err != nil {
 			return nil, err
 		}
+
+		dest = s3dest
+
+		// Periodically show some stats
+		go func() {
+			ticker := time.NewTicker(10 * time.Second)
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					metrics := s3dest.Metrics()
+					fmt.Printf("### S3 metrics ### Writes=%d bytes=%d time=%dms Reads=%d bytes=%d time=%dms\n",
+						metrics.Blocks_w_count, metrics.Blocks_w_bytes, metrics.Blocks_w_time.Milliseconds(),
+						metrics.Blocks_r_count, metrics.Blocks_r_bytes, metrics.Blocks_r_time.Milliseconds(),
+					)
+				}
+
+			}
+		}()
 	}
 
 	// Return everything we need
@@ -232,8 +259,8 @@ func sync_shutdown_everything() {
  * Migrate a device to S3
  *
  */
-func sync_migrate_s3(_ uint32, name string, sinfo *syncStorageInfo) error {
-	ctx, cancelFn := context.WithCancel(context.TODO())
+func sync_migrate_s3(p_ctx context.Context, name string, sinfo *syncStorageInfo) error {
+	ctx, cancelFn := context.WithCancel(p_ctx)
 
 	dest_metrics := modules.NewMetrics(sinfo.dest_metrics)
 	// Show logging for S3 writes
@@ -290,6 +317,7 @@ func sync_migrate_s3(_ uint32, name string, sinfo *syncStorageInfo) error {
 				ood := sinfo.tracker.MeasureDirty()
 				ood_age := sinfo.tracker.MeasureDirtyAge()
 				fmt.Printf("DIRTY STATUS %dms old, with %d blocks\n", time.Since(ood_age).Milliseconds(), ood)
+				// Show some S3 stats...
 			},
 			Error_handler: func(b *storage.BlockInfo, err error) {},
 		})
