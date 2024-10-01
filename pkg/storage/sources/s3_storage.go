@@ -19,20 +19,24 @@ var (
 )
 
 type S3Storage struct {
-	client                   *minio.Client
-	bucket                   string
-	prefix                   string
-	size                     uint64
-	block_size               int
-	lockers                  []sync.RWMutex
-	contexts                 []context.CancelFunc
-	contexts_lock            sync.Mutex
-	metrics_blocks_w_count   uint64
-	metrics_blocks_w_bytes   uint64
-	metrics_blocks_w_time_ns uint64
-	metrics_blocks_r_count   uint64
-	metrics_blocks_r_bytes   uint64
-	metrics_blocks_r_time_ns uint64
+	client                         *minio.Client
+	dummy                          bool
+	bucket                         string
+	prefix                         string
+	size                           uint64
+	block_size                     int
+	lockers                        []sync.RWMutex
+	contexts                       []context.CancelFunc
+	contexts_lock                  sync.Mutex
+	metrics_blocks_w_count         uint64
+	metrics_blocks_w_bytes         uint64
+	metrics_blocks_w_time_ns       uint64
+	metrics_blocks_w_pre_r_count   uint64
+	metrics_blocks_w_pre_r_bytes   uint64
+	metrics_blocks_w_pre_r_time_ns uint64
+	metrics_blocks_r_count         uint64
+	metrics_blocks_r_bytes         uint64
+	metrics_blocks_r_time_ns       uint64
 }
 
 func NewS3Storage(secure bool, endpoint string,
@@ -142,13 +146,12 @@ func (i *S3Storage) ReadAt(buffer []byte, offset int64) (int, error) {
 		}
 		n, err := obj.Read(buff)
 		dtime := time.Since(ctime)
-		if err.Error() == errNoSuchKey.Error() {
-			return len(buff), nil
-		}
 		if err == nil {
 			atomic.AddUint64(&i.metrics_blocks_r_count, 1)
 			atomic.AddUint64(&i.metrics_blocks_r_bytes, uint64(n))
 			atomic.AddUint64(&i.metrics_blocks_r_time_ns, uint64(dtime.Nanoseconds()))
+		} else if err.Error() == errNoSuchKey.Error() {
+			return len(buff), nil
 		}
 
 		return n, err
@@ -221,16 +224,13 @@ func (i *S3Storage) WriteAt(buffer []byte, offset int64) (int, error) {
 		}
 		n, err := obj.Read(buff)
 		dtime := time.Since(ctime)
-		if err.Error() == errNoSuchKey.Error() {
+		if err == nil {
+			atomic.AddUint64(&i.metrics_blocks_w_pre_r_count, 1)
+			atomic.AddUint64(&i.metrics_blocks_w_pre_r_bytes, uint64(n))
+			atomic.AddUint64(&i.metrics_blocks_w_pre_r_time_ns, uint64(dtime.Nanoseconds()))
+		} else if err.Error() == errNoSuchKey.Error() {
 			return len(buff), nil
 		}
-
-		if err == nil {
-			atomic.AddUint64(&i.metrics_blocks_r_count, 1)
-			atomic.AddUint64(&i.metrics_blocks_r_bytes, uint64(n))
-			atomic.AddUint64(&i.metrics_blocks_r_time_ns, uint64(dtime.Nanoseconds()))
-		}
-
 		return n, err
 	}
 
@@ -249,15 +249,16 @@ func (i *S3Storage) WriteAt(buffer []byte, offset int64) (int, error) {
 
 		i.setContext(int(block), nil)
 		i.lockers[block].Unlock()
-		// Currently, if the context was canceled, we ignore it.
-		if err != nil && !errors.Is(err, context.Canceled) {
-			return 0, err
-		}
 
 		if err == nil {
 			atomic.AddUint64(&i.metrics_blocks_w_count, 1)
 			atomic.AddUint64(&i.metrics_blocks_w_bytes, uint64(obj.Size))
 			atomic.AddUint64(&i.metrics_blocks_w_time_ns, uint64(dtime.Nanoseconds()))
+		} else {
+			// Currently, if the context was canceled, we ignore it.
+			if !errors.Is(err, context.Canceled) {
+				return 0, err
+			}
 		}
 
 		return int(obj.Size), nil
@@ -340,21 +341,27 @@ func (i *S3Storage) CancelWrites(offset int64, length int64) {
 }
 
 type S3Metrics struct {
-	Blocks_w_count uint64
-	Blocks_w_bytes uint64
-	Blocks_w_time  time.Duration
-	Blocks_r_count uint64
-	Blocks_r_bytes uint64
-	Blocks_r_time  time.Duration
+	Blocks_w_count       uint64
+	Blocks_w_bytes       uint64
+	Blocks_w_time        time.Duration
+	Blocks_w_pre_r_count uint64
+	Blocks_w_pre_r_bytes uint64
+	Blocks_w_pre_r_time  time.Duration
+	Blocks_r_count       uint64
+	Blocks_r_bytes       uint64
+	Blocks_r_time        time.Duration
 }
 
 func (i *S3Storage) Metrics() *S3Metrics {
 	return &S3Metrics{
-		Blocks_w_count: atomic.LoadUint64(&i.metrics_blocks_w_count),
-		Blocks_w_bytes: atomic.LoadUint64(&i.metrics_blocks_w_bytes),
-		Blocks_w_time:  time.Duration(atomic.LoadUint64(&i.metrics_blocks_w_time_ns)),
-		Blocks_r_count: atomic.LoadUint64(&i.metrics_blocks_r_count),
-		Blocks_r_bytes: atomic.LoadUint64(&i.metrics_blocks_r_bytes),
-		Blocks_r_time:  time.Duration(atomic.LoadUint64(&i.metrics_blocks_r_time_ns)),
+		Blocks_w_count:       atomic.LoadUint64(&i.metrics_blocks_w_count),
+		Blocks_w_bytes:       atomic.LoadUint64(&i.metrics_blocks_w_bytes),
+		Blocks_w_time:        time.Duration(atomic.LoadUint64(&i.metrics_blocks_w_time_ns)),
+		Blocks_w_pre_r_count: atomic.LoadUint64(&i.metrics_blocks_w_pre_r_count),
+		Blocks_w_pre_r_bytes: atomic.LoadUint64(&i.metrics_blocks_w_pre_r_bytes),
+		Blocks_w_pre_r_time:  time.Duration(atomic.LoadUint64(&i.metrics_blocks_w_pre_r_time_ns)),
+		Blocks_r_count:       atomic.LoadUint64(&i.metrics_blocks_r_count),
+		Blocks_r_bytes:       atomic.LoadUint64(&i.metrics_blocks_r_bytes),
+		Blocks_r_time:        time.Duration(atomic.LoadUint64(&i.metrics_blocks_r_time_ns)),
 	}
 }
