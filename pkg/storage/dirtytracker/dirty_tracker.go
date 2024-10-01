@@ -166,15 +166,24 @@ func (i *DirtyTrackerRemote) GetDirtyBlocks(max_age time.Duration, limit int, gr
 
 	// First look for any dirty blocks past max_age
 	i.dt.tracking_lock.Lock()
+
+	// First compile a list of subblocks for each block
+	grouped_tracking := make(map[uint][]uint)
+	for b, _ := range i.dt.tracking_times {
+		grouped_b := b >> group_by_shift
+		v, ok := grouped_tracking[grouped_b]
+		if ok {
+			grouped_tracking[grouped_b] = append(v, b)
+		} else {
+			grouped_tracking[grouped_b] = []uint{b}
+		}
+	}
+
+	// Next find any blocks past max_age.
 	for b, t := range i.dt.tracking_times {
 		if time.Since(t) > max_age {
 			grouped_b := b >> group_by_shift
-			v, ok := grouped_blocks[grouped_b]
-			if ok {
-				grouped_blocks[grouped_b] = append(v, b)
-			} else {
-				grouped_blocks[grouped_b] = []uint{b}
-			}
+			grouped_blocks[grouped_b] = grouped_tracking[grouped_b]
 			if len(grouped_blocks) == limit {
 				break
 			}
