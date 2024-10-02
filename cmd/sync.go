@@ -146,8 +146,8 @@ func runSync(ccmd *cobra.Command, args []string) {
  *
  */
 func sync_setup_device(ctx context.Context, conf *config.DeviceSchema) (*syncStorageInfo, error) {
-	block_size := sync_block_size // 1024 * 128
 
+	block_size := int(conf.ByteBlockSize())
 	num_blocks := (int(conf.ByteSize()) + block_size - 1) / block_size
 
 	replay_log := ""
@@ -185,47 +185,82 @@ func sync_setup_device(ctx context.Context, conf *config.DeviceSchema) (*syncSto
 
 	// Create a destination to migrate to
 	var dest storage.StorageProvider
+	var s3dest *sources.S3Storage
 	if sync_dummy {
-		dest = modules.NewNothing(sourceStorage.Size())
+		s3dest, err = sources.NewS3StorageDummy(sourceStorage.Size(), sync_block_size)
 	} else {
-		s3dest, err := sources.NewS3StorageCreate(sync_secure, sync_endpoint,
+		s3dest, err = sources.NewS3StorageCreate(sync_secure, sync_endpoint,
 			sync_access,
 			sync_secret,
 			sync_bucket,
 			conf.Name,
 			sourceStorage.Size(),
 			sync_block_size)
-		if err != nil {
-			return nil, err
-		}
 
-		dest = s3dest
+	}
+	if err != nil {
+		return nil, err
+	}
 
-		// Periodically show some stats
-		go func() {
-			ticker := time.NewTicker(10 * time.Second)
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case <-ticker.C:
-					metrics := s3dest.Metrics()
-					fmt.Printf("### S3 metrics ### Writes=%d bytes=%d time=%dms Reads=%d bytes=%d time=%dms\n",
-						metrics.Blocks_w_count, metrics.Blocks_w_bytes, metrics.Blocks_w_time.Milliseconds(),
-						metrics.Blocks_r_count, metrics.Blocks_r_bytes, metrics.Blocks_r_time.Milliseconds(),
-					)
+	dest = s3dest
+
+	// Periodically show some stats and do some dirty counting...
+	type dirty_stats_entry struct {
+		time    time.Time
+		data    uint64
+		max_age time.Duration
+	}
+
+	go func() {
+		dirty_stats := make([]*dirty_stats_entry, 0)
+		ticker := time.NewTicker(1 * time.Second)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				metrics := s3dest.Metrics()
+				fmt.Printf("### S3 metrics ### Writes=%d bytes=%d time=%dms data=%d | Reads=%d bytes=%d time=%dms data=%d | PreWReads=%d bytes=%d\n",
+					metrics.Blocks_w_count, metrics.Blocks_w_bytes, metrics.Blocks_w_time.Milliseconds(), metrics.Blocks_w_data_bytes,
+					metrics.Blocks_r_count, metrics.Blocks_r_bytes, metrics.Blocks_r_time.Milliseconds(), metrics.Blocks_r_data_bytes,
+					metrics.Blocks_w_pre_r_count, metrics.Blocks_w_pre_r_bytes,
+				)
+				// Measure dirty here...
+				ood := sourceDirtyRemote.MeasureDirty() * dirty_block_size
+				ood_age := sourceDirtyRemote.MeasureDirtyAge()
+				fmt.Printf("DIRTY STATUS %dms old, with %d bytes\n", time.Since(ood_age).Milliseconds(), ood)
+				dirty_stats = append(dirty_stats, &dirty_stats_entry{
+					time:    time.Now(),
+					data:    uint64(ood),
+					max_age: time.Since(ood_age),
+				})
+
+				// Now do an overall calculation on averages,max etc...
+				max_dirty_bytes := uint64(0)
+				max_dirty_age := time.Duration(0)
+				for _, s := range dirty_stats {
+					if s.data > max_dirty_bytes {
+						max_dirty_bytes = s.data
+					}
+					if s.max_age > max_dirty_age {
+						max_dirty_age = s.max_age
+					}
 				}
 
+				// TODO: Add some averages here or 95%?
+
+				fmt.Printf("DIRTY MAX bytes=%d age=%dms\n", max_dirty_bytes, max_dirty_age.Milliseconds())
 			}
-		}()
-	}
+
+		}
+	}()
 
 	// Return everything we need
 	return &syncStorageInfo{
 		tracker:      sourceDirtyRemote,
 		lockable:     sourceStorage,
 		orderer:      orderer,
-		block_size:   block_size,
+		block_size:   block_size, // Device block size
 		num_blocks:   num_blocks,
 		name:         conf.Name,
 		dest_metrics: modules.NewMetrics(dest),
@@ -314,10 +349,6 @@ func sync_migrate_s3(p_ctx context.Context, name string, sinfo *syncStorageInfo)
 			Block_size: sinfo.block_size,
 			Progress_handler: func(p *migrator.MigrationProgress) {
 				dest_metrics.ShowStats(name)
-				ood := sinfo.tracker.MeasureDirty()
-				ood_age := sinfo.tracker.MeasureDirtyAge()
-				fmt.Printf("DIRTY STATUS %dms old, with %d blocks\n", time.Since(ood_age).Milliseconds(), ood)
-				// Show some S3 stats...
 			},
 			Error_handler: func(b *storage.BlockInfo, err error) {},
 		})
