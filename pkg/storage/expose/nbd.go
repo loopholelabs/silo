@@ -117,14 +117,17 @@ func (n *ExposedStorageNBDNL) Init() error {
 			d.ASYNC_WRITES = n.async
 			// Start reading commands on the socket and dispatching them to our provider
 			go func() {
-				_ = d.Handle()
+				err := d.Handle()
+				if err != nil {
+					fmt.Printf("Error from Handle: %v\n", err)
+				}
 			}()
 			n.socks = append(n.socks, serverc)
 			socks = append(socks, client)
 			n.dispatchers = append(n.dispatchers, d)
 		}
 		var opts []nbdnl.ConnectOption
-		opts = append(opts, nbdnl.WithBlockSize(uint64(n.block_size)))
+		opts = append(opts, nbdnl.WithBlockSize(n.block_size))
 		opts = append(opts, nbdnl.WithTimeout(100*time.Millisecond))
 		opts = append(opts, nbdnl.WithDeadconnTimeout(100*time.Millisecond))
 

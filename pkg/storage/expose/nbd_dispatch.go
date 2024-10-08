@@ -187,12 +187,12 @@ func (d *Dispatch) Handle() error {
 				}
 
 				if request.Type == NBD_CMD_DISCONNECT {
-					//					fmt.Printf(" -> CMD_DISCONNECT\n")
+					fmt.Printf(" -> CMD_DISCONNECT\n")
 					return nil // All done
 				} else if request.Type == NBD_CMD_FLUSH {
 					return fmt.Errorf("not supported: Flush")
 				} else if request.Type == NBD_CMD_READ {
-					//					fmt.Printf("READ %x %d\n", request.Handle, request.Length)
+					fmt.Printf("READ %x %d\n", request.Handle, request.Length)
 					rp += 28
 					d.metric_packets_in++
 					err := d.cmdRead(request.Handle, request.From, request.Length)
