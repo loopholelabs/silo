@@ -7,7 +7,7 @@ toolchain go1.22.2
 require (
 	github.com/Merovius/nbd v0.0.0-20231017152624-27b78b60d8da
 	github.com/fatih/color v1.17.0
-	github.com/hashicorp/hcl/v2 v2.21.0
+	github.com/hashicorp/hcl/v2 v2.22.0
 	github.com/minio/minio-go/v7 v7.0.77
 	github.com/ory/dockertest/v3 v3.10.0
 	github.com/spf13/cobra v1.8.1
