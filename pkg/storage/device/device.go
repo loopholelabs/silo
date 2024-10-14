@@ -15,11 +15,14 @@ import (
 )
 
 const (
-	SYSTEM_MEMORY      = "memory"
-	SYSTEM_FILE        = "file"
-	SYSTEM_SPARSE_FILE = "sparsefile"
-	SYSTEM_S3          = "s3"
-	DEFAULT_BLOCK_SIZE = 4096
+	SYSTEM_MEMORY           = "memory"
+	SYSTEM_FILE             = "file"
+	SYSTEM_SPARSE_FILE      = "sparsefile"
+	SYSTEM_S3               = "s3"
+	DEFAULT_BLOCK_SIZE      = 4096
+	DEFAULT_NBD_CONNECTIONS = 8
+	DEFAULT_NBD_TIMEOUT     = 0
+	DEFAULT_NBD_ASYNC       = true
 )
 
 type Device struct {
@@ -215,7 +218,7 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 	// NB You may well need to call ex.SetProvider if you wish to insert other things in the chain.
 	var ex storage.ExposedStorage
 	if ds.Expose {
-		ex = expose.NewExposedStorageNBDNL(prov, 8, 0, prov.Size(), expose.NBD_DEFAULT_BLOCK_SIZE, true)
+		ex = expose.NewExposedStorageNBDNL(prov, DEFAULT_NBD_CONNECTIONS, DEFAULT_NBD_TIMEOUT, prov.Size(), expose.NBD_DEFAULT_BLOCK_SIZE, DEFAULT_NBD_ASYNC)
 
 		err := ex.Init()
 		if err != nil {
