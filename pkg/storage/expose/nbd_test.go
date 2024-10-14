@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/user"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -91,7 +92,7 @@ func TestNBDNLDeviceBlocksizes(t *testing.T) {
 	}
 }
 
-func TestNBDNLDeviceSmall(t *testing.T) {
+func TestNBDNLDeviceSmallRead(t *testing.T) {
 	currentUser, err := user.Current()
 	if err != nil {
 		panic(err)
@@ -130,7 +131,72 @@ func TestNBDNLDeviceSmall(t *testing.T) {
 	num, err := devfile.ReadAt(buffer, 0)
 	assert.NoError(t, err)
 	assert.Equal(t, 900, num)
-	devfile.Close()
+	err = devfile.Close()
+	assert.NoError(t, err)
+
+	// Make sure the data is equal
+	assert.Equal(t, b, buffer)
+}
+
+func TestNBDNLDeviceSmallWrite(t *testing.T) {
+	currentUser, err := user.Current()
+	if err != nil {
+		panic(err)
+	}
+	if currentUser.Username != "root" {
+		fmt.Printf("Cannot run test unless we are root.\n")
+		return
+	}
+
+	var ndev *ExposedStorageNBDNL
+	defer func() {
+		err := ndev.Shutdown()
+		assert.NoError(t, err)
+	}()
+
+	size := 900
+	prov := sources.NewMemoryStorage(size)
+
+	b := make([]byte, 900)
+	_, err = rand.Read(b)
+	assert.NoError(t, err)
+
+	hooks := modules.NewHooks(prov)
+
+	var write_wg sync.WaitGroup
+	write_wg.Add(1)
+	var writes uint32
+
+	hooks.Pre_write = func(buffer []byte, offset int64) (bool, int, error) {
+		num := atomic.AddUint32(&writes, 1)
+		if num == 1 {
+			write_wg.Done()
+		}
+		return false, 0, nil
+	}
+
+	ndev = NewExposedStorageNBDNL(hooks, 1, 0, uint64(size), 4096, true)
+
+	err = ndev.Init()
+	assert.NoError(t, err)
+
+	devfile, err := os.OpenFile(fmt.Sprintf("/dev/nbd%d", ndev.device_index), os.O_RDWR, 0666)
+	assert.NoError(t, err)
+
+	// Try doing a write...
+	num, err := devfile.WriteAt(b, 0)
+	assert.NoError(t, err)
+	assert.Equal(t, 900, num)
+	err = devfile.Close()
+	assert.NoError(t, err)
+
+	// NB: Most of the time Write() will have been called by now. BUT we need to wait specifically here for it to make sure.
+	write_wg.Wait()
+
+	buffer := make([]byte, 900)
+	numr, err := prov.ReadAt(buffer, 0)
+	assert.NoError(t, err)
+	assert.Equal(t, 900, numr)
 
 	// Make sure the data is equal
 	assert.Equal(t, b, buffer)
