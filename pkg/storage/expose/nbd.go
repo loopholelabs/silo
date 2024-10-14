@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -24,18 +25,19 @@ type ExposedStorageNBDNL struct {
 	ctx             context.Context
 	cancelfn        context.CancelFunc
 	num_connections int
-	timeout         uint64
+	timeout         time.Duration
 	size            uint64
 	block_size      uint64
 
 	socks        []io.Closer
+	prov_lock    sync.RWMutex
 	prov         storage.StorageProvider
 	device_index int
 	async        bool
 	dispatchers  []*Dispatch
 }
 
-func NewExposedStorageNBDNL(prov storage.StorageProvider, numConnections int, timeout uint64, size uint64, blockSize uint64, async bool) *ExposedStorageNBDNL {
+func NewExposedStorageNBDNL(prov storage.StorageProvider, numConnections int, timeout time.Duration, size uint64, blockSize uint64, async bool) *ExposedStorageNBDNL {
 
 	// The size must be a multiple of sector size
 	alignTo := uint64(512)
@@ -57,31 +59,45 @@ func NewExposedStorageNBDNL(prov storage.StorageProvider, numConnections int, ti
 }
 
 func (n *ExposedStorageNBDNL) SetProvider(prov storage.StorageProvider) {
+	n.prov_lock.Lock()
+	defer n.prov_lock.Unlock()
 	n.prov = prov
 }
 
 // Impl StorageProvider here so we can route calls to provider
 func (i *ExposedStorageNBDNL) ReadAt(buffer []byte, offset int64) (int, error) {
+	i.prov_lock.RLock()
+	defer i.prov_lock.RUnlock()
 	return i.prov.ReadAt(buffer, offset)
 }
 
 func (i *ExposedStorageNBDNL) WriteAt(buffer []byte, offset int64) (int, error) {
+	i.prov_lock.RLock()
+	defer i.prov_lock.RUnlock()
 	return i.prov.WriteAt(buffer, offset)
 }
 
 func (i *ExposedStorageNBDNL) Flush() error {
+	i.prov_lock.RLock()
+	defer i.prov_lock.RUnlock()
 	return i.prov.Flush()
 }
 
 func (i *ExposedStorageNBDNL) Size() uint64 {
+	i.prov_lock.RLock()
+	defer i.prov_lock.RUnlock()
 	return i.prov.Size()
 }
 
 func (i *ExposedStorageNBDNL) Close() error {
+	i.prov_lock.RLock()
+	defer i.prov_lock.RUnlock()
 	return i.prov.Close()
 }
 
 func (i *ExposedStorageNBDNL) CancelWrites(offset int64, length int64) {
+	i.prov_lock.RLock()
+	defer i.prov_lock.RUnlock()
 	i.prov.CancelWrites(offset, length)
 }
 
@@ -125,8 +141,8 @@ func (n *ExposedStorageNBDNL) Init() error {
 		}
 		var opts []nbdnl.ConnectOption
 		opts = append(opts, nbdnl.WithBlockSize(uint64(n.block_size)))
-		opts = append(opts, nbdnl.WithTimeout(100*time.Millisecond))
-		opts = append(opts, nbdnl.WithDeadconnTimeout(100*time.Millisecond))
+		opts = append(opts, nbdnl.WithTimeout(n.timeout))
+		opts = append(opts, nbdnl.WithDeadconnTimeout(n.timeout))
 
 		serverFlags := nbdnl.FlagHasFlags | nbdnl.FlagCanMulticonn
 
