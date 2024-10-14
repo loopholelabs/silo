@@ -361,3 +361,116 @@ func TestNBDNLDeviceShutdownWrite(t *testing.T) {
 	wg.Wait()
 
 }
+
+func TestNBDNLTimeout(t *testing.T) {
+	currentUser, err := user.Current()
+	if err != nil {
+		panic(err)
+	}
+	if currentUser.Username != "root" {
+		fmt.Printf("Cannot run test unless we are root.\n")
+		return
+	}
+
+	var n *ExposedStorageNBDNL
+
+	size := 4096 * 1024 * 1024
+	prov := sources.NewMemoryStorage(size)
+
+	hooks := modules.NewHooks(prov)
+
+	latency_time := 10 * time.Second
+
+	read_offset := int64(4096 * 1024 * 7)
+
+	// Only sleep for the specific read. (Other reads will happen for filesystem etc)
+	hooks.Pre_read = func(buffer []byte, offset int64) (bool, int, error) {
+		if offset == read_offset {
+			time.Sleep(latency_time)
+		}
+		return false, 0, nil
+	}
+
+	NBD_TIMEOUT := 2 * time.Second
+
+	// Use a SINGLE connection here. Otherwise nbd module will retry on other connections.
+	n = NewExposedStorageNBDNL(hooks, 1, NBD_TIMEOUT, uint64(size), 4096, true)
+	err = n.Init()
+	assert.NoError(t, err)
+
+	t.Cleanup(func() {
+		err := n.Shutdown()
+		assert.NoError(t, err)
+	})
+
+	devfile, err := os.OpenFile(fmt.Sprintf("/dev/nbd%d", n.device_index), os.O_RDWR, 0666)
+	assert.NoError(t, err)
+
+	t.Cleanup(func() {
+		devfile.Close()
+	})
+
+	// Try doing a read, which we expect to fail due to a timeout.
+	buffer := make([]byte, 4096*3)
+	ctime := time.Now()
+	_, err = devfile.ReadAt(buffer, int64(read_offset))
+	assert.Error(t, err)
+
+	// Big error bars here, but this should be ok
+	assert.WithinDuration(t, time.Now(), ctime.Add(NBD_TIMEOUT*2), NBD_TIMEOUT)
+}
+
+func TestNBDNLZeroTimeout(t *testing.T) {
+	currentUser, err := user.Current()
+	if err != nil {
+		panic(err)
+	}
+	if currentUser.Username != "root" {
+		fmt.Printf("Cannot run test unless we are root.\n")
+		return
+	}
+
+	var n *ExposedStorageNBDNL
+
+	size := 4096 * 1024 * 1024
+	prov := sources.NewMemoryStorage(size)
+
+	hooks := modules.NewHooks(prov)
+
+	latency_time := 5 * time.Second
+
+	read_offset := int64(4096 * 1024 * 7)
+
+	// Only sleep for the specific read. (Other reads will happen for filesystem etc)
+	hooks.Pre_read = func(buffer []byte, offset int64) (bool, int, error) {
+		if offset == read_offset {
+			time.Sleep(latency_time)
+		}
+		return false, 0, nil
+	}
+
+	n = NewExposedStorageNBDNL(hooks, 1, 0, uint64(size), 4096, true)
+	err = n.Init()
+	assert.NoError(t, err)
+
+	t.Cleanup(func() {
+		err := n.Shutdown()
+		assert.NoError(t, err)
+	})
+
+	devfile, err := os.OpenFile(fmt.Sprintf("/dev/nbd%d", n.device_index), os.O_RDWR, 0666)
+	assert.NoError(t, err)
+
+	t.Cleanup(func() {
+		devfile.Close()
+	})
+
+	// Try doing a read, which we expect to succeed
+	buffer := make([]byte, 4096*3)
+	ctime := time.Now()
+	_, err = devfile.ReadAt(buffer, int64(read_offset))
+	assert.NoError(t, err)
+
+	// Big error bars here, but this should be ok
+	assert.WithinDuration(t, time.Now(), ctime.Add(latency_time), 1*time.Second)
+}
