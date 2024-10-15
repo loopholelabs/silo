@@ -83,7 +83,7 @@ func NewDispatch(ctx context.Context, fp io.ReadWriteCloser, prov storage.Storag
 		ASYNC_WRITES:    true,
 		ASYNC_READS:     true,
 		response_header: make([]byte, 16),
-		fatal:           make(chan error, 8),
+		fatal:           make(chan error, 1),
 		fp:              fp,
 		prov:            prov,
 		ctx:             ctx,
@@ -266,7 +266,10 @@ func (d *Dispatch) cmdRead(cmd_handle uint64, cmd_from uint64, cmd_length uint32
 		go func() {
 			err := performRead(cmd_handle, cmd_from, cmd_length)
 			if err != nil {
-				d.fatal <- err
+				select {
+				case d.fatal <- err:
+				default:
+				}
 			}
 			d.pending_responses.Done()
 		}()
@@ -311,7 +314,10 @@ func (d *Dispatch) cmdWrite(cmd_handle uint64, cmd_from uint64, cmd_data []byte)
 		go func() {
 			err := performWrite(cmd_handle, cmd_from, cmd_data)
 			if err != nil {
-				d.fatal <- err
+				select {
+				case d.fatal <- err:
+				default:
+				}
 			}
 			d.pending_responses.Done()
 		}()
