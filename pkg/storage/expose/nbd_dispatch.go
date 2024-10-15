@@ -64,17 +64,18 @@ type Response struct {
 }
 
 type Dispatch struct {
-	ctx                context.Context
-	ASYNC_READS        bool
-	ASYNC_WRITES       bool
-	fp                 io.ReadWriteCloser
-	response_header    []byte
-	write_lock         sync.Mutex
-	prov               storage.StorageProvider
-	fatal              chan error
-	pending_responses  sync.WaitGroup
-	metric_packets_in  uint64
-	metric_packets_out uint64
+	ctx                    context.Context
+	ASYNC_READS            bool
+	ASYNC_WRITES           bool
+	fp                     io.ReadWriteCloser
+	response_header        []byte
+	write_lock             sync.Mutex
+	prov                   storage.StorageProvider
+	fatal                  chan error
+	pending_responses_lock sync.Mutex
+	pending_responses      sync.WaitGroup
+	metric_packets_in      uint64
+	metric_packets_out     uint64
 }
 
 func NewDispatch(ctx context.Context, fp io.ReadWriteCloser, prov storage.StorageProvider) *Dispatch {
@@ -94,7 +95,10 @@ func NewDispatch(ctx context.Context, fp io.ReadWriteCloser, prov storage.Storag
 }
 
 func (d *Dispatch) Wait() {
-	// Wait for any pending responses
+	d.pending_responses_lock.Lock()
+	defer d.pending_responses_lock.Unlock()
+
+	// Wait until there are no outstanding responses...
 	d.pending_responses.Wait()
 }
 
@@ -253,16 +257,18 @@ func (d *Dispatch) cmdRead(cmd_handle uint64, cmd_from uint64, cmd_length uint32
 		case e = <-errchan:
 		}
 
-		errorValue := uint32(0)
 		if e != nil {
-			errorValue = 1
-			data = make([]byte, 0) // If there was an error, don't send data
+			return d.writeResponse(1, handle, make([]byte, 0))
 		}
-		return d.writeResponse(errorValue, handle, data)
+
+		return d.writeResponse(0, handle, data)
 	}
 
+	d.pending_responses_lock.Lock()
+	d.pending_responses.Add(1)
+	d.pending_responses_lock.Unlock()
+
 	if d.ASYNC_READS {
-		d.pending_responses.Add(1)
 		go func() {
 			err := performRead(cmd_handle, cmd_from, cmd_length)
 			if err != nil {
@@ -274,7 +280,6 @@ func (d *Dispatch) cmdRead(cmd_handle uint64, cmd_from uint64, cmd_length uint32
 			d.pending_responses.Done()
 		}()
 	} else {
-		d.pending_responses.Add(1)
 		err := performRead(cmd_handle, cmd_from, cmd_length)
 		d.pending_responses.Done()
 		return err
@@ -309,8 +314,11 @@ func (d *Dispatch) cmdWrite(cmd_handle uint64, cmd_from uint64, cmd_data []byte)
 		return d.writeResponse(errorValue, handle, []byte{})
 	}
 
+	d.pending_responses_lock.Lock()
+	d.pending_responses.Add(1)
+	d.pending_responses_lock.Unlock()
+
 	if d.ASYNC_WRITES {
-		d.pending_responses.Add(1)
 		go func() {
 			err := performWrite(cmd_handle, cmd_from, cmd_data)
 			if err != nil {
@@ -322,7 +330,6 @@ func (d *Dispatch) cmdWrite(cmd_handle uint64, cmd_from uint64, cmd_data []byte)
 			d.pending_responses.Done()
 		}()
 	} else {
-		d.pending_responses.Add(1)
 		err := performWrite(cmd_handle, cmd_from, cmd_data)
 		d.pending_responses.Done()
 		return err

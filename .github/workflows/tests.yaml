@@ -20,8 +20,5 @@ jobs:
       - name: Setup nbd
         run: sudo modprobe nbd
 
-      - name: Test
-        run: go test -exec sudo -v ./...
-        
       - name: Test with Race Conditions
-        run: go test -race -v $(go list ./... | grep -v expose)
+        run: go test -exec sudo -race -v -count=1 ./...

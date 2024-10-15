@@ -89,6 +89,7 @@ type Migrator struct {
 	last_written_blocks      []time.Time
 	block_order              storage.BlockOrder
 	ctime                    time.Time
+	concurrency_lock         sync.Mutex
 	concurrency              map[int]chan bool
 	wg                       sync.WaitGroup
 	integrity                *integrity.IntegrityChecker
@@ -144,6 +145,28 @@ func NewMigrator(source storage.TrackingStorageProvider,
 	return m, nil
 }
 
+func (m *Migrator) concurrency_enter(block_type int) {
+	m.concurrency_lock.Lock()
+	cc, ok := m.concurrency[block_type]
+	if !ok {
+		cc = m.concurrency[storage.BlockTypeAny]
+	}
+	m.concurrency_lock.Unlock()
+	cc <- true
+	m.wg.Add(1)
+}
+
+func (m *Migrator) concurrency_exit(block_type int) {
+	m.concurrency_lock.Lock()
+	cc, ok := m.concurrency[block_type]
+	if !ok {
+		cc = m.concurrency[storage.BlockTypeAny]
+	}
+	m.concurrency_lock.Unlock()
+	<-cc
+	m.wg.Done()
+}
+
 /**
  * Set a MappedStorage for the source.
  *
@@ -180,26 +203,14 @@ func (m *Migrator) Migrate(num_blocks int) error {
 			break
 		}
 
-		cc, ok := m.concurrency[i.Type]
-		if !ok {
-			cc = m.concurrency[storage.BlockTypeAny]
-		}
-		cc <- true
-
-		m.wg.Add(1)
+		m.concurrency_enter(i.Type)
 
 		go func(block_no *storage.BlockInfo) {
 			err := m.migrateBlock(block_no.Block)
 			if err != nil {
 				m.error_fn(block_no, err)
 			}
-
-			m.wg.Done()
-			cc, ok := m.concurrency[block_no.Type]
-			if !ok {
-				cc = m.concurrency[storage.BlockTypeAny]
-			}
-			<-cc
+			m.concurrency_exit(block_no.Type)
 		}(i)
 	}
 	return nil
@@ -259,15 +270,9 @@ func (m *Migrator) MigrateDirty(blocks []uint) error {
 			return nil
 		}
 
-		cc, ok := m.concurrency[i.Type]
-		if !ok {
-			cc = m.concurrency[storage.BlockTypeAny]
-		}
-		cc <- true
+		m.concurrency_enter(i.Type)
 
 		m.waiting_blocks.ClearBit(int(pos)) // Allow more writes for this to come in now.
-
-		m.wg.Add(1)
 
 		m.clean_blocks.ClearBit(int(pos))
 
@@ -276,13 +281,7 @@ func (m *Migrator) MigrateDirty(blocks []uint) error {
 			if err != nil {
 				m.error_fn(block_no, err)
 			}
-
-			m.wg.Done()
-			cc, ok := m.concurrency[block_no.Type]
-			if !ok {
-				cc = m.concurrency[storage.BlockTypeAny]
-			}
-			<-cc
+			m.concurrency_exit(block_no.Type)
 		}(i)
 
 	}

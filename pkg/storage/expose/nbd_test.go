@@ -25,19 +25,17 @@ func TestNBDNLDevice(t *testing.T) {
 		return
 	}
 
-	var n *ExposedStorageNBDNL
-	defer func() {
-		err := n.Shutdown()
-		assert.NoError(t, err)
-	}()
-
 	size := 4096 * 1024 * 1024
 	prov := sources.NewMemoryStorage(size)
 
-	n = NewExposedStorageNBDNL(prov, 8, 0, uint64(size), 4096, true)
-
+	n := NewExposedStorageNBDNL(prov, 8, 0, uint64(size), 4096, true)
 	err = n.Init()
 	assert.NoError(t, err)
+
+	t.Cleanup(func() {
+		err = n.Shutdown()
+		assert.NoError(t, err)
+	})
 
 	var wg sync.WaitGroup
 
@@ -78,16 +76,13 @@ func TestNBDNLDeviceBlocksizes(t *testing.T) {
 
 	for _, bs := range blockSizes {
 		t.Run(fmt.Sprintf("blockSize-%d", bs), func(tt *testing.T) {
-			var n *ExposedStorageNBDNL
-			defer func() {
-				err := n.Shutdown()
-				assert.NoError(t, err)
-			}()
-
-			n = NewExposedStorageNBDNL(prov, 8, 0, uint64(size), uint64(bs), true)
-
+			n := NewExposedStorageNBDNL(prov, 8, 0, uint64(size), uint64(bs), true)
 			err = n.Init()
 			assert.NoError(t, err)
+			tt.Cleanup(func() {
+				err = n.Shutdown()
+				assert.NoError(t, err)
+			})
 		})
 	}
 }
@@ -102,12 +97,6 @@ func TestNBDNLDeviceSmallRead(t *testing.T) {
 		return
 	}
 
-	var ndev *ExposedStorageNBDNL
-	defer func() {
-		err := ndev.Shutdown()
-		assert.NoError(t, err)
-	}()
-
 	size := 900
 	prov := sources.NewMemoryStorage(size)
 
@@ -118,10 +107,13 @@ func TestNBDNLDeviceSmallRead(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 900, n)
 
-	ndev = NewExposedStorageNBDNL(prov, 1, 0, uint64(size), 4096, true)
-
+	ndev := NewExposedStorageNBDNL(prov, 1, 0, uint64(size), 4096, true)
 	err = ndev.Init()
 	assert.NoError(t, err)
+	t.Cleanup(func() {
+		err = ndev.Shutdown()
+		assert.NoError(t, err)
+	})
 
 	devfile, err := os.OpenFile(fmt.Sprintf("/dev/nbd%d", ndev.device_index), os.O_RDWR, 0666)
 	assert.NoError(t, err)
@@ -147,12 +139,6 @@ func TestNBDNLDeviceSmallWrite(t *testing.T) {
 		fmt.Printf("Cannot run test unless we are root.\n")
 		return
 	}
-
-	var ndev *ExposedStorageNBDNL
-	defer func() {
-		err := ndev.Shutdown()
-		assert.NoError(t, err)
-	}()
 
 	size := 900
 	prov := sources.NewMemoryStorage(size)
@@ -180,10 +166,14 @@ func TestNBDNLDeviceSmallWrite(t *testing.T) {
 		return false, 0, nil
 	}
 
-	ndev = NewExposedStorageNBDNL(hooks, 1, 0, uint64(size), 4096, true)
-
+	ndev := NewExposedStorageNBDNL(hooks, 1, 0, uint64(size), 4096, true)
 	err = ndev.Init()
 	assert.NoError(t, err)
+
+	t.Cleanup(func() {
+		err = ndev.Shutdown()
+		assert.NoError(t, err)
+	})
 
 	devfile, err := os.OpenFile(fmt.Sprintf("/dev/nbd%d", ndev.device_index), os.O_RDWR, 0666)
 	assert.NoError(t, err)
@@ -230,12 +220,6 @@ func TestNBDNLDeviceUnalignedPartialRead(t *testing.T) {
 		return
 	}
 
-	var ndev *ExposedStorageNBDNL
-	defer func() {
-		err := ndev.Shutdown()
-		assert.NoError(t, err)
-	}()
-
 	size := 8 * 1024
 	prov := sources.NewMemoryStorage(size)
 
@@ -246,10 +230,14 @@ func TestNBDNLDeviceUnalignedPartialRead(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, size, n)
 
-	ndev = NewExposedStorageNBDNL(prov, 1, 0, uint64(size), 4096, true)
+	ndev := NewExposedStorageNBDNL(prov, 1, 0, uint64(size), 4096, true)
 
 	err = ndev.Init()
 	assert.NoError(t, err)
+	defer func() {
+		err := ndev.Shutdown()
+		assert.NoError(t, err)
+	}()
 
 	devfile, err := os.OpenFile(fmt.Sprintf("/dev/nbd%d", ndev.device_index), os.O_RDWR, 0666)
 	assert.NoError(t, err)
@@ -275,18 +263,16 @@ func TestNBDNLDeviceUnalignedPartialWrite(t *testing.T) {
 		return
 	}
 
-	var ndev *ExposedStorageNBDNL
+	size := 900
+	prov := sources.NewMemoryStorage(size)
+	ndev := NewExposedStorageNBDNL(prov, 1, 0, uint64(size), 4096, true)
+
+	err = ndev.Init()
+	assert.NoError(t, err)
 	defer func() {
 		err := ndev.Shutdown()
 		assert.NoError(t, err)
 	}()
-
-	size := 900
-	prov := sources.NewMemoryStorage(size)
-	ndev = NewExposedStorageNBDNL(prov, 1, 0, uint64(size), 4096, true)
-
-	err = ndev.Init()
-	assert.NoError(t, err)
 
 	devfile, err := os.OpenFile(fmt.Sprintf("/dev/nbd%d", ndev.device_index), os.O_RDWR, 0666)
 	assert.NoError(t, err)

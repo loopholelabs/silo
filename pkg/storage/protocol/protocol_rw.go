@@ -26,18 +26,19 @@ type Waiters struct {
 }
 
 type ProtocolRW struct {
-	ctx              context.Context
-	readers          []io.Reader
-	writers          []io.Writer
-	writer_headers   [][]byte
-	writer_locks     []sync.Mutex
-	txID             uint32
-	active_devs      map[uint32]bool
-	active_devs_lock sync.Mutex
-	waiters          map[uint32]Waiters
-	waiters_lock     sync.Mutex
-	newdev_fn        func(context.Context, Protocol, uint32)
-	newdev_protocol  Protocol
+	ctx                  context.Context
+	readers              []io.Reader
+	writers              []io.Writer
+	writer_headers       [][]byte
+	writer_locks         []sync.Mutex
+	txID                 uint32
+	active_devs          map[uint32]bool
+	active_devs_lock     sync.Mutex
+	waiters              map[uint32]Waiters
+	waiters_lock         sync.Mutex
+	newdev_fn            func(context.Context, Protocol, uint32)
+	newdev_protocol_lock sync.RWMutex
+	newdev_protocol      Protocol
 }
 
 func NewProtocolRW(ctx context.Context, readers []io.Reader, writers []io.Writer, newdevFN func(context.Context, Protocol, uint32)) *ProtocolRW {
@@ -61,6 +62,8 @@ func NewProtocolRW(ctx context.Context, readers []io.Reader, writers []io.Writer
 }
 
 func (p *ProtocolRW) SetNewDevProtocol(proto Protocol) {
+	p.newdev_protocol_lock.Lock()
+	defer p.newdev_protocol_lock.Unlock()
 	p.newdev_protocol = proto
 }
 
@@ -79,7 +82,11 @@ func (p *ProtocolRW) InitDev(dev uint32) {
 		p.waiters_lock.Unlock()
 
 		if p.newdev_fn != nil {
-			p.newdev_fn(p.ctx, p.newdev_protocol, dev)
+			p.newdev_protocol_lock.RLock()
+			newdev_proto := p.newdev_protocol
+			p.newdev_protocol_lock.RUnlock()
+
+			p.newdev_fn(p.ctx, newdev_proto, dev)
 		}
 	}
 	p.active_devs_lock.Unlock()
