@@ -12,6 +12,9 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
 )
 
+const CHANNEL_SIZE_ID = 1
+const CHANNEL_SIZE_CMD = 32
+
 type packetinfo struct {
 	id   uint32
 	data []byte
@@ -163,7 +166,6 @@ func (p *ProtocolRW) Handle() error {
 					errs <- p.ctx.Err()
 					return
 				default:
-					break
 				}
 
 				_, err := io.ReadFull(reader, header)
@@ -205,7 +207,7 @@ func (p *ProtocolRW) handlePacket(dev uint32, id uint32, data []byte) error {
 	p.InitDev(dev)
 
 	if data == nil || len(data) < 1 {
-		return errors.New("Invalid data packet")
+		return errors.New("invalid data packet")
 	}
 
 	cmd := data[0]
@@ -220,31 +222,30 @@ func (p *ProtocolRW) handlePacket(dev uint32, id uint32, data []byte) error {
 		p.waiters[dev] = w
 	}
 
-	wq_id, okk := w.byID[id]
-	if !okk {
-		wq_id = make(chan packetinfo, 8) // Some buffer here...
-		w.byID[id] = wq_id
-	}
-
-	wq_cmd, okk := w.byCmd[cmd]
-	if !okk {
-		wq_cmd = make(chan packetinfo, 8) // Some buffer here...
-		w.byCmd[cmd] = wq_cmd
-	}
-
-	p.waiters_lock.Unlock()
-
+	// Only put responses in the ID map, and put requests in the CMD map.
 	if packets.IsResponse(cmd) {
+		wq_id, okk := w.byID[id]
+		if !okk {
+			wq_id = make(chan packetinfo, CHANNEL_SIZE_ID)
+			w.byID[id] = wq_id
+		}
 		wq_id <- packetinfo{
 			id:   id,
 			data: data,
 		}
 	} else {
+		wq_cmd, okk := w.byCmd[cmd]
+		if !okk {
+			wq_cmd = make(chan packetinfo, CHANNEL_SIZE_CMD)
+			w.byCmd[cmd] = wq_cmd
+		}
 		wq_cmd <- packetinfo{
 			id:   id,
 			data: data,
 		}
 	}
+	p.waiters_lock.Unlock()
+
 	return nil
 }
 
@@ -253,14 +254,18 @@ func (mp *ProtocolRW) WaitForPacket(dev uint32, id uint32) ([]byte, error) {
 	w := mp.waiters[dev]
 	wq, okk := w.byID[id]
 	if !okk {
-		wq = make(chan packetinfo, 8) // Some buffer here...
+		wq = make(chan packetinfo, CHANNEL_SIZE_ID)
 		w.byID[id] = wq
 	}
 	mp.waiters_lock.Unlock()
 
 	select {
 	case p := <-wq:
-		// TODO: Remove the channel, as we only expect a SINGLE response with this ID.
+		// We can now remove the waiting logic here, since we only expect a SINGLE response packet with that ID
+		mp.waiters_lock.Lock()
+		w := mp.waiters[dev]
+		delete(w.byID, id)
+		mp.waiters_lock.Unlock()
 		return p.data, nil
 	case <-mp.ctx.Done():
 		return nil, mp.ctx.Err()
@@ -272,13 +277,14 @@ func (mp *ProtocolRW) WaitForCommand(dev uint32, cmd byte) (uint32, []byte, erro
 	w := mp.waiters[dev]
 	wq, okk := w.byCmd[cmd]
 	if !okk {
-		wq = make(chan packetinfo, 8) // Some buffer here...
+		wq = make(chan packetinfo, CHANNEL_SIZE_CMD)
 		w.byCmd[cmd] = wq
 	}
 	mp.waiters_lock.Unlock()
 
 	select {
 	case p := <-wq:
+		// NB We don't clean up the channel here, since it's assumed we'll be waiting for more of the same commands.
 		return p.id, p.data, nil
 	case <-mp.ctx.Done():
 		return 0, nil, mp.ctx.Err()
