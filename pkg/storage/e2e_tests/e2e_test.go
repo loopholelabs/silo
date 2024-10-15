@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// NB without the sync() call, this test will fail, because the NBD write may not have gone through at migration time.
 func TestNBDMigratorPipe(t *testing.T) {
 	currentUser, err := user.Current()
 	if err != nil {
@@ -61,7 +62,7 @@ func TestNBDMigratorPipe(t *testing.T) {
 	assert.NoError(t, err)
 	num, err := devfile.WriteAt(buffer, int64(data_offset))
 	assert.NoError(t, err)
-	assert.Equal(t, 800, num)
+	assert.Equal(t, data_length, num)
 	err = devfile.Sync()
 	assert.NoError(t, err)
 	err = devfile.Close()

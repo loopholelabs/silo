@@ -13,6 +13,7 @@ import (
 
 	"github.com/Merovius/nbd/nbdnl"
 	"github.com/loopholelabs/silo/pkg/storage"
+	"github.com/rs/zerolog/log"
 )
 
 const NBD_DEFAULT_BLOCK_SIZE = 4096
@@ -62,6 +63,7 @@ func (n *ExposedStorageNBDNL) SetProvider(prov storage.StorageProvider) {
 	n.prov_lock.Lock()
 	defer n.prov_lock.Unlock()
 	n.prov = prov
+	log.Trace().Msg("NBD device.SetProvider called.")
 }
 
 // Impl StorageProvider here so we can route calls to provider
@@ -106,6 +108,7 @@ func (n *ExposedStorageNBDNL) Device() string {
 }
 
 func (n *ExposedStorageNBDNL) Init() error {
+	log.Trace().Msg("NBD Device Init()")
 
 	for {
 
@@ -117,6 +120,7 @@ func (n *ExposedStorageNBDNL) Init() error {
 		for i := 0; i < n.num_connections; i++ {
 			sockPair, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_STREAM, 0)
 			if err != nil {
+				log.Error().Err(err).Msg("NBD Could not create socket pair")
 				return err
 			}
 
@@ -124,6 +128,7 @@ func (n *ExposedStorageNBDNL) Init() error {
 			server := os.NewFile(uintptr(sockPair[1]), "server")
 			serverc, err := net.FileConn(server)
 			if err != nil {
+				log.Error().Err(err).Msg("NBD Could not create FileConn")
 				return err
 			}
 			server.Close()
@@ -131,9 +136,13 @@ func (n *ExposedStorageNBDNL) Init() error {
 			d := NewDispatch(n.ctx, serverc, n)
 			d.ASYNC_READS = n.async
 			d.ASYNC_WRITES = n.async
+
 			// Start reading commands on the socket and dispatching them to our provider
 			go func() {
-				_ = d.Handle()
+				err = d.Handle()
+				if err != nil && err != context.Canceled && err != io.EOF {
+					log.Error().Err(err).Msg("NBD Dispatch returned")
+				}
 			}()
 			n.socks = append(n.socks, serverc)
 			socks = append(socks, client)
@@ -148,12 +157,13 @@ func (n *ExposedStorageNBDNL) Init() error {
 
 		idx, err := nbdnl.Connect(nbdnl.IndexAny, socks, n.size, 0, serverFlags, opts...)
 		if err == nil {
+			log.Info().Uint32("index", idx).Msg("NBD Device created")
 			n.device_index = int(idx)
 			break
 		}
 
 		// FIXME: This is just for info. Usually it's an odd BADF error, which a retry seems to fix.
-		fmt.Printf("\n\nError from nbdnl.Connect %v\n\n", err)
+		log.Trace().Err(err).Msg("NBD Error from nbdnl.Connect")
 
 		// Sometimes (rare), there seems to be a BADF error here. Lets just retry for now...
 		// Close things down and try again...
@@ -165,7 +175,6 @@ func (n *ExposedStorageNBDNL) Init() error {
 			return err
 		}
 
-		//		fmt.Printf("\n\nRetrying...\n\n")
 		time.Sleep(50 * time.Millisecond)
 	}
 
@@ -178,10 +187,13 @@ func (n *ExposedStorageNBDNL) Init() error {
 		time.Sleep(100 * time.Nanosecond)
 	}
 
+	log.Trace().Int("index", n.device_index).Msg("NBD connected")
 	return nil
 }
 
 func (n *ExposedStorageNBDNL) Shutdown() error {
+	log.Trace().Int("index", n.device_index).Msg("NBD shutdown")
+
 	// First cancel the context, which will stop waiting on pending readAt/writeAt...
 	n.cancelfn()
 
@@ -190,9 +202,11 @@ func (n *ExposedStorageNBDNL) Shutdown() error {
 		d.Wait()
 	}
 
+	log.Trace().Int("index", n.device_index).Msg("NBD disconnect")
 	// Now ask to disconnect
 	err := nbdnl.Disconnect(uint32(n.device_index))
 	if err != nil {
+		log.Error().Err(err).Int("index", n.device_index).Msg("NBD disconnect error")
 		return err
 	}
 
@@ -200,9 +214,12 @@ func (n *ExposedStorageNBDNL) Shutdown() error {
 	for _, v := range n.socks {
 		err = v.Close()
 		if err != nil {
+			log.Error().Err(err).Int("index", n.device_index).Msg("NBD close socket")
 			return err
 		}
 	}
+
+	log.Trace().Int("index", n.device_index).Msg("Waiting for disconnection")
 
 	// Wait until it's completely disconnected...
 	for {
@@ -213,5 +230,6 @@ func (n *ExposedStorageNBDNL) Shutdown() error {
 		time.Sleep(100 * time.Nanosecond)
 	}
 
+	log.Trace().Int("index", n.device_index).Msg("NBD shutdown finished")
 	return nil
 }

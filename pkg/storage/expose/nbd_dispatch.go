@@ -10,15 +10,14 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage"
 )
 
-// TODO: Context, and handle fatal errors
-
-//const READ_POOL_BUFFER_SIZE = 256 * 1024
-//const READ_POOL_SIZE = 128
-
 /**
  * Exposes a storage provider as an nbd device
  *
  */
+
+// NBD read buffer size. Note that the block size will need to be smaller than this.
+const NBD_BUFFER_SIZE = 4 * 1024 * 1024
+
 const NBD_COMMAND = 0xab00
 const NBD_SET_SOCK = 0 | NBD_COMMAND
 const NBD_SET_BLKSIZE = 1 | NBD_COMMAND
@@ -76,7 +75,6 @@ type Dispatch struct {
 	pending_responses  sync.WaitGroup
 	metric_packets_in  uint64
 	metric_packets_out uint64
-	// read_buffers       chan []byte
 }
 
 func NewDispatch(ctx context.Context, fp io.ReadWriteCloser, prov storage.StorageProvider) *Dispatch {
@@ -90,12 +88,7 @@ func NewDispatch(ctx context.Context, fp io.ReadWriteCloser, prov storage.Storag
 		prov:            prov,
 		ctx:             ctx,
 	}
-	/*
-		d.read_buffers = make(chan []byte, READ_POOL_SIZE)
-		for i := 0; i < READ_POOL_SIZE; i++ {
-			d.read_buffers <- make([]byte, READ_POOL_BUFFER_SIZE)
-		}
-	*/
+
 	binary.BigEndian.PutUint32(d.response_header, NBD_RESPONSE_MAGIC)
 	return d
 }
@@ -143,8 +136,7 @@ func (d *Dispatch) Handle() error {
 	//	}()
 	// Speed read and dispatch...
 
-	BUFFER_SIZE := 4 * 1024 * 1024
-	buffer := make([]byte, BUFFER_SIZE)
+	buffer := make([]byte, NBD_BUFFER_SIZE)
 	wp := 0
 
 	request := Request{}
@@ -161,10 +153,12 @@ func (d *Dispatch) Handle() error {
 		rp := 0
 		for {
 
-			// If the context has been cancelled, quit
 			select {
+			// If the context has been cancelled, quit
 			case <-d.ctx.Done():
 				return d.ctx.Err()
+			case err := <-d.fatal:
+				return err // If an async read/write had a fatal, return it here.
 			default:
 			}
 
@@ -210,12 +204,11 @@ func (d *Dispatch) Handle() error {
 					copy(data, buffer[rp:rp+int(request.Length)])
 					rp += int(request.Length)
 					//					fmt.Printf("WRITE %x %d\n", request.Handle, request.Length)
-					err := d.cmdWrite(request.Handle, request.From, request.Length, data)
+					err := d.cmdWrite(request.Handle, request.From, data)
 					if err != nil {
 						return err
 					}
 				} else if request.Type == NBD_CMD_TRIM {
-					//					fmt.Printf("TRIM\n")
 					rp += 28
 					err = d.cmdTrim(request.Handle, request.From, request.Length)
 					if err != nil {
@@ -231,8 +224,6 @@ func (d *Dispatch) Handle() error {
 		}
 		// Now we need to move any partial to the start
 		if rp != 0 && rp != wp {
-			//			fmt.Printf("Copy partial %d %d\n", rp, wp)
-
 			copy(buffer, buffer[rp:wp])
 		}
 		wp -= rp
@@ -246,30 +237,8 @@ func (d *Dispatch) Handle() error {
 func (d *Dispatch) cmdRead(cmd_handle uint64, cmd_from uint64, cmd_length uint32) error {
 
 	performRead := func(handle uint64, from uint64, length uint32) error {
-		var b []byte
-		/*
-			var from_pool = false
-			if length <= READ_POOL_BUFFER_SIZE {
-				// Try to get a buffer from pool
-				select {
-				case b = <-d.read_buffers:
-					from_pool = true
-					b = b[:length]
-					break
-				default:
-					break
-				}
-			}
-		*/
-		// Couldn't get one from the pool
-		if b == nil {
-			// We'll have to alloc it
-			//			fmt.Printf("Alloc %d\n", length)
-			b = make([]byte, length)
-		}
-
 		errchan := make(chan error)
-		data := b // make([]byte, length)
+		data := make([]byte, length)
 
 		go func() {
 			_, e := d.prov.ReadAt(data, int64(from))
@@ -289,14 +258,7 @@ func (d *Dispatch) cmdRead(cmd_handle uint64, cmd_from uint64, cmd_length uint32
 			errorValue = 1
 			data = make([]byte, 0) // If there was an error, don't send data
 		}
-		err := d.writeResponse(errorValue, handle, data)
-		// Return it to pool if need to
-		/*
-			if from_pool {
-				d.read_buffers <- b[:READ_POOL_BUFFER_SIZE]
-			}
-		*/
-		return err
+		return d.writeResponse(errorValue, handle, data)
 	}
 
 	if d.ASYNC_READS {
@@ -321,8 +283,8 @@ func (d *Dispatch) cmdRead(cmd_handle uint64, cmd_from uint64, cmd_length uint32
  * cmdWrite
  *
  */
-func (d *Dispatch) cmdWrite(cmd_handle uint64, cmd_from uint64, cmd_length uint32, cmd_data []byte) error {
-	performWrite := func(handle uint64, from uint64, length uint32, data []byte) error {
+func (d *Dispatch) cmdWrite(cmd_handle uint64, cmd_from uint64, cmd_data []byte) error {
+	performWrite := func(handle uint64, from uint64, data []byte) error {
 		errchan := make(chan error)
 		go func() {
 			_, e := d.prov.WriteAt(data, int64(from))
@@ -347,7 +309,7 @@ func (d *Dispatch) cmdWrite(cmd_handle uint64, cmd_from uint64, cmd_length uint3
 	if d.ASYNC_WRITES {
 		d.pending_responses.Add(1)
 		go func() {
-			err := performWrite(cmd_handle, cmd_from, cmd_length, cmd_data)
+			err := performWrite(cmd_handle, cmd_from, cmd_data)
 			if err != nil {
 				d.fatal <- err
 			}
@@ -355,7 +317,7 @@ func (d *Dispatch) cmdWrite(cmd_handle uint64, cmd_from uint64, cmd_length uint3
 		}()
 	} else {
 		d.pending_responses.Add(1)
-		err := performWrite(cmd_handle, cmd_from, cmd_length, cmd_data)
+		err := performWrite(cmd_handle, cmd_from, cmd_data)
 		d.pending_responses.Done()
 		return err
 	}
