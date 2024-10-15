@@ -166,10 +166,15 @@ func TestNBDNLDeviceSmallWrite(t *testing.T) {
 	var write_wg sync.WaitGroup
 	write_wg.Add(1)
 	var writes uint32
+	var first_write_lock sync.Mutex
+	var first_write time.Time
 
 	hooks.Pre_write = func(buffer []byte, offset int64) (bool, int, error) {
 		num := atomic.AddUint32(&writes, 1)
 		if num == 1 {
+			first_write_lock.Lock()
+			first_write = time.Now()
+			first_write_lock.Unlock()
 			write_wg.Done()
 		}
 		return false, 0, nil
@@ -187,11 +192,24 @@ func TestNBDNLDeviceSmallWrite(t *testing.T) {
 	num, err := devfile.WriteAt(b, 0)
 	assert.NoError(t, err)
 	assert.Equal(t, 900, num)
-	err = devfile.Close()
+
+	err = devfile.Sync() // NB WAITS and actually syncs the data back
 	assert.NoError(t, err)
 
-	// NB: Most of the time Write() will have been called by now. BUT we need to wait specifically here for it to make sure.
+	err = devfile.Close() // NB CLOSE does NOT wait and sync the data back
+	assert.NoError(t, err)
+	now := time.Now()
+
+	// NB: Most of the time Write() will have been called by now even without the sync() call,
+	// The sync() above seems to make sure... Without it you'd need to wait here.
 	write_wg.Wait()
+
+	first_write_lock.Lock()
+	if first_write.After(now) {
+		fmt.Printf("Write was %dms AFTER close\n", first_write.Sub(now).Milliseconds())
+	}
+
+	first_write_lock.Unlock()
 
 	buffer := make([]byte, 900)
 	numr, err := prov.ReadAt(buffer, 0)
