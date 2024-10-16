@@ -226,3 +226,48 @@ func TestFileStorageSparseResume(t *testing.T) {
 
 	assert.Equal(t, data, buffer)
 }
+
+func TestFileStorageSparsePartialLastBlock(t *testing.T) {
+
+	// Here we have a sparse file.
+	// We have a block size of 100.
+	// We have a total size of 950.
+
+	// The issue comes when we do a write invloving the last block,
+	// but that doesn't extend to the END of the storage size.
+	// In this case we MUST read the block and merge the data in before writing back.
+	//
+
+	source, err := NewFileStorageSparseCreate("test_data_sparse", 950, 100)
+	assert.NoError(t, err)
+
+	t.Cleanup(func() {
+		os.Remove("test_data_sparse")
+	})
+
+	// Start by writing random data to the source.
+	data := make([]byte, source.Size())
+	_, err = rand.Read(data)
+	assert.NoError(t, err)
+
+	_, err = source.WriteAt(data, 0)
+	assert.NoError(t, err)
+
+	// Now do a partial write on a block boundary, which doesn't span to the end of the storage size.
+	buffer := make([]byte, 30)
+	_, err = rand.Read(buffer)
+	assert.NoError(t, err)
+	_, err = source.WriteAt(buffer, 900)
+	assert.NoError(t, err)
+
+	// Manually do the write in our buffer to compare with later.
+	copy(data[900:], buffer)
+
+	// Get all the data...
+	rbuffer := make([]byte, source.Size())
+	_, err = source.ReadAt(rbuffer, 0)
+	assert.NoError(t, err)
+
+	// Compare
+	assert.Equal(t, data, rbuffer)
+}
