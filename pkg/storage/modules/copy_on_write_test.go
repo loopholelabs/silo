@@ -2,6 +2,7 @@ package modules
 
 import (
 	"crypto/rand"
+	"os"
 	"testing"
 
 	"github.com/loopholelabs/silo/pkg/storage"
@@ -157,8 +158,12 @@ func TestCopyOnWriteCRCIssue(t *testing.T) {
 	size := 16 * 1024
 	blockSize := 64 * 1024
 
-	fstore, err := sources.NewFileStorageSparseCreate("./test.sparse", uint64(size), blockSize)
+	fstore, err := sources.NewFileStorageSparseCreate("test_data_sparse", uint64(size), blockSize)
 	assert.NoError(t, err)
+
+	t.Cleanup(func() {
+		os.Remove("test_data_sparse")
+	})
 
 	//	fstore := sources.NewMemoryStorage(size)
 
