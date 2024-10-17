@@ -208,10 +208,11 @@ func (i *FileStorageSparse) WriteAt(buffer []byte, offset int64) (int, error) {
 				// Partial write at the end
 				block_buffer := make([]byte, i.block_size)
 				var err error
-				// IF it's the last block partial, we don't need to do a read. It's complete already
-				if block_offset+int64(i.block_size) > int64(i.size) {
-					// We don't need to read the last block here.
-				} else {
+
+				data_len := buffer_end - (block_offset - offset)
+
+				// If the write doesn't extend to the end of the storage size, we need to do a read first.
+				if block_offset+data_len < int64(i.size) {
 					err = i.readBlock(block_buffer, b)
 				}
 				if err != nil {

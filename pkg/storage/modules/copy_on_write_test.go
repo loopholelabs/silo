@@ -2,8 +2,10 @@ package modules
 
 import (
 	"crypto/rand"
+	"os"
 	"testing"
 
+	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
 	"github.com/stretchr/testify/assert"
 )
@@ -148,4 +150,73 @@ func TestCopyOnWriteReadOverrunNonMultiple(t *testing.T) {
 	assert.Equal(t, 50, n)
 
 	assert.Equal(t, onlydata[size-50:], buff2[:50])
+}
+
+func TestCopyOnWriteCRCIssue(t *testing.T) {
+
+	// Create a new block storage, backed by memory storage
+	size := 16 * 1024
+	blockSize := 64 * 1024
+
+	fstore, err := sources.NewFileStorageSparseCreate("test_data_sparse", uint64(size), blockSize)
+	assert.NoError(t, err)
+
+	t.Cleanup(func() {
+		os.Remove("test_data_sparse")
+	})
+
+	rosource := sources.NewMemoryStorage(size)
+
+	fstore_log := NewLogger(fstore, "fstore")
+
+	cow := NewCopyOnWrite(rosource, fstore_log, blockSize)
+
+	reference := sources.NewMemoryStorage(size)
+
+	// Fill it with random stuff
+	data := make([]byte, size)
+	_, err = rand.Read(data)
+	assert.NoError(t, err)
+	_, err = rosource.WriteAt(data, 0)
+	assert.NoError(t, err)
+	_, err = reference.WriteAt(data, 0)
+	assert.NoError(t, err)
+
+	// Now do some WriteAt() calls, and then a big ReadAt() and make sure they match
+
+	doWrite := func(offset int64) {
+		buffer := make([]byte, 4096)
+		_, err := rand.Read(buffer)
+		assert.NoError(t, err)
+
+		n, err := cow.WriteAt(buffer, offset)
+		assert.NoError(t, err)
+		assert.Equal(t, n, 4096)
+
+		n, err = reference.WriteAt(buffer, offset)
+		assert.NoError(t, err)
+		assert.Equal(t, n, 4096)
+	}
+
+	doWrite(8192)
+	doWrite(0)
+	doWrite(4096)
+
+	// Now check they are equal
+
+	eq, err := storage.Equals(reference, fstore, blockSize)
+	assert.NoError(t, err)
+	assert.True(t, eq)
+
+	eq, err = storage.Equals(reference, cow, blockSize)
+	assert.NoError(t, err)
+	assert.True(t, eq)
+
+	buff_cow := make([]byte, cow.Size())
+	_, err = cow.ReadAt(buff_cow, 0)
+	assert.NoError(t, err)
+
+	buff_ref := make([]byte, reference.Size())
+	_, err = reference.ReadAt(buff_ref, 0)
+	assert.NoError(t, err)
 }
