@@ -165,8 +165,6 @@ func TestCopyOnWriteCRCIssue(t *testing.T) {
 		os.Remove("test_data_sparse")
 	})
 
-	//	fstore := sources.NewMemoryStorage(size)
-
 	rosource := sources.NewMemoryStorage(size)
 
 	fstore_log := NewLogger(fstore, "fstore")
