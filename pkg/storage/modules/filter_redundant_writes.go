@@ -3,6 +3,7 @@ package modules
 import (
 	"io"
 
+	"github.com/google/uuid"
 	"github.com/loopholelabs/silo/pkg/storage"
 )
 
@@ -23,6 +24,10 @@ func NewFilterRedundantWrites(prov storage.StorageProvider, source io.ReaderAt, 
 		source:              source,
 		no_change_allowance: allowance,
 	}
+}
+
+func (i *FilterRedundantWrites) UUID() []uuid.UUID {
+	return i.prov.UUID()
 }
 
 func (i *FilterRedundantWrites) ReadAt(buffer []byte, offset int64) (int, error) {

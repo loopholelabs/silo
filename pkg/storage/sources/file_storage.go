@@ -4,6 +4,8 @@ import (
 	"io"
 	"os"
 	"sync"
+
+	"github.com/google/uuid"
 )
 
 /**
@@ -11,6 +13,7 @@ import (
  *
  */
 type FileStorage struct {
+	uuid uuid.UUID
 	fp   *os.File
 	size int64
 	wg   sync.WaitGroup
@@ -22,6 +25,7 @@ func NewFileStorage(f string, size int64) (*FileStorage, error) {
 		return nil, err
 	}
 	return &FileStorage{
+		uuid: uuid.New(),
 		fp:   fp,
 		size: size,
 	}, nil
@@ -37,9 +41,14 @@ func NewFileStorageCreate(f string, size int64) (*FileStorage, error) {
 		return nil, err
 	}
 	return &FileStorage{
+		uuid: uuid.New(),
 		fp:   fp,
 		size: size,
 	}, nil
+}
+
+func (i *FileStorage) UUID() []uuid.UUID {
+	return []uuid.UUID{i.uuid}
 }
 
 func (i *FileStorage) ReadAt(buffer []byte, offset int64) (int, error) {

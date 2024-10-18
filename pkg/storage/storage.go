@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/google/uuid"
 	"github.com/loopholelabs/silo/pkg/storage/util"
 )
 
@@ -14,6 +15,7 @@ type StorageProvider interface {
 	Flush() error
 	Close() error
 	CancelWrites(offset int64, length int64)
+	UUID() []uuid.UUID
 }
 
 type LockableStorageProvider interface {

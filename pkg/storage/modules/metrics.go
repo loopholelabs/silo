@@ -5,6 +5,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/loopholelabs/silo/pkg/storage"
 )
 
@@ -45,6 +46,10 @@ func NewMetrics(prov storage.StorageProvider) *Metrics {
 	return &Metrics{
 		prov: prov,
 	}
+}
+
+func (i *Metrics) UUID() []uuid.UUID {
+	return i.prov.UUID()
 }
 
 func formatDuration(d time.Duration) string {

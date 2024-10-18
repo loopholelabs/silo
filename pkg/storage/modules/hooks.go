@@ -1,6 +1,7 @@
 package modules
 
 import (
+	"github.com/google/uuid"
 	"github.com/loopholelabs/silo/pkg/storage"
 )
 
@@ -28,6 +29,10 @@ func NewHooks(prov storage.StorageProvider) *Hooks {
 			return n, err
 		},
 	}
+}
+
+func (i *Hooks) UUID() []uuid.UUID {
+	return i.prov.UUID()
 }
 
 func (i *Hooks) ReadAt(buffer []byte, offset int64) (int, error) {

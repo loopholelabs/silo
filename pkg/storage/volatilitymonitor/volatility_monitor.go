@@ -4,6 +4,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/util"
 )
@@ -103,6 +104,10 @@ func (i *VolatilityMonitor) GetTotalVolatility() int {
 }
 
 // From storage.StorageProvider
+
+func (i *VolatilityMonitor) UUID() []uuid.UUID {
+	return i.prov.UUID()
+}
 
 func (i *VolatilityMonitor) ReadAt(buffer []byte, offset int64) (int, error) {
 	return i.prov.ReadAt(buffer, offset)

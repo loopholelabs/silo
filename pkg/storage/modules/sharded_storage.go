@@ -9,6 +9,7 @@ package modules
 import (
 	"fmt"
 
+	"github.com/google/uuid"
 	"github.com/loopholelabs/silo/pkg/storage"
 )
 
@@ -43,6 +44,15 @@ func NewShardedStorage(size int, blocksize int, creator func(index int, size int
 		n++
 	}
 	return bms, nil
+}
+
+// Return all
+func (i *ShardedStorage) UUID() []uuid.UUID {
+	uuids := make([]uuid.UUID, 0)
+	for _, bl := range i.blocks {
+		uuids = append(uuids, bl.UUID()...)
+	}
+	return uuids
 }
 
 func (i *ShardedStorage) ReadAt(buffer []byte, offset int64) (int, error) {

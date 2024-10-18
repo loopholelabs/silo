@@ -5,6 +5,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/loopholelabs/silo/pkg/storage"
 )
 
@@ -29,6 +30,10 @@ func (i *Logger) Disable() {
 
 func (i *Logger) Enable() {
 	i.enabled.Store(true)
+}
+
+func (i *Logger) UUID() []uuid.UUID {
+	return i.prov.UUID()
 }
 
 func (i *Logger) ReadAt(buffer []byte, offset int64) (int, error) {

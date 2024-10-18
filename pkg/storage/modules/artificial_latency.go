@@ -4,6 +4,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/loopholelabs/silo/pkg/storage"
 )
 
@@ -29,6 +30,10 @@ func NewArtificialLatency(prov storage.StorageProvider, latencyRead time.Duratio
 		latency_read_per_byte:  latencyReadPerByte,
 		latency_write_per_byte: latencyWritePerByte,
 	}
+}
+
+func (i *ArtificialLatency) UUID() []uuid.UUID {
+	return i.prov.UUID()
 }
 
 func (i *ArtificialLatency) ReadAt(buffer []byte, offset int64) (int, error) {

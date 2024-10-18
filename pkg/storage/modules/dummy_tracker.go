@@ -1,6 +1,7 @@
 package modules
 
 import (
+	"github.com/google/uuid"
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/util"
 )
@@ -21,6 +22,10 @@ func NewDummyTracker(prov storage.StorageProvider, block_size int) *DummyTracker
 
 func (i *DummyTracker) Sync() *util.Bitfield {
 	return i.bf
+}
+
+func (i *DummyTracker) UUID() []uuid.UUID {
+	return i.prov.UUID()
 }
 
 func (i *DummyTracker) ReadAt(buffer []byte, offset int64) (int, error) {

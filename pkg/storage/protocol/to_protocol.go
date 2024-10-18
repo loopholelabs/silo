@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 
+	"github.com/google/uuid"
 	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
 )
 
@@ -98,6 +99,11 @@ func (i *ToProtocol) DirtyList(block_size int, blocks []uint) error {
 	// Decode the response and use it...
 	err = packets.DecodeDirtyListResponse(r)
 	return err
+}
+
+// FIXME: Should this ask the other end?
+func (i *ToProtocol) UUID() []uuid.UUID {
+	return nil
 }
 
 func (i *ToProtocol) ReadAt(buffer []byte, offset int64) (int, error) {

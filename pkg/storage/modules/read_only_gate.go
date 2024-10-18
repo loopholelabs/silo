@@ -3,6 +3,7 @@ package modules
 import (
 	"sync"
 
+	"github.com/google/uuid"
 	"github.com/loopholelabs/silo/pkg/storage"
 )
 
@@ -22,6 +23,10 @@ func NewReadOnlyGate(prov storage.StorageProvider) *ReadOnlyGate {
 		lock:   sync.NewCond(&sync.Mutex{}),
 		locked: false,
 	}
+}
+
+func (i *ReadOnlyGate) UUID() []uuid.UUID {
+	return i.prov.UUID()
 }
 
 func (i *ReadOnlyGate) ReadAt(p []byte, off int64) (n int, err error) {

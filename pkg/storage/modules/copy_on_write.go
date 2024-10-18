@@ -3,6 +3,7 @@ package modules
 import (
 	"sync"
 
+	"github.com/google/uuid"
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/util"
 )
@@ -38,6 +39,10 @@ func (i *CopyOnWrite) SetBlockExists(blocks []uint) {
 
 func (i *CopyOnWrite) GetBlockExists() []uint {
 	return i.exists.Collect(0, i.exists.Length())
+}
+
+func (i *CopyOnWrite) UUID() []uuid.UUID {
+	return append(i.source.UUID(), i.cache.UUID()...)
 }
 
 func (i *CopyOnWrite) ReadAt(buffer []byte, offset int64) (int, error) {

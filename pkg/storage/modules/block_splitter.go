@@ -1,6 +1,7 @@
 package modules
 
 import (
+	"github.com/google/uuid"
 	"github.com/loopholelabs/silo/pkg/storage"
 )
 
@@ -20,6 +21,10 @@ func NewBlockSplitter(prov storage.StorageProvider, block_size int) *BlockSplitt
 		block_size: block_size,
 		size:       prov.Size(),
 	}
+}
+
+func (i *BlockSplitter) UUID() []uuid.UUID {
+	return i.prov.UUID()
 }
 
 func (i *BlockSplitter) ReadAt(buffer []byte, offset int64) (n int, err error) {

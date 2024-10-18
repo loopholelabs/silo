@@ -1,6 +1,7 @@
 package modules
 
 import (
+	"github.com/google/uuid"
 	"github.com/loopholelabs/silo/pkg/storage"
 )
 
@@ -16,6 +17,10 @@ func NewLimitedConcurrency(prov storage.StorageProvider, max_reads int, max_writ
 		concurrent_reads:  make(chan bool, max_reads),
 		concurrent_writes: make(chan bool, max_writes),
 	}
+}
+
+func (i *LimitedConcurrency) UUID() []uuid.UUID {
+	return i.prov.UUID()
 }
 
 func (i *LimitedConcurrency) ReadAt(buffer []byte, offset int64) (int, error) {

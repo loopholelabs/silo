@@ -5,6 +5,8 @@ import (
 	"errors"
 	"os"
 	"sync"
+
+	"github.com/google/uuid"
 )
 
 const BLOCK_HEADER_SIZE = 8
@@ -18,6 +20,7 @@ const BLOCK_HEADER_SIZE = 8
  *
  */
 type FileStorageSparse struct {
+	uuid         uuid.UUID
 	f            string
 	fp           *os.File
 	size         uint64
@@ -35,6 +38,7 @@ func NewFileStorageSparseCreate(f string, size uint64, blockSize int) (*FileStor
 	}
 
 	return &FileStorageSparse{
+		uuid:         uuid.New(),
 		f:            f,
 		fp:           fp,
 		size:         size,
@@ -71,6 +75,7 @@ func NewFileStorageSparse(f string, size uint64, blockSize int) (*FileStorageSpa
 	}
 
 	return &FileStorageSparse{
+		uuid:         uuid.New(),
 		f:            f,
 		fp:           fp,
 		size:         size,
@@ -115,6 +120,10 @@ func (i *FileStorageSparse) readBlock(buffer []byte, b uint) error {
 	} else {
 		return errors.New("cannot do a partial block write on incomplete block")
 	}
+}
+
+func (i *FileStorageSparse) UUID() []uuid.UUID {
+	return []uuid.UUID{i.uuid}
 }
 
 func (i *FileStorageSparse) ReadAt(buffer []byte, offset int64) (int, error) {

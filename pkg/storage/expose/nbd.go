@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Merovius/nbd/nbdnl"
+	"github.com/google/uuid"
 	"github.com/loopholelabs/silo/pkg/storage"
 )
 
@@ -61,6 +62,10 @@ func (n *ExposedStorageNBDNL) SetProvider(prov storage.StorageProvider) {
 }
 
 // Impl StorageProvider here so we can route calls to provider
+func (i *ExposedStorageNBDNL) UUID() []uuid.UUID {
+	return i.prov.UUID()
+}
+
 func (i *ExposedStorageNBDNL) ReadAt(buffer []byte, offset int64) (int, error) {
 	return i.prov.ReadAt(buffer, offset)
 }

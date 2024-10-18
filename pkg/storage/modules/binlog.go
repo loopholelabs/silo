@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
 )
@@ -71,6 +72,10 @@ func (i *BinLog) writeLog(data []byte) {
 func (i *BinLog) SetLogging(reads bool, writes bool) {
 	i.readsEnabled.Store(reads)
 	i.writesEnabled.Store(writes)
+}
+
+func (i *BinLog) UUID() []uuid.UUID {
+	return i.prov.UUID()
 }
 
 func (i *BinLog) ReadAt(buffer []byte, offset int64) (int, error) {

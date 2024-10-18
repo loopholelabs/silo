@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/google/uuid"
 	"github.com/loopholelabs/silo/pkg/storage"
 )
 
@@ -18,6 +19,15 @@ func NewRaid(prov []storage.StorageProvider) (*Raid, error) {
 	return &Raid{
 		prov: prov,
 	}, nil
+}
+
+// Return all
+func (r *Raid) UUID() []uuid.UUID {
+	uuids := make([]uuid.UUID, 0)
+	for _, bl := range r.prov {
+		uuids = append(uuids, bl.UUID()...)
+	}
+	return uuids
 }
 
 func (r *Raid) ReadAt(buffer []byte, offset int64) (int, error) {

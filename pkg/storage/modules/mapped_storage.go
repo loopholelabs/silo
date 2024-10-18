@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/util"
 )
@@ -54,6 +55,10 @@ func NewMappedStorage(prov storage.StorageProvider, block_size int) *MappedStora
 		block_available: available,
 		block_size:      block_size,
 	}
+}
+
+func (ms *MappedStorage) UUID() []uuid.UUID {
+	return ms.prov.UUID()
 }
 
 func (ms *MappedStorage) Stats() *MappedStorageStats {

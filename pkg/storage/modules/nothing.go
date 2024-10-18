@@ -1,5 +1,9 @@
 package modules
 
+import (
+	"github.com/google/uuid"
+)
+
 /**
  * Nothing storage - eg /dev/null
  *
@@ -13,6 +17,10 @@ func NewNothing(size uint64) *Nothing {
 	return &Nothing{
 		size: size,
 	}
+}
+
+func (i *Nothing) UUID() []uuid.UUID {
+	return nil
 }
 
 func (i *Nothing) ReadAt(buffer []byte, offset int64) (int, error) {

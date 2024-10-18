@@ -1,6 +1,7 @@
 package waitingcache
 
 import (
+	"github.com/google/uuid"
 	"github.com/loopholelabs/silo/pkg/storage/util"
 )
 
@@ -9,6 +10,10 @@ type WaitingCacheLocal struct {
 	available  util.Bitfield
 	NeedAt     func(offset int64, length int32)
 	DontNeedAt func(offset int64, length int32)
+}
+
+func (wcl *WaitingCacheLocal) UUID() []uuid.UUID {
+	return wcl.wc.prov.UUID()
 }
 
 func (wcl *WaitingCacheLocal) ReadAt(buffer []byte, offset int64) (int, error) {

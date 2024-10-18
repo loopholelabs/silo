@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
@@ -19,6 +20,7 @@ var (
 )
 
 type S3Storage struct {
+	uuid                           uuid.UUID
 	client                         *minio.Client
 	dummy                          bool
 	bucket                         string
@@ -61,6 +63,7 @@ func NewS3Storage(secure bool, endpoint string,
 	numBlocks := (int(size) + blockSize - 1) / blockSize
 
 	return &S3Storage{
+		uuid:       uuid.New(),
 		size:       size,
 		block_size: blockSize,
 		client:     client,
@@ -77,6 +80,7 @@ func NewS3StorageDummy(size uint64,
 	numBlocks := (int(size) + blockSize - 1) / blockSize
 
 	return &S3Storage{
+		uuid:       uuid.New(),
 		size:       size,
 		block_size: blockSize,
 		dummy:      true,
@@ -116,6 +120,7 @@ func NewS3StorageCreate(secure bool, endpoint string,
 	numBlocks := (int(size) + blockSize - 1) / blockSize
 
 	return &S3Storage{
+		uuid:       uuid.New(),
 		size:       size,
 		block_size: blockSize,
 		client:     client,
@@ -134,6 +139,10 @@ func (i *S3Storage) setContext(block int, cancel context.CancelFunc) {
 	}
 	i.contexts[block] = cancel // Set to the new context
 	i.contexts_lock.Unlock()
+}
+
+func (i *S3Storage) UUID() []uuid.UUID {
+	return []uuid.UUID{i.uuid}
 }
 
 func (i *S3Storage) ReadAt(buffer []byte, offset int64) (int, error) {

@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/util"
 )
@@ -30,6 +31,10 @@ type DirtyTracker struct {
 
 type DirtyTrackerLocal struct {
 	dt *DirtyTracker
+}
+
+func (dtl *DirtyTrackerLocal) UUID() []uuid.UUID {
+	return dtl.dt.prov.UUID()
 }
 
 func (dtl *DirtyTrackerLocal) ReadAt(buffer []byte, offset int64) (int, error) {
@@ -58,6 +63,10 @@ func (dtl *DirtyTrackerLocal) CancelWrites(offset int64, length int64) {
 
 type DirtyTrackerRemote struct {
 	dt *DirtyTracker
+}
+
+func (dtl *DirtyTrackerRemote) UUID() []uuid.UUID {
+	return dtl.dt.prov.UUID()
 }
 
 func (dtl *DirtyTrackerRemote) ReadAt(buffer []byte, offset int64) (int, error) {

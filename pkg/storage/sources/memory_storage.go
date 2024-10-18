@@ -2,6 +2,8 @@ package sources
 
 import (
 	"sync"
+
+	"github.com/google/uuid"
 )
 
 /**
@@ -10,14 +12,20 @@ import (
  *
  */
 type MemoryStorage struct {
+	uuid uuid.UUID
 	data []byte
 	lock sync.RWMutex
 }
 
 func NewMemoryStorage(size int) *MemoryStorage {
 	return &MemoryStorage{
+		uuid: uuid.New(),
 		data: make([]byte, size),
 	}
+}
+
+func (i *MemoryStorage) UUID() []uuid.UUID {
+	return []uuid.UUID{i.uuid}
 }
 
 func (i *MemoryStorage) ReadAt(buffer []byte, offset int64) (int, error) {

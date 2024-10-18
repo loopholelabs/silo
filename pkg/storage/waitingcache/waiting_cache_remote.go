@@ -3,12 +3,17 @@ package waitingcache
 import (
 	"io"
 
+	"github.com/google/uuid"
 	"github.com/loopholelabs/silo/pkg/storage/util"
 )
 
 type WaitingCacheRemote struct {
 	wc        *WaitingCache
 	available util.Bitfield
+}
+
+func (wcl *WaitingCacheRemote) UUID() []uuid.UUID {
+	return wcl.wc.prov.UUID()
 }
 
 func (wcl *WaitingCacheRemote) ReadAt(buffer []byte, offset int64) (int, error) {
