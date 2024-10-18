@@ -14,6 +14,7 @@ import (
 )
 
 type BinLog struct {
+	storage.StorageProviderLifecycleState
 	prov          storage.StorageProvider
 	filename      string
 	ctime         time.Time
@@ -22,6 +23,11 @@ type BinLog struct {
 	write_lock    sync.Mutex
 	readsEnabled  atomic.Bool
 	writesEnabled atomic.Bool
+}
+
+func (i *BinLog) SetLifecycleState(state storage.LifecycleState) {
+	i.StorageProviderLifecycleState.SetLifecycleState(state)
+	storage.SetLifecycleState(i.prov, state)
 }
 
 func NewBinLog(prov storage.StorageProvider, filename string) (*BinLog, error) {

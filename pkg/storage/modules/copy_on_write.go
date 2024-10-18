@@ -9,6 +9,7 @@ import (
 )
 
 type CopyOnWrite struct {
+	storage.StorageProviderLifecycleState
 	source     storage.StorageProvider
 	cache      storage.StorageProvider
 	exists     *util.Bitfield
@@ -17,6 +18,12 @@ type CopyOnWrite struct {
 	Close_fn   func()
 	lock       sync.Mutex
 	wg         sync.WaitGroup
+}
+
+func (i *CopyOnWrite) SetLifecycleState(state storage.LifecycleState) {
+	i.StorageProviderLifecycleState.SetLifecycleState(state)
+	storage.SetLifecycleState(i.source, state)
+	storage.SetLifecycleState(i.cache, state)
 }
 
 func NewCopyOnWrite(source storage.StorageProvider, cache storage.StorageProvider, blockSize int) *CopyOnWrite {

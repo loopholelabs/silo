@@ -13,6 +13,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
+
+	"github.com/loopholelabs/silo/pkg/storage"
 )
 
 var (
@@ -20,6 +22,7 @@ var (
 )
 
 type S3Storage struct {
+	storage.StorageProviderLifecycleState
 	uuid                           uuid.UUID
 	client                         *minio.Client
 	dummy                          bool

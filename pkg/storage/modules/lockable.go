@@ -13,9 +13,15 @@ import (
  */
 
 type Lockable struct {
+	storage.StorageProviderLifecycleState
 	prov   storage.StorageProvider
 	lock   *sync.Cond
 	locked bool
+}
+
+func (i *Lockable) SetLifecycleState(state storage.LifecycleState) {
+	i.StorageProviderLifecycleState.SetLifecycleState(state)
+	storage.SetLifecycleState(i.prov, state)
 }
 
 func NewLockable(prov storage.StorageProvider) *Lockable {

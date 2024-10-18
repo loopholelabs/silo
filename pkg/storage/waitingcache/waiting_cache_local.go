@@ -2,14 +2,21 @@ package waitingcache
 
 import (
 	"github.com/google/uuid"
+	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/util"
 )
 
 type WaitingCacheLocal struct {
+	storage.StorageProviderLifecycleState
 	wc         *WaitingCache
 	available  util.Bitfield
 	NeedAt     func(offset int64, length int32)
 	DontNeedAt func(offset int64, length int32)
+}
+
+func (i *WaitingCacheLocal) SetLifecycleState(state storage.LifecycleState) {
+	i.StorageProviderLifecycleState.SetLifecycleState(state)
+	storage.SetLifecycleState(i.wc.prov, state)
 }
 
 func (wcl *WaitingCacheLocal) UUID() []uuid.UUID {

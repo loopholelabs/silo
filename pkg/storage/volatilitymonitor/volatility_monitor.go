@@ -10,6 +10,7 @@ import (
 )
 
 type VolatilityMonitor struct {
+	storage.StorageProviderLifecycleState
 	prov          storage.StorageProvider
 	expiry        time.Duration
 	size          uint64
@@ -19,6 +20,11 @@ type VolatilityMonitor struct {
 	available     util.Bitfield
 	blockData     map[uint]*volatilityData
 	totalData     *volatilityData
+}
+
+func (i *VolatilityMonitor) SetLifecycleState(state storage.LifecycleState) {
+	i.StorageProviderLifecycleState.SetLifecycleState(state)
+	storage.SetLifecycleState(i.prov, state)
 }
 
 func NewVolatilityMonitor(prov storage.StorageProvider, blockSize int, expiry time.Duration) *VolatilityMonitor {

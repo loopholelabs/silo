@@ -7,8 +7,14 @@ import (
 )
 
 type DummyTracker struct {
+	storage.StorageProviderLifecycleState
 	prov storage.StorageProvider
 	bf   *util.Bitfield
+}
+
+func (i *DummyTracker) SetLifecycleState(state storage.LifecycleState) {
+	i.StorageProviderLifecycleState.SetLifecycleState(state)
+	storage.SetLifecycleState(i.prov, state)
 }
 
 func NewDummyTracker(prov storage.StorageProvider, block_size int) *DummyTracker {

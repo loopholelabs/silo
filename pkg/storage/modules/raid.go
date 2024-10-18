@@ -9,7 +9,15 @@ import (
 )
 
 type Raid struct {
+	storage.StorageProviderLifecycleState
 	prov []storage.StorageProvider
+}
+
+func (i *Raid) SetLifecycleState(state storage.LifecycleState) {
+	i.StorageProviderLifecycleState.SetLifecycleState(state)
+	for _, pr := range i.prov {
+		storage.SetLifecycleState(pr, state)
+	}
 }
 
 func NewRaid(prov []storage.StorageProvider) (*Raid, error) {

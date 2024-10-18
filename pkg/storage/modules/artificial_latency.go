@@ -14,12 +14,18 @@ import (
  *
  */
 type ArtificialLatency struct {
+	storage.StorageProviderLifecycleState
 	lock                   sync.RWMutex
 	prov                   storage.StorageProvider
 	latency_read           time.Duration
 	latency_write          time.Duration
 	latency_read_per_byte  time.Duration
 	latency_write_per_byte time.Duration
+}
+
+func (i *ArtificialLatency) SetLifecycleState(state storage.LifecycleState) {
+	i.StorageProviderLifecycleState.SetLifecycleState(state)
+	storage.SetLifecycleState(i.prov, state)
 }
 
 func NewArtificialLatency(prov storage.StorageProvider, latencyRead time.Duration, latencyReadPerByte time.Duration, latencyWrite time.Duration, latencyWritePerByte time.Duration) *ArtificialLatency {

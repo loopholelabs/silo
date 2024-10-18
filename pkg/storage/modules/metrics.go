@@ -14,6 +14,7 @@ import (
  *
  */
 type Metrics struct {
+	storage.StorageProviderLifecycleState
 	prov                storage.StorageProvider
 	metric_read_ops     uint64
 	metric_read_bytes   uint64
@@ -40,6 +41,11 @@ type MetricsSnapshot struct {
 	Flush_ops    uint64
 	Flush_time   uint64
 	Flush_errors uint64
+}
+
+func (i *Metrics) SetLifecycleState(state storage.LifecycleState) {
+	i.StorageProviderLifecycleState.SetLifecycleState(state)
+	storage.SetLifecycleState(i.prov, state)
 }
 
 func NewMetrics(prov storage.StorageProvider) *Metrics {

@@ -14,9 +14,17 @@ import (
 )
 
 type ShardedStorage struct {
+	storage.StorageProviderLifecycleState
 	blocks     []storage.StorageProvider
 	block_size int
 	size       int
+}
+
+func (i *ShardedStorage) SetLifecycleState(state storage.LifecycleState) {
+	i.StorageProviderLifecycleState.SetLifecycleState(state)
+	for _, pr := range i.blocks {
+		storage.SetLifecycleState(pr, state)
+	}
 }
 
 func NewShardedStorage(size int, blocksize int, creator func(index int, size int) (storage.StorageProvider, error)) (*ShardedStorage, error) {

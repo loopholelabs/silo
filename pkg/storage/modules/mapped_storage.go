@@ -16,6 +16,7 @@ var Err_out_of_space = errors.New("out of space")
 var Err_not_found = errors.New("not found")
 
 type MappedStorage struct {
+	storage.StorageProviderLifecycleState
 	prov            storage.StorageProvider
 	IDs             []uint64
 	id_to_block     map[uint64]uint64
@@ -41,6 +42,11 @@ type MappedStorageStats struct {
 	WriteBlocks_time          time.Duration
 	WriteBlocks_bulk_new      uint64
 	WriteBlocks_bulk_existing uint64
+}
+
+func (i *MappedStorage) SetLifecycleState(state storage.LifecycleState) {
+	i.StorageProviderLifecycleState.SetLifecycleState(state)
+	storage.SetLifecycleState(i.prov, state)
 }
 
 func NewMappedStorage(prov storage.StorageProvider, block_size int) *MappedStorage {

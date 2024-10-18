@@ -4,12 +4,19 @@ import (
 	"io"
 
 	"github.com/google/uuid"
+	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/util"
 )
 
 type WaitingCacheRemote struct {
+	storage.StorageProviderLifecycleState
 	wc        *WaitingCache
 	available util.Bitfield
+}
+
+func (i *WaitingCacheRemote) SetLifecycleState(state storage.LifecycleState) {
+	i.StorageProviderLifecycleState.SetLifecycleState(state)
+	storage.SetLifecycleState(i.wc.prov, state)
 }
 
 func (wcl *WaitingCacheRemote) UUID() []uuid.UUID {

@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/google/uuid"
+	"github.com/loopholelabs/silo/pkg/storage"
 )
 
 /**
@@ -13,6 +14,7 @@ import (
  *
  */
 type FileStorage struct {
+	storage.StorageProviderLifecycleState
 	uuid uuid.UUID
 	fp   *os.File
 	size int64

@@ -30,7 +30,13 @@ type DirtyTracker struct {
 }
 
 type DirtyTrackerLocal struct {
+	storage.StorageProviderLifecycleState
 	dt *DirtyTracker
+}
+
+func (i *DirtyTrackerLocal) SetLifecycleState(state storage.LifecycleState) {
+	i.StorageProviderLifecycleState.SetLifecycleState(state)
+	storage.SetLifecycleState(i.dt.prov, state)
 }
 
 func (dtl *DirtyTrackerLocal) UUID() []uuid.UUID {
@@ -62,7 +68,13 @@ func (dtl *DirtyTrackerLocal) CancelWrites(offset int64, length int64) {
 }
 
 type DirtyTrackerRemote struct {
+	storage.StorageProviderLifecycleState
 	dt *DirtyTracker
+}
+
+func (i *DirtyTrackerRemote) SetLifecycleState(state storage.LifecycleState) {
+	i.StorageProviderLifecycleState.SetLifecycleState(state)
+	storage.SetLifecycleState(i.dt.prov, state)
 }
 
 func (dtl *DirtyTrackerRemote) UUID() []uuid.UUID {

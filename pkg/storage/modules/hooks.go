@@ -6,11 +6,17 @@ import (
 )
 
 type Hooks struct {
+	storage.StorageProviderLifecycleState
 	prov       storage.StorageProvider
 	Pre_read   func(buffer []byte, offset int64) (bool, int, error)
 	Post_read  func(buffer []byte, offset int64, n int, err error) (int, error)
 	Pre_write  func(buffer []byte, offset int64) (bool, int, error)
 	Post_write func(buffer []byte, offset int64, n int, err error) (int, error)
+}
+
+func (i *Hooks) SetLifecycleState(state storage.LifecycleState) {
+	i.StorageProviderLifecycleState.SetLifecycleState(state)
+	storage.SetLifecycleState(i.prov, state)
 }
 
 func NewHooks(prov storage.StorageProvider) *Hooks {

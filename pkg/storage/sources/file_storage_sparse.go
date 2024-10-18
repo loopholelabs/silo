@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/google/uuid"
+	"github.com/loopholelabs/silo/pkg/storage"
 )
 
 const BLOCK_HEADER_SIZE = 8
@@ -20,6 +21,7 @@ const BLOCK_HEADER_SIZE = 8
  *
  */
 type FileStorageSparse struct {
+	storage.StorageProviderLifecycleState
 	uuid         uuid.UUID
 	f            string
 	fp           *os.File

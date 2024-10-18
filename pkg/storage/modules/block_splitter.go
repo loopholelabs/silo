@@ -10,6 +10,7 @@ import (
  */
 
 type BlockSplitter struct {
+	storage.StorageProviderLifecycleState
 	prov       storage.StorageProvider
 	block_size int
 	size       uint64
@@ -21,6 +22,11 @@ func NewBlockSplitter(prov storage.StorageProvider, block_size int) *BlockSplitt
 		block_size: block_size,
 		size:       prov.Size(),
 	}
+}
+
+func (i *BlockSplitter) SetLifecycleState(state storage.LifecycleState) {
+	i.StorageProviderLifecycleState.SetLifecycleState(state)
+	storage.SetLifecycleState(i.prov, state)
 }
 
 func (i *BlockSplitter) UUID() []uuid.UUID {

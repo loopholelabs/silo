@@ -13,9 +13,15 @@ import (
  */
 
 type FilterRedundantWrites struct {
+	storage.StorageProviderLifecycleState
 	prov                storage.StorageProvider
 	source              io.ReaderAt
 	no_change_allowance int
+}
+
+func (i *FilterRedundantWrites) SetLifecycleState(state storage.LifecycleState) {
+	i.StorageProviderLifecycleState.SetLifecycleState(state)
+	storage.SetLifecycleState(i.prov, state)
 }
 
 func NewFilterRedundantWrites(prov storage.StorageProvider, source io.ReaderAt, allowance int) *FilterRedundantWrites {

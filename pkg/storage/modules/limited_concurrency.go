@@ -6,9 +6,15 @@ import (
 )
 
 type LimitedConcurrency struct {
+	storage.StorageProviderLifecycleState
 	prov              storage.StorageProvider
 	concurrent_reads  chan bool
 	concurrent_writes chan bool
+}
+
+func (i *LimitedConcurrency) SetLifecycleState(state storage.LifecycleState) {
+	i.StorageProviderLifecycleState.SetLifecycleState(state)
+	storage.SetLifecycleState(i.prov, state)
 }
 
 func NewLimitedConcurrency(prov storage.StorageProvider, max_reads int, max_writes int) *LimitedConcurrency {

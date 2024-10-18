@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	"github.com/google/uuid"
+	"github.com/loopholelabs/silo/pkg/storage"
 )
 
 /**
@@ -12,6 +13,7 @@ import (
  *
  */
 type MemoryStorage struct {
+	storage.StorageProviderLifecycleState
 	uuid uuid.UUID
 	data []byte
 	lock sync.RWMutex

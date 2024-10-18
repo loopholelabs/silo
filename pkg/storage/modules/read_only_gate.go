@@ -12,9 +12,15 @@ import (
  */
 
 type ReadOnlyGate struct {
+	storage.StorageProviderLifecycleState
 	prov   storage.StorageProvider
 	lock   *sync.Cond
 	locked bool
+}
+
+func (i *ReadOnlyGate) SetLifecycleState(state storage.LifecycleState) {
+	i.StorageProviderLifecycleState.SetLifecycleState(state)
+	storage.SetLifecycleState(i.prov, state)
 }
 
 func NewReadOnlyGate(prov storage.StorageProvider) *ReadOnlyGate {
