@@ -80,7 +80,7 @@ func EncodeWriteAtComp(offset int64, data []byte) []byte {
 
 func DecodeWriteAtComp(buff []byte) (offset int64, data []byte, err error) {
 	if buff == nil || len(buff) < 9 || buff[0] != COMMAND_WRITE_AT_COMP {
-		return 0, nil, errors.New("Invalid packet command")
+		return 0, nil, errors.New("invalid packet command")
 	}
 	off := int64(binary.LittleEndian.Uint64(buff[1:]))
 

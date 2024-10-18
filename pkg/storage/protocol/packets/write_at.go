@@ -14,23 +14,20 @@ func EncodeWriteAt(offset int64, data []byte) []byte {
 	return buff
 }
 
-func EncodeWriterWriteAt(offset int64, data []byte) (uint32, func(w io.Writer) error) {
-	return uint32(9 + len(data)), func(w io.Writer) error {
-		header := make([]byte, 1+8)
-		header[0] = COMMAND_WRITE_AT
-		binary.LittleEndian.PutUint64(header[1:], uint64(offset))
-		_, err := w.Write(header)
-		if err != nil {
-			return err
-		}
-		_, err = w.Write(data)
+func EncodeWriterWriteAt(offset int64, data []byte) (uint32, []byte, func(w io.Writer) error) {
+	header := make([]byte, 1+8)
+	header[0] = COMMAND_WRITE_AT
+	binary.LittleEndian.PutUint64(header[1:], uint64(offset))
+
+	return uint32(9 + len(data)), header, func(w io.Writer) error {
+		_, err := w.Write(data)
 		return err
 	}
 }
 
 func DecodeWriteAt(buff []byte) (offset int64, data []byte, err error) {
 	if buff == nil || len(buff) < 9 || buff[0] != COMMAND_WRITE_AT {
-		return 0, nil, errors.New("Invalid packet command")
+		return 0, nil, errors.New("invalid packet command")
 	}
 	off := int64(binary.LittleEndian.Uint64(buff[1:]))
 	return off, buff[9:], nil
@@ -56,21 +53,21 @@ func EncodeWriteAtResponse(war *WriteAtResponse) []byte {
 
 func DecodeWriteAtResponse(buff []byte) (*WriteAtResponse, error) {
 	if buff == nil {
-		return nil, errors.New("Invalid packet")
+		return nil, errors.New("invalid packet")
 	}
 	if buff[0] == COMMAND_WRITE_AT_RESPONSE_ERR {
 		return &WriteAtResponse{
-			Error: errors.New("Remote error"),
+			Error: errors.New("remote error"),
 			Bytes: 0,
 		}, nil
 	} else if buff[0] == COMMAND_WRITE_AT_RESPONSE {
 		if len(buff) < 5 {
-			return nil, errors.New("Invalid packet")
+			return nil, errors.New("invalid packet")
 		}
 		return &WriteAtResponse{
 			Error: nil,
 			Bytes: int(binary.LittleEndian.Uint32(buff[1:])),
 		}, nil
 	}
-	return nil, errors.New("Unknown packet")
+	return nil, errors.New("unknown packet")
 }

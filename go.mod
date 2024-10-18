@@ -10,6 +10,7 @@ require (
 	github.com/hashicorp/hcl/v2 v2.21.0
 	github.com/minio/minio-go/v7 v7.0.77
 	github.com/ory/dockertest/v3 v3.10.0
+	github.com/rs/zerolog v1.33.0
 	github.com/spf13/cobra v1.8.1
 	github.com/stretchr/testify v1.9.0
 	github.com/vbauerster/mpb/v8 v8.7.5
