@@ -3,6 +3,7 @@ package storage
 import (
 	"fmt"
 	"io"
+	"sync"
 
 	"github.com/google/uuid"
 	"github.com/loopholelabs/silo/pkg/storage/util"
@@ -16,6 +17,99 @@ type StorageProvider interface {
 	Close() error
 	CancelWrites(offset int64, length int64)
 	UUID() []uuid.UUID
+}
+
+type StorageProviderWithLifecycleIfc interface {
+	StorageProvider
+	SetLifecycleState(LifecycleState)
+	GetLifecycleState() LifecycleState
+	AddLifecycleNotification(LifecycleState, LifecycleCallback)
+}
+
+// Try to change the lifecycle of a StorageProvider
+func SetLifecycleState(s StorageProvider, state LifecycleState) bool {
+	lcsp, ok := s.(StorageProviderWithLifecycleIfc)
+	if ok {
+		lcsp.SetLifecycleState(state)
+	}
+	return ok
+}
+
+// Try to get the lifecycle of a StorageProvider
+func GetLifecycleState(s StorageProvider) (LifecycleState, bool) {
+	lcsp, ok := s.(StorageProviderWithLifecycleIfc)
+	if ok {
+		return lcsp.GetLifecycleState(), true
+	}
+	return Lifecycle_none, false
+}
+
+// Try to add a lifecycle notification on a StorageProvider
+func AddLifecycleNotification(s StorageProvider, state LifecycleState, callback LifecycleCallback) bool {
+	lcsp, ok := s.(StorageProviderWithLifecycleIfc)
+	if ok {
+		lcsp.AddLifecycleNotification(state, callback)
+	}
+	return ok
+}
+
+/**
+ * A StorageProvider can embed StorageProviderLifecycleState to support lifecycles
+ *
+ */
+type LifecycleState int
+
+const Lifecycle_none = LifecycleState(0)
+const Lifecycle_active = LifecycleState(1)
+const Lifecycle_migrating_to = LifecycleState(2)
+const Lifecycle_migrating_from = LifecycleState(3)
+const Lifecycle_closed = LifecycleState(4)
+
+type LifecycleCallback func(from LifecycleState, to LifecycleState)
+
+type StorageProviderLifecycleState struct {
+	state_lock      sync.Mutex
+	state           LifecycleState
+	state_callbacks map[LifecycleState][]LifecycleCallback
+}
+
+// Set the current state, and notify any callbacks
+func (spl *StorageProviderLifecycleState) SetLifecycleState(state LifecycleState) {
+	spl.state_lock.Lock()
+	defer spl.state_lock.Unlock()
+	state_was := spl.state
+	spl.state = state
+	if spl.state_callbacks == nil {
+		return
+	}
+	cbs, ok := spl.state_callbacks[state]
+	if ok {
+		for _, cb := range cbs {
+			cb(state_was, state)
+		}
+	}
+}
+
+// Get the current state
+func (spl *StorageProviderLifecycleState) GetLifecycleState() LifecycleState {
+	spl.state_lock.Lock()
+	defer spl.state_lock.Unlock()
+	return spl.state
+}
+
+// Add a new callback for the given state.
+func (spl *StorageProviderLifecycleState) AddLifecycleNotification(state LifecycleState, callback LifecycleCallback) {
+	spl.state_lock.Lock()
+	defer spl.state_lock.Unlock()
+	if spl.state_callbacks == nil {
+		spl.state_callbacks = make(map[LifecycleState][]LifecycleCallback)
+	}
+	_, ok := spl.state_callbacks[state]
+	if ok {
+		spl.state_callbacks[state] = append(spl.state_callbacks[state], callback)
+	} else {
+		spl.state_callbacks[state] = []LifecycleCallback{callback}
+	}
 }
 
 type LockableStorageProvider interface {
