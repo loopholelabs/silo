@@ -294,22 +294,26 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 
 		var wg sync.WaitGroup
 
-		// Sync happens here...
-		wg.Add(1)
-		go func() {
-			// Do this in a goroutine, but make sure it's cancelled etc
-			status, err := syncer.Sync(false, true)
-			log.Info().Str("schema", string(ds.Encode())).Err(err).Any("status", status).Msg("Sync finished")
-			wg.Done()
-		}()
+		storage.AddEventNotification(prov, "start_sync", func(event_type storage.EventType, data storage.EventData) storage.EventReturnData {
+			log.Info().Str("schema", string(ds.Encode())).Msg("Starting sync")
+			// Sync happens here...
+			wg.Add(1)
+			go func() {
+				// Do this in a goroutine, but make sure it's cancelled etc
+				status, err := syncer.Sync(false, true)
+				log.Info().Str("schema", string(ds.Encode())).Err(err).Any("status", status).Msg("Sync finished")
+				wg.Done()
+			}()
+			return true
+		})
 
-		// If the storage enters the "migrating_to" state, we should cancel the sync.
-		storage.AddEventNotification(prov, "migrating_to", func(event_type storage.EventType, data storage.EventData) storage.EventReturnData {
-			log.Info().Str("schema", string(ds.Encode())).Msg("Sync cancelled as storage transitioned to migrating_to")
+		// If the storage gets a "stop_sync", we should cancel the sync, and return the safe blocks
+		storage.AddEventNotification(prov, "stop_sync", func(event_type storage.EventType, data storage.EventData) storage.EventReturnData {
+			log.Info().Str("schema", string(ds.Encode())).Msg("Stopping sync")
 			cancelfn()
 			// WAIT HERE for the sync to finish
 			wg.Wait()
-			return nil // TODO: Return the sync blocks
+			return syncer.GetSafeBlockMap()
 		})
 
 	}
