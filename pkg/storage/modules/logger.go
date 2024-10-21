@@ -10,15 +10,15 @@ import (
 )
 
 type Logger struct {
-	storage.StorageProviderLifecycleState
+	storage.StorageProviderWithEvents
 	prov    storage.StorageProvider
 	prefix  string
 	enabled atomic.Bool
 }
 
-func (i *Logger) SetLifecycleState(state storage.LifecycleState) {
-	i.StorageProviderLifecycleState.SetLifecycleState(state)
-	storage.SetLifecycleState(i.prov, state)
+func (i *Logger) SendEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
+	data := i.StorageProviderWithEvents.SendEvent(event_type, event_data)
+	return append(data, storage.SendEvent(i.prov, event_type, event_data)...)
 }
 
 func NewLogger(prov storage.StorageProvider, prefix string) *Logger {

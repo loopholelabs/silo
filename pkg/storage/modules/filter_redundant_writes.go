@@ -13,15 +13,15 @@ import (
  */
 
 type FilterRedundantWrites struct {
-	storage.StorageProviderLifecycleState
+	storage.StorageProviderWithEvents
 	prov                storage.StorageProvider
 	source              io.ReaderAt
 	no_change_allowance int
 }
 
-func (i *FilterRedundantWrites) SetLifecycleState(state storage.LifecycleState) {
-	i.StorageProviderLifecycleState.SetLifecycleState(state)
-	storage.SetLifecycleState(i.prov, state)
+func (i *FilterRedundantWrites) SendEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
+	data := i.StorageProviderWithEvents.SendEvent(event_type, event_data)
+	return append(data, storage.SendEvent(i.prov, event_type, event_data)...)
 }
 
 func NewFilterRedundantWrites(prov storage.StorageProvider, source io.ReaderAt, allowance int) *FilterRedundantWrites {

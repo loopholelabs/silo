@@ -9,15 +9,16 @@ import (
 )
 
 type Raid struct {
-	storage.StorageProviderLifecycleState
+	storage.StorageProviderWithEvents
 	prov []storage.StorageProvider
 }
 
-func (i *Raid) SetLifecycleState(state storage.LifecycleState) {
-	i.StorageProviderLifecycleState.SetLifecycleState(state)
+func (i *Raid) SendEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
+	data := i.StorageProviderWithEvents.SendEvent(event_type, event_data)
 	for _, pr := range i.prov {
-		storage.SetLifecycleState(pr, state)
+		data = append(data, storage.SendEvent(pr, event_type, event_data)...)
 	}
+	return data
 }
 
 func NewRaid(prov []storage.StorageProvider) (*Raid, error) {

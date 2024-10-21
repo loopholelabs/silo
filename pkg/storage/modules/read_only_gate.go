@@ -12,15 +12,15 @@ import (
  */
 
 type ReadOnlyGate struct {
-	storage.StorageProviderLifecycleState
+	storage.StorageProviderWithEvents
 	prov   storage.StorageProvider
 	lock   *sync.Cond
 	locked bool
 }
 
-func (i *ReadOnlyGate) SetLifecycleState(state storage.LifecycleState) {
-	i.StorageProviderLifecycleState.SetLifecycleState(state)
-	storage.SetLifecycleState(i.prov, state)
+func (i *ReadOnlyGate) SendEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
+	data := i.StorageProviderWithEvents.SendEvent(event_type, event_data)
+	return append(data, storage.SendEvent(i.prov, event_type, event_data)...)
 }
 
 func NewReadOnlyGate(prov storage.StorageProvider) *ReadOnlyGate {

@@ -14,7 +14,7 @@ import (
  *
  */
 type FileStorage struct {
-	storage.StorageProviderLifecycleState
+	storage.StorageProviderWithEvents
 	uuid uuid.UUID
 	fp   *os.File
 	size int64

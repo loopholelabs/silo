@@ -13,7 +13,7 @@ import (
  *
  */
 type MemoryStorage struct {
-	storage.StorageProviderLifecycleState
+	storage.StorageProviderWithEvents
 	uuid uuid.UUID
 	data []byte
 	lock sync.RWMutex

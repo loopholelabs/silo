@@ -21,7 +21,7 @@ const BLOCK_HEADER_SIZE = 8
  *
  */
 type FileStorageSparse struct {
-	storage.StorageProviderLifecycleState
+	storage.StorageProviderWithEvents
 	uuid         uuid.UUID
 	f            string
 	fp           *os.File

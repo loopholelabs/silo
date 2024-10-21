@@ -19,99 +19,75 @@ type StorageProvider interface {
 	UUID() []uuid.UUID
 }
 
-type StorageProviderWithLifecycleIfc interface {
+type StorageProviderWithEventsIfc interface {
 	StorageProvider
-	SetLifecycleState(LifecycleState)
-	GetLifecycleState() LifecycleState
-	AddLifecycleNotification(LifecycleState, LifecycleCallback)
+	SendEvent(EventType, EventData) []EventReturnData
+	AddEventNotification(EventType, EventCallback)
 }
 
-// Try to change the lifecycle of a StorageProvider
-func SetLifecycleState(s StorageProvider, state LifecycleState) bool {
-	lcsp, ok := s.(StorageProviderWithLifecycleIfc)
+// Try to send an event for a StorageProvider
+func SendEvent(s StorageProvider, event_type EventType, event_data EventData) []EventReturnData {
+	lcsp, ok := s.(StorageProviderWithEventsIfc)
 	if ok {
-		lcsp.SetLifecycleState(state)
+		return lcsp.SendEvent(event_type, event_data)
 	}
-	return ok
-}
-
-// Try to get the lifecycle of a StorageProvider
-func GetLifecycleState(s StorageProvider) (LifecycleState, bool) {
-	lcsp, ok := s.(StorageProviderWithLifecycleIfc)
-	if ok {
-		return lcsp.GetLifecycleState(), true
-	}
-	return Lifecycle_none, false
+	return nil
 }
 
 // Try to add a lifecycle notification on a StorageProvider
-func AddLifecycleNotification(s StorageProvider, state LifecycleState, callback LifecycleCallback) bool {
-	lcsp, ok := s.(StorageProviderWithLifecycleIfc)
+func AddEventNotification(s StorageProvider, state EventType, callback EventCallback) bool {
+	lcsp, ok := s.(StorageProviderWithEventsIfc)
 	if ok {
-		lcsp.AddLifecycleNotification(state, callback)
+		lcsp.AddEventNotification(state, callback)
 	}
 	return ok
 }
 
 /**
- * A StorageProvider can embed StorageProviderLifecycleState to support lifecycles
+ * A StorageProvider can embed StorageProviderWithEvents to support events
  *
  */
-type LifecycleState int
+type EventType string
+type EventData interface{}
+type EventReturnData interface{}
 
-const Lifecycle_none = LifecycleState(0)
-const Lifecycle_active = LifecycleState(1)
-const Lifecycle_migrating_to = LifecycleState(2)
-const Lifecycle_migrating_from = LifecycleState(3)
-const Lifecycle_closed = LifecycleState(4)
+type EventCallback func(event EventType, data EventData) EventReturnData
 
-type LifecycleCallback func(from LifecycleState, to LifecycleState)
-
-type StorageProviderLifecycleState struct {
-	state_lock      sync.Mutex
-	state           LifecycleState
-	state_callbacks map[LifecycleState][]LifecycleCallback
+type StorageProviderWithEvents struct {
+	lock      sync.Mutex
+	callbacks map[EventType][]EventCallback
 }
 
 // Set the current state, and notify any callbacks
-func (spl *StorageProviderLifecycleState) SetLifecycleState(state LifecycleState) {
-	spl.state_lock.Lock()
-	defer spl.state_lock.Unlock()
-	if spl.state == state {
-		return // Nothing has changed.
+func (spl *StorageProviderWithEvents) SendEvent(event_type EventType, event_data EventData) []EventReturnData {
+	spl.lock.Lock()
+	defer spl.lock.Unlock()
+	if spl.callbacks == nil {
+		return nil
 	}
-	state_was := spl.state
-	spl.state = state
-	if spl.state_callbacks == nil {
-		return
-	}
-	cbs, ok := spl.state_callbacks[state]
+	cbs, ok := spl.callbacks[event_type]
 	if ok {
+		rets := make([]EventReturnData, 0)
 		for _, cb := range cbs {
-			cb(state_was, state)
+			rets = append(rets, cb(event_type, event_data))
 		}
+		return rets
 	}
-}
-
-// Get the current state
-func (spl *StorageProviderLifecycleState) GetLifecycleState() LifecycleState {
-	spl.state_lock.Lock()
-	defer spl.state_lock.Unlock()
-	return spl.state
+	return nil
 }
 
 // Add a new callback for the given state.
-func (spl *StorageProviderLifecycleState) AddLifecycleNotification(state LifecycleState, callback LifecycleCallback) {
-	spl.state_lock.Lock()
-	defer spl.state_lock.Unlock()
-	if spl.state_callbacks == nil {
-		spl.state_callbacks = make(map[LifecycleState][]LifecycleCallback)
+func (spl *StorageProviderWithEvents) AddEventNotification(event_type EventType, callback EventCallback) {
+	spl.lock.Lock()
+	defer spl.lock.Unlock()
+	if spl.callbacks == nil {
+		spl.callbacks = make(map[EventType][]EventCallback)
 	}
-	_, ok := spl.state_callbacks[state]
+	_, ok := spl.callbacks[event_type]
 	if ok {
-		spl.state_callbacks[state] = append(spl.state_callbacks[state], callback)
+		spl.callbacks[event_type] = append(spl.callbacks[event_type], callback)
 	} else {
-		spl.state_callbacks[state] = []LifecycleCallback{callback}
+		spl.callbacks[event_type] = []EventCallback{callback}
 	}
 }
 

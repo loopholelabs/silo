@@ -14,17 +14,18 @@ import (
 )
 
 type ShardedStorage struct {
-	storage.StorageProviderLifecycleState
+	storage.StorageProviderWithEvents
 	blocks     []storage.StorageProvider
 	block_size int
 	size       int
 }
 
-func (i *ShardedStorage) SetLifecycleState(state storage.LifecycleState) {
-	i.StorageProviderLifecycleState.SetLifecycleState(state)
+func (i *ShardedStorage) SendEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
+	data := i.StorageProviderWithEvents.SendEvent(event_type, event_data)
 	for _, pr := range i.blocks {
-		storage.SetLifecycleState(pr, state)
+		data = append(data, storage.SendEvent(pr, event_type, event_data)...)
 	}
+	return data
 }
 
 func NewShardedStorage(size int, blocksize int, creator func(index int, size int) (storage.StorageProvider, error)) (*ShardedStorage, error) {

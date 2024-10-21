@@ -22,7 +22,7 @@ var (
 )
 
 type S3Storage struct {
-	storage.StorageProviderLifecycleState
+	storage.StorageProviderWithEvents
 	uuid                           uuid.UUID
 	client                         *minio.Client
 	dummy                          bool

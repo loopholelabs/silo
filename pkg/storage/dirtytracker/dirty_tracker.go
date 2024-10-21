@@ -30,13 +30,13 @@ type DirtyTracker struct {
 }
 
 type DirtyTrackerLocal struct {
-	storage.StorageProviderLifecycleState
+	storage.StorageProviderWithEvents
 	dt *DirtyTracker
 }
 
-func (i *DirtyTrackerLocal) SetLifecycleState(state storage.LifecycleState) {
-	i.StorageProviderLifecycleState.SetLifecycleState(state)
-	storage.SetLifecycleState(i.dt.prov, state)
+func (i *DirtyTrackerLocal) SendEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
+	data := i.StorageProviderWithEvents.SendEvent(event_type, event_data)
+	return append(data, storage.SendEvent(i.dt.prov, event_type, event_data)...)
 }
 
 func (dtl *DirtyTrackerLocal) UUID() []uuid.UUID {
@@ -68,13 +68,13 @@ func (dtl *DirtyTrackerLocal) CancelWrites(offset int64, length int64) {
 }
 
 type DirtyTrackerRemote struct {
-	storage.StorageProviderLifecycleState
+	storage.StorageProviderWithEvents
 	dt *DirtyTracker
 }
 
-func (i *DirtyTrackerRemote) SetLifecycleState(state storage.LifecycleState) {
-	i.StorageProviderLifecycleState.SetLifecycleState(state)
-	storage.SetLifecycleState(i.dt.prov, state)
+func (i *DirtyTrackerRemote) SendEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
+	data := i.StorageProviderWithEvents.SendEvent(event_type, event_data)
+	return append(data, storage.SendEvent(i.dt.prov, event_type, event_data)...)
 }
 
 func (dtl *DirtyTrackerRemote) UUID() []uuid.UUID {

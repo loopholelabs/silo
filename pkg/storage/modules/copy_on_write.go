@@ -9,7 +9,7 @@ import (
 )
 
 type CopyOnWrite struct {
-	storage.StorageProviderLifecycleState
+	storage.StorageProviderWithEvents
 	source     storage.StorageProvider
 	cache      storage.StorageProvider
 	exists     *util.Bitfield
@@ -20,10 +20,10 @@ type CopyOnWrite struct {
 	wg         sync.WaitGroup
 }
 
-func (i *CopyOnWrite) SetLifecycleState(state storage.LifecycleState) {
-	i.StorageProviderLifecycleState.SetLifecycleState(state)
-	storage.SetLifecycleState(i.source, state)
-	storage.SetLifecycleState(i.cache, state)
+func (i *CopyOnWrite) SendEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
+	data := i.StorageProviderWithEvents.SendEvent(event_type, event_data)
+	data = append(data, storage.SendEvent(i.source, event_type, event_data)...)
+	return append(data, storage.SendEvent(i.cache, event_type, event_data)...)
 }
 
 func NewCopyOnWrite(source storage.StorageProvider, cache storage.StorageProvider, blockSize int) *CopyOnWrite {

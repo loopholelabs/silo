@@ -9,14 +9,14 @@ import (
 )
 
 type WaitingCacheRemote struct {
-	storage.StorageProviderLifecycleState
+	storage.StorageProviderWithEvents
 	wc        *WaitingCache
 	available util.Bitfield
 }
 
-func (i *WaitingCacheRemote) SetLifecycleState(state storage.LifecycleState) {
-	i.StorageProviderLifecycleState.SetLifecycleState(state)
-	storage.SetLifecycleState(i.wc.prov, state)
+func (i *WaitingCacheRemote) SendEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
+	data := i.StorageProviderWithEvents.SendEvent(event_type, event_data)
+	return append(data, storage.SendEvent(i.wc.prov, event_type, event_data)...)
 }
 
 func (wcl *WaitingCacheRemote) UUID() []uuid.UUID {

@@ -14,7 +14,7 @@ import (
  *
  */
 type ArtificialLatency struct {
-	storage.StorageProviderLifecycleState
+	storage.StorageProviderWithEvents
 	lock                   sync.RWMutex
 	prov                   storage.StorageProvider
 	latency_read           time.Duration
@@ -23,9 +23,9 @@ type ArtificialLatency struct {
 	latency_write_per_byte time.Duration
 }
 
-func (i *ArtificialLatency) SetLifecycleState(state storage.LifecycleState) {
-	i.StorageProviderLifecycleState.SetLifecycleState(state)
-	storage.SetLifecycleState(i.prov, state)
+func (i *ArtificialLatency) SendEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
+	data := i.StorageProviderWithEvents.SendEvent(event_type, event_data)
+	return append(data, storage.SendEvent(i.prov, event_type, event_data)...)
 }
 
 func NewArtificialLatency(prov storage.StorageProvider, latencyRead time.Duration, latencyReadPerByte time.Duration, latencyWrite time.Duration, latencyWritePerByte time.Duration) *ArtificialLatency {

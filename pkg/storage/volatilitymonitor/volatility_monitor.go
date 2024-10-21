@@ -10,7 +10,7 @@ import (
 )
 
 type VolatilityMonitor struct {
-	storage.StorageProviderLifecycleState
+	storage.StorageProviderWithEvents
 	prov          storage.StorageProvider
 	expiry        time.Duration
 	size          uint64
@@ -22,9 +22,9 @@ type VolatilityMonitor struct {
 	totalData     *volatilityData
 }
 
-func (i *VolatilityMonitor) SetLifecycleState(state storage.LifecycleState) {
-	i.StorageProviderLifecycleState.SetLifecycleState(state)
-	storage.SetLifecycleState(i.prov, state)
+func (i *VolatilityMonitor) SendEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
+	data := i.StorageProviderWithEvents.SendEvent(event_type, event_data)
+	return append(data, storage.SendEvent(i.prov, event_type, event_data)...)
 }
 
 func NewVolatilityMonitor(prov storage.StorageProvider, blockSize int, expiry time.Duration) *VolatilityMonitor {

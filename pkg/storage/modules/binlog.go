@@ -14,7 +14,7 @@ import (
 )
 
 type BinLog struct {
-	storage.StorageProviderLifecycleState
+	storage.StorageProviderWithEvents
 	prov          storage.StorageProvider
 	filename      string
 	ctime         time.Time
@@ -25,9 +25,9 @@ type BinLog struct {
 	writesEnabled atomic.Bool
 }
 
-func (i *BinLog) SetLifecycleState(state storage.LifecycleState) {
-	i.StorageProviderLifecycleState.SetLifecycleState(state)
-	storage.SetLifecycleState(i.prov, state)
+func (i *BinLog) SendEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
+	data := i.StorageProviderWithEvents.SendEvent(event_type, event_data)
+	return append(data, storage.SendEvent(i.prov, event_type, event_data)...)
 }
 
 func NewBinLog(prov storage.StorageProvider, filename string) (*BinLog, error) {

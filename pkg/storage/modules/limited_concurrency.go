@@ -6,15 +6,15 @@ import (
 )
 
 type LimitedConcurrency struct {
-	storage.StorageProviderLifecycleState
+	storage.StorageProviderWithEvents
 	prov              storage.StorageProvider
 	concurrent_reads  chan bool
 	concurrent_writes chan bool
 }
 
-func (i *LimitedConcurrency) SetLifecycleState(state storage.LifecycleState) {
-	i.StorageProviderLifecycleState.SetLifecycleState(state)
-	storage.SetLifecycleState(i.prov, state)
+func (i *LimitedConcurrency) SendEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
+	data := i.StorageProviderWithEvents.SendEvent(event_type, event_data)
+	return append(data, storage.SendEvent(i.prov, event_type, event_data)...)
 }
 
 func NewLimitedConcurrency(prov storage.StorageProvider, max_reads int, max_writes int) *LimitedConcurrency {

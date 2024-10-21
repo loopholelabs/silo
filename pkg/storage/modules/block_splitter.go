@@ -10,7 +10,7 @@ import (
  */
 
 type BlockSplitter struct {
-	storage.StorageProviderLifecycleState
+	storage.StorageProviderWithEvents
 	prov       storage.StorageProvider
 	block_size int
 	size       uint64
@@ -24,9 +24,9 @@ func NewBlockSplitter(prov storage.StorageProvider, block_size int) *BlockSplitt
 	}
 }
 
-func (i *BlockSplitter) SetLifecycleState(state storage.LifecycleState) {
-	i.StorageProviderLifecycleState.SetLifecycleState(state)
-	storage.SetLifecycleState(i.prov, state)
+func (i *BlockSplitter) SendEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
+	data := i.StorageProviderWithEvents.SendEvent(event_type, event_data)
+	return append(data, storage.SendEvent(i.prov, event_type, event_data)...)
 }
 
 func (i *BlockSplitter) UUID() []uuid.UUID {

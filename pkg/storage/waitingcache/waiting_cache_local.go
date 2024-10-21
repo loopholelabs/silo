@@ -7,16 +7,16 @@ import (
 )
 
 type WaitingCacheLocal struct {
-	storage.StorageProviderLifecycleState
+	storage.StorageProviderWithEvents
 	wc         *WaitingCache
 	available  util.Bitfield
 	NeedAt     func(offset int64, length int32)
 	DontNeedAt func(offset int64, length int32)
 }
 
-func (i *WaitingCacheLocal) SetLifecycleState(state storage.LifecycleState) {
-	i.StorageProviderLifecycleState.SetLifecycleState(state)
-	storage.SetLifecycleState(i.wc.prov, state)
+func (i *WaitingCacheLocal) SendEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
+	data := i.StorageProviderWithEvents.SendEvent(event_type, event_data)
+	return append(data, storage.SendEvent(i.wc.prov, event_type, event_data)...)
 }
 
 func (wcl *WaitingCacheLocal) UUID() []uuid.UUID {

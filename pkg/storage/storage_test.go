@@ -10,7 +10,7 @@ import (
 )
 
 type SomeStorage struct {
-	StorageProviderLifecycleState
+	StorageProviderWithEvents
 }
 
 func NewSomeStorage() *SomeStorage {
@@ -83,39 +83,37 @@ func (ss *SomeStorageNoLife) UUID() []uuid.UUID {
 	return nil
 }
 
-func TestStorageLifecycle(t *testing.T) {
+func TestStorageEvents(t *testing.T) {
 	ss := NewSomeStorage()
 
 	var wg sync.WaitGroup
 	wg.Add(1)
-	ok := AddLifecycleNotification(ss, Lifecycle_migrating_to, func(from LifecycleState, to LifecycleState) {
+	ok := AddEventNotification(ss, "testing", func(event EventType, data EventData) EventReturnData {
 		// Do something here
-		assert.Equal(t, from, Lifecycle_none)
-		assert.Equal(t, to, Lifecycle_migrating_to)
+		assert.Equal(t, EventType("testing"), event)
+		assert.Equal(t, "HELLO WORLD", data.(string))
 		wg.Done()
+
+		return "SOMETHING"
 	})
 	assert.True(t, ok)
 
-	ok = SetLifecycleState(ss, Lifecycle_migrating_to)
-	assert.True(t, ok)
+	data := SendEvent(ss, "testing", EventData("HELLO WORLD"))
+	assert.Equal(t, 1, len(data))
+	assert.Equal(t, "SOMETHING", data[0].(string))
 
 	wg.Wait()
 
-	state, ok := GetLifecycleState(ss)
-	assert.True(t, ok)
-	assert.Equal(t, Lifecycle_migrating_to, state)
-
-	// Try doing it on something that doesn't support lifecycle
+	// Try doing it on something that doesn't support events
 
 	ssnl := NewSomeStorageNoLife()
 
-	ok = AddLifecycleNotification(ssnl, Lifecycle_migrating_to, func(from LifecycleState, to LifecycleState) {
+	ok = AddEventNotification(ssnl, "testing", func(from EventType, to EventData) EventReturnData {
 		assert.Fail(t, "shouldn't happen")
+		return nil
 	})
 	assert.False(t, ok)
-	ok = SetLifecycleState(ssnl, Lifecycle_migrating_to)
-	assert.False(t, ok)
-	_, ok = GetLifecycleState(ssnl)
-	assert.False(t, ok)
+	data = SendEvent(ssnl, "testing", nil)
+	assert.Equal(t, 0, len(data))
 
 }
