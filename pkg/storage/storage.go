@@ -77,6 +77,9 @@ type StorageProviderLifecycleState struct {
 func (spl *StorageProviderLifecycleState) SetLifecycleState(state LifecycleState) {
 	spl.state_lock.Lock()
 	defer spl.state_lock.Unlock()
+	if spl.state == state {
+		return // Nothing has changed.
+	}
 	state_was := spl.state
 	spl.state = state
 	if spl.state_callbacks == nil {
