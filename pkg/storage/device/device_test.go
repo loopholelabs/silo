@@ -99,7 +99,7 @@ func TestSourcesExistingDir(t *testing.T) {
 	devs["Test3"].Provider.Close()
 }
 
-func TestDeviceLifecycle(t *testing.T) {
+func TestDeviceEvents(t *testing.T) {
 	devs := setup(t)
 
 	buffer := []byte("Hello world testing 1 2 3")
@@ -114,16 +114,19 @@ func TestDeviceLifecycle(t *testing.T) {
 
 	var wg sync.WaitGroup
 	wg.Add(1)
-	b := storage.AddLifecycleNotification(devs["TestNew"].Provider, storage.Lifecycle_migrating_to, func(from storage.LifecycleState, to storage.LifecycleState) {
+	b := storage.AddEventNotification(devs["TestNew"].Provider, "migrating_to", func(event_type storage.EventType, event_data storage.EventData) storage.EventReturnData {
 		// The storage is transitioning to migrating_to
+		assert.Equal(t, "HELLO WORLD", event_data)
 		wg.Done()
+		return "OK"
 	})
 	assert.True(t, b)
 
 	metrics := modules.NewMetrics(devs["TestNew"].Provider)
 
-	b = storage.SetLifecycleState(metrics, storage.Lifecycle_migrating_to)
-	assert.True(t, b)
+	data := storage.SendEvent(metrics, "migrating_to", "HELLO WORLD")
+	assert.Equal(t, 1, len(data))
+	assert.Equal(t, "OK", data[0].(string))
 
 	wg.Wait()
 

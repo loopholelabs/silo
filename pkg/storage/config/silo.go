@@ -5,6 +5,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/gohcl"
@@ -26,6 +27,25 @@ type DeviceSchema struct {
 	ROSource      *DeviceSchema `hcl:"source,block"`
 	Binlog        string        `hcl:"binlog,optional"`
 	PageServerPID int           `hcl:"pid,optional"`
+	Sync          *SyncS3Schema `hcl:"sync,block"`
+}
+
+type SyncConfigSchema struct {
+	BlockShift  int           `hcl:"blockshift,attr"`
+	MaxAge      time.Duration `hcl:"maxage,attr"`
+	MinChanged  int           `hcl:"minchanged,attr"`
+	CheckPeriod time.Duration `hcl:"checkperiod,attr"`
+	Limit       int           `hcl:"limit,attr"`
+}
+
+type SyncS3Schema struct {
+	Secure    bool              `hcl:"secure,attr"`
+	AccessKey string            `hcl:"accesskey,attr"`
+	SecretKey string            `hcl:"secretkey,attr"`
+	Endpoint  string            `hcl:"endpoint,attr"`
+	Bucket    string            `hcl:"bucket,attr"`
+	Config    *SyncConfigSchema `hcl:"config,block"`
+	Lifecycle string            `hcl:"lifecycle,attr"`
 }
 
 func parseByteValue(val string) int64 {
