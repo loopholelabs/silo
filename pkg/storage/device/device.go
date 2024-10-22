@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"sync"
+	"time"
 
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/blocks"
@@ -16,6 +17,7 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/expose"
 	"github.com/loopholelabs/silo/pkg/storage/migrator"
 	"github.com/loopholelabs/silo/pkg/storage/modules"
+	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
 	"github.com/rs/zerolog/log"
 )
@@ -56,7 +58,8 @@ func NewDevices(ds []*config.DeviceSchema) (map[string]*Device, error) {
 }
 
 func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.ExposedStorage, error) {
-	log.Info().Str("schema", string(ds.Encode())).Msg("Setting up NewDevice from schema")
+	device_schema := string(ds.Encode())
+	log.Info().Str("schema", device_schema).Msg("Setting up NewDevice from schema")
 
 	var prov storage.StorageProvider
 	var err error
@@ -171,7 +174,7 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 
 	// Optionally use a copy on write RO source...
 	if ds.ROSource != nil {
-		log.Info().Str("schema", string(ds.Encode())).Msg("Setting up CopyOnWrite")
+		log.Info().Str("schema", device_schema).Msg("Setting up CopyOnWrite")
 
 		// Create the ROSource...
 		rodev, _, err := NewDevice(ds.ROSource)
@@ -226,7 +229,7 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 	// NB You may well need to call ex.SetProvider if you wish to insert other things in the chain.
 	var ex storage.ExposedStorage
 	if ds.Expose {
-		log.Info().Str("schema", string(ds.Encode())).Msg("Setting up Expose device")
+		log.Info().Str("schema", device_schema).Msg("Setting up Expose device")
 
 		ex = expose.NewExposedStorageNBDNL(prov, 8, 0, prov.Size(), expose.NBD_DEFAULT_BLOCK_SIZE, true)
 
@@ -239,7 +242,7 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 
 	// Optionally sync the device to S3
 	if ds.Sync != nil {
-		log.Info().Str("schema", string(ds.Encode())).Msg("Setting up Sync")
+		log.Info().Str("schema", device_schema).Msg("Setting up Sync")
 
 		//			s3dest, err := sources.NewS3StorageDummy(prov.Size(), bs)
 		s3dest, err := sources.NewS3StorageCreate(ds.Sync.Secure,
@@ -267,6 +270,18 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 		orderer := blocks.NewAnyBlockOrder(num_blocks, nil)
 		orderer.AddAll()
 
+		check_period, err := time.ParseDuration(ds.Sync.Config.CheckPeriod)
+		if err != nil {
+			prov.Close()
+			return nil, nil, err
+		}
+
+		max_age, err := time.ParseDuration(ds.Sync.Config.MaxAge)
+		if err != nil {
+			prov.Close()
+			return nil, nil, err
+		}
+
 		ctx, cancelfn := context.WithCancel(context.TODO())
 
 		// Start doing the sync...
@@ -279,10 +294,10 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 			Lockable:           sourceStorage,
 			Destination:        s3dest,
 			Orderer:            orderer,
-			Dirty_check_period: ds.Sync.Config.CheckPeriod,
+			Dirty_check_period: check_period,
 			Dirty_block_getter: func() []uint {
 				return sourceDirtyRemote.GetDirtyBlocks(
-					ds.Sync.Config.MaxAge, ds.Sync.Config.Limit, ds.Sync.Config.BlockShift, ds.Sync.Config.MinChanged)
+					max_age, ds.Sync.Config.Limit, ds.Sync.Config.BlockShift, ds.Sync.Config.MinChanged)
 			},
 			Block_size:       bs,
 			Progress_handler: func(p *migrator.MigrationProgress) {},
@@ -295,13 +310,13 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 		var wg sync.WaitGroup
 
 		storage.AddEventNotification(prov, "start_sync", func(event_type storage.EventType, data storage.EventData) storage.EventReturnData {
-			log.Info().Str("schema", string(ds.Encode())).Msg("Starting sync")
+			log.Info().Str("schema", device_schema).Msg("Starting sync")
 			// Sync happens here...
 			wg.Add(1)
 			go func() {
 				// Do this in a goroutine, but make sure it's cancelled etc
 				status, err := syncer.Sync(false, true)
-				log.Info().Str("schema", string(ds.Encode())).Err(err).Any("status", status).Msg("Sync finished")
+				log.Info().Str("schema", device_schema).Err(err).Any("status", status).Msg("Sync finished")
 				wg.Done()
 			}()
 			return true
@@ -309,11 +324,25 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 
 		// If the storage gets a "stop_sync", we should cancel the sync, and return the safe blocks
 		storage.AddEventNotification(prov, "stop_sync", func(event_type storage.EventType, data storage.EventData) storage.EventReturnData {
-			log.Info().Str("schema", string(ds.Encode())).Msg("Stopping sync")
+			log.Info().Str("schema", device_schema).Msg("Stopping sync")
 			cancelfn()
 			// WAIT HERE for the sync to finish
 			wg.Wait()
-			return syncer.GetSafeBlockMap()
+			blocks := syncer.GetSafeBlockMap()
+			// Translate these to locations so they can be sent to a destination...
+			alt_sources := make([]packets.AlternateSource, 0)
+			for block, hash := range blocks {
+				as := packets.AlternateSource{
+					Offset:   int64(block * uint(bs)),
+					Length:   int64(bs),
+					Hash:     hash,
+					Location: fmt.Sprintf("%s %s %s", ds.Sync.Endpoint, ds.Sync.Bucket, ds.Name),
+				}
+				alt_sources = append(alt_sources, as)
+			}
+
+			log.Info().Str("schema", device_schema).Int("sources", len(alt_sources)).Msg("Sync stopped with sources")
+			return alt_sources
 		})
 
 	}

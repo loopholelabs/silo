@@ -5,7 +5,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/gohcl"
@@ -31,11 +30,11 @@ type DeviceSchema struct {
 }
 
 type SyncConfigSchema struct {
-	BlockShift  int           `hcl:"blockshift,attr"`
-	MaxAge      time.Duration `hcl:"maxage,attr"`
-	MinChanged  int           `hcl:"minchanged,attr"`
-	CheckPeriod time.Duration `hcl:"checkperiod,attr"`
-	Limit       int           `hcl:"limit,attr"`
+	BlockShift  int    `hcl:"blockshift,attr"`
+	MaxAge      string `hcl:"maxage,attr"`
+	MinChanged  int    `hcl:"minchanged,attr"`
+	CheckPeriod string `hcl:"checkperiod,attr"`
+	Limit       int    `hcl:"limit,attr"`
 }
 
 type SyncS3Schema struct {
@@ -45,7 +44,6 @@ type SyncS3Schema struct {
 	Endpoint  string            `hcl:"endpoint,attr"`
 	Bucket    string            `hcl:"bucket,attr"`
 	Config    *SyncConfigSchema `hcl:"config,block"`
-	Lifecycle string            `hcl:"lifecycle,attr"`
 }
 
 func parseByteValue(val string) int64 {
