@@ -22,7 +22,6 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/modules"
 	"github.com/loopholelabs/silo/pkg/storage/protocol"
 	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
-	"github.com/loopholelabs/silo/pkg/storage/sources"
 	"github.com/loopholelabs/silo/pkg/storage/volatilitymonitor"
 	"github.com/spf13/cobra"
 	"github.com/vbauerster/mpb/v8"
@@ -125,6 +124,25 @@ func runServe(ccmd *cobra.Command, args []string) {
 	}
 
 	for i, s := range siloConf.Device {
+
+		// Insert the s3 sync config bits here...
+		if serve_sync_s3 {
+			s.Sync = &config.SyncS3Schema{
+				Secure:    serve_sync_secure,
+				Endpoint:  serve_sync_endpoint,
+				AccessKey: serve_sync_access,
+				SecretKey: serve_sync_secret,
+				Bucket:    serve_sync_bucket,
+				Config: &config.SyncConfigSchema{
+					BlockShift:  serve_sync_dirty_block_shift,
+					MinChanged:  serve_sync_dirty_min_changed,
+					Limit:       serve_sync_dirty_limit,
+					MaxAge:      serve_sync_block_max_age.String(),
+					CheckPeriod: serve_sync_dirty_block_period.String(),
+				},
+			}
+		}
+
 		fmt.Printf("Setup storage %d [%s] size %s - %d\n", i, s.Name, s.Size, s.ByteSize())
 		sinfo, err := setupStorageDevice(s)
 		if err != nil {
@@ -167,25 +185,15 @@ func runServe(ccmd *cobra.Command, args []string) {
 				altSources := make([]packets.AlternateSource, 0)
 
 				if serve_sync_s3 {
-					s3_blocks := src.s3_syncer.GetSafeBlockMap() // Get a list of blocks that are on S3 for this device...
+					// Get the alternate sources here...
+					r := storage.SendEvent(src.lockable, "stop_sync", nil)
 
-					for {
-						block := src.s3_order.GetNext()
-						if block.Block == storage.BlockInfoFinish.Block {
-							break
-						}
-						// If the block is on S3, add it
-						hash_s3, ok := s3_blocks[uint(block.Block)]
-						if ok {
-							as := packets.AlternateSource{
-								Offset:   int64(block.Block * src.block_size),
-								Length:   int64(src.block_size),
-								Hash:     hash_s3,
-								Location: fmt.Sprintf("%s %s %s", serve_sync_endpoint, serve_sync_bucket, src.name),
-							}
-							altSources = append(altSources, as)
-						}
+					for _, ret := range r {
+						as := ret.([]packets.AlternateSource)
+						altSources = append(altSources, as...)
 					}
+
+					fmt.Printf("Got alternateSources %v\n", altSources)
 				}
 
 				err := migrateDevice(uint32(index), src.name, pro, src, altSources)
@@ -216,13 +224,9 @@ func shutdown_everything() {
 	for _, i := range src_storage {
 		i.lockable.Unlock()
 		i.tracker.Close()
-	}
 
-	if serve_sync_s3 {
-		fmt.Printf("Stopping S3 sync...\n")
-		for _, i := range src_storage {
-			i.s3_sync_cancel()
-		}
+		// Stop sync if it's still going...
+		storage.SendEvent(i.lockable, "stop_sync", nil)
 	}
 
 	fmt.Printf("Shutting down devices cleanly...\n")
@@ -243,6 +247,12 @@ func setupStorageDevice(conf *config.DeviceSchema) (*storageInfo, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// Start sync
+	if serve_sync_s3 {
+		storage.SendEvent(source, "start_sync", nil)
+	}
+
 	if ex != nil {
 		fmt.Printf("Device %s exposed as %s\n", conf.Name, ex.Device())
 		src_exposed = append(src_exposed, ex)
@@ -252,74 +262,6 @@ func setupStorageDevice(conf *config.DeviceSchema) (*storageInfo, error) {
 
 	var sourceDirty storage.StorageProvider
 	sourceDirty = sourceDirtyLocal
-
-	var s3_cancel func()
-	var s3_ctx context.Context
-	var s3_syncer *migrator.Syncer
-	var s3_order *volatilitymonitor.VolatilityMonitor
-	if serve_sync_s3 {
-		s3_block_size := block_size >> serve_sync_dirty_block_shift
-		s3SourceDirtyLocal, s3SourceDirtyRemote := dirtytracker.NewDirtyTracker(sourceDirtyLocal, s3_block_size)
-		s3_order = volatilitymonitor.NewVolatilityMonitor(s3SourceDirtyLocal, block_size, 10*time.Second)
-		s3Lockable := modules.NewLockable(s3_order) //s3SourceDirtyLocal)
-		sourceDirty = s3Lockable
-
-		s3_order.AddAll()
-
-		s3Orderer := blocks.NewAnyBlockOrder(num_blocks, nil)
-
-		dest, err := sources.NewS3StorageCreate(serve_sync_secure,
-			serve_sync_endpoint,
-			serve_sync_access,
-			serve_sync_secret,
-			serve_sync_bucket,
-			conf.Name,
-			source.Size(),
-			block_size)
-		if err != nil {
-			return nil, err
-		}
-
-		// Start syncing to S3 if it was requested of us...
-		s3_ctx, s3_cancel = context.WithCancel(context.TODO())
-
-		s3_syncer = migrator.NewSyncer(s3_ctx, &migrator.Sync_config{
-			Name:               conf.Name,
-			Integrity:          false,
-			Cancel_writes:      true,
-			Dedupe_writes:      true,
-			Tracker:            s3SourceDirtyRemote,
-			Lockable:           s3Lockable,
-			Destination:        dest,
-			Orderer:            s3Orderer,
-			Dirty_check_period: serve_sync_dirty_block_period,
-			Dirty_block_getter: func() []uint {
-				return s3SourceDirtyRemote.GetDirtyBlocks(
-					serve_sync_block_max_age,
-					serve_sync_dirty_limit,
-					serve_sync_dirty_block_shift,
-					serve_sync_dirty_min_changed)
-			},
-			Block_size: block_size,
-			Progress_handler: func(p *migrator.MigrationProgress) {
-				ood := s3SourceDirtyRemote.MeasureDirty()
-				ood_age := s3SourceDirtyRemote.MeasureDirtyAge()
-				fmt.Printf("S3 DIRTY STATUS %dms old, with %d blocks\n", time.Since(ood_age).Milliseconds(), ood)
-			},
-			Error_handler: func(b *storage.BlockInfo, err error) {
-				fmt.Printf("There was an error syncing to S3.")
-				panic(err)
-			},
-			Destination_content_check: func(offset int, data []byte) bool {
-				return false
-			},
-		})
-
-		go func() {
-			status, err := s3_syncer.Sync(false, true)
-			fmt.Printf("S3 Migration status %v err %v\n", status, err)
-		}()
-	}
 
 	sourceMonitor := volatilitymonitor.NewVolatilityMonitor(sourceDirty, block_size, 10*time.Second)
 	sourceStorage := modules.NewLockable(sourceMonitor)
@@ -342,16 +284,13 @@ func setupStorageDevice(conf *config.DeviceSchema) (*storageInfo, error) {
 	schema := string(conf.Encode())
 
 	sinfo := &storageInfo{
-		tracker:        sourceDirtyRemote,
-		lockable:       sourceStorage,
-		orderer:        orderer,
-		block_size:     block_size,
-		num_blocks:     num_blocks,
-		name:           conf.Name,
-		schema:         schema,
-		s3_sync_cancel: s3_cancel,
-		s3_syncer:      s3_syncer,
-		s3_order:       s3_order,
+		tracker:    sourceDirtyRemote,
+		lockable:   sourceStorage,
+		orderer:    orderer,
+		block_size: block_size,
+		num_blocks: num_blocks,
+		name:       conf.Name,
+		schema:     schema,
 	}
 
 	return sinfo, nil

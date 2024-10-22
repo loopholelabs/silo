@@ -307,12 +307,22 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 		// The provider we return should feed into our sync here.
 		prov = sourceStorage
 
+		var sync_lock sync.Mutex
+		var sync_running bool
 		var wg sync.WaitGroup
 
 		storage.AddEventNotification(prov, "start_sync", func(event_type storage.EventType, data storage.EventData) storage.EventReturnData {
+			sync_lock.Lock()
+			if sync_running {
+				sync_lock.Unlock()
+				return false
+			}
 			log.Info().Str("schema", device_schema).Msg("Starting sync")
-			// Sync happens here...
+			sync_running = true
 			wg.Add(1)
+			sync_lock.Unlock()
+
+			// Sync happens here...
 			go func() {
 				// Do this in a goroutine, but make sure it's cancelled etc
 				status, err := syncer.Sync(false, true)
@@ -324,10 +334,19 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 
 		// If the storage gets a "stop_sync", we should cancel the sync, and return the safe blocks
 		storage.AddEventNotification(prov, "stop_sync", func(event_type storage.EventType, data storage.EventData) storage.EventReturnData {
+			sync_lock.Lock()
+			if !sync_running {
+				sync_lock.Unlock()
+				return nil
+			}
 			log.Info().Str("schema", device_schema).Msg("Stopping sync")
 			cancelfn()
 			// WAIT HERE for the sync to finish
 			wg.Wait()
+			sync_running = false
+			sync_lock.Unlock()
+
+			// Get the list of safe blocks we can use.
 			blocks := syncer.GetSafeBlockMap()
 			// Translate these to locations so they can be sent to a destination...
 			alt_sources := make([]packets.AlternateSource, 0)
