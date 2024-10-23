@@ -295,10 +295,7 @@ func (i *S3Storage) WriteAt(buffer []byte, offset int64) (int, error) {
 				atomic.AddUint64(&i.metrics_blocks_w_bytes, uint64(obj.Size))
 				atomic.AddUint64(&i.metrics_blocks_w_time_ns, uint64(dtime.Nanoseconds()))
 			} else {
-				// Currently, if the context was canceled, we ignore it.
-				if !errors.Is(err, context.Canceled) {
-					return 0, err
-				}
+				return 0, err
 			}
 
 			return int(obj.Size), nil
