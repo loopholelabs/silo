@@ -72,7 +72,8 @@ func TestDeviceSync(t *testing.T) {
 	// Do a few write here, and wait a little bit for sync to happen...
 	for i := 0; i < num_blocks; i++ {
 		wbuffer := make([]byte, block_size)
-		rand.Read(wbuffer)
+		_, err = rand.Read(wbuffer)
+		assert.NoError(t, err)
 		n, err = prov.WriteAt(wbuffer, int64(i*block_size))
 		assert.NoError(t, err)
 		assert.Equal(t, 64*1024, n)
