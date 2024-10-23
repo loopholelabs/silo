@@ -19,6 +19,7 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/modules"
 	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
+	"github.com/rs/zerolog/log"
 )
 
 const (
@@ -214,6 +215,7 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 
 	// Optionally binlog this dev to a file
 	if ds.Binlog != "" {
+		log.Info().Str("schema", string(ds.Encode())).Msg("Setting up BinLog")
 		prov, err = modules.NewBinLog(prov, ds.Binlog)
 		if err != nil {
 			return nil, nil, err
