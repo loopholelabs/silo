@@ -103,6 +103,7 @@ type Migrator struct {
 	dedupe_writes            bool
 	recent_write_age         time.Duration
 	dest_content_check       func(offset int, buffer []byte) bool
+	start_of_migration       bool
 }
 
 func NewMigrator(source storage.TrackingStorageProvider,
@@ -138,6 +139,7 @@ func NewMigrator(source storage.TrackingStorageProvider,
 		cancel_writes:            config.Cancel_writes,
 		dedupe_writes:            config.Dedupe_writes,
 		dest_content_check:       config.Dest_content_check,
+		start_of_migration:       true,
 	}
 
 	if m.dest.Size() != m.source_tracker.Size() {
@@ -179,10 +181,28 @@ func (m *Migrator) SetMigratedBlock(block int) {
 	m.reportProgress(false)
 }
 
+func (m *Migrator) start_migration() {
+	/*
+		if m.start_of_migration {
+			m.start_of_migration = false
+
+			// Get the alternate sources here, tell the source we are migrating, tell the destination of the alternate_sources
+			r := storage.SendEvent(m.source_tracker, "stop_sync", nil)
+			for _, ret := range r {
+				as, ok := ret.([]packets.AlternateSource)
+				if ok && len(as) > 0 {
+					storage.SendEvent(m.dest, "alternate_sources", as)
+				}
+			}
+		}
+	*/
+}
+
 /**
  * Migrate storage to dest.
  */
 func (m *Migrator) Migrate(num_blocks int) error {
+	m.start_migration()
 	m.ctime = time.Now()
 
 	for b := 0; b < num_blocks; b++ {
@@ -260,6 +280,7 @@ func (m *Migrator) MigrateDirty(blocks []uint) error {
  * You can give a tracking ID which will turn up at block_fn on success
  */
 func (m *Migrator) MigrateDirtyWithId(blocks []uint, tid uint64) error {
+	m.start_migration()
 	for _, pos := range blocks {
 		i := &storage.BlockInfo{Block: int(pos), Type: storage.BlockTypeDirty}
 

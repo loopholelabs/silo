@@ -182,21 +182,7 @@ func runServe(ccmd *cobra.Command, args []string) {
 			wg.Add(1)
 			go func(index int, src *storageInfo) {
 
-				altSources := make([]packets.AlternateSource, 0)
-
-				if serve_sync_s3 {
-					// Get the alternate sources here...
-					r := storage.SendEvent(src.lockable, "stop_sync", nil)
-
-					for _, ret := range r {
-						as := ret.([]packets.AlternateSource)
-						altSources = append(altSources, as...)
-					}
-
-					fmt.Printf("Got alternateSources %v\n", altSources)
-				}
-
-				err := migrateDevice(uint32(index), src.name, pro, src, altSources)
+				err := migrateDevice(uint32(index), src.name, pro, src)
 				if err != nil {
 					fmt.Printf("There was an issue migrating the storage %d %v\n", index, err)
 				}
@@ -300,7 +286,6 @@ func setupStorageDevice(conf *config.DeviceSchema) (*storageInfo, error) {
 func migrateDevice(dev_id uint32, name string,
 	pro protocol.Protocol,
 	sinfo *storageInfo,
-	altSources []packets.AlternateSource,
 ) error {
 	size := sinfo.lockable.Size()
 	dest := protocol.NewToProtocol(uint64(size), dev_id, pro)
@@ -312,6 +297,15 @@ func migrateDevice(dev_id uint32, name string,
 	if err != nil {
 		return err
 	}
+
+	altSources := make([]packets.AlternateSource, 0)
+	// Get the alternate sources here...
+	r := storage.SendEvent(sinfo.lockable, "stop_sync", nil)
+	for _, ret := range r {
+		as := ret.([]packets.AlternateSource)
+		altSources = append(altSources, as...)
+	}
+	fmt.Printf("Got alternateSources %v\n", altSources)
 
 	if len(altSources) > 0 {
 		// Send list of alternate sources in a good order (Least volatile first)
