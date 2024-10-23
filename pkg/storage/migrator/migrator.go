@@ -20,6 +20,7 @@ type MigratorConfig struct {
 	Unlocker_handler func()
 	Error_handler    func(b *storage.BlockInfo, err error)
 	Progress_handler func(p *MigrationProgress)
+	Block_handler    func(b *storage.BlockInfo, id uint64, block []byte)
 	Concurrency      map[int]int
 	Integrity        bool
 	Cancel_writes    bool
@@ -34,6 +35,7 @@ func NewMigratorConfig() *MigratorConfig {
 		Unlocker_handler: func() {},
 		Error_handler:    func(b *storage.BlockInfo, err error) {},
 		Progress_handler: func(p *MigrationProgress) {},
+		Block_handler:    func(b *storage.BlockInfo, id uint64, data []byte) {},
 		Concurrency: map[int]int{
 			storage.BlockTypeAny:      32,
 			storage.BlockTypeStandard: 32,
@@ -73,6 +75,7 @@ type Migrator struct {
 	source_unlock_fn         func()
 	error_fn                 func(block *storage.BlockInfo, err error)
 	progress_fn              func(*MigrationProgress)
+	block_fn                 func(block *storage.BlockInfo, id uint64, data []byte)
 	progress_lock            sync.Mutex
 	progress_last            time.Time
 	progress_last_status     *MigrationProgress
@@ -110,6 +113,7 @@ func NewMigrator(source storage.TrackingStorageProvider,
 		source_unlock_fn:         config.Unlocker_handler,
 		error_fn:                 config.Error_handler,
 		progress_fn:              config.Progress_handler,
+		block_fn:                 config.Block_handler,
 		block_size:               config.Block_size,
 		num_blocks:               num_blocks,
 		metric_blocks_migrated:   0,
@@ -189,7 +193,7 @@ func (m *Migrator) Migrate(num_blocks int) error {
 		m.wg.Add(1)
 
 		go func(block_no *storage.BlockInfo) {
-			err := m.migrateBlock(block_no.Block)
+			_, err := m.migrateBlock(block_no.Block)
 			if err != nil {
 				m.error_fn(block_no, err)
 			}
@@ -241,6 +245,14 @@ func (m *Migrator) Unlock() {
  * An attempt is made to cancel any existing writes for the blocks first.
  */
 func (m *Migrator) MigrateDirty(blocks []uint) error {
+	return m.MigrateDirtyWithId(blocks, 0)
+}
+
+/**
+ *
+ * You can give a tracking ID which will turn up at block_fn on success
+ */
+func (m *Migrator) MigrateDirtyWithId(blocks []uint, tid uint64) error {
 	for _, pos := range blocks {
 		i := &storage.BlockInfo{Block: int(pos), Type: storage.BlockTypeDirty}
 
@@ -271,10 +283,12 @@ func (m *Migrator) MigrateDirty(blocks []uint) error {
 
 		m.clean_blocks.ClearBit(int(pos))
 
-		go func(block_no *storage.BlockInfo) {
-			err := m.migrateBlock(block_no.Block)
+		go func(block_no *storage.BlockInfo, track_id uint64) {
+			data, err := m.migrateBlock(block_no.Block)
 			if err != nil {
 				m.error_fn(block_no, err)
+			} else {
+				m.block_fn(block_no, track_id, data)
 			}
 
 			m.wg.Done()
@@ -283,7 +297,7 @@ func (m *Migrator) MigrateDirty(blocks []uint) error {
 				cc = m.concurrency[storage.BlockTypeAny]
 			}
 			<-cc
-		}(i)
+		}(i, tid)
 
 	}
 	return nil
@@ -338,10 +352,37 @@ func (m *Migrator) reportProgress(forced bool) {
 }
 
 /**
+ * Get overall status of the migration
+ *
+ */
+func (m *Migrator) Status() *MigrationProgress {
+	m.progress_lock.Lock()
+	defer m.progress_lock.Unlock()
+
+	migrated := m.migrated_blocks.Count(0, uint(m.num_blocks))
+	perc_mig := float64(migrated*100) / float64(m.num_blocks)
+
+	completed := m.clean_blocks.Count(0, uint(m.num_blocks))
+	perc_complete := float64(completed*100) / float64(m.num_blocks)
+
+	return &MigrationProgress{
+		Total_blocks:            m.num_blocks,
+		Migrated_blocks:         migrated,
+		Migrated_blocks_perc:    perc_mig,
+		Ready_blocks:            completed,
+		Ready_blocks_perc:       perc_complete,
+		Active_blocks:           m.moving_blocks.Count(0, uint(m.num_blocks)),
+		Total_Canceled_blocks:   int(atomic.LoadInt64(&m.metric_blocks_canceled)),
+		Total_Migrated_blocks:   int(atomic.LoadInt64(&m.metric_blocks_migrated)),
+		Total_Duplicated_blocks: int(atomic.LoadInt64(&m.metric_blocks_duplicates)),
+	}
+}
+
+/**
  * Migrate a single block to dest
  *
  */
-func (m *Migrator) migrateBlock(block int) error {
+func (m *Migrator) migrateBlock(block int) ([]byte, error) {
 	m.block_locks[block].Lock()
 	defer m.block_locks[block].Unlock()
 
@@ -354,15 +395,13 @@ func (m *Migrator) migrateBlock(block int) error {
 	// Read from source
 	n, err := m.source_tracker.ReadAt(buff, int64(offset))
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	var idmap map[uint64]uint64
 	if m.source_mapped != nil {
 		idmap = m.source_mapped.GetMapForSourceRange(int64(offset), m.block_size)
 	}
-
-	// TODO: Need to figure out how we want to route the WriteAtWithMap here...
 
 	// If it was a partial read, truncate
 	buff = buff[:n]
@@ -373,11 +412,12 @@ func (m *Migrator) migrateBlock(block int) error {
 		// Now write it to destStorage
 		n, err = m.dest.WriteAt(buff, int64(offset))
 	}
+
 	if n != len(buff) || err != nil {
 		if errors.Is(err, context.Canceled) {
 			atomic.AddInt64(&m.metric_blocks_canceled, 1)
 		}
-		return err
+		return nil, err
 	}
 
 	// Set the last successful write for this block
@@ -394,5 +434,5 @@ func (m *Migrator) migrateBlock(block int) error {
 	m.clean_blocks.SetBit(block)
 
 	m.reportProgress(false)
-	return nil
+	return buff, nil
 }
