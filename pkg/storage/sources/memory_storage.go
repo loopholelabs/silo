@@ -2,6 +2,8 @@ package sources
 
 import (
 	"sync"
+
+	"github.com/loopholelabs/silo/pkg/storage"
 )
 
 /**
@@ -10,6 +12,7 @@ import (
  *
  */
 type MemoryStorage struct {
+	storage.StorageProviderWithEvents
 	data []byte
 	lock sync.RWMutex
 }

@@ -8,7 +8,17 @@ import (
 )
 
 type Raid struct {
+	storage.StorageProviderWithEvents
 	prov []storage.StorageProvider
+}
+
+// Relay events to embedded StorageProvider
+func (i *Raid) SendEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
+	data := i.StorageProviderWithEvents.SendEvent(event_type, event_data)
+	for _, pr := range i.prov {
+		data = append(data, storage.SendEvent(pr, event_type, event_data)...)
+	}
+	return data
 }
 
 func NewRaid(prov []storage.StorageProvider) (*Raid, error) {

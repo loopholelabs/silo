@@ -5,6 +5,8 @@ import (
 	"errors"
 	"os"
 	"sync"
+
+	"github.com/loopholelabs/silo/pkg/storage"
 )
 
 const BLOCK_HEADER_SIZE = 8
@@ -18,6 +20,7 @@ const BLOCK_HEADER_SIZE = 8
  *
  */
 type FileStorageSparse struct {
+	storage.StorageProviderWithEvents
 	f            string
 	fp           *os.File
 	size         uint64

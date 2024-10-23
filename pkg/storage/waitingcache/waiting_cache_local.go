@@ -1,14 +1,22 @@
 package waitingcache
 
 import (
+	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/util"
 )
 
 type WaitingCacheLocal struct {
+	storage.StorageProviderWithEvents
 	wc         *WaitingCache
 	available  util.Bitfield
 	NeedAt     func(offset int64, length int32)
 	DontNeedAt func(offset int64, length int32)
+}
+
+// Relay events to embedded StorageProvider
+func (wcl *WaitingCacheLocal) SendEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
+	data := wcl.StorageProviderWithEvents.SendEvent(event_type, event_data)
+	return append(data, storage.SendEvent(wcl.wc.prov, event_type, event_data)...)
 }
 
 func (wcl *WaitingCacheLocal) ReadAt(buffer []byte, offset int64) (int, error) {

@@ -13,9 +13,19 @@ import (
 )
 
 type ShardedStorage struct {
+	storage.StorageProviderWithEvents
 	blocks     []storage.StorageProvider
 	block_size int
 	size       int
+}
+
+// Relay events to embedded StorageProvider
+func (i *ShardedStorage) SendEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
+	data := i.StorageProviderWithEvents.SendEvent(event_type, event_data)
+	for _, pr := range i.blocks {
+		data = append(data, storage.SendEvent(pr, event_type, event_data)...)
+	}
+	return data
 }
 
 func NewShardedStorage(size int, blocksize int, creator func(index int, size int) (storage.StorageProvider, error)) (*ShardedStorage, error) {
