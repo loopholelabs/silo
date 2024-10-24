@@ -158,11 +158,11 @@ func (s *Syncer) Sync(sync_all_first bool, continuous bool) (*MigrationProgress,
 		hash := sha256.Sum256(data)
 
 		s.block_status_lock.Lock()
-		defer s.block_status_lock.Unlock()
 		if id > s.block_status[b.Block].Current_ID {
 			s.block_status[b.Block].Current_ID = id
 			s.block_status[b.Block].Current_hash = hash
 		}
+		s.block_status_lock.Unlock()
 	}
 
 	mig, err := NewMigrator(s.config.Tracker, s.config.Destination, s.config.Orderer, conf)
