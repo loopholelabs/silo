@@ -21,6 +21,9 @@ type FromProtocol struct {
 	present_lock       sync.Mutex
 	present            *util.Bitfield
 	present_block_size int
+
+	alternateSourcesLock sync.Mutex
+	alternateSources     []packets.AlternateSource
 }
 
 func NewFromProtocol(ctx context.Context, dev uint32, provFactory func(*packets.DevInfo) storage.StorageProvider, protocol Protocol) *FromProtocol {
@@ -35,6 +38,22 @@ func NewFromProtocol(ctx context.Context, dev uint32, provFactory func(*packets.
 	return fp
 }
 
+func (fp *FromProtocol) GetAlternateSources() []packets.AlternateSource {
+	fp.alternateSourcesLock.Lock()
+	defer fp.alternateSourcesLock.Unlock()
+
+	// If we didn't get a WriteAt, then return the alternateSource for a block, and mark it as present.
+	ret := make([]packets.AlternateSource, 0)
+	for _, as := range fp.alternateSources {
+		if !fp.data_present(int(as.Offset), int(as.Length)) {
+			ret = append(ret, as)
+			// Mark the range as present if we return it here.
+			fp.mark_range_present(int(as.Offset), int(as.Length))
+		}
+	}
+	return ret
+}
+
 func (fp *FromProtocol) GetDataPresent() int {
 	fp.present_lock.Lock()
 	defer fp.present_lock.Unlock()
@@ -44,6 +63,22 @@ func (fp *FromProtocol) GetDataPresent() int {
 		size = int(fp.prov.Size())
 	}
 	return size
+}
+
+func (fp *FromProtocol) data_present(offset int, length int) bool {
+	// Translate to full blocks...
+	end := uint64(offset + length)
+	if end > fp.prov.Size() {
+		end = fp.prov.Size()
+	}
+
+	b_start := uint(offset / fp.present_block_size)
+	b_end := uint((end-1)/uint64(fp.present_block_size)) + 1
+
+	// Check they're all there
+	fp.present_lock.Lock()
+	defer fp.present_lock.Unlock()
+	return fp.present.BitsSet(b_start, b_end)
 }
 
 func (fp *FromProtocol) mark_range_present(offset int, length int) {
@@ -181,7 +216,7 @@ func (fp *FromProtocol) HandleDevInfo() error {
 
 	fp.init <- true // Confirm things have been initialized for this device.
 
-	// Internal - route any AlternateSources packets through to the device here...
+	// Internal - store alternateSources here...
 	go func() {
 		for {
 			_, data, err := fp.protocol.WaitForCommand(fp.dev, packets.COMMAND_ALTERNATE_SOURCES)
@@ -192,8 +227,11 @@ func (fp *FromProtocol) HandleDevInfo() error {
 			if err != nil {
 				return
 			}
-			// Now send them to the device, so it can save them, ready for pulling
-			storage.SendSiloEvent(fp.prov, "sources", altSources)
+
+			// For now just set it. It only gets sent ONCE at the start of a migration at the moment.
+			fp.alternateSourcesLock.Lock()
+			fp.alternateSources = altSources
+			fp.alternateSourcesLock.Unlock()
 		}
 	}()
 
@@ -309,14 +347,13 @@ func (fp *FromProtocol) HandleWriteAtHash() error {
 			return err
 		}
 
-		offset, length, _, err := packets.DecodeWriteAtHash(data)
+		_, length, _, err := packets.DecodeWriteAtHash(data)
 		if err != nil {
 			return err
 		}
 
-		// TODO: We should doublecheck offset/hash here...
-
-		fp.mark_range_present(int(offset), int(length))
+		// For now, we will simply ack. We do NOT mark it as present. That part will be done when the alternateSources is retrieved.
+		// fp.mark_range_present(int(offset), int(length))
 
 		war := &packets.WriteAtResponse{
 			Error: nil,

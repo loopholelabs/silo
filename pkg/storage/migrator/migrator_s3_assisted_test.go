@@ -24,15 +24,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-/**
- * Test a simple migration through a pipe. No writer no reader.
- *
- */
-func TestMigratorS3Assisted(t *testing.T) {
+func setupDevices(t *testing.T, size int, blockSize int) (storage.StorageProvider, storage.StorageProvider) {
 	PORT_9000 := testutils.SetupMinio(t.Cleanup)
-
-	size := 1024 * 1024
-	blockSize := 64 * 1024
 
 	testSyncSchemaSrc := fmt.Sprintf(`
 	device TestSync {
@@ -100,20 +93,31 @@ func TestMigratorS3Assisted(t *testing.T) {
 	require.Equal(t, 1, len(devSrc))
 	require.Equal(t, 1, len(devDest))
 
-	prov := devSrc["TestSync"].Provider
+	return devSrc["TestSync"].Provider, devDest["TestSync"].Provider
+}
+
+/**
+ * Test a simple migration through a pipe. No writer no reader.
+ *
+ */
+func TestMigratorS3Assisted(t *testing.T) {
+	size := 1024 * 1024
+	blockSize := 64 * 1024
+
+	provSrc, provDest := setupDevices(t, size, blockSize)
 
 	//
-	ok := storage.SendSiloEvent(prov, "sync.start", nil)
+	ok := storage.SendSiloEvent(provSrc, "sync.start", nil)
 	assert.Equal(t, 1, len(ok))
 	assert.True(t, ok[0].(bool))
 
 	num_blocks := (size + blockSize - 1) / blockSize
-	sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(prov, blockSize)
+	sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(provSrc, blockSize)
 	sourceStorage := modules.NewLockable(sourceDirtyLocal)
 
 	// Set up some data here.
 	buffer := make([]byte, size)
-	_, err = crand.Read(buffer)
+	_, err := crand.Read(buffer)
 	assert.NoError(t, err)
 
 	n, err := sourceStorage.WriteAt(buffer, 0)
@@ -136,7 +140,7 @@ func TestMigratorS3Assisted(t *testing.T) {
 
 	initDev := func(ctx context.Context, p protocol.Protocol, dev uint32) {
 		destStorageFactory := func(di *packets.DevInfo) storage.StorageProvider {
-			return devDest["TestSync"].Provider
+			return provDest
 		}
 
 		// Pipe from the protocol to destWaiting
@@ -189,22 +193,163 @@ func TestMigratorS3Assisted(t *testing.T) {
 	assert.NoError(t, err)
 
 	// This will GRAB the data in alternateSources from S3, and return when it's done.
-	storage.SendSiloEvent(devDest["TestSync"].Provider, "sync.start", nil)
+	storage.SendSiloEvent(provDest, "sync.start", destFrom.GetAlternateSources())
 
 	// This will end with migration completed, and consumer Locked.
-	eq, err := storage.Equals(devSrc["TestSync"].Provider, devDest["TestSync"].Provider, blockSize)
+	eq, err := storage.Equals(provSrc, provDest, blockSize)
 	assert.NoError(t, err)
 	assert.True(t, eq)
 
-	assert.Equal(t, int(prov.Size()), destFrom.GetDataPresent())
+	// All the data should be there.
+	assert.Equal(t, int(provSrc.Size()), destFrom.GetDataPresent())
 
 	// Get some statistics from the source
-	srcStats := storage.SendSiloEvent(devSrc["TestSync"].Provider, "sync.status", nil)
+	srcStats := storage.SendSiloEvent(provSrc, "sync.status", nil)
 	require.Equal(t, 1, len(srcStats))
 	srcMetrics := srcStats[0].(*sources.S3Metrics)
 
 	// Get some statistics from the destination puller
-	destStats := storage.SendSiloEvent(devDest["TestSync"].Provider, "sync.status", nil)
+	destStats := storage.SendSiloEvent(provDest, "sync.status", nil)
+	require.Equal(t, 1, len(destStats))
+	destMetrics := destStats[0].(*sources.S3Metrics)
+
+	// The source should have pushed some blocks to S3 but not all.
+	assert.Greater(t, int(srcMetrics.BlocksWCount), 0)
+	assert.Less(t, int(srcMetrics.BlocksWCount), num_blocks)
+
+	// Do some asserts on the S3Metrics... It should have pulled some from S3, but not all
+	assert.Greater(t, int(destMetrics.BlocksRCount), 0)
+	assert.Less(t, int(destMetrics.BlocksRCount), num_blocks)
+
+}
+
+/**
+ * Once we stop the sync, we change the source. It shouldn't use the alternate source for the data in question
+ *
+ */
+func TestMigratorS3AssistedChangeSource(t *testing.T) {
+	size := 1024 * 1024
+	blockSize := 64 * 1024
+
+	provSrc, provDest := setupDevices(t, size, blockSize)
+
+	//
+	ok := storage.SendSiloEvent(provSrc, "sync.start", nil)
+	assert.Equal(t, 1, len(ok))
+	assert.True(t, ok[0].(bool))
+
+	num_blocks := (size + blockSize - 1) / blockSize
+	sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(provSrc, blockSize)
+	sourceStorage := modules.NewLockable(sourceDirtyLocal)
+
+	// Set up some data here.
+	buffer := make([]byte, size)
+	_, err := crand.Read(buffer)
+	assert.NoError(t, err)
+
+	n, err := sourceStorage.WriteAt(buffer, 0)
+	assert.NoError(t, err)
+	assert.Equal(t, len(buffer), n)
+
+	// Wait for the sync to do some bits.
+	time.Sleep(500 * time.Millisecond)
+
+	orderer := blocks.NewAnyBlockOrder(num_blocks, nil)
+	orderer.AddAll()
+
+	// START moving data from sourceStorage to destStorage
+
+	var destFrom *protocol.FromProtocol
+
+	// Create a simple pipe
+	r1, w1 := io.Pipe()
+	r2, w2 := io.Pipe()
+
+	initDev := func(ctx context.Context, p protocol.Protocol, dev uint32) {
+		destStorageFactory := func(di *packets.DevInfo) storage.StorageProvider {
+			return provDest
+		}
+
+		// Pipe from the protocol to destWaiting
+		destFrom = protocol.NewFromProtocol(ctx, dev, destStorageFactory, p)
+		go func() {
+			_ = destFrom.HandleReadAt()
+		}()
+		go func() {
+			_ = destFrom.HandleWriteAt()
+		}()
+		go func() {
+			_ = destFrom.HandleWriteAtHash()
+		}()
+		go func() {
+			_ = destFrom.HandleDevInfo()
+		}()
+	}
+
+	prSource := protocol.NewProtocolRW(context.TODO(), []io.Reader{r1}, []io.Writer{w2}, nil)
+	prDest := protocol.NewProtocolRW(context.TODO(), []io.Reader{r2}, []io.Writer{w1}, initDev)
+
+	go func() {
+		_ = prSource.Handle()
+	}()
+	go func() {
+		_ = prDest.Handle()
+	}()
+
+	// Pipe a destination to the protocol
+	destination := protocol.NewToProtocol(sourceDirtyRemote.Size(), 17, prSource)
+
+	err = destination.SendDevInfo("test", uint32(blockSize), "")
+	assert.NoError(t, err)
+
+	conf := migrator.NewMigratorConfig().WithBlockSize(blockSize)
+	conf.Locker_handler = sourceStorage.Lock
+	conf.Unlocker_handler = sourceStorage.Unlock
+
+	mig, err := migrator.NewMigrator(sourceDirtyRemote,
+		destination,
+		orderer,
+		conf)
+
+	assert.NoError(t, err)
+
+	err = mig.Migrate(0) // This will *start* the migration, which will stop the sync and snapshot alternateSources
+	assert.NoError(t, err)
+
+	// Now do some writes to source - we'll overwrite half the data, which will have to go p2p instead of S3.
+	buffer = make([]byte, size/2)
+	_, err = crand.Read(buffer)
+	assert.NoError(t, err)
+
+	n, err = sourceStorage.WriteAt(buffer, 0)
+	assert.NoError(t, err)
+	assert.Equal(t, len(buffer), n)
+
+	// Do the migration here...
+	err = mig.Migrate(num_blocks)
+	assert.NoError(t, err)
+
+	err = mig.WaitForCompletion()
+	assert.NoError(t, err)
+
+	// This will GRAB the data in alternateSources from S3, and return when it's done.
+	storage.SendSiloEvent(provDest, "sync.start", destFrom.GetAlternateSources())
+
+	// This will end with migration completed, and consumer Locked.
+	eq, err := storage.Equals(provSrc, provDest, blockSize)
+	assert.NoError(t, err)
+	assert.True(t, eq)
+
+	// All the data should be there.
+	assert.Equal(t, int(provSrc.Size()), destFrom.GetDataPresent())
+
+	// Get some statistics from the source
+	srcStats := storage.SendSiloEvent(provSrc, "sync.status", nil)
+	require.Equal(t, 1, len(srcStats))
+	srcMetrics := srcStats[0].(*sources.S3Metrics)
+
+	// Get some statistics from the destination puller
+	destStats := storage.SendSiloEvent(provDest, "sync.status", nil)
 	require.Equal(t, 1, len(destStats))
 	destMetrics := destStats[0].(*sources.S3Metrics)
 
