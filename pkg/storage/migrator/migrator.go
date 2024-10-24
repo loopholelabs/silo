@@ -193,9 +193,11 @@ func (m *Migrator) Migrate(num_blocks int) error {
 		m.wg.Add(1)
 
 		go func(block_no *storage.BlockInfo) {
-			_, err := m.migrateBlock(block_no.Block)
+			data, err := m.migrateBlock(block_no.Block)
 			if err != nil {
 				m.error_fn(block_no, err)
+			} else {
+				m.block_fn(block_no, 0, data)
 			}
 
 			m.wg.Done()
