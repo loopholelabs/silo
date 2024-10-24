@@ -302,22 +302,25 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 		var sync_lock sync.Mutex
 		var sync_running bool
 		var wg sync.WaitGroup
-		var alternateSources []packets.AlternateSource
 
 		// If the storage gets a "sync.start", we should start syncing to S3.
 		storage.AddSiloEventNotification(prov, "sync.start", func(event_type storage.EventType, data storage.EventData) storage.EventReturnData {
-			// TODO: Pull these in parallel
-			for _, as := range alternateSources {
-				buffer := make([]byte, as.Length)
-				n, err := s3dest.ReadAt(buffer, as.Offset)
-				if err != nil || n != int(as.Length) {
-					panic(err)
-				}
+			if data != nil {
+				alternateSources := data.([]packets.AlternateSource)
 
-				// TODO: We should probably check the hash here...
-				n, err = prov.WriteAt(buffer, as.Offset)
-				if err != nil || n != int(as.Length) {
-					panic(err)
+				// TODO: Pull these in parallel
+				for _, as := range alternateSources {
+					buffer := make([]byte, as.Length)
+					n, err := s3dest.ReadAt(buffer, as.Offset)
+					if err != nil || n != int(as.Length) {
+						panic(err)
+					}
+
+					// TODO: We should probably check the hash here...
+					n, err = prov.WriteAt(buffer, as.Offset)
+					if err != nil || n != int(as.Length) {
+						panic(err)
+					}
 				}
 			}
 
@@ -372,12 +375,6 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 			}
 
 			return alt_sources
-		})
-
-		// If the storage gets a "sources", this is the list of data that's on S3. We could start pulling it now, or wait until sync.start is called.
-		storage.AddSiloEventNotification(prov, "sources", func(event_type storage.EventType, data storage.EventData) storage.EventReturnData {
-			alternateSources = data.([]packets.AlternateSource)
-			return nil
 		})
 	}
 

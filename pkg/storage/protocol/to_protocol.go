@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
 	"errors"
@@ -136,16 +137,18 @@ func (i *ToProtocol) WriteAt(buffer []byte, offset int64) (int, error) {
 	var id uint32
 	var err error
 
-	// TODO: If it's in the alternateSources list, we only need to send a WriteAtHash command.
-	// For now, we only match exact block ranges.
+	// If it's in the alternateSources list, we only need to send a WriteAtHash command.
+	// For now, we only match exact block ranges here.
 	dontSendData := false
 	for _, as := range i.alternateSources {
 		if as.Offset == offset && as.Length == int64(len(buffer)) {
-			// We should check the hash here as well...
-
-			data := packets.EncodeWriteAtHash(as.Offset, as.Length, as.Hash[:])
-			id, err = i.protocol.SendPacket(i.dev, ID_PICK_ANY, data)
-			dontSendData = true
+			// Only allow this if the hash is still correct/current for the data.
+			hash := sha256.Sum256(buffer)
+			if bytes.Equal(hash[:], as.Hash[:]) {
+				data := packets.EncodeWriteAtHash(as.Offset, as.Length, as.Hash[:])
+				id, err = i.protocol.SendPacket(i.dev, ID_PICK_ANY, data)
+				dontSendData = true
+			}
 			break
 		}
 	}
