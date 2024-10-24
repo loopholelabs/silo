@@ -13,70 +13,61 @@ import (
 	"github.com/loopholelabs/logging/types"
 )
 
-type Sync_config struct {
-	Logger             types.RootLogger
-	Name               string
-	Tracker            *dirtytracker.DirtyTrackerRemote // A dirty block tracker
-	Lockable           storage.LockableStorageProvider  // Lockable
-	Locker_handler     func()
-	Unlocker_handler   func()
-	Destination        storage.StorageProvider
-	Orderer            storage.BlockOrder
-	Dirty_check_period time.Duration
-	Dirty_block_getter func() []uint
+type SyncConfig struct {
+	Logger           types.RootLogger
+	Name             string
+	Tracker          *dirtytracker.DirtyTrackerRemote // A dirty block tracker
+	Lockable         storage.LockableStorageProvider  // Lockable
+	LockerHandler    func()
+	UnlockerHandler  func()
+	Destination      storage.StorageProvider
+	Orderer          storage.BlockOrder
+	DirtyCheckPeriod time.Duration
+	DirtyBlockGetter func() []uint
 
-	// NB If you use dirty_block_shift here, you'll need to also shift the block size in DirtyTracker constructor
-	//	getter := func() []uint {
-	//		return Tracker.GetDirtyBlocks(Dirty_block_max_age, Dirty_limit, Dirty_block_shift, Dirty_min_changed)
-	//	}
-	// Dirty_block_max_age time.Duration
-	// Dirty_limit         int
-	// Dirty_block_shift   int
-	// Dirty_min_changed   int
+	BlockSize int
 
-	Block_size int
+	HashesHandler   func(map[uint][32]byte)
+	ProgressHandler func(p *MigrationProgress)
+	ErrorHandler    func(b *storage.BlockInfo, err error)
 
-	Hashes_handler   func(map[uint][32]byte)
-	Progress_handler func(p *MigrationProgress)
-	Error_handler    func(b *storage.BlockInfo, err error)
-
-	Concurrency   map[int]int
-	Integrity     bool
-	Cancel_writes bool
-	Dedupe_writes bool
+	Concurrency  map[int]int
+	Integrity    bool
+	CancelWrites bool
+	DedupeWrites bool
 }
 
 type Syncer struct {
-	ctx               context.Context
-	config            *Sync_config
-	block_status_lock sync.Mutex
-	block_status      []Block_status
-	current_dirty_id  uint64
+	ctx             context.Context
+	config          *SyncConfig
+	blockStatusLock sync.Mutex
+	blockStatus     []Block_status
+	currentDirtyID  uint64
 }
 
 type Block_status struct {
-	Updating_ID  uint64
-	Current_ID   uint64
-	Current_hash [sha256.Size]byte
+	UpdatingID  uint64
+	CurrentID   uint64
+	CurrentHash [sha256.Size]byte
 }
 
-func NewSyncer(ctx context.Context, sinfo *Sync_config) *Syncer {
-	num_blocks := (sinfo.Tracker.Size() + uint64(sinfo.Block_size) - 1) / uint64(sinfo.Block_size)
+func NewSyncer(ctx context.Context, sinfo *SyncConfig) *Syncer {
+	numBlocks := (sinfo.Tracker.Size() + uint64(sinfo.BlockSize) - 1) / uint64(sinfo.BlockSize)
 
-	status := make([]Block_status, num_blocks)
-	for b := 0; b < int(num_blocks); b++ {
+	status := make([]Block_status, numBlocks)
+	for b := 0; b < int(numBlocks); b++ {
 		status[b] = Block_status{
-			Updating_ID:  0,
-			Current_ID:   0,
-			Current_hash: [32]byte{},
+			UpdatingID:  0,
+			CurrentID:   0,
+			CurrentHash: [32]byte{},
 		}
 	}
 
 	return &Syncer{
-		ctx:              ctx,
-		config:           sinfo,
-		block_status:     status,
-		current_dirty_id: 0,
+		ctx:            ctx,
+		config:         sinfo,
+		blockStatus:    status,
+		currentDirtyID: 0,
 	}
 }
 
@@ -87,9 +78,9 @@ func NewSyncer(ctx context.Context, sinfo *Sync_config) *Syncer {
 func (s *Syncer) GetSafeBlockMap() map[uint][sha256.Size]byte {
 	blocks := make(map[uint][sha256.Size]byte, 0)
 
-	for b, status := range s.block_status {
-		if status.Current_ID == status.Updating_ID {
-			blocks[uint(b)] = status.Current_hash
+	for b, status := range s.blockStatus {
+		if status.CurrentID == status.UpdatingID {
+			blocks[uint(b)] = status.CurrentHash
 		}
 	}
 	return blocks
@@ -99,18 +90,18 @@ func (s *Syncer) GetSafeBlockMap() map[uint][sha256.Size]byte {
  *
  *
  */
-func (s *Syncer) Sync(sync_all_first bool, continuous bool) (*MigrationProgress, error) {
-	conf := NewMigratorConfig().WithBlockSize(s.config.Block_size)
+func (s *Syncer) Sync(syncAllFirst bool, continuous bool) (*MigrationProgress, error) {
+	conf := NewMigratorConfig().WithBlockSize(s.config.BlockSize)
 	conf.Locker_handler = func() {
-		if s.config.Locker_handler != nil {
-			s.config.Locker_handler()
+		if s.config.LockerHandler != nil {
+			s.config.LockerHandler()
 		} else {
 			s.config.Lockable.Lock()
 		}
 	}
 	conf.Unlocker_handler = func() {
-		if s.config.Unlocker_handler != nil {
-			s.config.Unlocker_handler()
+		if s.config.UnlockerHandler != nil {
+			s.config.UnlockerHandler()
 		} else {
 			s.config.Lockable.Unlock()
 		}
@@ -123,8 +114,8 @@ func (s *Syncer) Sync(sync_all_first bool, continuous bool) (*MigrationProgress,
 	}
 
 	conf.Integrity = s.config.Integrity
-	conf.Cancel_writes = s.config.Cancel_writes
-	conf.Dedupe_writes = s.config.Dedupe_writes
+	conf.Cancel_writes = s.config.CancelWrites
+	conf.Dedupe_writes = s.config.DedupeWrites
 
 	conf.Progress_handler = func(p *MigrationProgress) {
 		if s.config.Logger != nil {
@@ -140,8 +131,8 @@ func (s *Syncer) Sync(sync_all_first bool, continuous bool) (*MigrationProgress,
 				Int("total_duplicated_blocks", p.Total_Duplicated_blocks).
 				Msg("Continuous sync progress")
 		}
-		if s.config.Progress_handler != nil {
-			s.config.Progress_handler(p)
+		if s.config.ProgressHandler != nil {
+			s.config.ProgressHandler(p)
 		}
 	}
 	conf.Error_handler = func(b *storage.BlockInfo, err error) {
@@ -153,8 +144,8 @@ func (s *Syncer) Sync(sync_all_first bool, continuous bool) (*MigrationProgress,
 				Int("type", b.Type).
 				Msg("Continuous sync error")
 		}
-		if s.config.Error_handler != nil {
-			s.config.Error_handler(b, err)
+		if s.config.ErrorHandler != nil {
+			s.config.ErrorHandler(b, err)
 		}
 	}
 
@@ -162,12 +153,12 @@ func (s *Syncer) Sync(sync_all_first bool, continuous bool) (*MigrationProgress,
 	conf.Block_handler = func(b *storage.BlockInfo, id uint64, data []byte) {
 		hash := sha256.Sum256(data)
 
-		s.block_status_lock.Lock()
-		if id > s.block_status[b.Block].Current_ID {
-			s.block_status[b.Block].Current_ID = id
-			s.block_status[b.Block].Current_hash = hash
+		s.blockStatusLock.Lock()
+		if id > s.blockStatus[b.Block].CurrentID {
+			s.blockStatus[b.Block].CurrentID = id
+			s.blockStatus[b.Block].CurrentHash = hash
 		}
-		s.block_status_lock.Unlock()
+		s.blockStatusLock.Unlock()
 	}
 
 	mig, err := NewMigrator(s.config.Tracker, s.config.Destination, s.config.Orderer, conf)
@@ -175,11 +166,11 @@ func (s *Syncer) Sync(sync_all_first bool, continuous bool) (*MigrationProgress,
 		return nil, err
 	}
 
-	num_blocks := (s.config.Tracker.Size() + uint64(s.config.Block_size) - 1) / uint64(s.config.Block_size)
+	numBlocks := (s.config.Tracker.Size() + uint64(s.config.BlockSize) - 1) / uint64(s.config.BlockSize)
 
-	if sync_all_first {
+	if syncAllFirst {
 		// Now do the initial migration...
-		err = mig.Migrate(int(num_blocks))
+		err = mig.Migrate(int(numBlocks))
 		if err != nil {
 			return nil, err
 		}
@@ -190,13 +181,13 @@ func (s *Syncer) Sync(sync_all_first bool, continuous bool) (*MigrationProgress,
 			return nil, err
 		}
 
-		if s.config.Hashes_handler != nil {
+		if s.config.HashesHandler != nil {
 			hashes := mig.GetHashes()
-			s.config.Hashes_handler(hashes)
+			s.config.HashesHandler(hashes)
 		}
 	} else {
 		// We don't need to do an initial migration.
-		for b := 0; b < int(num_blocks); b++ {
+		for b := 0; b < int(numBlocks); b++ {
 			mig.SetMigratedBlock(b)
 		}
 		// Track changes for everything.
@@ -216,16 +207,16 @@ func (s *Syncer) Sync(sync_all_first bool, continuous bool) (*MigrationProgress,
 			return mig.Status(), s.ctx.Err()
 		default:
 		}
-		blocks := mig.GetLatestDirtyFunc(s.config.Dirty_block_getter)
+		blocks := mig.GetLatestDirtyFunc(s.config.DirtyBlockGetter)
 
 		if blocks != nil {
-			id := atomic.AddUint64(&s.current_dirty_id, 1)
+			id := atomic.AddUint64(&s.currentDirtyID, 1)
 			// Update block_updates with the new ID for these blocks
-			s.block_status_lock.Lock()
+			s.blockStatusLock.Lock()
 			for _, b := range blocks {
-				s.block_status[b].Updating_ID = id
+				s.blockStatus[b].UpdatingID = id
 			}
-			s.block_status_lock.Unlock()
+			s.blockStatusLock.Unlock()
 			err = mig.MigrateDirtyWithId(blocks, id)
 			if err != nil {
 				return mig.Status(), err
@@ -238,6 +229,6 @@ func (s *Syncer) Sync(sync_all_first bool, continuous bool) (*MigrationProgress,
 			}
 			mig.Unlock()
 		}
-		time.Sleep(s.config.Dirty_check_period)
+		time.Sleep(s.config.DirtyCheckPeriod)
 	}
 }

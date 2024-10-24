@@ -23,7 +23,7 @@ func TestSyncToS3(t *testing.T) {
 
 	size := 1024 * 1024
 	blockSize := 4096
-	num_blocks := (size + blockSize - 1) / blockSize
+	numBlocks := (size + blockSize - 1) / blockSize
 
 	// First we setup some local storage
 	sourceStorageMem := sources.NewMemoryStorage(size)
@@ -41,7 +41,7 @@ func TestSyncToS3(t *testing.T) {
 	assert.Equal(t, len(buffer), n)
 
 	// Periodically write to sourceStorage so it is dirty
-	ctx, cancel_writes := context.WithCancel(context.TODO())
+	ctx, cancelWrites := context.WithCancel(context.TODO())
 	go func() {
 		for {
 			select {
@@ -62,7 +62,7 @@ func TestSyncToS3(t *testing.T) {
 	}()
 
 	// Start monitoring blocks, and wait a bit...
-	orderer := blocks.NewPriorityBlockOrder(num_blocks, sourceMonitor)
+	orderer := blocks.NewPriorityBlockOrder(numBlocks, sourceMonitor)
 	orderer.AddAll()
 
 	// START moving data from sourceStorage to destStorage
@@ -70,37 +70,37 @@ func TestSyncToS3(t *testing.T) {
 
 	assert.NoError(t, err)
 
-	sync_config := &Sync_config{
-		Name:               "sync_s3",
-		Integrity:          false,
-		Cancel_writes:      true,
-		Dedupe_writes:      true,
-		Tracker:            sourceDirtyRemote,
-		Lockable:           sourceStorage,
-		Destination:        destStorage,
-		Orderer:            orderer,
-		Dirty_check_period: 1 * time.Second,
-		Dirty_block_getter: func() []uint {
+	syncConfig := &SyncConfig{
+		Name:             "sync_s3",
+		Integrity:        false,
+		CancelWrites:     true,
+		DedupeWrites:     true,
+		Tracker:          sourceDirtyRemote,
+		Lockable:         sourceStorage,
+		Destination:      destStorage,
+		Orderer:          orderer,
+		DirtyCheckPeriod: 1 * time.Second,
+		DirtyBlockGetter: func() []uint {
 			b := sourceDirtyRemote.Sync()
 			return b.Collect(0, b.Length())
 
 			// Use some basic params here for getting dirty blocks
 			// return sourceDirtyRemote.GetDirtyBlocks(1*time.Second, 16, 10, 4)
 		},
-		Block_size: blockSize,
-		Progress_handler: func(p *MigrationProgress) {
+		BlockSize: blockSize,
+		ProgressHandler: func(p *MigrationProgress) {
 			// Don't need to do anything here...
 		},
-		Error_handler: func(b *storage.BlockInfo, err error) {
+		ErrorHandler: func(b *storage.BlockInfo, err error) {
 			assert.Fail(t, fmt.Sprintf("Error migrating block %d: %v", b.Block, err))
 		},
 	}
 
 	// Stop writing in a bit, and we should catch up sync
-	time.AfterFunc(time.Second, cancel_writes)
+	time.AfterFunc(time.Second, cancelWrites)
 
 	// Sync the data for a bit
-	syncer := NewSyncer(context.TODO(), sync_config)
+	syncer := NewSyncer(context.TODO(), syncConfig)
 	_, err = syncer.Sync(true, false)
 	assert.NoError(t, err)
 
@@ -115,7 +115,7 @@ func TestSyncToS3(t *testing.T) {
 func TestSyncSimple(t *testing.T) {
 	size := 1024 * 1024
 	blockSize := 4096
-	num_blocks := (size + blockSize - 1) / blockSize
+	numBlocks := (size + blockSize - 1) / blockSize
 
 	sourceStorageMem := sources.NewMemoryStorage(size)
 	sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(sourceStorageMem, blockSize)
@@ -130,7 +130,7 @@ func TestSyncSimple(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, len(buffer), n)
 
-	orderer := blocks.NewAnyBlockOrder(num_blocks, nil)
+	orderer := blocks.NewAnyBlockOrder(numBlocks, nil)
 	orderer.AddAll()
 
 	// START moving data from sourceStorage to destStorage
@@ -138,34 +138,34 @@ func TestSyncSimple(t *testing.T) {
 	destStorage := sources.NewMemoryStorage(size)
 
 	// Use sync
-	sync_config := &Sync_config{
-		Name:               "simple",
-		Integrity:          false,
-		Cancel_writes:      true,
-		Dedupe_writes:      true,
-		Tracker:            sourceDirtyRemote,
-		Lockable:           sourceStorage,
-		Destination:        destStorage,
-		Orderer:            orderer,
-		Dirty_check_period: 1 * time.Second,
-		Dirty_block_getter: func() []uint {
+	syncConfig := &SyncConfig{
+		Name:             "simple",
+		Integrity:        false,
+		CancelWrites:     true,
+		DedupeWrites:     true,
+		Tracker:          sourceDirtyRemote,
+		Lockable:         sourceStorage,
+		Destination:      destStorage,
+		Orderer:          orderer,
+		DirtyCheckPeriod: 1 * time.Second,
+		DirtyBlockGetter: func() []uint {
 			b := sourceDirtyRemote.Sync()
 			return b.Collect(0, b.Length())
 
 			// Use some basic params here for getting dirty blocks
 			// return sourceDirtyRemote.GetDirtyBlocks(1*time.Second, 16, 10, 4)
 		},
-		Block_size: blockSize,
-		Progress_handler: func(p *MigrationProgress) {
+		BlockSize: blockSize,
+		ProgressHandler: func(p *MigrationProgress) {
 			// Don't need to do anything here...
 		},
-		Error_handler: func(b *storage.BlockInfo, err error) {
+		ErrorHandler: func(b *storage.BlockInfo, err error) {
 			assert.Fail(t, fmt.Sprintf("Error migrating block %d: %v", b.Block, err))
 		},
 	}
 
 	// Sync the data for a bit
-	syncer := NewSyncer(context.TODO(), sync_config)
+	syncer := NewSyncer(context.TODO(), syncConfig)
 	_, err = syncer.Sync(true, false)
 	assert.NoError(t, err)
 
