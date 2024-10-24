@@ -386,22 +386,22 @@ func migrateDevice(dev_id uint32, name string,
 		})
 	}()
 
-	sync_config := &migrator.Sync_config{
-		Name:       "serve",
-		Tracker:    sinfo.tracker,
-		Lockable:   sinfo.lockable,
-		Block_size: sinfo.block_size,
-		Locker_handler: func() {
+	sync_config := &migrator.SyncConfig{
+		Name:      "serve",
+		Tracker:   sinfo.tracker,
+		Lockable:  sinfo.lockable,
+		BlockSize: sinfo.block_size,
+		LockerHandler: func() {
 			_ = dest.SendEvent(&packets.Event{Type: packets.EventPreLock})
 			sinfo.lockable.Lock()
 			_ = dest.SendEvent(&packets.Event{Type: packets.EventPostLock})
 		},
-		Unlocker_handler: func() {
+		UnlockerHandler: func() {
 			_ = dest.SendEvent(&packets.Event{Type: packets.EventPreUnlock})
 			sinfo.lockable.Unlock()
 			_ = dest.SendEvent(&packets.Event{Type: packets.EventPostUnlock})
 		},
-		Error_handler: func(b *storage.BlockInfo, err error) {
+		ErrorHandler: func(b *storage.BlockInfo, err error) {
 			// For now...
 			panic(err)
 		},
@@ -441,7 +441,7 @@ func migrateDevice(dev_id uint32, name string,
 
 	if serve_progress {
 
-		sync_config.Progress_handler = func(p *migrator.MigrationProgress) {
+		sync_config.ProgressHandler = func(p *migrator.MigrationProgress) {
 			v := uint64(p.Ready_blocks) * uint64(sinfo.block_size)
 			if v > size {
 				v = size
@@ -452,26 +452,26 @@ func migrateDevice(dev_id uint32, name string,
 			last_value = v
 		}
 	} else {
-		sync_config.Progress_handler = func(p *migrator.MigrationProgress) {
+		sync_config.ProgressHandler = func(p *migrator.MigrationProgress) {
 			fmt.Printf("[%s] Progress Moved: %d/%d %.2f%% Clean: %d/%d %.2f%% InProgress: %d\n",
 				name, p.Migrated_blocks, p.Total_blocks, p.Migrated_blocks_perc,
 				p.Ready_blocks, p.Total_blocks, p.Ready_blocks_perc,
 				p.Active_blocks)
 		}
-		sync_config.Error_handler = func(b *storage.BlockInfo, err error) {
+		sync_config.ErrorHandler = func(b *storage.BlockInfo, err error) {
 			fmt.Printf("[%s] Error for block %d error %v\n", name, b.Block, err)
 		}
 	}
 
-	sync_config.Hashes_handler = func(hashes map[uint][32]byte) {
+	sync_config.HashesHandler = func(hashes map[uint][32]byte) {
 		err = dest.SendHashes(hashes)
 		if err != nil {
 			panic(err) // FIXME
 		}
 	}
 
-	sync_config.Dirty_check_period = 100 * time.Millisecond
-	sync_config.Dirty_block_getter = func() []uint {
+	sync_config.DirtyCheckPeriod = 100 * time.Millisecond
+	sync_config.DirtyBlockGetter = func() []uint {
 		blocks := sinfo.tracker.Sync()
 		d := blocks.Collect(0, blocks.Length())
 

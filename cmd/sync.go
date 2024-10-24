@@ -221,9 +221,9 @@ func sync_setup_device(ctx context.Context, conf *config.DeviceSchema) (*syncSto
 			case <-ticker.C:
 				metrics := s3dest.Metrics()
 				fmt.Printf("### S3 metrics ### Writes=%d bytes=%d time=%dms data=%d | Reads=%d bytes=%d time=%dms data=%d | PreWReads=%d bytes=%d\n",
-					metrics.Blocks_w_count, metrics.Blocks_w_bytes, metrics.Blocks_w_time.Milliseconds(), metrics.Blocks_w_data_bytes,
-					metrics.Blocks_r_count, metrics.Blocks_r_bytes, metrics.Blocks_r_time.Milliseconds(), metrics.Blocks_r_data_bytes,
-					metrics.Blocks_w_pre_r_count, metrics.Blocks_w_pre_r_bytes,
+					metrics.BlocksWCount, metrics.BlocksWBytes, metrics.BlocksWTime.Milliseconds(), metrics.BlocksWDataBytes,
+					metrics.BlocksRCount, metrics.BlocksRBytes, metrics.BlocksRTime.Milliseconds(), metrics.BlocksRDataBytes,
+					metrics.BlocksWPreRCount, metrics.BlocksWPreRBytes,
 				)
 				// Measure dirty here...
 				ood := sourceDirtyRemote.MeasureDirty() * dirty_block_size
@@ -333,24 +333,24 @@ func sync_migrate_s3(p_ctx context.Context, name string, sinfo *syncStorageInfo)
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
-		syncer := migrator.NewSyncer(ctx, &migrator.Sync_config{
-			Name:               name,
-			Integrity:          false,
-			Cancel_writes:      true,
-			Dedupe_writes:      true,
-			Tracker:            sinfo.tracker,
-			Lockable:           sinfo.lockable,
-			Destination:        log_dest,
-			Orderer:            sinfo.orderer,
-			Dirty_check_period: sync_dirty_period,
-			Dirty_block_getter: func() []uint {
+		syncer := migrator.NewSyncer(ctx, &migrator.SyncConfig{
+			Name:             name,
+			Integrity:        false,
+			CancelWrites:     true,
+			DedupeWrites:     true,
+			Tracker:          sinfo.tracker,
+			Lockable:         sinfo.lockable,
+			Destination:      log_dest,
+			Orderer:          sinfo.orderer,
+			DirtyCheckPeriod: sync_dirty_period,
+			DirtyBlockGetter: func() []uint {
 				return sinfo.tracker.GetDirtyBlocks(sync_block_max_age, sync_dirty_limit, sync_dirty_block_shift, sync_dirty_min_changed)
 			},
-			Block_size: sinfo.block_size,
-			Progress_handler: func(p *migrator.MigrationProgress) {
+			BlockSize: sinfo.block_size,
+			ProgressHandler: func(p *migrator.MigrationProgress) {
 				dest_metrics.ShowStats(name)
 			},
-			Error_handler: func(b *storage.BlockInfo, err error) {},
+			ErrorHandler: func(b *storage.BlockInfo, err error) {},
 		})
 
 		status, err := syncer.Sync(false, true)
