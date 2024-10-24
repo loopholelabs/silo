@@ -170,7 +170,7 @@ func (i *S3Storage) ReadAt(buffer []byte, offset int64) (int, error) {
 			}
 			n, err := obj.Read(buff)
 			dtime := time.Since(ctime)
-			if err == nil {
+			if err == io.EOF {
 				atomic.AddUint64(&i.metricsBlocksRCount, 1)
 				atomic.AddUint64(&i.metricsBlocksRBytes, uint64(n))
 				atomic.AddUint64(&i.metricsBlocksRTimeNS, uint64(dtime.Nanoseconds()))
@@ -256,7 +256,7 @@ func (i *S3Storage) WriteAt(buffer []byte, offset int64) (int, error) {
 			}
 			n, err := obj.Read(buff)
 			dtime := time.Since(ctime)
-			if err == nil {
+			if err == io.EOF {
 				atomic.AddUint64(&i.metricsBlocksWPreRCount, 1)
 				atomic.AddUint64(&i.metricsBlocksWPreRBytes, uint64(n))
 				atomic.AddUint64(&i.metricsBlocksWPreRTimeNS, uint64(dtime.Nanoseconds()))
@@ -390,6 +390,14 @@ type S3Metrics struct {
 	BlocksRBytes     uint64
 	BlocksRDataBytes uint64
 	BlocksRTime      time.Duration
+}
+
+func (i *S3Metrics) String() string {
+	return fmt.Sprintf("W %d (%d bytes) (%d dataBytes) %dms Wp %d (%d bytes) %dms R %d (%d bytes) (%d dataBytes) %dms",
+		i.BlocksWCount, i.BlocksWBytes, i.BlocksWDataBytes, i.BlocksWTime.Milliseconds(),
+		i.BlocksWPreRCount, i.BlocksWPreRBytes, i.BlocksWPreRTime.Milliseconds(),
+		i.BlocksRCount, i.BlocksRBytes, i.BlocksRDataBytes, i.BlocksRTime.Milliseconds(),
+	)
 }
 
 func (i *S3Storage) Metrics() *S3Metrics {

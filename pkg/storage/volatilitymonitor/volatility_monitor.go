@@ -22,9 +22,9 @@ type VolatilityMonitor struct {
 }
 
 // Relay events to embedded StorageProvider
-func (i *VolatilityMonitor) SendEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
-	data := i.StorageProviderWithEvents.SendEvent(event_type, event_data)
-	return append(data, storage.SendEvent(i.prov, event_type, event_data)...)
+func (i *VolatilityMonitor) SendSiloEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
+	data := i.StorageProviderWithEvents.SendSiloEvent(event_type, event_data)
+	return append(data, storage.SendSiloEvent(i.prov, event_type, event_data)...)
 }
 
 func NewVolatilityMonitor(prov storage.StorageProvider, blockSize int, expiry time.Duration) *VolatilityMonitor {

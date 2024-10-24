@@ -14,9 +14,9 @@ type WaitingCacheLocal struct {
 }
 
 // Relay events to embedded StorageProvider
-func (wcl *WaitingCacheLocal) SendEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
-	data := wcl.StorageProviderWithEvents.SendEvent(event_type, event_data)
-	return append(data, storage.SendEvent(wcl.wc.prov, event_type, event_data)...)
+func (wcl *WaitingCacheLocal) SendSiloEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
+	data := wcl.StorageProviderWithEvents.SendSiloEvent(event_type, event_data)
+	return append(data, storage.SendSiloEvent(wcl.wc.prov, event_type, event_data)...)
 }
 
 func (wcl *WaitingCacheLocal) ReadAt(buffer []byte, offset int64) (int, error) {

@@ -98,6 +98,7 @@ type Migrator struct {
 	cancel_writes            bool
 	dedupe_writes            bool
 	recent_write_age         time.Duration
+	migrationStarted         bool
 }
 
 func NewMigrator(source storage.TrackingStorageProvider,
@@ -107,6 +108,7 @@ func NewMigrator(source storage.TrackingStorageProvider,
 
 	num_blocks := (int(source.Size()) + config.Block_size - 1) / config.Block_size
 	m := &Migrator{
+		migrationStarted:         false,
 		dest:                     dest,
 		source_tracker:           source,
 		source_lock_fn:           config.Locker_handler,
@@ -172,10 +174,24 @@ func (m *Migrator) SetMigratedBlock(block int) {
 	m.reportProgress(false)
 }
 
+func (m *Migrator) startMigration() {
+	if m.migrationStarted {
+		return
+	}
+	m.migrationStarted = true
+
+	// Tell the source to stop sync, and send alternateSources to the destination.
+	as := storage.SendSiloEvent(m.source_tracker, "sync.stop", nil)
+	if len(as) == 1 {
+		storage.SendSiloEvent(m.dest, "sources", as[0])
+	}
+}
+
 /**
  * Migrate storage to dest.
  */
 func (m *Migrator) Migrate(num_blocks int) error {
+	m.startMigration()
 	m.ctime = time.Now()
 
 	for b := 0; b < num_blocks; b++ {
@@ -255,6 +271,8 @@ func (m *Migrator) MigrateDirty(blocks []uint) error {
  * You can give a tracking ID which will turn up at block_fn on success
  */
 func (m *Migrator) MigrateDirtyWithId(blocks []uint, tid uint64) error {
+	m.startMigration()
+
 	for _, pos := range blocks {
 		i := &storage.BlockInfo{Block: int(pos), Type: storage.BlockTypeDirty}
 

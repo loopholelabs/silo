@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 
+	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
 )
 
@@ -12,10 +13,12 @@ var ErrInvalidPacket = errors.New("invalid packet")
 var ErrRemoteWriteError = errors.New("remote write error")
 
 type ToProtocol struct {
+	storage.StorageProviderWithEvents
 	size              uint64
 	dev               uint32
 	protocol          Protocol
 	Compressed_writes bool
+	alternateSources  []packets.AlternateSource
 }
 
 func NewToProtocol(size uint64, deviceID uint32, p Protocol) *ToProtocol {
@@ -25,6 +28,18 @@ func NewToProtocol(size uint64, deviceID uint32, p Protocol) *ToProtocol {
 		protocol:          p,
 		Compressed_writes: false,
 	}
+}
+
+// Support Silo Events
+func (i *ToProtocol) SendSiloEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
+	if event_type == storage.EventType("sources") {
+		i.alternateSources = event_data.([]packets.AlternateSource)
+		// Send the list of alternate sources here...
+		h := packets.EncodeAlternateSources(i.alternateSources)
+		_, _ = i.protocol.SendPacket(i.dev, ID_PICK_ANY, h)
+		// For now, we do not check the error. If there was a protocol / io error, we should see it on the next send
+	}
+	return nil
 }
 
 func (i *ToProtocol) SendEvent(e *packets.Event) error {
@@ -120,12 +135,29 @@ func (i *ToProtocol) ReadAt(buffer []byte, offset int64) (int, error) {
 func (i *ToProtocol) WriteAt(buffer []byte, offset int64) (int, error) {
 	var id uint32
 	var err error
-	if i.Compressed_writes {
-		data := packets.EncodeWriteAtComp(offset, buffer)
-		id, err = i.protocol.SendPacket(i.dev, ID_PICK_ANY, data)
-	} else {
-		l, f := packets.EncodeWriterWriteAt(offset, buffer)
-		id, err = i.protocol.SendPacketWriter(i.dev, ID_PICK_ANY, l, f)
+
+	// TODO: If it's in the alternateSources list, we only need to send a WriteAtHash command.
+	// For now, we only match exact block ranges.
+	dontSendData := false
+	for _, as := range i.alternateSources {
+		if as.Offset == offset && as.Length == int64(len(buffer)) {
+			// We should check the hash here as well...
+
+			data := packets.EncodeWriteAtHash(as.Offset, as.Length, as.Hash[:])
+			id, err = i.protocol.SendPacket(i.dev, ID_PICK_ANY, data)
+			dontSendData = true
+			break
+		}
+	}
+
+	if !dontSendData {
+		if i.Compressed_writes {
+			data := packets.EncodeWriteAtComp(offset, buffer)
+			id, err = i.protocol.SendPacket(i.dev, ID_PICK_ANY, data)
+		} else {
+			l, f := packets.EncodeWriterWriteAt(offset, buffer)
+			id, err = i.protocol.SendPacketWriter(i.dev, ID_PICK_ANY, l, f)
+		}
 	}
 	if err != nil {
 		return 0, err

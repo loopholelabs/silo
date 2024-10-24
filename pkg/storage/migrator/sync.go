@@ -79,7 +79,7 @@ func (s *Syncer) GetSafeBlockMap() map[uint][sha256.Size]byte {
 	blocks := make(map[uint][sha256.Size]byte, 0)
 
 	for b, status := range s.blockStatus {
-		if status.CurrentID == status.UpdatingID {
+		if status.CurrentID > 0 && status.CurrentID == status.UpdatingID {
 			blocks[uint(b)] = status.CurrentHash
 		}
 	}

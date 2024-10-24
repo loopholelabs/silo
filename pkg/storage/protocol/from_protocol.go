@@ -180,6 +180,23 @@ func (fp *FromProtocol) HandleDevInfo() error {
 	fp.present = util.NewBitfield(num_blocks)
 
 	fp.init <- true // Confirm things have been initialized for this device.
+
+	// Internal - route any AlternateSources packets through to the device here...
+	go func() {
+		for {
+			_, data, err := fp.protocol.WaitForCommand(fp.dev, packets.COMMAND_ALTERNATE_SOURCES)
+			if err != nil {
+				return
+			}
+			altSources, err := packets.DecodeAlternateSources(data)
+			if err != nil {
+				return
+			}
+			// Now send them to the device, so it can save them, ready for pulling
+			storage.SendSiloEvent(fp.prov, "sources", altSources)
+		}
+	}()
+
 	return nil
 }
 
@@ -276,6 +293,39 @@ func (fp *FromProtocol) HandleWriteAt() error {
 				errLock.Unlock()
 			}
 		}(offset, write_data, id)
+	}
+}
+
+// Handle any WriteAtHash commands. (We simply acknowledge)
+func (fp *FromProtocol) HandleWriteAtHash() error {
+	err := fp.wait_init_or_cancel()
+	if err != nil {
+		return err
+	}
+
+	for {
+		id, data, err := fp.protocol.WaitForCommand(fp.dev, packets.COMMAND_WRITE_AT_HASH)
+		if err != nil {
+			return err
+		}
+
+		offset, length, _, err := packets.DecodeWriteAtHash(data)
+		if err != nil {
+			return err
+		}
+
+		// TODO: We should doublecheck offset/hash here...
+
+		fp.mark_range_present(int(offset), int(length))
+
+		war := &packets.WriteAtResponse{
+			Error: nil,
+			Bytes: int(length),
+		}
+		_, err = fp.protocol.SendPacket(fp.dev, id, packets.EncodeWriteAtResponse(war))
+		if err != nil {
+			return err
+		}
 	}
 }
 

@@ -98,7 +98,7 @@ func TestStorageEvents(t *testing.T) {
 
 	var wg sync.WaitGroup
 	wg.Add(1)
-	ok := storage.AddEventNotification(ss, "testing", func(event storage.EventType, data storage.EventData) storage.EventReturnData {
+	ok := storage.AddSiloEventNotification(ss, "testing", func(event storage.EventType, data storage.EventData) storage.EventReturnData {
 		// Do something here
 		assert.Equal(t, storage.EventType("testing"), event)
 		assert.Equal(t, "HELLO WORLD", data.(string))
@@ -108,7 +108,7 @@ func TestStorageEvents(t *testing.T) {
 	})
 	assert.True(t, ok)
 
-	data := storage.SendEvent(ss, "testing", storage.EventData("HELLO WORLD"))
+	data := storage.SendSiloEvent(ss, "testing", storage.EventData("HELLO WORLD"))
 	assert.Equal(t, 1, len(data))
 	assert.Equal(t, "SOMETHING", data[0].(string))
 
@@ -118,12 +118,12 @@ func TestStorageEvents(t *testing.T) {
 
 	ssnl := NewSomeStorageNoEvents()
 
-	ok = storage.AddEventNotification(ssnl, "testing", func(from storage.EventType, to storage.EventData) storage.EventReturnData {
+	ok = storage.AddSiloEventNotification(ssnl, "testing", func(from storage.EventType, to storage.EventData) storage.EventReturnData {
 		assert.Fail(t, "shouldn't happen")
 		return nil
 	})
 	assert.False(t, ok)
-	data = storage.SendEvent(ssnl, "testing", nil)
+	data = storage.SendSiloEvent(ssnl, "testing", nil)
 	assert.Nil(t, data)
 
 }
@@ -187,7 +187,7 @@ func TestStorageEventsForModules(tt *testing.T) {
 
 				if td.insert_handler[i] {
 					// Register an event notification on the module.
-					ok := storage.AddEventNotification(s, "some_event", func(event storage.EventType, data storage.EventData) storage.EventReturnData {
+					ok := storage.AddSiloEventNotification(s, "some_event", func(event storage.EventType, data storage.EventData) storage.EventReturnData {
 						assert.Equal(t, event, storage.EventType("some_event"))
 						assert.Equal(t, data, storage.EventData("some_data"))
 						atomic.AddUint64(&mod_data.events_received, 1)
@@ -249,7 +249,7 @@ func TestStorageEventsForModules(tt *testing.T) {
 
 			// Now send events to various parts of the chain, and make sure the handlers receive the events.
 			for i, mod := range all_modules {
-				r := storage.SendEvent(mod.prov, storage.EventType("some_event"), storage.EventData("some_data"))
+				r := storage.SendSiloEvent(mod.prov, storage.EventType("some_event"), storage.EventData("some_data"))
 				assert.NotNil(t, r)
 				assert.Equal(t, td.expected_returns[i], len(r))
 			}

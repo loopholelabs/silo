@@ -16,9 +16,9 @@ type BlockSplitter struct {
 }
 
 // Relay events to embedded StorageProvider
-func (i *BlockSplitter) SendEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
-	data := i.StorageProviderWithEvents.SendEvent(event_type, event_data)
-	return append(data, storage.SendEvent(i.prov, event_type, event_data)...)
+func (i *BlockSplitter) SendSiloEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
+	data := i.StorageProviderWithEvents.SendSiloEvent(event_type, event_data)
+	return append(data, storage.SendSiloEvent(i.prov, event_type, event_data)...)
 }
 
 func NewBlockSplitter(prov storage.StorageProvider, block_size int) *BlockSplitter {
