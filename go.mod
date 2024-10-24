@@ -1,15 +1,17 @@
 module github.com/loopholelabs/silo
 
-go 1.21
+go 1.22
 
-toolchain go1.22.2
+toolchain go1.22.4
 
 require (
 	github.com/Merovius/nbd v0.0.0-20231017152624-27b78b60d8da
 	github.com/fatih/color v1.17.0
+	github.com/google/uuid v1.6.0
 	github.com/hashicorp/hcl/v2 v2.21.0
 	github.com/minio/minio-go/v7 v7.0.77
 	github.com/ory/dockertest/v3 v3.10.0
+	github.com/rs/zerolog v1.33.0
 	github.com/spf13/cobra v1.8.1
 	github.com/stretchr/testify v1.9.0
 	github.com/vbauerster/mpb/v8 v8.7.5
@@ -37,13 +39,13 @@ require (
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/imdario/mergo v0.3.12 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/josharian/native v1.1.0 // indirect
 	github.com/klauspost/compress v1.17.9 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.8 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
+	github.com/loopholelabs/logging v0.3.1 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-runewidth v0.0.16 // indirect
