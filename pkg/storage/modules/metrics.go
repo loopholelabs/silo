@@ -13,6 +13,7 @@ import (
  *
  */
 type Metrics struct {
+	storage.StorageProviderWithEvents
 	prov                storage.StorageProvider
 	metric_read_ops     uint64
 	metric_read_bytes   uint64
@@ -45,6 +46,12 @@ func NewMetrics(prov storage.StorageProvider) *Metrics {
 	return &Metrics{
 		prov: prov,
 	}
+}
+
+// Relay events to embedded StorageProvider
+func (i *Metrics) SendEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
+	data := i.StorageProviderWithEvents.SendEvent(event_type, event_data)
+	return append(data, storage.SendEvent(i.prov, event_type, event_data)...)
 }
 
 func formatDuration(d time.Duration) string {

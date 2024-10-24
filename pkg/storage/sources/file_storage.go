@@ -4,6 +4,8 @@ import (
 	"io"
 	"os"
 	"sync"
+
+	"github.com/loopholelabs/silo/pkg/storage"
 )
 
 /**
@@ -11,6 +13,7 @@ import (
  *
  */
 type FileStorage struct {
+	storage.StorageProviderWithEvents
 	fp   *os.File
 	size int64
 	wg   sync.WaitGroup

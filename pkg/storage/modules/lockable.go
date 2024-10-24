@@ -12,9 +12,16 @@ import (
  */
 
 type Lockable struct {
+	storage.StorageProviderWithEvents
 	prov   storage.StorageProvider
 	lock   *sync.Cond
 	locked bool
+}
+
+// Relay events to embedded StorageProvider
+func (i *Lockable) SendEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
+	data := i.StorageProviderWithEvents.SendEvent(event_type, event_data)
+	return append(data, storage.SendEvent(i.prov, event_type, event_data)...)
 }
 
 func NewLockable(prov storage.StorageProvider) *Lockable {

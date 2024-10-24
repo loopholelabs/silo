@@ -5,11 +5,18 @@ import (
 )
 
 type Hooks struct {
+	storage.StorageProviderWithEvents
 	prov       storage.StorageProvider
 	Pre_read   func(buffer []byte, offset int64) (bool, int, error)
 	Post_read  func(buffer []byte, offset int64, n int, err error) (int, error)
 	Pre_write  func(buffer []byte, offset int64) (bool, int, error)
 	Post_write func(buffer []byte, offset int64, n int, err error) (int, error)
+}
+
+// Relay events to embedded StorageProvider
+func (i *Hooks) SendEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
+	data := i.StorageProviderWithEvents.SendEvent(event_type, event_data)
+	return append(data, storage.SendEvent(i.prov, event_type, event_data)...)
 }
 
 func NewHooks(prov storage.StorageProvider) *Hooks {

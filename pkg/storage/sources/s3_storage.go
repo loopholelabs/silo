@@ -8,6 +8,7 @@ import (
 	"io"
 	"sync"
 
+	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
@@ -19,6 +20,7 @@ var (
 */
 
 type S3Storage struct {
+	storage.StorageProviderWithEvents
 	client        *minio.Client
 	bucket        string
 	prefix        string
