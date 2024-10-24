@@ -26,6 +26,24 @@ type DeviceSchema struct {
 	ROSource      *DeviceSchema `hcl:"source,block"`
 	Binlog        string        `hcl:"binlog,optional"`
 	PageServerPID int           `hcl:"pid,optional"`
+	Sync          *SyncS3Schema `hcl:"sync,block"`
+}
+
+type SyncConfigSchema struct {
+	BlockShift  int    `hcl:"blockshift,attr"`
+	MaxAge      string `hcl:"maxage,attr"`
+	MinChanged  int    `hcl:"minchanged,attr"`
+	CheckPeriod string `hcl:"checkperiod,attr"`
+	Limit       int    `hcl:"limit,attr"`
+}
+
+type SyncS3Schema struct {
+	Secure    bool              `hcl:"secure,attr"`
+	AccessKey string            `hcl:"accesskey,attr"`
+	SecretKey string            `hcl:"secretkey,attr"`
+	Endpoint  string            `hcl:"endpoint,attr"`
+	Bucket    string            `hcl:"bucket,attr"`
+	Config    *SyncConfigSchema `hcl:"config,block"`
 }
 
 func parseByteValue(val string) int64 {

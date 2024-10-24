@@ -179,7 +179,7 @@ func sync_setup_device(conf *config.DeviceSchema) (*syncStorageInfo, error) {
 	if sync_dummy {
 		dest = modules.NewNothing(sourceStorage.Size())
 	} else {
-		dest, err = sources.NewS3StorageCreate(sync_endpoint,
+		dest, err = sources.NewS3StorageCreate(false, sync_endpoint,
 			sync_access,
 			sync_secret,
 			sync_bucket,
