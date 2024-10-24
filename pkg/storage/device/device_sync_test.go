@@ -67,7 +67,7 @@ func TestDeviceSync(t *testing.T) {
 	assert.Equal(t, 1024*1024, n)
 
 	// Tell the sync to start.
-	storage.SendEvent(prov, "sync.start", nil)
+	storage.SendSiloEvent(prov, "sync.start", nil)
 
 	// Do a few write here, and wait a little bit for sync to happen...
 	for i := 0; i < num_blocks; i++ {
@@ -83,7 +83,7 @@ func TestDeviceSync(t *testing.T) {
 	time.Sleep(500 * time.Millisecond)
 
 	// Tell the sync to stop, and return the AlternateSource details.
-	asources := storage.SendEvent(prov, "sync.stop", nil)
+	asources := storage.SendSiloEvent(prov, "sync.stop", nil)
 
 	locs := make([]string, 0)
 
@@ -107,7 +107,7 @@ func TestDeviceSync(t *testing.T) {
 	assert.Equal(t, num_blocks, len(locs))
 
 	// Get some statistics
-	stats := storage.SendEvent(prov, "sync.status", nil)
+	stats := storage.SendSiloEvent(prov, "sync.status", nil)
 
 	assert.Equal(t, 1, len(stats))
 	metrics := stats[0].(*sources.S3Metrics)

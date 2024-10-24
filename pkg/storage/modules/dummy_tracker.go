@@ -12,9 +12,9 @@ type DummyTracker struct {
 }
 
 // Relay events to embedded StorageProvider
-func (i *DummyTracker) SendEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
-	data := i.StorageProviderWithEvents.SendEvent(event_type, event_data)
-	return append(data, storage.SendEvent(i.prov, event_type, event_data)...)
+func (i *DummyTracker) SendSiloEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
+	data := i.StorageProviderWithEvents.SendSiloEvent(event_type, event_data)
+	return append(data, storage.SendSiloEvent(i.prov, event_type, event_data)...)
 }
 
 func NewDummyTracker(prov storage.StorageProvider, block_size int) *DummyTracker {

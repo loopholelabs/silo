@@ -49,9 +49,9 @@ func NewMetrics(prov storage.StorageProvider) *Metrics {
 }
 
 // Relay events to embedded StorageProvider
-func (i *Metrics) SendEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
-	data := i.StorageProviderWithEvents.SendEvent(event_type, event_data)
-	return append(data, storage.SendEvent(i.prov, event_type, event_data)...)
+func (i *Metrics) SendSiloEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
+	data := i.StorageProviderWithEvents.SendSiloEvent(event_type, event_data)
+	return append(data, storage.SendSiloEvent(i.prov, event_type, event_data)...)
 }
 
 func formatDuration(d time.Duration) string {

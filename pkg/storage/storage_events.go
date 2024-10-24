@@ -12,24 +12,24 @@ import "sync"
 
 type StorageProviderWithEventsIfc interface {
 	StorageProvider
-	SendEvent(EventType, EventData) []EventReturnData
-	AddEventNotification(EventType, EventCallback)
+	SendSiloEvent(EventType, EventData) []EventReturnData
+	AddSiloEventNotification(EventType, EventCallback)
 }
 
 // Try to send an event for a given StorageProvider
-func SendEvent(s StorageProvider, event_type EventType, event_data EventData) []EventReturnData {
+func SendSiloEvent(s StorageProvider, event_type EventType, event_data EventData) []EventReturnData {
 	lcsp, ok := s.(StorageProviderWithEventsIfc)
 	if ok {
-		return lcsp.SendEvent(event_type, event_data)
+		return lcsp.SendSiloEvent(event_type, event_data)
 	}
 	return nil
 }
 
 // Try to add an event notification on a StorageProvider
-func AddEventNotification(s StorageProvider, state EventType, callback EventCallback) bool {
+func AddSiloEventNotification(s StorageProvider, state EventType, callback EventCallback) bool {
 	lcsp, ok := s.(StorageProviderWithEventsIfc)
 	if ok {
-		lcsp.AddEventNotification(state, callback)
+		lcsp.AddSiloEventNotification(state, callback)
 	}
 	return ok
 }
@@ -50,7 +50,7 @@ type StorageProviderWithEvents struct {
 }
 
 // Send an event, and notify any callbacks
-func (spl *StorageProviderWithEvents) SendEvent(event_type EventType, event_data EventData) []EventReturnData {
+func (spl *StorageProviderWithEvents) SendSiloEvent(event_type EventType, event_data EventData) []EventReturnData {
 	spl.lock.Lock()
 	defer spl.lock.Unlock()
 	if spl.callbacks == nil {
@@ -68,7 +68,7 @@ func (spl *StorageProviderWithEvents) SendEvent(event_type EventType, event_data
 }
 
 // Add a new callback for the given state.
-func (spl *StorageProviderWithEvents) AddEventNotification(event_type EventType, callback EventCallback) {
+func (spl *StorageProviderWithEvents) AddSiloEventNotification(event_type EventType, callback EventCallback) {
 	spl.lock.Lock()
 	defer spl.lock.Unlock()
 	if spl.callbacks == nil {
