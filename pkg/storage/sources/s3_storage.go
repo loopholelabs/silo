@@ -21,26 +21,26 @@ var (
 
 type S3Storage struct {
 	storage.StorageProviderWithEvents
-	dummy                          bool
-	client                         *minio.Client
-	bucket                         string
-	prefix                         string
-	size                           uint64
-	block_size                     int
-	lockers                        []sync.RWMutex
-	contexts                       []context.CancelFunc
-	contexts_lock                  sync.Mutex
-	metrics_blocks_w_count         uint64
-	metrics_blocks_w_data_bytes    uint64
-	metrics_blocks_w_bytes         uint64
-	metrics_blocks_w_time_ns       uint64
-	metrics_blocks_w_pre_r_count   uint64
-	metrics_blocks_w_pre_r_bytes   uint64
-	metrics_blocks_w_pre_r_time_ns uint64
-	metrics_blocks_r_count         uint64
-	metrics_blocks_r_data_bytes    uint64
-	metrics_blocks_r_bytes         uint64
-	metrics_blocks_r_time_ns       uint64
+	dummy                    bool
+	client                   *minio.Client
+	bucket                   string
+	prefix                   string
+	size                     uint64
+	blockSize                int
+	lockers                  []sync.RWMutex
+	contexts                 []context.CancelFunc
+	contextsLock             sync.Mutex
+	metricsBlocksWCount      uint64
+	metricsBlocksWDataBytes  uint64
+	metricsBlocksWBytes      uint64
+	metricsBlocksWTimeNS     uint64
+	metricsBlocksWPreRCount  uint64
+	metricsBlocksWPreRBytes  uint64
+	metricsBlocksWPreRTimeNS uint64
+	metricsBlocksRCount      uint64
+	metricsBlocksRDataBytes  uint64
+	metricsBlocksRBytes      uint64
+	metricsBlocksRTimeNS     uint64
 }
 
 func NewS3Storage(secure bool, endpoint string,
@@ -63,13 +63,13 @@ func NewS3Storage(secure bool, endpoint string,
 	numBlocks := (int(size) + blockSize - 1) / blockSize
 
 	return &S3Storage{
-		size:       size,
-		block_size: blockSize,
-		client:     client,
-		bucket:     bucket,
-		prefix:     prefix,
-		lockers:    make([]sync.RWMutex, numBlocks),
-		contexts:   make([]context.CancelFunc, numBlocks),
+		size:      size,
+		blockSize: blockSize,
+		client:    client,
+		bucket:    bucket,
+		prefix:    prefix,
+		lockers:   make([]sync.RWMutex, numBlocks),
+		contexts:  make([]context.CancelFunc, numBlocks),
 	}, nil
 }
 
@@ -79,11 +79,11 @@ func NewS3StorageDummy(size uint64,
 	numBlocks := (int(size) + blockSize - 1) / blockSize
 
 	return &S3Storage{
-		size:       size,
-		block_size: blockSize,
-		dummy:      true,
-		lockers:    make([]sync.RWMutex, numBlocks),
-		contexts:   make([]context.CancelFunc, numBlocks),
+		size:      size,
+		blockSize: blockSize,
+		dummy:     true,
+		lockers:   make([]sync.RWMutex, numBlocks),
+		contexts:  make([]context.CancelFunc, numBlocks),
 	}, nil
 }
 
@@ -118,24 +118,24 @@ func NewS3StorageCreate(secure bool, endpoint string,
 	numBlocks := (int(size) + blockSize - 1) / blockSize
 
 	return &S3Storage{
-		size:       size,
-		block_size: blockSize,
-		client:     client,
-		bucket:     bucket,
-		prefix:     prefix,
-		lockers:    make([]sync.RWMutex, numBlocks),
-		contexts:   make([]context.CancelFunc, numBlocks),
+		size:      size,
+		blockSize: blockSize,
+		client:    client,
+		bucket:    bucket,
+		prefix:    prefix,
+		lockers:   make([]sync.RWMutex, numBlocks),
+		contexts:  make([]context.CancelFunc, numBlocks),
 	}, nil
 }
 
 func (i *S3Storage) setContext(block int, cancel context.CancelFunc) {
-	i.contexts_lock.Lock()
+	i.contextsLock.Lock()
 	ex := i.contexts[block]
 	if ex != nil {
 		ex() // Cancel any existing context for this block
 	}
 	i.contexts[block] = cancel // Set to the new context
-	i.contexts_lock.Unlock()
+	i.contextsLock.Unlock()
 }
 
 func (i *S3Storage) ReadAt(buffer []byte, offset int64) (int, error) {
@@ -145,23 +145,23 @@ func (i *S3Storage) ReadAt(buffer []byte, offset int64) (int, error) {
 		end = i.size
 	}
 
-	b_start := uint(offset / int64(i.block_size))
-	b_end := uint((end-1)/uint64(i.block_size)) + 1
+	bStart := uint(offset / int64(i.blockSize))
+	bEnd := uint((end-1)/uint64(i.blockSize)) + 1
 
-	blocks := b_end - b_start
+	blocks := bEnd - bStart
 	errs := make(chan error, blocks)
 
 	getData := func(buff []byte, off int64) (int, error) {
 		if i.dummy {
-			atomic.AddUint64(&i.metrics_blocks_r_count, 1)
-			atomic.AddUint64(&i.metrics_blocks_r_bytes, uint64(len(buff)))
+			atomic.AddUint64(&i.metricsBlocksRCount, 1)
+			atomic.AddUint64(&i.metricsBlocksRBytes, uint64(len(buff)))
 			//atomic.AddUint64(&i.metrics_blocks_r_time_ns, uint64(dtime.Nanoseconds()))
 			return len(buff), nil
 		} else {
-			i.lockers[off/int64(i.block_size)].RLock()
+			i.lockers[off/int64(i.blockSize)].RLock()
 			ctime := time.Now()
 			obj, err := i.client.GetObject(context.TODO(), i.bucket, fmt.Sprintf("%s-%d", i.prefix, off), minio.GetObjectOptions{})
-			i.lockers[off/int64(i.block_size)].RUnlock()
+			i.lockers[off/int64(i.blockSize)].RUnlock()
 			if err != nil {
 				if err.Error() == errNoSuchKey.Error() {
 					return len(buff), nil
@@ -171,9 +171,9 @@ func (i *S3Storage) ReadAt(buffer []byte, offset int64) (int, error) {
 			n, err := obj.Read(buff)
 			dtime := time.Since(ctime)
 			if err == nil {
-				atomic.AddUint64(&i.metrics_blocks_r_count, 1)
-				atomic.AddUint64(&i.metrics_blocks_r_bytes, uint64(n))
-				atomic.AddUint64(&i.metrics_blocks_r_time_ns, uint64(dtime.Nanoseconds()))
+				atomic.AddUint64(&i.metricsBlocksRCount, 1)
+				atomic.AddUint64(&i.metricsBlocksRBytes, uint64(n))
+				atomic.AddUint64(&i.metricsBlocksRTimeNS, uint64(dtime.Nanoseconds()))
 			} else if err.Error() == errNoSuchKey.Error() {
 				return len(buff), nil
 			}
@@ -182,44 +182,44 @@ func (i *S3Storage) ReadAt(buffer []byte, offset int64) (int, error) {
 		}
 	}
 
-	for b := b_start; b < b_end; b++ {
-		go func(block_no uint) {
-			block_offset := int64(block_no) * int64(i.block_size)
+	for b := bStart; b < bEnd; b++ {
+		go func(blockNo uint) {
+			blockOffset := int64(blockNo) * int64(i.blockSize)
 			var err error
-			if block_offset > offset {
+			if blockOffset > offset {
 				// Partial read at the end
-				if len(buffer[block_offset-offset:]) < i.block_size {
-					block_buffer := make([]byte, i.block_size)
-					_, err = getData(block_buffer, block_offset)
-					copy(buffer[block_offset-offset:], block_buffer)
+				if len(buffer[blockOffset-offset:]) < i.blockSize {
+					blockBuffer := make([]byte, i.blockSize)
+					_, err = getData(blockBuffer, blockOffset)
+					copy(buffer[blockOffset-offset:], blockBuffer)
 				} else {
 					// Complete read in the middle
-					s := block_offset - offset
-					e := s + int64(i.block_size)
+					s := blockOffset - offset
+					e := s + int64(i.blockSize)
 					if e > int64(len(buffer)) {
 						e = int64(len(buffer))
 					}
-					_, err = getData(buffer[s:e], block_offset)
+					_, err = getData(buffer[s:e], blockOffset)
 				}
 			} else {
 				// Partial read at the start
-				block_buffer := make([]byte, i.block_size)
-				_, err = getData(block_buffer, block_offset)
-				copy(buffer, block_buffer[offset-block_offset:])
+				blockBuffer := make([]byte, i.blockSize)
+				_, err = getData(blockBuffer, blockOffset)
+				copy(buffer, blockBuffer[offset-blockOffset:])
 			}
 			errs <- err
 		}(b)
 	}
 
 	// Wait for completion, Check for errors and return...
-	for b := b_start; b < b_end; b++ {
+	for b := bStart; b < bEnd; b++ {
 		e := <-errs
 		if e != nil && !errors.Is(e, io.EOF) {
 			return 0, e
 		}
 	}
 
-	atomic.AddUint64(&i.metrics_blocks_r_data_bytes, uint64(len(buffer)))
+	atomic.AddUint64(&i.metricsBlocksRDataBytes, uint64(len(buffer)))
 
 	return len(buffer), nil
 }
@@ -231,24 +231,23 @@ func (i *S3Storage) WriteAt(buffer []byte, offset int64) (int, error) {
 		end = i.size
 	}
 
-	b_start := uint(offset / int64(i.block_size))
-	b_end := uint((end-1)/uint64(i.block_size)) + 1
+	bStart := uint(offset / int64(i.blockSize))
+	bEnd := uint((end-1)/uint64(i.blockSize)) + 1
 
-	blocks := b_end - b_start
+	blocks := bEnd - bStart
 	errs := make(chan error, blocks)
 
 	getData := func(buff []byte, off int64) (int, error) {
 		if i.dummy {
-			atomic.AddUint64(&i.metrics_blocks_w_pre_r_count, 1)
-			atomic.AddUint64(&i.metrics_blocks_w_pre_r_bytes, uint64(len(buff)))
-			//atomic.AddUint64(&i.metrics_blocks_w_pre_r_time_ns, uint64(dtime.Nanoseconds()))
+			atomic.AddUint64(&i.metricsBlocksWPreRCount, 1)
+			atomic.AddUint64(&i.metricsBlocksWPreRBytes, uint64(len(buff)))
 			return len(buff), nil
 		} else {
 			ctx := context.TODO()
-			i.lockers[off/int64(i.block_size)].RLock()
+			i.lockers[off/int64(i.blockSize)].RLock()
 			ctime := time.Now()
 			obj, err := i.client.GetObject(ctx, i.bucket, fmt.Sprintf("%s-%d", i.prefix, off), minio.GetObjectOptions{})
-			i.lockers[off/int64(i.block_size)].RUnlock()
+			i.lockers[off/int64(i.blockSize)].RUnlock()
 			if err != nil {
 				if err.Error() == errNoSuchKey.Error() {
 					return len(buff), nil
@@ -258,9 +257,9 @@ func (i *S3Storage) WriteAt(buffer []byte, offset int64) (int, error) {
 			n, err := obj.Read(buff)
 			dtime := time.Since(ctime)
 			if err == nil {
-				atomic.AddUint64(&i.metrics_blocks_w_pre_r_count, 1)
-				atomic.AddUint64(&i.metrics_blocks_w_pre_r_bytes, uint64(n))
-				atomic.AddUint64(&i.metrics_blocks_w_pre_r_time_ns, uint64(dtime.Nanoseconds()))
+				atomic.AddUint64(&i.metricsBlocksWPreRCount, 1)
+				atomic.AddUint64(&i.metricsBlocksWPreRBytes, uint64(n))
+				atomic.AddUint64(&i.metricsBlocksWPreRTimeNS, uint64(dtime.Nanoseconds()))
 			} else if err.Error() == errNoSuchKey.Error() {
 				return len(buff), nil
 			}
@@ -270,12 +269,11 @@ func (i *S3Storage) WriteAt(buffer []byte, offset int64) (int, error) {
 
 	putData := func(buff []byte, off int64) (int, error) {
 		if i.dummy {
-			atomic.AddUint64(&i.metrics_blocks_w_count, 1)
-			atomic.AddUint64(&i.metrics_blocks_w_bytes, uint64(len(buff)))
-			//atomic.AddUint64(&i.metrics_blocks_w_time_ns, uint64(dtime.Nanoseconds()))
+			atomic.AddUint64(&i.metricsBlocksWCount, 1)
+			atomic.AddUint64(&i.metricsBlocksWBytes, uint64(len(buff)))
 			return len(buff), nil
 		} else {
-			block := off / int64(i.block_size)
+			block := off / int64(i.blockSize)
 			ctx, cancelFn := context.WithCancel(context.TODO())
 			i.lockers[block].Lock()
 
@@ -283,7 +281,7 @@ func (i *S3Storage) WriteAt(buffer []byte, offset int64) (int, error) {
 
 			ctime := time.Now()
 			obj, err := i.client.PutObject(ctx, i.bucket, fmt.Sprintf("%s-%d", i.prefix, off),
-				bytes.NewReader(buff), int64(i.block_size),
+				bytes.NewReader(buff), int64(i.blockSize),
 				minio.PutObjectOptions{})
 			dtime := time.Since(ctime)
 
@@ -291,9 +289,9 @@ func (i *S3Storage) WriteAt(buffer []byte, offset int64) (int, error) {
 			i.lockers[block].Unlock()
 
 			if err == nil {
-				atomic.AddUint64(&i.metrics_blocks_w_count, 1)
-				atomic.AddUint64(&i.metrics_blocks_w_bytes, uint64(obj.Size))
-				atomic.AddUint64(&i.metrics_blocks_w_time_ns, uint64(dtime.Nanoseconds()))
+				atomic.AddUint64(&i.metricsBlocksWCount, 1)
+				atomic.AddUint64(&i.metricsBlocksWBytes, uint64(obj.Size))
+				atomic.AddUint64(&i.metricsBlocksWTimeNS, uint64(dtime.Nanoseconds()))
 			} else {
 				return 0, err
 			}
@@ -302,38 +300,38 @@ func (i *S3Storage) WriteAt(buffer []byte, offset int64) (int, error) {
 		}
 	}
 
-	for b := b_start; b < b_end; b++ {
+	for b := bStart; b < bEnd; b++ {
 		go func(block_no uint) {
-			block_offset := int64(block_no) * int64(i.block_size)
+			blockOffset := int64(block_no) * int64(i.blockSize)
 			var err error
-			if block_offset >= offset {
+			if blockOffset >= offset {
 				// Partial write at the end
-				if len(buffer[block_offset-offset:]) < i.block_size {
-					block_buffer := make([]byte, i.block_size)
+				if len(buffer[blockOffset-offset:]) < i.blockSize {
+					blockBuffer := make([]byte, i.blockSize)
 					// Read existing data
-					_, err = getData(block_buffer, block_offset)
+					_, err = getData(blockBuffer, blockOffset)
 					if err == nil || errors.Is(err, io.EOF) {
 						// Update the data
-						copy(block_buffer, buffer[block_offset-offset:])
+						copy(blockBuffer, buffer[blockOffset-offset:])
 						// Write back
-						_, err = putData(block_buffer, block_offset)
+						_, err = putData(blockBuffer, blockOffset)
 					}
 				} else {
 					// Complete write in the middle
-					s := block_offset - offset
-					e := s + int64(i.block_size)
+					s := blockOffset - offset
+					e := s + int64(i.blockSize)
 					if e > int64(len(buffer)) {
 						e = int64(len(buffer))
 					}
-					_, err = putData(buffer[s:e], block_offset)
+					_, err = putData(buffer[s:e], blockOffset)
 				}
 			} else {
 				// Partial write at the start
-				block_buffer := make([]byte, i.block_size)
-				_, err = getData(block_buffer, block_offset)
+				blockBuffer := make([]byte, i.blockSize)
+				_, err = getData(blockBuffer, blockOffset)
 				if err == nil || errors.Is(err, io.EOF) {
-					copy(block_buffer[offset-block_offset:], buffer)
-					_, err = putData(block_buffer, block_offset)
+					copy(blockBuffer[offset-blockOffset:], buffer)
+					_, err = putData(blockBuffer, blockOffset)
 				}
 			}
 			errs <- err
@@ -341,14 +339,14 @@ func (i *S3Storage) WriteAt(buffer []byte, offset int64) (int, error) {
 	}
 
 	// Wait for completion, Check for errors and return...
-	for b := b_start; b < b_end; b++ {
+	for b := bStart; b < bEnd; b++ {
 		e := <-errs
 		if e != nil && !errors.Is(e, io.EOF) {
 			return 0, e
 		}
 	}
 
-	atomic.AddUint64(&i.metrics_blocks_w_data_bytes, uint64(len(buffer)))
+	atomic.AddUint64(&i.metricsBlocksWDataBytes, uint64(len(buffer)))
 
 	return len(buffer), nil
 }
@@ -371,41 +369,41 @@ func (i *S3Storage) CancelWrites(offset int64, length int64) {
 		end = i.size
 	}
 
-	b_start := uint(offset / int64(i.block_size))
-	b_end := uint((end-1)/uint64(i.block_size)) + 1
+	bStart := uint(offset / int64(i.blockSize))
+	bEnd := uint((end-1)/uint64(i.blockSize)) + 1
 
-	for b := b_start; b < b_end; b++ {
+	for b := bStart; b < bEnd; b++ {
 		// Cancel any writes for the given block...
 		i.setContext(int(b), nil)
 	}
 }
 
 type S3Metrics struct {
-	Blocks_w_count       uint64
-	Blocks_w_bytes       uint64
-	Blocks_w_data_bytes  uint64
-	Blocks_w_time        time.Duration
-	Blocks_w_pre_r_count uint64
-	Blocks_w_pre_r_bytes uint64
-	Blocks_w_pre_r_time  time.Duration
-	Blocks_r_count       uint64
-	Blocks_r_bytes       uint64
-	Blocks_r_data_bytes  uint64
-	Blocks_r_time        time.Duration
+	BlocksWCount     uint64
+	BlocksWBytes     uint64
+	BlocksWDataBytes uint64
+	BlocksWTime      time.Duration
+	BlocksWPreRCount uint64
+	BlocksWPreRBytes uint64
+	BlocksWPreRTime  time.Duration
+	BlocksRCount     uint64
+	BlocksRBytes     uint64
+	BlocksRDataBytes uint64
+	BlocksRTime      time.Duration
 }
 
 func (i *S3Storage) Metrics() *S3Metrics {
 	return &S3Metrics{
-		Blocks_w_count:       atomic.LoadUint64(&i.metrics_blocks_w_count),
-		Blocks_w_bytes:       atomic.LoadUint64(&i.metrics_blocks_w_bytes),
-		Blocks_w_data_bytes:  atomic.LoadUint64(&i.metrics_blocks_w_data_bytes),
-		Blocks_w_time:        time.Duration(atomic.LoadUint64(&i.metrics_blocks_w_time_ns)),
-		Blocks_w_pre_r_count: atomic.LoadUint64(&i.metrics_blocks_w_pre_r_count),
-		Blocks_w_pre_r_bytes: atomic.LoadUint64(&i.metrics_blocks_w_pre_r_bytes),
-		Blocks_w_pre_r_time:  time.Duration(atomic.LoadUint64(&i.metrics_blocks_w_pre_r_time_ns)),
-		Blocks_r_count:       atomic.LoadUint64(&i.metrics_blocks_r_count),
-		Blocks_r_bytes:       atomic.LoadUint64(&i.metrics_blocks_r_bytes),
-		Blocks_r_data_bytes:  atomic.LoadUint64(&i.metrics_blocks_r_data_bytes),
-		Blocks_r_time:        time.Duration(atomic.LoadUint64(&i.metrics_blocks_r_time_ns)),
+		BlocksWCount:     atomic.LoadUint64(&i.metricsBlocksWCount),
+		BlocksWBytes:     atomic.LoadUint64(&i.metricsBlocksWBytes),
+		BlocksWDataBytes: atomic.LoadUint64(&i.metricsBlocksWDataBytes),
+		BlocksWTime:      time.Duration(atomic.LoadUint64(&i.metricsBlocksWTimeNS)),
+		BlocksWPreRCount: atomic.LoadUint64(&i.metricsBlocksWPreRCount),
+		BlocksWPreRBytes: atomic.LoadUint64(&i.metricsBlocksWPreRBytes),
+		BlocksWPreRTime:  time.Duration(atomic.LoadUint64(&i.metricsBlocksWPreRTimeNS)),
+		BlocksRCount:     atomic.LoadUint64(&i.metricsBlocksRCount),
+		BlocksRBytes:     atomic.LoadUint64(&i.metricsBlocksRBytes),
+		BlocksRDataBytes: atomic.LoadUint64(&i.metricsBlocksRDataBytes),
+		BlocksRTime:      time.Duration(atomic.LoadUint64(&i.metricsBlocksRTimeNS)),
 	}
 }

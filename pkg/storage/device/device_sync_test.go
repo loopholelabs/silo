@@ -113,7 +113,7 @@ func TestDeviceSync(t *testing.T) {
 	metrics := stats[0].(*sources.S3Metrics)
 
 	// Do some asserts on the S3Metrics... It should have written each block at least once by now.
-	assert.GreaterOrEqual(t, num_blocks, int(metrics.Blocks_w_count))
+	assert.GreaterOrEqual(t, num_blocks, int(metrics.BlocksWCount))
 
 	prov.Close()
 }
