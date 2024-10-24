@@ -1,7 +1,6 @@
 package modules
 
 import (
-	"sync"
 	"time"
 
 	"github.com/loopholelabs/silo/pkg/storage"
@@ -9,17 +8,17 @@ import (
 
 /**
  * Simple artificial latency for tests etc
- * Adds a RWMutex for this, so that the added latency is within a lock
  *
  */
 type ArtificialLatency struct {
 	storage.ProviderWithEvents
-	lock                sync.RWMutex
 	prov                storage.Provider
 	latencyRead         time.Duration
 	latencyWrite        time.Duration
 	latencyReadPerByte  time.Duration
 	latencyWritePerByte time.Duration
+	latencyFlush        time.Duration
+	latencyClose        time.Duration
 }
 
 // Relay events to embedded StorageProvider
@@ -28,19 +27,22 @@ func (i *ArtificialLatency) SendSiloEvent(eventType storage.EventType, eventData
 	return append(data, storage.SendSiloEvent(i.prov, eventType, eventData)...)
 }
 
-func NewArtificialLatency(prov storage.Provider, latencyRead time.Duration, latencyReadPerByte time.Duration, latencyWrite time.Duration, latencyWritePerByte time.Duration) *ArtificialLatency {
+func NewArtificialLatency(prov storage.Provider,
+	latencyRead time.Duration, latencyReadPerByte time.Duration,
+	latencyWrite time.Duration, latencyWritePerByte time.Duration,
+	latencyFlush time.Duration, latencyClose time.Duration) *ArtificialLatency {
 	return &ArtificialLatency{
 		prov:                prov,
 		latencyRead:         latencyRead,
 		latencyWrite:        latencyWrite,
 		latencyReadPerByte:  latencyReadPerByte,
 		latencyWritePerByte: latencyWritePerByte,
+		latencyFlush:        latencyFlush,
+		latencyClose:        latencyClose,
 	}
 }
 
 func (i *ArtificialLatency) ReadAt(buffer []byte, offset int64) (int, error) {
-	i.lock.RLock()
-	defer i.lock.RUnlock()
 	if i.latencyRead != 0 {
 		time.Sleep(i.latencyRead)
 	}
@@ -51,8 +53,6 @@ func (i *ArtificialLatency) ReadAt(buffer []byte, offset int64) (int, error) {
 }
 
 func (i *ArtificialLatency) WriteAt(buffer []byte, offset int64) (int, error) {
-	i.lock.Lock()
-	defer i.lock.Unlock()
 	if i.latencyWrite != 0 {
 		time.Sleep(i.latencyWrite)
 	}
@@ -63,6 +63,9 @@ func (i *ArtificialLatency) WriteAt(buffer []byte, offset int64) (int, error) {
 }
 
 func (i *ArtificialLatency) Flush() error {
+	if i.latencyFlush != 0 {
+		time.Sleep(i.latencyFlush)
+	}
 	return i.prov.Flush()
 }
 
@@ -71,6 +74,9 @@ func (i *ArtificialLatency) Size() uint64 {
 }
 
 func (i *ArtificialLatency) Close() error {
+	if i.latencyClose != 0 {
+		time.Sleep(i.latencyClose)
+	}
 	return i.prov.Close()
 }
 

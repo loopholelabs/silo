@@ -208,7 +208,7 @@ func TestStorageEventsForModules(tt *testing.T) {
 			addModule(sourceDirtyLocal)
 			addModule(sourceDirtyRemote)
 
-			mod1 := modules.NewArtificialLatency(sourceDirtyLocal, 0, 0, 0, 0)
+			mod1 := modules.NewArtificialLatency(sourceDirtyLocal, 0, 0, 0, 0, 0, 0)
 			addModule(mod1)
 			mod2, err := modules.NewBinLog(mod1, "binlog_file")
 			assert.NoError(t, err)
