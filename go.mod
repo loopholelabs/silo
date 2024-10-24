@@ -1,8 +1,8 @@
 module github.com/loopholelabs/silo
 
-go 1.21
+go 1.22
 
-toolchain go1.22.2
+toolchain go1.22.4
 
 require (
 	github.com/Merovius/nbd v0.0.0-20231017152624-27b78b60d8da
@@ -45,6 +45,7 @@ require (
 	github.com/klauspost/compress v1.17.9 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.8 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
+	github.com/loopholelabs/logging v0.3.1 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-runewidth v0.0.16 // indirect

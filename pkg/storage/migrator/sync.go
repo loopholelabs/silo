@@ -10,10 +10,11 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/dirtytracker"
 
-	"github.com/rs/zerolog/log"
+	"github.com/loopholelabs/logging/types"
 )
 
 type Sync_config struct {
+	Logger             types.RootLogger
 	Name               string
 	Tracker            *dirtytracker.DirtyTrackerRemote // A dirty block tracker
 	Lockable           storage.LockableStorageProvider  // Lockable
@@ -126,28 +127,32 @@ func (s *Syncer) Sync(sync_all_first bool, continuous bool) (*MigrationProgress,
 	conf.Dedupe_writes = s.config.Dedupe_writes
 
 	conf.Progress_handler = func(p *MigrationProgress) {
-		log.Info().
-			Str("name", s.config.Name).
-			Float64("migrated_blocks_perc", p.Migrated_blocks_perc).
-			Int("ready_blocks", p.Ready_blocks).
-			Int("total_blocks", p.Total_blocks).
-			Float64("ready_blocks_perc", p.Ready_blocks_perc).
-			Int("active_blocks", p.Active_blocks).
-			Int("total_migrated_blocks", p.Total_Migrated_blocks).
-			Int("total_canceled_blocks", p.Total_Canceled_blocks).
-			Int("total_duplicated_blocks", p.Total_Duplicated_blocks).
-			Msg("Continuous sync progress")
+		if s.config.Logger != nil {
+			s.config.Logger.Info().
+				Str("name", s.config.Name).
+				Float64("migrated_blocks_perc", p.Migrated_blocks_perc).
+				Int("ready_blocks", p.Ready_blocks).
+				Int("total_blocks", p.Total_blocks).
+				Float64("ready_blocks_perc", p.Ready_blocks_perc).
+				Int("active_blocks", p.Active_blocks).
+				Int("total_migrated_blocks", p.Total_Migrated_blocks).
+				Int("total_canceled_blocks", p.Total_Canceled_blocks).
+				Int("total_duplicated_blocks", p.Total_Duplicated_blocks).
+				Msg("Continuous sync progress")
+		}
 		if s.config.Progress_handler != nil {
 			s.config.Progress_handler(p)
 		}
 	}
 	conf.Error_handler = func(b *storage.BlockInfo, err error) {
-		log.Error().
-			Str("name", s.config.Name).
-			Err(err).
-			Int("block", b.Block).
-			Int("type", b.Type).
-			Msg("Continuous sync error")
+		if s.config.Logger != nil {
+			s.config.Logger.Error().
+				Str("name", s.config.Name).
+				Err(err).
+				Int("block", b.Block).
+				Int("type", b.Type).
+				Msg("Continuous sync error")
+		}
 		if s.config.Error_handler != nil {
 			s.config.Error_handler(b, err)
 		}
