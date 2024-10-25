@@ -40,6 +40,7 @@ func setupDevices(t *testing.T, size int, blockSize int) (storage.StorageProvide
 			endpoint = "%s"
 			bucket = "silosilo"
 			config {
+			    onlydirty = true
 				blockshift = 2
 				maxage = "100ms"
 				minchanged = 4
@@ -63,6 +64,7 @@ func setupDevices(t *testing.T, size int, blockSize int) (storage.StorageProvide
 			endpoint = "%s"
 			bucket = "silosilo"
 			config {
+			    onlydirty = true
 				blockshift = 2
 				maxage = "100ms"
 				minchanged = 4

@@ -34,6 +34,7 @@ func TestDeviceSync(t *testing.T) {
 			endpoint = "%s"
 			bucket = "silosilo"
 			config {
+				onlydirty = true
 				blockshift = 2
 				maxage = "100ms"
 				minchanged = 4

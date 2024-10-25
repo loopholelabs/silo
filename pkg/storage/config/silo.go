@@ -30,6 +30,7 @@ type DeviceSchema struct {
 }
 
 type SyncConfigSchema struct {
+	OnlyDirty   bool   `hcl:"onlydirty,attr"`
 	BlockShift  int    `hcl:"blockshift,attr"`
 	MaxAge      string `hcl:"maxage,attr"`
 	MinChanged  int    `hcl:"minchanged,attr"`

@@ -316,7 +316,7 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 						panic(err)
 					}
 
-					// TODO: We should probably check the hash here...
+					// TODO: We should probably check the hash here, though if it's incorrect there's nothing we can do.
 					n, err = prov.WriteAt(buffer, as.Offset)
 					if err != nil || n != int(as.Length) {
 						panic(err)
@@ -335,8 +335,8 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 
 			// Sync happens here...
 			go func() {
-				// Do this in a goroutine, but make sure it's cancelled etc
-				_, _ = syncer.Sync(false, true)
+				// Do this in a goroutine. It'll get cancelled via context
+				_, _ = syncer.Sync(!ds.Sync.Config.OnlyDirty, true)
 				wg.Done()
 			}()
 			return true
