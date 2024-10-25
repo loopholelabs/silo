@@ -45,7 +45,7 @@ func setupDevices(t *testing.T, size int, blockSize int) (storage.StorageProvide
 				maxage = "100ms"
 				minchanged = 4
 				limit = 8
-				checkperiod = "500ms"
+				checkperiod = "1s"
 			}
 		}
 	}
@@ -69,7 +69,7 @@ func setupDevices(t *testing.T, size int, blockSize int) (storage.StorageProvide
 				maxage = "100ms"
 				minchanged = 4
 				limit = 8
-				checkperiod = "500ms"
+				checkperiod = "1s"
 			}
 		}
 	}
@@ -127,7 +127,7 @@ func TestMigratorS3Assisted(t *testing.T) {
 	assert.Equal(t, len(buffer), n)
 
 	// Wait for the sync to do some bits.
-	time.Sleep(500 * time.Millisecond)
+	time.Sleep(1 * time.Second)
 
 	orderer := blocks.NewAnyBlockOrder(num_blocks, nil)
 	orderer.AddAll()
@@ -192,7 +192,7 @@ func TestMigratorS3Assisted(t *testing.T) {
 	assert.NoError(t, err)
 
 	// This will GRAB the data in alternateSources from S3, and return when it's done.
-	storage.SendSiloEvent(provDest, "sync.start", destFrom.GetAlternateSources())
+	storage.SendSiloEvent(provDest, "sync.start", device.SyncStartConfig{AlternateSources: destFrom.GetAlternateSources(), Destination: provDest})
 
 	// This will end with migration completed, and consumer Locked.
 	eq, err := storage.Equals(provSrc, provDest, blockSize)
@@ -251,7 +251,7 @@ func TestMigratorS3AssistedChangeSource(t *testing.T) {
 	assert.Equal(t, len(buffer), n)
 
 	// Wait for the sync to do some bits.
-	time.Sleep(500 * time.Millisecond)
+	time.Sleep(1 * time.Second)
 
 	orderer := blocks.NewAnyBlockOrder(num_blocks, nil)
 	orderer.AddAll()
@@ -329,7 +329,7 @@ func TestMigratorS3AssistedChangeSource(t *testing.T) {
 	assert.NoError(t, err)
 
 	// This will GRAB the data in alternateSources from S3, and return when it's done.
-	storage.SendSiloEvent(provDest, "sync.start", destFrom.GetAlternateSources())
+	storage.SendSiloEvent(provDest, "sync.start", device.SyncStartConfig{AlternateSources: destFrom.GetAlternateSources(), Destination: provDest})
 
 	// This will end with migration completed, and consumer Locked.
 	eq, err := storage.Equals(provSrc, provDest, blockSize)

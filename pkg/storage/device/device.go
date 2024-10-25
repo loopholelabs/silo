@@ -36,6 +36,11 @@ type Device struct {
 	Exposed  storage.ExposedStorage
 }
 
+type SyncStartConfig struct {
+	AlternateSources []packets.AlternateSource
+	Destination      storage.StorageProvider
+}
+
 func NewDevices(ds []*config.DeviceSchema) (map[string]*Device, error) {
 	devices := make(map[string]*Device)
 	for _, c := range ds {
@@ -308,12 +313,12 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 		// If the storage gets a "sync.start", we should start syncing to S3.
 		storage.AddSiloEventNotification(prov, "sync.start", func(event_type storage.EventType, data storage.EventData) storage.EventReturnData {
 			if data != nil {
-				alternateSources := data.([]packets.AlternateSource)
+				startConfig := data.(SyncStartConfig)
 
 				var wg sync.WaitGroup
 
 				// Pull these blocks in parallel
-				for _, as := range alternateSources {
+				for _, as := range startConfig.AlternateSources {
 					wg.Add(1)
 					go func(a packets.AlternateSource) {
 						buffer := make([]byte, a.Length)
@@ -328,7 +333,7 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 							panic("The data in S3 is corrupt.")
 						}
 
-						n, err = prov.WriteAt(buffer, a.Offset)
+						n, err = startConfig.Destination.WriteAt(buffer, a.Offset)
 						if err != nil || n != int(a.Length) {
 							panic(fmt.Sprintf("sync.start unable to write data to device from S3. %v", err))
 						}
