@@ -15,19 +15,19 @@ var ErrRemoteWriteError = errors.New("remote write error")
 
 type ToProtocol struct {
 	storage.StorageProviderWithEvents
-	size              uint64
-	dev               uint32
-	protocol          Protocol
-	Compressed_writes bool
-	alternateSources  []packets.AlternateSource
+	size             uint64
+	dev              uint32
+	protocol         Protocol
+	CompressedWrites bool
+	alternateSources []packets.AlternateSource
 }
 
 func NewToProtocol(size uint64, deviceID uint32, p Protocol) *ToProtocol {
 	return &ToProtocol{
-		size:              size,
-		dev:               deviceID,
-		protocol:          p,
-		Compressed_writes: false,
+		size:             size,
+		dev:              deviceID,
+		protocol:         p,
+		CompressedWrites: false,
 	}
 }
 
@@ -154,7 +154,7 @@ func (i *ToProtocol) WriteAt(buffer []byte, offset int64) (int, error) {
 	}
 
 	if !dontSendData {
-		if i.Compressed_writes {
+		if i.CompressedWrites {
 			data := packets.EncodeWriteAtComp(offset, buffer)
 			id, err = i.protocol.SendPacket(i.dev, ID_PICK_ANY, data)
 		} else {

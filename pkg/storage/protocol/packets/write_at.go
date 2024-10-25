@@ -8,6 +8,7 @@ import (
 
 const WRITE_AT_DATA = 0
 const WRITE_AT_HASH = 1
+const WRITE_AT_COMP_RLE = 2
 
 func EncodeWriteAt(offset int64, data []byte) []byte {
 	buff := make([]byte, 2+8+len(data))
