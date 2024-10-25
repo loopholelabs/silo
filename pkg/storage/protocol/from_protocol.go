@@ -311,62 +311,46 @@ func (fp *FromProtocol) HandleWriteAt() error {
 
 		offset, write_data, err := packets.DecodeWriteAt(data)
 		if err != nil {
-			return err
-		}
+			// It could be a WriteAtHash command...
+			_, length, _, errWriteAtHash := packets.DecodeWriteAtHash(data)
+			if errWriteAtHash != nil {
+				return err
+			}
 
-		// Handle in a goroutine
-		go func(goffset int64, gdata []byte, gid uint32) {
-			n, err := fp.prov.WriteAt(gdata, goffset)
+			// For now, we will simply ack. We do NOT mark it as present. That part will be done when the alternateSources is retrieved.
+			// fp.mark_range_present(int(offset), int(length))
+
 			war := &packets.WriteAtResponse{
-				Bytes: n,
-				Error: err,
+				Error: nil,
+				Bytes: int(length),
 			}
-			if err == nil {
-				fp.mark_range_present(int(goffset), len(gdata))
-			}
-			_, err = fp.protocol.SendPacket(fp.dev, gid, packets.EncodeWriteAtResponse(war))
+			_, err = fp.protocol.SendPacket(fp.dev, id, packets.EncodeWriteAtResponse(war))
 			if err != nil {
-				errLock.Lock()
-				errValue = err
-				errLock.Unlock()
+				return err
 			}
-		}(offset, write_data, id)
-	}
-}
-
-// Handle any WriteAtHash commands. (We simply acknowledge)
-func (fp *FromProtocol) HandleWriteAtHash() error {
-	err := fp.wait_init_or_cancel()
-	if err != nil {
-		return err
-	}
-
-	for {
-		id, data, err := fp.protocol.WaitForCommand(fp.dev, packets.COMMAND_WRITE_AT_HASH)
-		if err != nil {
-			return err
-		}
-
-		_, length, _, err := packets.DecodeWriteAtHash(data)
-		if err != nil {
-			return err
-		}
-
-		// For now, we will simply ack. We do NOT mark it as present. That part will be done when the alternateSources is retrieved.
-		// fp.mark_range_present(int(offset), int(length))
-
-		war := &packets.WriteAtResponse{
-			Error: nil,
-			Bytes: int(length),
-		}
-		_, err = fp.protocol.SendPacket(fp.dev, id, packets.EncodeWriteAtResponse(war))
-		if err != nil {
-			return err
+		} else {
+			// Handle in a goroutine
+			go func(goffset int64, gdata []byte, gid uint32) {
+				n, err := fp.prov.WriteAt(gdata, goffset)
+				war := &packets.WriteAtResponse{
+					Bytes: n,
+					Error: err,
+				}
+				if err == nil {
+					fp.mark_range_present(int(goffset), len(gdata))
+				}
+				_, err = fp.protocol.SendPacket(fp.dev, gid, packets.EncodeWriteAtResponse(war))
+				if err != nil {
+					errLock.Lock()
+					errValue = err
+					errLock.Unlock()
+				}
+			}(offset, write_data, id)
 		}
 	}
 }
 
-// Handle any WriteAt commands, and send to provider
+// Handle any WriteAtWithMap commands, and send to provider
 func (fp *FromProtocol) HandleWriteAtWithMap(cb func(offset int64, data []byte, idmap map[uint64]uint64) error) error {
 	err := fp.wait_init_or_cancel()
 	if err != nil {

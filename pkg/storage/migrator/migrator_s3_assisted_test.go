@@ -154,9 +154,6 @@ func TestMigratorS3Assisted(t *testing.T) {
 			_ = destFrom.HandleWriteAt()
 		}()
 		go func() {
-			_ = destFrom.HandleWriteAtHash()
-		}()
-		go func() {
 			_ = destFrom.HandleDevInfo()
 		}()
 	}
@@ -279,9 +276,6 @@ func TestMigratorS3AssistedChangeSource(t *testing.T) {
 		}()
 		go func() {
 			_ = destFrom.HandleWriteAt()
-		}()
-		go func() {
-			_ = destFrom.HandleWriteAtHash()
 		}()
 		go func() {
 			_ = destFrom.HandleDevInfo()
