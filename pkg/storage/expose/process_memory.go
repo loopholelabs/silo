@@ -214,20 +214,25 @@ func (pm *ProcessMemory) getSmap(dev string) (*Smap, error) {
 	}
 }
 
+func (pm *ProcessMemory) clearSoftDirty() error {
+	return os.WriteFile(fmt.Sprintf("/proc/%d/clear_refs", pm.pid), []byte("4"), 0666)
+}
+
 /**
  * readSoftDirtyMemory
  *
  */
-func (pm *ProcessMemory) readSoftDirtyMemory(addr_start uint64, addr_end uint64, prov storage.StorageProvider) error {
+func (pm *ProcessMemory) readSoftDirtyMemory(addr_start uint64, addr_end uint64, prov storage.StorageProvider) (uint64, error) {
+	bytesRead := uint64(0)
 	memf, err := os.OpenFile(fmt.Sprintf("/proc/%d/mem", pm.pid), os.O_RDONLY, 0)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer memf.Close()
 
 	f, err := os.OpenFile(fmt.Sprintf("/proc/%d/pagemap", pm.pid), os.O_RDONLY, 0)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer f.Close()
 
@@ -235,11 +240,9 @@ func (pm *ProcessMemory) readSoftDirtyMemory(addr_start uint64, addr_end uint64,
 	pos := int64((addr_start >> PAGE_SHIFT) << 3)
 	_, err = f.Seek(pos, io.SeekStart)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
-	//kdata := make([]byte, 8)
-	data := make([]byte, 8)
 	dataBuffer := make([]byte, READ_BUFFER_SIZE) // Max read size
 
 	copyData := func(start uint64, end uint64) error {
@@ -256,21 +259,28 @@ func (pm *ProcessMemory) readSoftDirtyMemory(addr_start uint64, addr_end uint64,
 	currentStart := uint64(0)
 	currentEnd := uint64(0)
 
-	for xx := addr_start; xx < addr_end; xx += PAGE_SIZE {
-		_, err = f.Read(data)
-		if err != nil {
-			return err
-		}
+	numPages := ((addr_end - addr_start) + PAGE_SIZE - 1) / PAGE_SIZE
+	pageBuffer := make([]byte, numPages<<3)
+	_, err = f.Read(pageBuffer)
+	if err != nil {
+		return 0, err
+	}
 
-		val := binary.LittleEndian.Uint64(data)
+	dataIndex := 0
+	for xx := addr_start; xx < addr_end; xx += PAGE_SIZE {
+
+		val := binary.LittleEndian.Uint64(pageBuffer[dataIndex:])
+		dataIndex += 8
+
 		if (val & PAGEMAP_FLAG_PRESENT) == PAGEMAP_FLAG_PRESENT {
 			if (val & PAGEMAP_FLAG_SOFT_DIRTY) == PAGEMAP_FLAG_SOFT_DIRTY {
 				if currentEnd == xx {
 					if currentEnd-currentStart+PAGE_SIZE > uint64(len(dataBuffer)) {
 						err = copyData(currentStart, currentEnd)
 						if err != nil {
-							return err
+							return 0, err
 						}
+						bytesRead += (currentEnd - currentStart)
 
 						currentStart = xx
 						currentEnd = xx + PAGE_SIZE
@@ -281,8 +291,9 @@ func (pm *ProcessMemory) readSoftDirtyMemory(addr_start uint64, addr_end uint64,
 					if currentEnd != 0 {
 						err = copyData(currentStart, currentEnd)
 						if err != nil {
-							return err
+							return 0, err
 						}
+						bytesRead += (currentEnd - currentStart)
 					}
 					currentStart = xx
 					currentEnd = xx + PAGE_SIZE
@@ -294,11 +305,14 @@ func (pm *ProcessMemory) readSoftDirtyMemory(addr_start uint64, addr_end uint64,
 	if currentEnd != 0 {
 		err = copyData(currentStart, currentEnd)
 		if err != nil {
-			return err
+			return 0, err
 		}
+		bytesRead += (currentEnd - currentStart)
 	}
 
-	return nil
+	// Wait for any pending to finish
+
+	return bytesRead, nil
 }
 
 /**

@@ -7,6 +7,7 @@ import (
 	"os/user"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
@@ -70,17 +71,41 @@ func TestProcessMemory(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Change some of the data...
-	changedData := 1024 * 1024 * 20
+	changedData := 1024 * 1024 * 900
 	_, err = crand.Read(mmdata1[:changedData])
 	assert.NoError(t, err)
 
 	// Read the soft dirty memory
-	err = pm.readSoftDirtyMemory(mem_start, mem_end, provCheck)
+	ctime := time.Now()
+	nbytes, err := pm.readSoftDirtyMemory(mem_start, mem_end, provCheck)
+	dtime := time.Since(ctime)
+	assert.NoError(t, err)
+	mbPerMs := float64(nbytes) / float64(1024*1024*dtime.Milliseconds())
+	fmt.Printf("Read %d bytes in %dms at %.2fMB/ms\n", nbytes, dtime.Milliseconds(), mbPerMs)
+	/*
+		// Reset
+		fmt.Printf("Clearing soft_dirty flags\n")
+		err = os.WriteFile(fmt.Sprintf("/proc/%d/clear_refs", pid), []byte("4"), 0666)
+		assert.NoError(t, err)
+
+		// Change something
+		mmdata1[0] = 57
+
+		// Retry
+		// Read the soft dirty memory
+		nbytes, err = pm.readSoftDirtyMemory(mem_start, mem_end, provCheck)
+		assert.NoError(t, err)
+		fmt.Printf("RETRY Read %d bytes\n", nbytes)
+
+		// Retry...
+	*/
+	// This should push all changes to prov
+	msync_ctime := time.Now()
+	err = unix.Msync(mmdata1, unix.MS_SYNC)
+	msync_dtime := time.Since(msync_ctime)
 	assert.NoError(t, err)
 
-	// This should push all changes to prov
-	err = unix.Msync(mmdata1, unix.MS_SYNC)
-	assert.NoError(t, err)
+	fmt.Printf("TIME read %dms msync %dms\n", dtime.Milliseconds(), msync_dtime.Milliseconds())
 
 	equal, err := storage.Equals(provCheck, prov, 64*1024)
 	assert.NoError(t, err)
