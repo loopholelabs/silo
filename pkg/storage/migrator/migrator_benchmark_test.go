@@ -172,9 +172,6 @@ func BenchmarkMigrationPipe(mb *testing.B) {
 					_ = destFrom.HandleWriteAt()
 				}()
 				go func() {
-					_ = destFrom.HandleWriteAtComp()
-				}()
-				go func() {
 					_ = destFrom.HandleDevInfo()
 				}()
 			}
@@ -203,7 +200,7 @@ func BenchmarkMigrationPipe(mb *testing.B) {
 			destination := protocol.NewToProtocol(sourceDirtyRemote.Size(), 17, prSource)
 
 			if testconf.compress {
-				destination.Compressed_writes = true
+				destination.CompressedWrites = true
 			}
 
 			err = destination.SendDevInfo("test", uint32(blockSize), "")

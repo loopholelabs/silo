@@ -1,10 +1,12 @@
 package protocol
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
 	"errors"
 
+	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
 )
 
@@ -12,19 +14,33 @@ var ErrInvalidPacket = errors.New("invalid packet")
 var ErrRemoteWriteError = errors.New("remote write error")
 
 type ToProtocol struct {
-	size              uint64
-	dev               uint32
-	protocol          Protocol
-	Compressed_writes bool
+	storage.StorageProviderWithEvents
+	size             uint64
+	dev              uint32
+	protocol         Protocol
+	CompressedWrites bool
+	alternateSources []packets.AlternateSource
 }
 
 func NewToProtocol(size uint64, deviceID uint32, p Protocol) *ToProtocol {
 	return &ToProtocol{
-		size:              size,
-		dev:               deviceID,
-		protocol:          p,
-		Compressed_writes: false,
+		size:             size,
+		dev:              deviceID,
+		protocol:         p,
+		CompressedWrites: false,
 	}
+}
+
+// Support Silo Events
+func (i *ToProtocol) SendSiloEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
+	if event_type == storage.EventType("sources") {
+		i.alternateSources = event_data.([]packets.AlternateSource)
+		// Send the list of alternate sources here...
+		h := packets.EncodeAlternateSources(i.alternateSources)
+		_, _ = i.protocol.SendPacket(i.dev, ID_PICK_ANY, h)
+		// For now, we do not check the error. If there was a protocol / io error, we should see it on the next send
+	}
+	return nil
 }
 
 func (i *ToProtocol) SendEvent(e *packets.Event) error {
@@ -120,12 +136,31 @@ func (i *ToProtocol) ReadAt(buffer []byte, offset int64) (int, error) {
 func (i *ToProtocol) WriteAt(buffer []byte, offset int64) (int, error) {
 	var id uint32
 	var err error
-	if i.Compressed_writes {
-		data := packets.EncodeWriteAtComp(offset, buffer)
-		id, err = i.protocol.SendPacket(i.dev, ID_PICK_ANY, data)
-	} else {
-		l, f := packets.EncodeWriterWriteAt(offset, buffer)
-		id, err = i.protocol.SendPacketWriter(i.dev, ID_PICK_ANY, l, f)
+
+	// If it's in the alternateSources list, we only need to send a WriteAtHash command.
+	// For now, we only match exact block ranges here.
+	dontSendData := false
+	for _, as := range i.alternateSources {
+		if as.Offset == offset && as.Length == int64(len(buffer)) {
+			// Only allow this if the hash is still correct/current for the data.
+			hash := sha256.Sum256(buffer)
+			if bytes.Equal(hash[:], as.Hash[:]) {
+				data := packets.EncodeWriteAtHash(as.Offset, as.Length, as.Hash[:])
+				id, err = i.protocol.SendPacket(i.dev, ID_PICK_ANY, data)
+				dontSendData = true
+			}
+			break
+		}
+	}
+
+	if !dontSendData {
+		if i.CompressedWrites {
+			data := packets.EncodeWriteAtComp(offset, buffer)
+			id, err = i.protocol.SendPacket(i.dev, ID_PICK_ANY, data)
+		} else {
+			l, f := packets.EncodeWriterWriteAt(offset, buffer)
+			id, err = i.protocol.SendPacketWriter(i.dev, ID_PICK_ANY, l, f)
+		}
 	}
 	if err != nil {
 		return 0, err

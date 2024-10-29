@@ -58,10 +58,6 @@ func setup(num int) *ToProtocol {
 		go func() {
 			_ = destFromProtocol.HandleWriteAt()
 		}()
-		go func() {
-			_ = destFromProtocol.HandleWriteAtComp()
-		}()
-
 	})
 
 	sourceToProtocol := NewToProtocol(uint64(size), 1, prSource)
@@ -110,7 +106,7 @@ func BenchmarkWriteAt(mb *testing.B) {
 func BenchmarkWriteAtComp(mb *testing.B) {
 	sourceToProtocol := setup(1)
 
-	sourceToProtocol.Compressed_writes = true
+	sourceToProtocol.CompressedWrites = true
 
 	// Do some writes
 	buff := make([]byte, 256*1024)

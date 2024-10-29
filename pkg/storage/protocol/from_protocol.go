@@ -11,39 +11,74 @@ import (
 )
 
 type FromProtocol struct {
-	dev          uint32
-	prov         storage.StorageProvider
-	prov_factory func(*packets.DevInfo) storage.StorageProvider
-	protocol     Protocol
-	init         chan bool
-	ctx          context.Context
+	dev             uint32
+	prov            storage.StorageProvider
+	providerFactory func(*packets.DevInfo) storage.StorageProvider
+	protocol        Protocol
+	init            chan bool
+	ctx             context.Context
 
-	present_lock       sync.Mutex
-	present            *util.Bitfield
-	present_block_size int
+	presentLock      sync.Mutex
+	present          *util.Bitfield
+	presentBlockSize int
+
+	alternateSourcesLock sync.Mutex
+	alternateSources     []packets.AlternateSource
 }
 
 func NewFromProtocol(ctx context.Context, dev uint32, provFactory func(*packets.DevInfo) storage.StorageProvider, protocol Protocol) *FromProtocol {
 	fp := &FromProtocol{
-		dev:                dev,
-		prov_factory:       provFactory,
-		protocol:           protocol,
-		present_block_size: 1024,
-		init:               make(chan bool, 1),
-		ctx:                ctx,
+		dev:              dev,
+		providerFactory:  provFactory,
+		protocol:         protocol,
+		presentBlockSize: 1024,
+		init:             make(chan bool, 1),
+		ctx:              ctx,
 	}
 	return fp
 }
 
+func (fp *FromProtocol) GetAlternateSources() []packets.AlternateSource {
+	fp.alternateSourcesLock.Lock()
+	defer fp.alternateSourcesLock.Unlock()
+
+	// If we didn't get a WriteAt, then return the alternateSource for a block, and mark it as present.
+	ret := make([]packets.AlternateSource, 0)
+	for _, as := range fp.alternateSources {
+		if !fp.data_present(int(as.Offset), int(as.Length)) {
+			ret = append(ret, as)
+			// Mark the range as present if we return it here.
+			fp.mark_range_present(int(as.Offset), int(as.Length))
+		}
+	}
+	return ret
+}
+
 func (fp *FromProtocol) GetDataPresent() int {
-	fp.present_lock.Lock()
-	defer fp.present_lock.Unlock()
+	fp.presentLock.Lock()
+	defer fp.presentLock.Unlock()
 	blocks := fp.present.Count(0, fp.present.Length())
-	size := blocks * fp.present_block_size
+	size := blocks * fp.presentBlockSize
 	if size > int(fp.prov.Size()) {
 		size = int(fp.prov.Size())
 	}
 	return size
+}
+
+func (fp *FromProtocol) data_present(offset int, length int) bool {
+	// Translate to full blocks...
+	end := uint64(offset + length)
+	if end > fp.prov.Size() {
+		end = fp.prov.Size()
+	}
+
+	b_start := uint(offset / fp.presentBlockSize)
+	b_end := uint((end-1)/uint64(fp.presentBlockSize)) + 1
+
+	// Check they're all there
+	fp.presentLock.Lock()
+	defer fp.presentLock.Unlock()
+	return fp.present.BitsSet(b_start, b_end)
 }
 
 func (fp *FromProtocol) mark_range_present(offset int, length int) {
@@ -53,23 +88,23 @@ func (fp *FromProtocol) mark_range_present(offset int, length int) {
 		end = fp.prov.Size()
 	}
 
-	b_start := uint(offset / fp.present_block_size)
-	b_end := uint((end-1)/uint64(fp.present_block_size)) + 1
+	b_start := uint(offset / fp.presentBlockSize)
+	b_end := uint((end-1)/uint64(fp.presentBlockSize)) + 1
 
 	// First block is incomplete. Ignore it.
-	if offset > (int(b_start) * fp.present_block_size) {
+	if offset > (int(b_start) * fp.presentBlockSize) {
 		b_start++
 	}
 
 	// Last block is incomplete AND is not the last block. Ignore it.
-	if offset+length < int(b_end*uint(fp.present_block_size)) && offset+length < int(fp.prov.Size()) {
+	if offset+length < int(b_end*uint(fp.presentBlockSize)) && offset+length < int(fp.prov.Size()) {
 		b_end--
 	}
 
 	// Mark the blocks
-	fp.present_lock.Lock()
+	fp.presentLock.Lock()
 	fp.present.SetBits(b_start, b_end)
-	fp.present_lock.Unlock()
+	fp.presentLock.Unlock()
 }
 
 func (fp *FromProtocol) mark_range_missing(offset int, length int) {
@@ -79,23 +114,23 @@ func (fp *FromProtocol) mark_range_missing(offset int, length int) {
 		end = fp.prov.Size()
 	}
 
-	b_start := uint(offset / fp.present_block_size)
-	b_end := uint((end-1)/uint64(fp.present_block_size)) + 1
+	b_start := uint(offset / fp.presentBlockSize)
+	b_end := uint((end-1)/uint64(fp.presentBlockSize)) + 1
 
 	// First block is incomplete. Ignore it.
-	if offset > (int(b_start) * fp.present_block_size) {
+	if offset > (int(b_start) * fp.presentBlockSize) {
 		b_start++
 	}
 
 	// Last block is incomplete AND is not the last block. Ignore it.
-	if offset+length < int(b_end*uint(fp.present_block_size)) && offset+length < int(fp.prov.Size()) {
+	if offset+length < int(b_end*uint(fp.presentBlockSize)) && offset+length < int(fp.prov.Size()) {
 		b_end--
 	}
 
 	// Mark the blocks
-	fp.present_lock.Lock()
+	fp.presentLock.Lock()
 	fp.present.ClearBits(b_start, b_end)
-	fp.present_lock.Unlock()
+	fp.presentLock.Unlock()
 }
 
 func (fp *FromProtocol) wait_init_or_cancel() error {
@@ -175,11 +210,31 @@ func (fp *FromProtocol) HandleDevInfo() error {
 	}
 
 	// Create storage
-	fp.prov = fp.prov_factory(di)
-	num_blocks := (int(fp.prov.Size()) + fp.present_block_size - 1) / fp.present_block_size
+	fp.prov = fp.providerFactory(di)
+	num_blocks := (int(fp.prov.Size()) + fp.presentBlockSize - 1) / fp.presentBlockSize
 	fp.present = util.NewBitfield(num_blocks)
 
 	fp.init <- true // Confirm things have been initialized for this device.
+
+	// Internal - store alternateSources here...
+	go func() {
+		for {
+			_, data, err := fp.protocol.WaitForCommand(fp.dev, packets.COMMAND_ALTERNATE_SOURCES)
+			if err != nil {
+				return
+			}
+			altSources, err := packets.DecodeAlternateSources(data)
+			if err != nil {
+				return
+			}
+
+			// For now just set it. It only gets sent ONCE at the start of a migration at the moment.
+			fp.alternateSourcesLock.Lock()
+			fp.alternateSources = altSources
+			fp.alternateSourcesLock.Unlock()
+		}
+	}()
+
 	return nil
 }
 
@@ -254,32 +309,60 @@ func (fp *FromProtocol) HandleWriteAt() error {
 			return err
 		}
 
-		offset, write_data, err := packets.DecodeWriteAt(data)
-		if err != nil {
-			return err
-		}
+		if len(data) > 1 && data[1] == packets.WRITE_AT_HASH {
+			// It could be a WriteAtHash command...
+			_, length, _, errWriteAtHash := packets.DecodeWriteAtHash(data)
+			if errWriteAtHash != nil {
+				return err
+			}
 
-		// Handle in a goroutine
-		go func(goffset int64, gdata []byte, gid uint32) {
-			n, err := fp.prov.WriteAt(gdata, goffset)
+			// For now, we will simply ack. We do NOT mark it as present. That part will be done when the alternateSources is retrieved.
+			// fp.mark_range_present(int(offset), int(length))
+
 			war := &packets.WriteAtResponse{
-				Bytes: n,
-				Error: err,
+				Error: nil,
+				Bytes: int(length),
 			}
-			if err == nil {
-				fp.mark_range_present(int(goffset), len(gdata))
-			}
-			_, err = fp.protocol.SendPacket(fp.dev, gid, packets.EncodeWriteAtResponse(war))
+			_, err = fp.protocol.SendPacket(fp.dev, id, packets.EncodeWriteAtResponse(war))
 			if err != nil {
-				errLock.Lock()
-				errValue = err
-				errLock.Unlock()
+				return err
 			}
-		}(offset, write_data, id)
+		} else {
+
+			var offset int64
+			var write_data []byte
+
+			if len(data) > 1 && data[1] == packets.WRITE_AT_COMP_RLE {
+				offset, write_data, err = packets.DecodeWriteAtComp(data)
+			} else {
+				offset, write_data, err = packets.DecodeWriteAt(data)
+			}
+			if err != nil {
+				return err
+			}
+
+			// Handle in a goroutine
+			go func(goffset int64, gdata []byte, gid uint32) {
+				n, err := fp.prov.WriteAt(gdata, goffset)
+				war := &packets.WriteAtResponse{
+					Bytes: n,
+					Error: err,
+				}
+				if err == nil {
+					fp.mark_range_present(int(goffset), len(gdata))
+				}
+				_, err = fp.protocol.SendPacket(fp.dev, gid, packets.EncodeWriteAtResponse(war))
+				if err != nil {
+					errLock.Lock()
+					errValue = err
+					errLock.Unlock()
+				}
+			}(offset, write_data, id)
+		}
 	}
 }
 
-// Handle any WriteAt commands, and send to provider
+// Handle any WriteAtWithMap commands, and send to provider
 func (fp *FromProtocol) HandleWriteAtWithMap(cb func(offset int64, data []byte, idmap map[uint64]uint64) error) error {
 	err := fp.wait_init_or_cancel()
 	if err != nil {
@@ -359,55 +442,6 @@ func (fp *FromProtocol) HandleRemoveDev(cb func()) error {
 
 	cb()
 	return nil
-}
-
-// Handle any WriteAtComp commands, and send to provider
-func (fp *FromProtocol) HandleWriteAtComp() error {
-	err := fp.wait_init_or_cancel()
-	if err != nil {
-		return err
-	}
-
-	var errLock sync.Mutex
-	var errValue error
-
-	for {
-		// If there was an error in one of the goroutines, return it.
-		errLock.Lock()
-		if errValue != nil {
-			errLock.Unlock()
-			return errValue
-		}
-		errLock.Unlock()
-
-		id, data, err := fp.protocol.WaitForCommand(fp.dev, packets.COMMAND_WRITE_AT_COMP)
-		if err != nil {
-			return err
-		}
-
-		offset, write_data, err := packets.DecodeWriteAtComp(data)
-		if err != nil {
-			return err
-		}
-
-		// Handle in a goroutine
-		go func(goffset int64, gdata []byte, gid uint32) {
-			n, err := fp.prov.WriteAt(gdata, goffset)
-			if err == nil {
-				fp.mark_range_present(int(goffset), len(gdata))
-			}
-			war := &packets.WriteAtResponse{
-				Bytes: n,
-				Error: err,
-			}
-			_, err = fp.protocol.SendPacket(fp.dev, gid, packets.EncodeWriteAtResponse(war))
-			if err != nil {
-				errLock.Lock()
-				errValue = err
-				errLock.Unlock()
-			}
-		}(offset, write_data, id)
-	}
 }
 
 // Handle any DirtyList commands

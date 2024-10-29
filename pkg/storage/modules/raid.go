@@ -13,10 +13,10 @@ type Raid struct {
 }
 
 // Relay events to embedded StorageProvider
-func (i *Raid) SendEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
-	data := i.StorageProviderWithEvents.SendEvent(event_type, event_data)
+func (i *Raid) SendSiloEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
+	data := i.StorageProviderWithEvents.SendSiloEvent(event_type, event_data)
 	for _, pr := range i.prov {
-		data = append(data, storage.SendEvent(pr, event_type, event_data)...)
+		data = append(data, storage.SendSiloEvent(pr, event_type, event_data)...)
 	}
 	return data
 }

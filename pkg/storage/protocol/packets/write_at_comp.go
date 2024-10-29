@@ -9,7 +9,9 @@ import (
 func EncodeWriteAtComp(offset int64, data []byte) []byte {
 	var buff bytes.Buffer
 
-	buff.WriteByte(COMMAND_WRITE_AT_COMP)
+	buff.WriteByte(COMMAND_WRITE_AT)
+	buff.WriteByte(WRITE_AT_COMP_RLE)
+
 	b := make([]byte, 8)
 	binary.LittleEndian.PutUint64(b, uint64(offset))
 	buff.Write(b)
@@ -79,15 +81,15 @@ func EncodeWriteAtComp(offset int64, data []byte) []byte {
 }
 
 func DecodeWriteAtComp(buff []byte) (offset int64, data []byte, err error) {
-	if buff == nil || len(buff) < 9 || buff[0] != COMMAND_WRITE_AT_COMP {
+	if buff == nil || len(buff) < 10 || buff[0] != COMMAND_WRITE_AT || buff[1] != WRITE_AT_COMP_RLE {
 		return 0, nil, errors.New("Invalid packet command")
 	}
-	off := int64(binary.LittleEndian.Uint64(buff[1:]))
+	off := int64(binary.LittleEndian.Uint64(buff[2:]))
 
 	var d bytes.Buffer
 
 	// Now read the RLE data and put it in d buffer...
-	p := 9
+	p := 10
 	for {
 		if p == len(buff) {
 			break

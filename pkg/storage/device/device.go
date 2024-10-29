@@ -1,7 +1,9 @@
 package device
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -32,6 +34,11 @@ const (
 type Device struct {
 	Provider storage.StorageProvider
 	Exposed  storage.ExposedStorage
+}
+
+type SyncStartConfig struct {
+	AlternateSources []packets.AlternateSource
+	Destination      storage.StorageProvider
 }
 
 func NewDevices(ds []*config.DeviceSchema) (map[string]*Device, error) {
@@ -296,7 +303,7 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 			ErrorHandler:    func(b *storage.BlockInfo, err error) {},
 		})
 
-		// The provider we return should feed into our sync here.
+		// The provider we return should feed into our sync here...
 		prov = sourceStorage
 
 		var sync_lock sync.Mutex
@@ -304,7 +311,38 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 		var wg sync.WaitGroup
 
 		// If the storage gets a "sync.start", we should start syncing to S3.
-		storage.AddEventNotification(prov, "sync.start", func(event_type storage.EventType, data storage.EventData) storage.EventReturnData {
+		storage.AddSiloEventNotification(prov, "sync.start", func(event_type storage.EventType, data storage.EventData) storage.EventReturnData {
+			if data != nil {
+				startConfig := data.(SyncStartConfig)
+
+				var wg sync.WaitGroup
+
+				// Pull these blocks in parallel
+				for _, as := range startConfig.AlternateSources {
+					wg.Add(1)
+					go func(a packets.AlternateSource) {
+						buffer := make([]byte, a.Length)
+						n, err := s3dest.ReadAt(buffer, a.Offset)
+						if err != nil || n != int(a.Length) {
+							panic(fmt.Sprintf("sync.start unable to read from S3. %v", err))
+						}
+
+						// Check the data in S3 hasn't changed.
+						hash := sha256.Sum256(buffer)
+						if !bytes.Equal(hash[:], a.Hash[:]) {
+							panic("The data in S3 is corrupt.")
+						}
+
+						n, err = startConfig.Destination.WriteAt(buffer, a.Offset)
+						if err != nil || n != int(a.Length) {
+							panic(fmt.Sprintf("sync.start unable to write data to device from S3. %v", err))
+						}
+						wg.Done()
+					}(as)
+				}
+				wg.Wait() // Wait for all S3 requests to complete
+			}
+
 			sync_lock.Lock()
 			if sync_running {
 				sync_lock.Unlock()
@@ -316,20 +354,20 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 
 			// Sync happens here...
 			go func() {
-				// Do this in a goroutine, but make sure it's cancelled etc
-				_, _ = syncer.Sync(false, true)
+				// Do this in a goroutine. It'll get cancelled via context
+				_, _ = syncer.Sync(!ds.Sync.Config.OnlyDirty, true)
 				wg.Done()
 			}()
 			return true
 		})
 
 		// If the storage gets a "sync.status", get some status on the S3Storage
-		storage.AddEventNotification(prov, "sync.status", func(event_type storage.EventType, data storage.EventData) storage.EventReturnData {
+		storage.AddSiloEventNotification(prov, "sync.status", func(event_type storage.EventType, data storage.EventData) storage.EventReturnData {
 			return s3dest.Metrics()
 		})
 
 		// If the storage gets a "sync.stop", we should cancel the sync, and return the safe blocks
-		storage.AddEventNotification(prov, "sync.stop", func(event_type storage.EventType, data storage.EventData) storage.EventReturnData {
+		storage.AddSiloEventNotification(prov, "sync.stop", func(event_type storage.EventType, data storage.EventData) storage.EventReturnData {
 			sync_lock.Lock()
 			if !sync_running {
 				sync_lock.Unlock()
@@ -357,7 +395,6 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 
 			return alt_sources
 		})
-
 	}
 
 	return prov, ex, nil

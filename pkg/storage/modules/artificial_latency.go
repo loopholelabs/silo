@@ -23,9 +23,9 @@ type ArtificialLatency struct {
 }
 
 // Relay events to embedded StorageProvider
-func (i *ArtificialLatency) SendEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
-	data := i.StorageProviderWithEvents.SendEvent(event_type, event_data)
-	return append(data, storage.SendEvent(i.prov, event_type, event_data)...)
+func (i *ArtificialLatency) SendSiloEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
+	data := i.StorageProviderWithEvents.SendSiloEvent(event_type, event_data)
+	return append(data, storage.SendSiloEvent(i.prov, event_type, event_data)...)
 }
 
 func NewArtificialLatency(prov storage.StorageProvider, latencyRead time.Duration, latencyReadPerByte time.Duration, latencyWrite time.Duration, latencyWritePerByte time.Duration) *ArtificialLatency {

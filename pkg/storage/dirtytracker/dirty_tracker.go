@@ -34,9 +34,9 @@ type DirtyTrackerLocal struct {
 }
 
 // Relay events to embedded StorageProvider
-func (i *DirtyTrackerLocal) SendEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
-	data := i.StorageProviderWithEvents.SendEvent(event_type, event_data)
-	return append(data, storage.SendEvent(i.dt.prov, event_type, event_data)...)
+func (i *DirtyTrackerLocal) SendSiloEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
+	data := i.StorageProviderWithEvents.SendSiloEvent(event_type, event_data)
+	return append(data, storage.SendSiloEvent(i.dt.prov, event_type, event_data)...)
 }
 
 func (dtl *DirtyTrackerLocal) ReadAt(buffer []byte, offset int64) (int, error) {
@@ -69,9 +69,9 @@ type DirtyTrackerRemote struct {
 }
 
 // Relay events to embedded StorageProvider
-func (i *DirtyTrackerRemote) SendEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
-	data := i.StorageProviderWithEvents.SendEvent(event_type, event_data)
-	return append(data, storage.SendEvent(i.dt.prov, event_type, event_data)...)
+func (i *DirtyTrackerRemote) SendSiloEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
+	data := i.StorageProviderWithEvents.SendSiloEvent(event_type, event_data)
+	return append(data, storage.SendSiloEvent(i.dt.prov, event_type, event_data)...)
 }
 
 func (dtl *DirtyTrackerRemote) ReadAt(buffer []byte, offset int64) (int, error) {
