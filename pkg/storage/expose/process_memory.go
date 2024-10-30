@@ -12,49 +12,49 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage"
 )
 
-const PAGE_SIZE = 4096
-const PAGE_SHIFT = 12
+const PageSize = 4096
+const PageShift = 12
 
-const READ_BUFFER_SIZE = 4 * 1024 * 1024 // 4mb should be fairly fast
+const ReadBufferSize = 4 * 1024 * 1024 // 4mb should be fairly fast
 
 // pagemap flags
-const PAGEMAP_FLAG_SOFT_DIRTY = 1 << 55
-const PAGEMAP_FLAG_EXCLUSIVE = 1 << 56
-const PAGEMAP_FLAG_FILEPAGE = 1 << 61
-const PAGEMAP_FLAG_SWAPPED = 1 << 62
-const PAGEMAP_FLAG_PRESENT = 1 << 63
-const PAGEMAP_MASK_PFN = (1 << 55) - 1
-const PAGEMAP_MASK_SWAP_TYPE = (1 << 5) - 1
-const PAGEMAP_SWAP_OFFSET_SHIFT = 5
-const PAGEMAP_MASK_SWAP_OFFSET = (1 << 50) - 1
+const PagemapFlagSoftDirty = 1 << 55
+const PagemapFlagExclusive = 1 << 56
+const PagemapFlagFilepage = 1 << 61
+const PagemapFlagSwapped = 1 << 62
+const PagemapFlagPresent = 1 << 63
+const PagemapMaskPfn = (1 << 55) - 1
+const PagemapMaskSwapType = (1 << 5) - 1
+const PagemapSwapOffsetShift = 5
+const PagemapMaskSwapOffset = (1 << 50) - 1
 
 // kpageflags
-const KFLAG_LOCKED = 1
-const KFLAG_ERROR = 1 << 1
-const KFLAG_REFERENCED = 1 << 2
-const KFLAG_UPTODATE = 1 << 3
-const KFLAG_DIRTY = 1 << 4
-const KFLAG_LRU = 1 << 5
-const KFLAG_ACTIVE = 1 << 6
-const KFLAG_SLAB = 1 << 7
-const KFLAG_WRITEBACK = 1 << 8
-const KFLAG_RECLAIM = 1 << 9
-const KFLAG_BUDDY = 1 << 10
-const KFLAG_MMAP = 1 << 11
-const KFLAG_ANON = 1 << 12
-const KFLAG_SWAPCACHE = 1 << 13
-const KFLAG_SWAPBACKED = 1 << 14
-const KFLAG_COMPOUND_HEAD = 1 << 15
-const KFLAG_COMPOUND_TAIL = 1 << 16
-const KFLAG_HUGE = 1 << 17
-const KFLAG_UNEVICTABLE = 1 << 18
-const KFLAG_HWPOISON = 1 << 19
-const KFLAG_NOPAGE = 1 << 20
-const KFLAG_KSM = 1 << 21
-const KFLAG_THP = 1 << 22
-const KFLAG_BALLOON = 1 << 23
-const KFLAG_ZERO_PAGE = 1 << 24
-const KFLAG_IDLE = 1 << 25
+const KflagLocked = 1
+const KflagError = 1 << 1
+const KflagReferenced = 1 << 2
+const KflagUptodate = 1 << 3
+const KflagDirty = 1 << 4
+const KflagLru = 1 << 5
+const KflagActive = 1 << 6
+const KflagSlab = 1 << 7
+const KflagWriteback = 1 << 8
+const KflagReclaim = 1 << 9
+const KflagBuddy = 1 << 10
+const KflagMmap = 1 << 11
+const KflagAnon = 1 << 12
+const KflagSwapcache = 1 << 13
+const KflagSwapbacked = 1 << 14
+const KflagCompoundHead = 1 << 15
+const KflagCompoundTail = 1 << 16
+const KflagHuge = 1 << 17
+const KflagUnevictable = 1 << 18
+const KflagHwPoison = 1 << 19
+const KflagNopage = 1 << 20
+const KflagKSM = 1 << 21
+const KflagTHP = 1 << 22
+const KflagBalloon = 1 << 23
+const KflagZeroPage = 1 << 24
+const KflagIdle = 1 << 25
 
 /**
  * ProcessMemory
@@ -69,31 +69,31 @@ type ProcessMemory struct {
  *
  */
 type Smap struct {
-	Size            int
-	KernelPageSize  int
-	MMUPageSize     int
-	Rss             int
-	Pss             int
-	Pss_Dirty       int
-	Shared_Clean    int
-	Shared_Dirty    int
-	Private_Clean   int
-	Private_Dirty   int
-	Referenced      int
-	Anonymous       int
-	KSM             int
-	LazyFree        int
-	AnonHugePages   int
-	ShmemPmdMapped  int
-	FilePmdMapped   int
-	Shared_Hugetlb  int
-	Private_Hugetlb int
-	Swap            int
-	SwapPss         int
-	Locked          int
-	THPeligible     string
-	ProtectionKey   string
-	VmFlags         string
+	Size           int
+	KernelPageSize int
+	MMUPageSize    int
+	Rss            int
+	Pss            int
+	PssDirty       int
+	SharedClean    int
+	SharedDirty    int
+	PrivateClean   int
+	PrivateDirty   int
+	Referenced     int
+	Anonymous      int
+	KSM            int
+	LazyFree       int
+	AnonHugePages  int
+	ShmemPmdMapped int
+	FilePmdMapped  int
+	SharedHugetlb  int
+	PrivateHugetlb int
+	Swap           int
+	SwapPss        int
+	Locked         int
+	THPeligible    string
+	ProtectionKey  string
+	VMFlags        string
 }
 
 func NewProcessMemory(pid int) *ProcessMemory {
@@ -104,7 +104,7 @@ func NewProcessMemory(pid int) *ProcessMemory {
  *
  *
  */
-func (pm *ProcessMemory) getMemoryRange(dev string) (uint64, uint64, error) {
+func (pm *ProcessMemory) GetMemoryRange(dev string) (uint64, uint64, error) {
 	maps, err := os.ReadFile(fmt.Sprintf("/proc/%d/maps", pm.pid))
 	if err != nil {
 		return 0, 0, err
@@ -114,25 +114,25 @@ func (pm *ProcessMemory) getMemoryRange(dev string) (uint64, uint64, error) {
 		data := strings.Fields(l)
 		if len(data) == 6 && data[5] == dev {
 			mems := strings.Split(data[0], "-")
-			mem_start, err := strconv.ParseUint(mems[0], 16, 64)
+			memStart, err := strconv.ParseUint(mems[0], 16, 64)
 			if err != nil {
 				return 0, 0, err
 			}
-			mem_end, err := strconv.ParseUint(mems[1], 16, 64)
+			memEnd, err := strconv.ParseUint(mems[1], 16, 64)
 			if err != nil {
 				return 0, 0, err
 			}
-			return mem_start, mem_end, nil
+			return memStart, memEnd, nil
 		}
 	}
 	return 0, 0, errors.New("device not found in maps")
 }
 
 /**
- * getSmap - Get the smap data for a given mapped device.
+ * GetSmap - Get the smap data for a given mapped device.
  *
  */
-func (pm *ProcessMemory) getSmap(dev string) (*Smap, error) {
+func (pm *ProcessMemory) GetSmap(dev string) (*Smap, error) {
 	smaps, err := os.ReadFile(fmt.Sprintf("/proc/%d/smaps", pm.pid))
 	if err != nil {
 		return nil, err
@@ -150,60 +150,62 @@ func (pm *ProcessMemory) getSmap(dev string) (*Smap, error) {
 			// This is the one we need...
 			for i := 0; i < 26; i++ {
 				v := strings.Fields(lines[lp+i])
-				if v[0] == "THPeligible:" {
+				switch v[0] {
+				case "THPeligible:":
 					smap.THPeligible = v[1]
-				} else if v[0] == "ProtectionKey:" {
+				case "ProtectionKey:":
 					smap.ProtectionKey = v[1]
-				} else if v[0] == "VmFlags:" {
-					smap.VmFlags = v[1]
-				} else {
+				case "VmFlags:":
+					smap.VMFlags = v[1]
+				default:
 					kvalue, kerr := strconv.ParseInt(v[1], 10, 64)
 					if kerr != nil {
 						return nil, kerr
 					}
-					if v[0] == "Size:" {
+					switch v[0] {
+					case "Size:":
 						smap.Size = int(kvalue) * 1024
-					} else if v[0] == "KernelPageSize:" {
+					case "KernelPageSize:":
 						smap.KernelPageSize = int(kvalue) * 1024
-					} else if v[0] == "MMUPageSize:" {
+					case "MMUPageSize:":
 						smap.MMUPageSize = int(kvalue) * 1024
-					} else if v[0] == "Rss:" {
+					case "Rss:":
 						smap.Rss = int(kvalue) * 1024
-					} else if v[0] == "Pss:" {
+					case "Pss:":
 						smap.Pss = int(kvalue) * 1024
-					} else if v[0] == "Pss_Dirty:" {
-						smap.Pss_Dirty = int(kvalue) * 1024
-					} else if v[0] == "Shared_Clean:" {
-						smap.Shared_Clean = int(kvalue) * 1024
-					} else if v[0] == "Shared_Dirty:" {
-						smap.Shared_Dirty = int(kvalue) * 1024
-					} else if v[0] == "Private_Clean:" {
-						smap.Private_Clean = int(kvalue) * 1024
-					} else if v[0] == "Private_Dirty:" {
-						smap.Private_Dirty = int(kvalue) * 1024
-					} else if v[0] == "Referenced:" {
+					case "Pss_Dirty:":
+						smap.PssDirty = int(kvalue) * 1024
+					case "Shared_Clean:":
+						smap.SharedClean = int(kvalue) * 1024
+					case "Shared_Dirty:":
+						smap.SharedDirty = int(kvalue) * 1024
+					case "Private_Clean:":
+						smap.PrivateClean = int(kvalue) * 1024
+					case "Private_Dirty:":
+						smap.PrivateDirty = int(kvalue) * 1024
+					case "Referenced:":
 						smap.Referenced = int(kvalue) * 1024
-					} else if v[0] == "Anonymous:" {
+					case "Anonymous:":
 						smap.Anonymous = int(kvalue) * 1024
-					} else if v[0] == "KSM:" {
+					case "KSM:":
 						smap.KSM = int(kvalue) * 1024
-					} else if v[0] == "LazyFree:" {
+					case "LazyFree:":
 						smap.LazyFree = int(kvalue) * 1024
-					} else if v[0] == "AnonHugePages:" {
+					case "AnonHugePages:":
 						smap.AnonHugePages = int(kvalue) * 1024
-					} else if v[0] == "ShmemPmdMapped:" {
+					case "ShmemPmdMapped:":
 						smap.ShmemPmdMapped = int(kvalue) * 1024
-					} else if v[0] == "FilePmdMapped:" {
+					case "FilePmdMapped:":
 						smap.FilePmdMapped = int(kvalue) * 1024
-					} else if v[0] == "Shared_Hugetlb:" {
-						smap.Shared_Hugetlb = int(kvalue) * 1024
-					} else if v[0] == "Private_Hugetlb:" {
-						smap.Private_Hugetlb = int(kvalue) * 1024
-					} else if v[0] == "Swap:" {
+					case "Shared_Hugetlb:":
+						smap.SharedHugetlb = int(kvalue) * 1024
+					case "Private_Hugetlb:":
+						smap.PrivateHugetlb = int(kvalue) * 1024
+					case "Swap:":
 						smap.Swap = int(kvalue) * 1024
-					} else if v[0] == "SwapPss:" {
+					case "SwapPss:":
 						smap.SwapPss = int(kvalue) * 1024
-					} else if v[0] == "Locked:" {
+					case "Locked:":
 						smap.Locked = int(kvalue) * 1024
 					}
 				}
@@ -214,15 +216,15 @@ func (pm *ProcessMemory) getSmap(dev string) (*Smap, error) {
 	}
 }
 
-func (pm *ProcessMemory) clearSoftDirty() error {
+func (pm *ProcessMemory) ClearSoftDirty() error {
 	return os.WriteFile(fmt.Sprintf("/proc/%d/clear_refs", pm.pid), []byte("4"), 0666)
 }
 
 /**
- * readSoftDirtyMemory
+ * ReadSoftDirtyMemory
  *
  */
-func (pm *ProcessMemory) readSoftDirtyMemory(addr_start uint64, addr_end uint64, prov storage.StorageProvider) (uint64, error) {
+func (pm *ProcessMemory) ReadSoftDirtyMemory(addrStart uint64, addrEnd uint64, prov storage.Provider) (uint64, error) {
 	bytesRead := uint64(0)
 	memf, err := os.OpenFile(fmt.Sprintf("/proc/%d/mem", pm.pid), os.O_RDONLY, 0)
 	if err != nil {
@@ -237,13 +239,13 @@ func (pm *ProcessMemory) readSoftDirtyMemory(addr_start uint64, addr_end uint64,
 	defer f.Close()
 
 	// seek, and read
-	pos := int64((addr_start >> PAGE_SHIFT) << 3)
+	pos := int64((addrStart >> PageShift) << 3)
 	_, err = f.Seek(pos, io.SeekStart)
 	if err != nil {
 		return 0, err
 	}
 
-	dataBuffer := make([]byte, READ_BUFFER_SIZE) // Max read size
+	dataBuffer := make([]byte, ReadBufferSize) // Max read size
 
 	copyData := func(start uint64, end uint64) error {
 		length := end - start
@@ -252,14 +254,14 @@ func (pm *ProcessMemory) readSoftDirtyMemory(addr_start uint64, addr_end uint64,
 			return err
 		}
 		// NB here we adjust for the start of memory
-		_, err = prov.WriteAt(dataBuffer[:length], int64(start-addr_start))
+		_, err = prov.WriteAt(dataBuffer[:length], int64(start-addrStart))
 		return err
 	}
 
 	currentStart := uint64(0)
 	currentEnd := uint64(0)
 
-	numPages := ((addr_end - addr_start) + PAGE_SIZE - 1) / PAGE_SIZE
+	numPages := ((addrEnd - addrStart) + PageSize - 1) / PageSize
 	pageBuffer := make([]byte, numPages<<3)
 	_, err = f.Read(pageBuffer)
 	if err != nil {
@@ -267,15 +269,15 @@ func (pm *ProcessMemory) readSoftDirtyMemory(addr_start uint64, addr_end uint64,
 	}
 
 	dataIndex := 0
-	for xx := addr_start; xx < addr_end; xx += PAGE_SIZE {
+	for xx := addrStart; xx < addrEnd; xx += PageSize {
 
 		val := binary.LittleEndian.Uint64(pageBuffer[dataIndex:])
 		dataIndex += 8
 
-		if (val & PAGEMAP_FLAG_PRESENT) == PAGEMAP_FLAG_PRESENT {
-			if (val & PAGEMAP_FLAG_SOFT_DIRTY) == PAGEMAP_FLAG_SOFT_DIRTY {
+		if (val & PagemapFlagPresent) == PagemapFlagPresent {
+			if (val & PagemapFlagSoftDirty) == PagemapFlagSoftDirty {
 				if currentEnd == xx {
-					if currentEnd-currentStart+PAGE_SIZE > uint64(len(dataBuffer)) {
+					if currentEnd-currentStart+PageSize > uint64(len(dataBuffer)) {
 						err = copyData(currentStart, currentEnd)
 						if err != nil {
 							return 0, err
@@ -283,9 +285,9 @@ func (pm *ProcessMemory) readSoftDirtyMemory(addr_start uint64, addr_end uint64,
 						bytesRead += (currentEnd - currentStart)
 
 						currentStart = xx
-						currentEnd = xx + PAGE_SIZE
+						currentEnd = xx + PageSize
 					} else {
-						currentEnd = xx + PAGE_SIZE
+						currentEnd = xx + PageSize
 					}
 				} else {
 					if currentEnd != 0 {
@@ -296,7 +298,7 @@ func (pm *ProcessMemory) readSoftDirtyMemory(addr_start uint64, addr_end uint64,
 						bytesRead += (currentEnd - currentStart)
 					}
 					currentStart = xx
-					currentEnd = xx + PAGE_SIZE
+					currentEnd = xx + PageSize
 				}
 			}
 		}
@@ -316,10 +318,10 @@ func (pm *ProcessMemory) readSoftDirtyMemory(addr_start uint64, addr_end uint64,
 }
 
 /**
- * readDirtyMemory
+ * ReadDirtyMemory
  *
  */
-func (pm *ProcessMemory) readDirtyMemory(addr_start uint64, addr_end uint64, prov storage.StorageProvider) error {
+func (pm *ProcessMemory) ReadDirtyMemory(addrStart uint64, addrEnd uint64, prov storage.Provider) error {
 	memf, err := os.OpenFile(fmt.Sprintf("/proc/%d/mem", pm.pid), os.O_RDONLY, 0)
 	if err != nil {
 		return err
@@ -339,7 +341,7 @@ func (pm *ProcessMemory) readDirtyMemory(addr_start uint64, addr_end uint64, pro
 	defer kf.Close()
 
 	// seek, and read
-	pos := int64((addr_start >> PAGE_SHIFT) << 3)
+	pos := int64((addrStart >> PageShift) << 3)
 	_, err = f.Seek(pos, io.SeekStart)
 	if err != nil {
 		return err
@@ -347,7 +349,7 @@ func (pm *ProcessMemory) readDirtyMemory(addr_start uint64, addr_end uint64, pro
 
 	kdata := make([]byte, 8)
 	data := make([]byte, 8)
-	dataBuffer := make([]byte, READ_BUFFER_SIZE) // Max read size
+	dataBuffer := make([]byte, ReadBufferSize) // Max read size
 
 	copyData := func(start uint64, end uint64) error {
 		length := end - start
@@ -356,22 +358,22 @@ func (pm *ProcessMemory) readDirtyMemory(addr_start uint64, addr_end uint64, pro
 			return err
 		}
 		// NB here we adjust for the start of memory
-		_, err = prov.WriteAt(dataBuffer[:length], int64(start-addr_start))
+		_, err = prov.WriteAt(dataBuffer[:length], int64(start-addrStart))
 		return err
 	}
 
 	currentStart := uint64(0)
 	currentEnd := uint64(0)
 
-	for xx := addr_start; xx < addr_end; xx += PAGE_SIZE {
+	for xx := addrStart; xx < addrEnd; xx += PageSize {
 		_, err = f.Read(data)
 		if err != nil {
 			return err
 		}
 
 		val := binary.LittleEndian.Uint64(data)
-		if (val & PAGEMAP_FLAG_PRESENT) == PAGEMAP_FLAG_PRESENT {
-			pfn := val & PAGEMAP_MASK_PFN
+		if (val & PagemapFlagPresent) == PagemapFlagPresent {
+			pfn := val & PagemapMaskPfn
 			// Lookup in /proc/kpageflags
 			_, err = kf.Seek(int64(pfn<<3), io.SeekStart)
 			if err != nil {
@@ -384,18 +386,18 @@ func (pm *ProcessMemory) readDirtyMemory(addr_start uint64, addr_end uint64, pro
 
 			kval := binary.LittleEndian.Uint64(kdata)
 
-			if (kval & KFLAG_DIRTY) == KFLAG_DIRTY {
+			if (kval & KflagDirty) == KflagDirty {
 				if currentEnd == xx {
-					if currentEnd-currentStart+PAGE_SIZE > uint64(len(dataBuffer)) {
+					if currentEnd-currentStart+PageSize > uint64(len(dataBuffer)) {
 						err = copyData(currentStart, currentEnd)
 						if err != nil {
 							return err
 						}
 
 						currentStart = xx
-						currentEnd = xx + PAGE_SIZE
+						currentEnd = xx + PageSize
 					} else {
-						currentEnd = xx + PAGE_SIZE
+						currentEnd = xx + PageSize
 					}
 				} else {
 					if currentEnd != 0 {
@@ -405,7 +407,7 @@ func (pm *ProcessMemory) readDirtyMemory(addr_start uint64, addr_end uint64, pro
 						}
 					}
 					currentStart = xx
-					currentEnd = xx + PAGE_SIZE
+					currentEnd = xx + PageSize
 				}
 			}
 		}
@@ -422,29 +424,29 @@ func (pm *ProcessMemory) readDirtyMemory(addr_start uint64, addr_end uint64, pro
 }
 
 /**
- * readAllMemory
+ * ReadAllMemory
  *
  */
-func (pm *ProcessMemory) readAllMemory(addr_start uint64, addr_end uint64, prov storage.StorageProvider) error {
+func (pm *ProcessMemory) ReadAllMemory(addrStart uint64, addrEnd uint64, prov storage.Provider) error {
 	memf, err := os.OpenFile(fmt.Sprintf("/proc/%d/mem", pm.pid), os.O_RDONLY, 0)
 	if err != nil {
 		return err
 	}
 	defer memf.Close()
 
-	dataBuffer := make([]byte, READ_BUFFER_SIZE) // Max read size
+	dataBuffer := make([]byte, ReadBufferSize) // Max read size
 
-	for xx := addr_start; xx < addr_end; xx += uint64(len(dataBuffer)) {
+	for xx := addrStart; xx < addrEnd; xx += uint64(len(dataBuffer)) {
 		length := uint64(len(dataBuffer))
-		if xx+length >= addr_end {
-			length = addr_end - xx
+		if xx+length >= addrEnd {
+			length = addrEnd - xx
 		}
 		_, err := memf.ReadAt(dataBuffer[:length], int64(xx))
 		if err != nil {
 			return err
 		}
 		// NB here we adjust for the start of memory
-		_, err = prov.WriteAt(dataBuffer[:length], int64(xx-addr_start))
+		_, err = prov.WriteAt(dataBuffer[:length], int64(xx-addrStart))
 		if err != nil {
 			return err
 		}
