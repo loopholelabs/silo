@@ -16,11 +16,13 @@ import (
 )
 
 var (
+
+	//nolint:all
 	errNoSuchKey = errors.New("The specified key does not exist.") // Minio doesn't export errors
 )
 
 type S3Storage struct {
-	storage.StorageProviderWithEvents
+	storage.ProviderWithEvents
 	dummy                    bool
 	client                   *minio.Client
 	bucket                   string
@@ -155,31 +157,29 @@ func (i *S3Storage) ReadAt(buffer []byte, offset int64) (int, error) {
 		if i.dummy {
 			atomic.AddUint64(&i.metricsBlocksRCount, 1)
 			atomic.AddUint64(&i.metricsBlocksRBytes, uint64(len(buff)))
-			//atomic.AddUint64(&i.metrics_blocks_r_time_ns, uint64(dtime.Nanoseconds()))
 			return len(buff), nil
-		} else {
-			i.lockers[off/int64(i.blockSize)].RLock()
-			ctime := time.Now()
-			obj, err := i.client.GetObject(context.TODO(), i.bucket, fmt.Sprintf("%s-%d", i.prefix, off), minio.GetObjectOptions{})
-			i.lockers[off/int64(i.blockSize)].RUnlock()
-			if err != nil {
-				if err.Error() == errNoSuchKey.Error() {
-					return len(buff), nil
-				}
-				return 0, err
-			}
-			n, err := obj.Read(buff)
-			dtime := time.Since(ctime)
-			if err == nil {
-				atomic.AddUint64(&i.metricsBlocksRCount, 1)
-				atomic.AddUint64(&i.metricsBlocksRBytes, uint64(n))
-				atomic.AddUint64(&i.metricsBlocksRTimeNS, uint64(dtime.Nanoseconds()))
-			} else if err.Error() == errNoSuchKey.Error() {
+		}
+		i.lockers[off/int64(i.blockSize)].RLock()
+		ctime := time.Now()
+		obj, err := i.client.GetObject(context.TODO(), i.bucket, fmt.Sprintf("%s-%d", i.prefix, off), minio.GetObjectOptions{})
+		i.lockers[off/int64(i.blockSize)].RUnlock()
+		if err != nil {
+			if err.Error() == errNoSuchKey.Error() {
 				return len(buff), nil
 			}
-
-			return n, err
+			return 0, err
 		}
+		n, err := obj.Read(buff)
+		dtime := time.Since(ctime)
+		if err == io.EOF {
+			atomic.AddUint64(&i.metricsBlocksRCount, 1)
+			atomic.AddUint64(&i.metricsBlocksRBytes, uint64(n))
+			atomic.AddUint64(&i.metricsBlocksRTimeNS, uint64(dtime.Nanoseconds()))
+		} else if err.Error() == errNoSuchKey.Error() {
+			return len(buff), nil
+		}
+
+		return n, err
 	}
 
 	for b := bStart; b < bEnd; b++ {
@@ -242,29 +242,28 @@ func (i *S3Storage) WriteAt(buffer []byte, offset int64) (int, error) {
 			atomic.AddUint64(&i.metricsBlocksWPreRCount, 1)
 			atomic.AddUint64(&i.metricsBlocksWPreRBytes, uint64(len(buff)))
 			return len(buff), nil
-		} else {
-			ctx := context.TODO()
-			i.lockers[off/int64(i.blockSize)].RLock()
-			ctime := time.Now()
-			obj, err := i.client.GetObject(ctx, i.bucket, fmt.Sprintf("%s-%d", i.prefix, off), minio.GetObjectOptions{})
-			i.lockers[off/int64(i.blockSize)].RUnlock()
-			if err != nil {
-				if err.Error() == errNoSuchKey.Error() {
-					return len(buff), nil
-				}
-				return 0, err
-			}
-			n, err := obj.Read(buff)
-			dtime := time.Since(ctime)
-			if err == nil {
-				atomic.AddUint64(&i.metricsBlocksWPreRCount, 1)
-				atomic.AddUint64(&i.metricsBlocksWPreRBytes, uint64(n))
-				atomic.AddUint64(&i.metricsBlocksWPreRTimeNS, uint64(dtime.Nanoseconds()))
-			} else if err.Error() == errNoSuchKey.Error() {
+		}
+		ctx := context.TODO()
+		i.lockers[off/int64(i.blockSize)].RLock()
+		ctime := time.Now()
+		obj, err := i.client.GetObject(ctx, i.bucket, fmt.Sprintf("%s-%d", i.prefix, off), minio.GetObjectOptions{})
+		i.lockers[off/int64(i.blockSize)].RUnlock()
+		if err != nil {
+			if err.Error() == errNoSuchKey.Error() {
 				return len(buff), nil
 			}
-			return n, err
+			return 0, err
 		}
+		n, err := obj.Read(buff)
+		dtime := time.Since(ctime)
+		if err == io.EOF {
+			atomic.AddUint64(&i.metricsBlocksWPreRCount, 1)
+			atomic.AddUint64(&i.metricsBlocksWPreRBytes, uint64(n))
+			atomic.AddUint64(&i.metricsBlocksWPreRTimeNS, uint64(dtime.Nanoseconds()))
+		} else if err.Error() == errNoSuchKey.Error() {
+			return len(buff), nil
+		}
+		return n, err
 	}
 
 	putData := func(buff []byte, off int64) (int, error) {
@@ -272,32 +271,32 @@ func (i *S3Storage) WriteAt(buffer []byte, offset int64) (int, error) {
 			atomic.AddUint64(&i.metricsBlocksWCount, 1)
 			atomic.AddUint64(&i.metricsBlocksWBytes, uint64(len(buff)))
 			return len(buff), nil
-		} else {
-			block := off / int64(i.blockSize)
-			ctx, cancelFn := context.WithCancel(context.TODO())
-			i.lockers[block].Lock()
-
-			i.setContext(int(block), cancelFn)
-
-			ctime := time.Now()
-			obj, err := i.client.PutObject(ctx, i.bucket, fmt.Sprintf("%s-%d", i.prefix, off),
-				bytes.NewReader(buff), int64(i.blockSize),
-				minio.PutObjectOptions{})
-			dtime := time.Since(ctime)
-
-			i.setContext(int(block), nil)
-			i.lockers[block].Unlock()
-
-			if err == nil {
-				atomic.AddUint64(&i.metricsBlocksWCount, 1)
-				atomic.AddUint64(&i.metricsBlocksWBytes, uint64(obj.Size))
-				atomic.AddUint64(&i.metricsBlocksWTimeNS, uint64(dtime.Nanoseconds()))
-			} else {
-				return 0, err
-			}
-
-			return int(obj.Size), nil
 		}
+
+		block := off / int64(i.blockSize)
+		ctx, cancelFn := context.WithCancel(context.TODO())
+		i.lockers[block].Lock()
+
+		i.setContext(int(block), cancelFn)
+
+		ctime := time.Now()
+		obj, err := i.client.PutObject(ctx, i.bucket, fmt.Sprintf("%s-%d", i.prefix, off),
+			bytes.NewReader(buff), int64(i.blockSize),
+			minio.PutObjectOptions{})
+		dtime := time.Since(ctime)
+
+		i.setContext(int(block), nil)
+		i.lockers[block].Unlock()
+
+		if err == nil {
+			atomic.AddUint64(&i.metricsBlocksWCount, 1)
+			atomic.AddUint64(&i.metricsBlocksWBytes, uint64(obj.Size))
+			atomic.AddUint64(&i.metricsBlocksWTimeNS, uint64(dtime.Nanoseconds()))
+		} else {
+			return 0, err
+		}
+
+		return int(obj.Size), nil
 	}
 
 	for b := bStart; b < bEnd; b++ {
@@ -356,7 +355,7 @@ func (i *S3Storage) Flush() error {
 }
 
 func (i *S3Storage) Size() uint64 {
-	return uint64(i.size)
+	return i.size
 }
 
 func (i *S3Storage) Close() error {
@@ -390,6 +389,14 @@ type S3Metrics struct {
 	BlocksRBytes     uint64
 	BlocksRDataBytes uint64
 	BlocksRTime      time.Duration
+}
+
+func (i *S3Metrics) String() string {
+	return fmt.Sprintf("W %d (%d bytes) (%d dataBytes) %dms Wp %d (%d bytes) %dms R %d (%d bytes) (%d dataBytes) %dms",
+		i.BlocksWCount, i.BlocksWBytes, i.BlocksWDataBytes, i.BlocksWTime.Milliseconds(),
+		i.BlocksWPreRCount, i.BlocksWPreRBytes, i.BlocksWPreRTime.Milliseconds(),
+		i.BlocksRCount, i.BlocksRBytes, i.BlocksRDataBytes, i.BlocksRTime.Milliseconds(),
+	)
 }
 
 func (i *S3Storage) Metrics() *S3Metrics {

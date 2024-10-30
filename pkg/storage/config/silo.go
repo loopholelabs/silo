@@ -30,6 +30,7 @@ type DeviceSchema struct {
 }
 
 type SyncConfigSchema struct {
+	OnlyDirty   bool   `hcl:"onlydirty,attr"`
 	BlockShift  int    `hcl:"blockshift,attr"`
 	MaxAge      string `hcl:"maxage,attr"`
 	MinChanged  int    `hcl:"minchanged,attr"`
@@ -53,24 +54,28 @@ func parseByteValue(val string) int64 {
 	if s == "" {
 		return 0
 	}
-	if strings.HasSuffix(s, "b") {
+
+	suffix := s[len(s)-1:] // Get the last byte
+	switch suffix {
+	case "b":
 		multiplier = 1
 		s = s[:len(s)-1]
-	} else if strings.HasSuffix(s, "k") {
+	case "k":
 		multiplier = 1024
 		s = s[:len(s)-1]
-	} else if strings.HasSuffix(s, "m") {
+	case "m":
 		multiplier = 1024 * 1024
 		s = s[:len(s)-1]
-	} else if strings.HasSuffix(s, "g") {
+	case "g":
 		multiplier = 1024 * 1024 * 1024
 		s = s[:len(s)-1]
 	}
+
 	i, err := strconv.ParseInt(s, 10, 64)
 	if err != nil {
 		panic(err)
 	}
-	return int64(i) * multiplier
+	return i * multiplier
 }
 
 func (ds *DeviceSchema) ByteSize() int64 {

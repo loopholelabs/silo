@@ -15,11 +15,11 @@ func NewNothing(size uint64) *Nothing {
 	}
 }
 
-func (i *Nothing) ReadAt(buffer []byte, offset int64) (int, error) {
+func (i *Nothing) ReadAt(buffer []byte, _ int64) (int, error) {
 	return len(buffer), nil
 }
 
-func (i *Nothing) WriteAt(buffer []byte, offset int64) (int, error) {
+func (i *Nothing) WriteAt(buffer []byte, _ int64) (int, error) {
 	return len(buffer), nil
 }
 
@@ -35,6 +35,6 @@ func (i *Nothing) Close() error {
 	return nil
 }
 
-func (i *Nothing) CancelWrites(offset int64, length int64) {
+func (i *Nothing) CancelWrites(_ int64, _ int64) {
 	// TODO: Implement
 }

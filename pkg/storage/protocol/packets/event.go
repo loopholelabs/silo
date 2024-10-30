@@ -1,9 +1,5 @@
 package packets
 
-import (
-	"errors"
-)
-
 type EventType byte
 
 const EventPreLock = EventType(0)
@@ -31,28 +27,27 @@ type Event struct {
 func EncodeEvent(e *Event) []byte {
 	if e.Type == EventCustom {
 		buff := make([]byte, 1+1+1+len(e.CustomPayload))
-		buff[0] = COMMAND_EVENT
+		buff[0] = CommandEvent
 		buff[1] = byte(e.Type)
 		buff[2] = e.CustomType
 		copy(buff[3:], e.CustomPayload)
 		return buff
-	} else {
-		buff := make([]byte, 1+1)
-		buff[0] = COMMAND_EVENT
-		buff[1] = byte(e.Type)
-		return buff
 	}
+	buff := make([]byte, 1+1)
+	buff[0] = CommandEvent
+	buff[1] = byte(e.Type)
+	return buff
 }
 
 func DecodeEvent(buff []byte) (*Event, error) {
-	if buff == nil || len(buff) < 2 || buff[0] != COMMAND_EVENT {
-		return nil, errors.New("Invalid packet")
+	if buff == nil || len(buff) < 2 || buff[0] != CommandEvent {
+		return nil, ErrInvalidPacket
 	}
 	e := &Event{Type: EventType(buff[1])}
 	if e.Type == EventCustom {
 		// Decode the other bits
 		if len(buff) < 3 {
-			return nil, errors.New("Invalid packet")
+			return nil, ErrInvalidPacket
 		}
 		e.CustomType = buff[2]
 		e.CustomPayload = buff[3:]
@@ -62,13 +57,13 @@ func DecodeEvent(buff []byte) (*Event, error) {
 
 func EncodeEventResponse() []byte {
 	buff := make([]byte, 1)
-	buff[0] = COMMAND_EVENT_RESPONSE
+	buff[0] = CommandEventResponse
 	return buff
 }
 
 func DecodeEventResponse(buff []byte) error {
-	if buff == nil || len(buff) < 1 || buff[0] != COMMAND_EVENT_RESPONSE {
-		return errors.New("Invalid packet")
+	if buff == nil || len(buff) < 1 || buff[0] != CommandEventResponse {
+		return ErrInvalidPacket
 	}
 	return nil
 }

@@ -1,35 +1,39 @@
 package packets
 
-const COMMAND_REQUEST = byte(0)
-const COMMAND_RESPONSE = byte(0x80)
+import "errors"
+
+var ErrInvalidPacket = errors.New("invalid packet")
+var ErrReadError = errors.New("remote read error")
+var ErrWriteError = errors.New("remote write error")
+
+const CommandRequest = byte(0)
+const CommandResponse = byte(0x80)
 
 const (
-	COMMAND_READ_AT           = COMMAND_REQUEST | byte(1)
-	COMMAND_WRITE_AT          = COMMAND_REQUEST | byte(2)
-	COMMAND_NEED_AT           = COMMAND_REQUEST | byte(3)
-	COMMAND_DONT_NEED_AT      = COMMAND_REQUEST | byte(4)
-	COMMAND_DIRTY_LIST        = COMMAND_REQUEST | byte(5)
-	COMMAND_DEV_INFO          = COMMAND_REQUEST | byte(6)
-	COMMAND_EVENT             = COMMAND_REQUEST | byte(7)
-	COMMAND_WRITE_AT_COMP     = COMMAND_REQUEST | byte(8)
-	COMMAND_HASHES            = COMMAND_REQUEST | byte(9)
-	COMMAND_WRITE_AT_WITH_MAP = COMMAND_REQUEST | byte(10)
-	COMMAND_REMOVE_DEV        = COMMAND_REQUEST | byte(11)
-	COMMAND_REMOVE_FROM_MAP   = COMMAND_REQUEST | byte(12)
-	COMMAND_WRITE_AT_HASH     = COMMAND_REQUEST | byte(13)
-	COMMAND_ALTERNATE_SOURCES = COMMAND_REQUEST | byte(14)
+	CommandReadAt           = CommandRequest | byte(1)
+	CommandWriteAt          = CommandRequest | byte(2)
+	CommandNeedAt           = CommandRequest | byte(3)
+	CommandDontNeedAt       = CommandRequest | byte(4)
+	CommandDirtyList        = CommandRequest | byte(5)
+	CommandDevInfo          = CommandRequest | byte(6)
+	CommandEvent            = CommandRequest | byte(7)
+	CommandHashes           = CommandRequest | byte(8)
+	CommandWriteAtWithMap   = CommandRequest | byte(9)
+	CommandRemoveDev        = CommandRequest | byte(10)
+	CommandRemoveFromMap    = CommandRequest | byte(11)
+	CommandAlternateSources = CommandRequest | byte(12)
 )
 
 const (
-	COMMAND_READ_AT_RESPONSE      = COMMAND_RESPONSE | byte(1)
-	COMMAND_READ_AT_RESPONSE_ERR  = COMMAND_RESPONSE | byte(2)
-	COMMAND_WRITE_AT_RESPONSE     = COMMAND_RESPONSE | byte(3)
-	COMMAND_WRITE_AT_RESPONSE_ERR = COMMAND_RESPONSE | byte(4)
-	COMMAND_EVENT_RESPONSE        = COMMAND_RESPONSE | byte(5)
-	COMMAND_HASHES_RESPONSE       = COMMAND_RESPONSE | byte(6)
-	COMMAND_DIRTY_LIST_RESPONSE   = COMMAND_RESPONSE | byte(7)
+	CommandReadAtResponse     = CommandResponse | byte(1)
+	CommandReadAtResponseErr  = CommandResponse | byte(2)
+	CommandWriteAtResponse    = CommandResponse | byte(3)
+	CommandWriteAtResponseErr = CommandResponse | byte(4)
+	CommandEventResponse      = CommandResponse | byte(5)
+	CommandHashesResponse     = CommandResponse | byte(6)
+	CommandDirtyListResponse  = CommandResponse | byte(7)
 )
 
 func IsResponse(cmd byte) bool {
-	return (cmd & COMMAND_RESPONSE) == COMMAND_RESPONSE
+	return (cmd & CommandResponse) == CommandResponse
 }

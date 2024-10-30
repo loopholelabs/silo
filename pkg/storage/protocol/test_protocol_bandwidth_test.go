@@ -15,7 +15,7 @@ import (
 func TestTestProtocolBandwidth(t *testing.T) {
 
 	size := 1024 * 1024
-	var store storage.StorageProvider
+	var store storage.Provider
 
 	// Setup a protocol in the middle, and make sure our reads/writes get through ok
 
@@ -25,7 +25,7 @@ func TestTestProtocolBandwidth(t *testing.T) {
 
 	sourceToProtocol := NewToProtocol(uint64(size), 1, pr)
 
-	storeFactory := func(di *packets.DevInfo) storage.StorageProvider {
+	storeFactory := func(di *packets.DevInfo) storage.Provider {
 		store = sources.NewMemoryStorage(int(di.Size))
 		return store
 	}

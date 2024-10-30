@@ -10,26 +10,26 @@ import "sync"
  * StorageProviders should also relay events to any StorageProviders they wrap.
  */
 
-type StorageProviderWithEventsIfc interface {
-	StorageProvider
-	SendEvent(EventType, EventData) []EventReturnData
-	AddEventNotification(EventType, EventCallback)
+type ProviderWithEventsIfc interface {
+	Provider
+	SendSiloEvent(EventType, EventData) []EventReturnData
+	AddSiloEventNotification(EventType, EventCallback)
 }
 
 // Try to send an event for a given StorageProvider
-func SendEvent(s StorageProvider, event_type EventType, event_data EventData) []EventReturnData {
-	lcsp, ok := s.(StorageProviderWithEventsIfc)
+func SendSiloEvent(s Provider, eventType EventType, eventData EventData) []EventReturnData {
+	lcsp, ok := s.(ProviderWithEventsIfc)
 	if ok {
-		return lcsp.SendEvent(event_type, event_data)
+		return lcsp.SendSiloEvent(eventType, eventData)
 	}
 	return nil
 }
 
 // Try to add an event notification on a StorageProvider
-func AddEventNotification(s StorageProvider, state EventType, callback EventCallback) bool {
-	lcsp, ok := s.(StorageProviderWithEventsIfc)
+func AddSiloEventNotification(s Provider, state EventType, callback EventCallback) bool {
+	lcsp, ok := s.(ProviderWithEventsIfc)
 	if ok {
-		lcsp.AddEventNotification(state, callback)
+		lcsp.AddSiloEventNotification(state, callback)
 	}
 	return ok
 }
@@ -44,23 +44,23 @@ type EventReturnData interface{}
 
 type EventCallback func(event EventType, data EventData) EventReturnData
 
-type StorageProviderWithEvents struct {
+type ProviderWithEvents struct {
 	lock      sync.Mutex
 	callbacks map[EventType][]EventCallback
 }
 
 // Send an event, and notify any callbacks
-func (spl *StorageProviderWithEvents) SendEvent(event_type EventType, event_data EventData) []EventReturnData {
+func (spl *ProviderWithEvents) SendSiloEvent(eventType EventType, eventData EventData) []EventReturnData {
 	spl.lock.Lock()
 	defer spl.lock.Unlock()
 	if spl.callbacks == nil {
 		return nil
 	}
-	cbs, ok := spl.callbacks[event_type]
+	cbs, ok := spl.callbacks[eventType]
 	if ok {
 		rets := make([]EventReturnData, 0)
 		for _, cb := range cbs {
-			rets = append(rets, cb(event_type, event_data))
+			rets = append(rets, cb(eventType, eventData))
 		}
 		return rets
 	}
@@ -68,16 +68,16 @@ func (spl *StorageProviderWithEvents) SendEvent(event_type EventType, event_data
 }
 
 // Add a new callback for the given state.
-func (spl *StorageProviderWithEvents) AddEventNotification(event_type EventType, callback EventCallback) {
+func (spl *ProviderWithEvents) AddSiloEventNotification(eventType EventType, callback EventCallback) {
 	spl.lock.Lock()
 	defer spl.lock.Unlock()
 	if spl.callbacks == nil {
 		spl.callbacks = make(map[EventType][]EventCallback)
 	}
-	_, ok := spl.callbacks[event_type]
+	_, ok := spl.callbacks[eventType]
 	if ok {
-		spl.callbacks[event_type] = append(spl.callbacks[event_type], callback)
+		spl.callbacks[eventType] = append(spl.callbacks[eventType], callback)
 	} else {
-		spl.callbacks[event_type] = []EventCallback{callback}
+		spl.callbacks[eventType] = []EventCallback{callback}
 	}
 }

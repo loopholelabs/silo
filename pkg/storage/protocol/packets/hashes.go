@@ -3,13 +3,12 @@ package packets
 import (
 	"crypto/sha256"
 	"encoding/binary"
-	"errors"
 )
 
 func EncodeHashes(hashes map[uint][sha256.Size]byte) []byte {
 
 	buff := make([]byte, 1+((4+sha256.Size)*len(hashes)))
-	buff[0] = COMMAND_HASHES
+	buff[0] = CommandHashes
 	ptr := 1
 	for i, v := range hashes {
 		binary.LittleEndian.PutUint32(buff[ptr:], uint32(i))
@@ -21,8 +20,8 @@ func EncodeHashes(hashes map[uint][sha256.Size]byte) []byte {
 }
 
 func DecodeHashes(buff []byte) (map[uint][sha256.Size]byte, error) {
-	if buff == nil || len(buff) < 1 || buff[0] != COMMAND_HASHES {
-		return nil, errors.New("Invalid packet")
+	if buff == nil || len(buff) < 1 || buff[0] != CommandHashes {
+		return nil, ErrInvalidPacket
 	}
 	hashes := make(map[uint][sha256.Size]byte)
 	ptr := 1
@@ -31,7 +30,7 @@ func DecodeHashes(buff []byte) (map[uint][sha256.Size]byte, error) {
 			break
 		}
 		if ptr+(4+sha256.Size) > len(buff) {
-			return nil, errors.New("Invalid packet data")
+			return nil, ErrInvalidPacket
 		}
 		b := binary.LittleEndian.Uint32(buff[ptr:])
 		ptr += 4
@@ -43,12 +42,12 @@ func DecodeHashes(buff []byte) (map[uint][sha256.Size]byte, error) {
 }
 
 func EncodeHashesResponse() []byte {
-	return []byte{COMMAND_HASHES_RESPONSE}
+	return []byte{CommandHashesResponse}
 }
 
 func DecodeHashesResponse(buff []byte) error {
-	if buff == nil || len(buff) != 1 || buff[0] != COMMAND_HASHES_RESPONSE {
-		return errors.New("Invalid packet")
+	if buff == nil || len(buff) != 1 || buff[0] != CommandHashesResponse {
+		return ErrInvalidPacket
 	}
 	return nil
 }

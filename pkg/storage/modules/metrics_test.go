@@ -18,26 +18,14 @@ func TestMetrics(t *testing.T) {
 
 	met.Flush()
 
-	assert.Equal(t, uint64(1), met.metric_read_ops)
-	assert.Equal(t, uint64(1), met.metric_write_ops)
-	assert.Equal(t, uint64(1), met.metric_flush_ops)
+	assert.Equal(t, uint64(1), met.metricReadOps)
+	assert.Equal(t, uint64(1), met.metricWriteOps)
+	assert.Equal(t, uint64(1), met.metricFlushOps)
 
 	met.ResetMetrics()
 
-	assert.Equal(t, uint64(0), met.metric_read_ops)
-	assert.Equal(t, uint64(0), met.metric_write_ops)
-	assert.Equal(t, uint64(0), met.metric_flush_ops)
+	assert.Equal(t, uint64(0), met.metricReadOps)
+	assert.Equal(t, uint64(0), met.metricWriteOps)
+	assert.Equal(t, uint64(0), met.metricFlushOps)
 
-	/*
-		metric_read_bytes   uint64
-		metric_read_time    uint64
-		metric_read_errors  uint64
-		metric_write_ops    uint64
-		metric_write_bytes  uint64
-		metric_write_time   uint64
-		metric_write_errors uint64
-		metric_flush_ops    uint64
-		metric_flush_time   uint64
-		metric_flush_errors uint64
-	*/
 }

@@ -17,7 +17,7 @@ import (
 const size = 1024 * 1024
 
 func setup(num int) *ToProtocol {
-	var store storage.StorageProvider
+	var store storage.Provider
 
 	readers1 := make([]io.Reader, 0)
 	readers2 := make([]io.Reader, 0)
@@ -34,8 +34,8 @@ func setup(num int) *ToProtocol {
 		writers2 = append(writers2, w2)
 	}
 
-	storeFactory := func(di *packets.DevInfo) storage.StorageProvider {
-		cr := func(i int, size int) (storage.StorageProvider, error) {
+	storeFactory := func(di *packets.DevInfo) storage.Provider {
+		cr := func(_ int, _ int) (storage.Provider, error) {
 			return sources.NewMemoryStorage(int(di.Size)), nil
 		}
 		var err error
@@ -46,8 +46,8 @@ func setup(num int) *ToProtocol {
 		return store
 	}
 
-	prSource := NewProtocolRW(context.TODO(), readers1, writers2, nil)
-	prDest := NewProtocolRW(context.TODO(), readers2, writers1, func(ctx context.Context, p Protocol, dev uint32) {
+	prSource := NewRW(context.TODO(), readers1, writers2, nil)
+	prDest := NewRW(context.TODO(), readers2, writers1, func(ctx context.Context, p Protocol, dev uint32) {
 		destFromProtocol := NewFromProtocol(ctx, dev, storeFactory, p)
 		go func() {
 			_ = destFromProtocol.HandleDevInfo()
@@ -58,10 +58,6 @@ func setup(num int) *ToProtocol {
 		go func() {
 			_ = destFromProtocol.HandleWriteAt()
 		}()
-		go func() {
-			_ = destFromProtocol.HandleWriteAtComp()
-		}()
-
 	})
 
 	sourceToProtocol := NewToProtocol(uint64(size), 1, prSource)
@@ -110,7 +106,7 @@ func BenchmarkWriteAt(mb *testing.B) {
 func BenchmarkWriteAtComp(mb *testing.B) {
 	sourceToProtocol := setup(1)
 
-	sourceToProtocol.Compressed_writes = true
+	sourceToProtocol.CompressedWrites = true
 
 	// Do some writes
 	buff := make([]byte, 256*1024)

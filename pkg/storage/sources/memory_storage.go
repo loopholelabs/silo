@@ -12,7 +12,7 @@ import (
  *
  */
 type MemoryStorage struct {
-	storage.StorageProviderWithEvents
+	storage.ProviderWithEvents
 	data []byte
 	lock sync.RWMutex
 }
@@ -49,4 +49,4 @@ func (i *MemoryStorage) Close() error {
 	return nil
 }
 
-func (i *MemoryStorage) CancelWrites(offset int64, length int64) {}
+func (i *MemoryStorage) CancelWrites(_ int64, _ int64) {}

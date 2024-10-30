@@ -51,10 +51,10 @@ func SetupMinio(cleanup func(func())) string {
 	if err != nil {
 		panic(err)
 	}
-	PORT_9000 := resource.GetPort("9000/tcp")
+	MinioPort := resource.GetPort("9000/tcp")
 
 	err = pool.Retry(func() error {
-		url := fmt.Sprintf("http://localhost:%s/minio/health/live", PORT_9000)
+		url := fmt.Sprintf("http://localhost:%s/minio/health/live", MinioPort)
 		resp, err := http.Get(url)
 		if err != nil {
 			return err
@@ -68,5 +68,5 @@ func SetupMinio(cleanup func(func())) string {
 	if err != nil {
 		panic(err)
 	}
-	return PORT_9000
+	return MinioPort
 }

@@ -10,9 +10,9 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/sources"
 )
 
-const bench_size = 4 * 1024 * 1024
-const bench_block_size = 4096
-const bench_num_blocks = bench_size / bench_block_size
+const benchSize = 4 * 1024 * 1024
+const benchBlockSize = 4096
+const benchNumBlocks = benchSize / benchBlockSize
 
 func benchOrder(mb *testing.B, ord storage.BlockOrder) {
 	mb.ResetTimer()
@@ -21,7 +21,7 @@ func benchOrder(mb *testing.B, ord storage.BlockOrder) {
 		ord.AddAll()
 
 		var wg sync.WaitGroup
-		for j := 0; j < bench_num_blocks; j++ {
+		for j := 0; j < benchNumBlocks; j++ {
 			wg.Add(1)
 			go func() {
 				ord.GetNext()
@@ -34,14 +34,14 @@ func benchOrder(mb *testing.B, ord storage.BlockOrder) {
 
 func BenchmarkBlockOrderVol(mb *testing.B) {
 	// Create a new block storage, backed by memory storage
-	mem := sources.NewMemoryStorage(bench_size)
-	vol := NewVolatilityMonitor(mem, bench_block_size, 50*time.Millisecond)
+	mem := sources.NewMemoryStorage(benchSize)
+	vol := NewVolatilityMonitor(mem, benchBlockSize, 50*time.Millisecond)
 
 	benchOrder(mb, vol)
 }
 
 func BenchmarkBlockOrderAny(mb *testing.B) {
-	ord := blocks.NewAnyBlockOrder(bench_num_blocks, nil)
+	ord := blocks.NewAnyBlockOrder(benchNumBlocks, nil)
 	benchOrder(mb, ord)
 }
 

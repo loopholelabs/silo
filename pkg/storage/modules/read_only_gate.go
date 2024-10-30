@@ -11,19 +11,19 @@ import (
  */
 
 type ReadOnlyGate struct {
-	storage.StorageProviderWithEvents
-	prov   storage.StorageProvider
+	storage.ProviderWithEvents
+	prov   storage.Provider
 	lock   *sync.Cond
 	locked bool
 }
 
 // Relay events to embedded StorageProvider
-func (i *ReadOnlyGate) SendEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
-	data := i.StorageProviderWithEvents.SendEvent(event_type, event_data)
-	return append(data, storage.SendEvent(i.prov, event_type, event_data)...)
+func (i *ReadOnlyGate) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
+	data := i.ProviderWithEvents.SendSiloEvent(eventType, eventData)
+	return append(data, storage.SendSiloEvent(i.prov, eventType, eventData)...)
 }
 
-func NewReadOnlyGate(prov storage.StorageProvider) *ReadOnlyGate {
+func NewReadOnlyGate(prov storage.Provider) *ReadOnlyGate {
 	return &ReadOnlyGate{
 		prov:   prov,
 		lock:   sync.NewCond(&sync.Mutex{}),
@@ -57,7 +57,7 @@ func (i *ReadOnlyGate) Close() error {
 	return i.prov.Close()
 }
 
-func (i *ReadOnlyGate) CancelWrites(offset int64, length int64) {
+func (i *ReadOnlyGate) CancelWrites(_ int64, _ int64) {
 	// TODO: Implement
 }
 

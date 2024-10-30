@@ -82,8 +82,8 @@ func TestAnyBlockOrderRemove(t *testing.T) {
 		done[ii.Block] = true
 	}
 
-	_, ok_100 := done[100]
-	assert.False(t, ok_100)
+	_, ok100 := done[100]
+	assert.False(t, ok100)
 
 	// Should signal end
 	assert.Equal(t, storage.BlockInfoFinish, abo.GetNext())

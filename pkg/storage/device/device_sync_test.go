@@ -17,9 +17,9 @@ import (
 )
 
 func TestDeviceSync(t *testing.T) {
-	PORT_9000 := testutils.SetupMinio(t.Cleanup)
+	MinioPort := testutils.SetupMinio(t.Cleanup)
 
-	block_size := 64 * 1024
+	blockSize := 64 * 1024
 
 	testSyncSchema := fmt.Sprintf(`
 	device TestSync {
@@ -34,6 +34,7 @@ func TestDeviceSync(t *testing.T) {
 			endpoint = "%s"
 			bucket = "silosilo"
 			config {
+				onlydirty = true
 				blockshift = 2
 				maxage = "100ms"
 				minchanged = 4
@@ -42,7 +43,7 @@ func TestDeviceSync(t *testing.T) {
 			}
 		}
 	}
-	`, fmt.Sprintf("localhost:%s", PORT_9000))
+	`, fmt.Sprintf("localhost:%s", MinioPort))
 
 	s := new(config.SiloSchema)
 	err := s.Decode([]byte(testSyncSchema))
@@ -57,7 +58,7 @@ func TestDeviceSync(t *testing.T) {
 
 	prov := devs["TestSync"].Provider
 
-	num_blocks := (int(prov.Size()) + block_size - 1) / block_size
+	numBlocks := (int(prov.Size()) + blockSize - 1) / blockSize
 
 	buffer := make([]byte, 1024*1024)
 	_, err = rand.Read(buffer)
@@ -67,14 +68,14 @@ func TestDeviceSync(t *testing.T) {
 	assert.Equal(t, 1024*1024, n)
 
 	// Tell the sync to start.
-	storage.SendEvent(prov, "sync.start", nil)
+	storage.SendSiloEvent(prov, "sync.start", nil)
 
 	// Do a few write here, and wait a little bit for sync to happen...
-	for i := 0; i < num_blocks; i++ {
-		wbuffer := make([]byte, block_size)
+	for i := 0; i < numBlocks; i++ {
+		wbuffer := make([]byte, blockSize)
 		_, err = rand.Read(wbuffer)
 		assert.NoError(t, err)
-		n, err = prov.WriteAt(wbuffer, int64(i*block_size))
+		n, err = prov.WriteAt(wbuffer, int64(i*blockSize))
 		assert.NoError(t, err)
 		assert.Equal(t, 64*1024, n)
 	}
@@ -83,7 +84,7 @@ func TestDeviceSync(t *testing.T) {
 	time.Sleep(500 * time.Millisecond)
 
 	// Tell the sync to stop, and return the AlternateSource details.
-	asources := storage.SendEvent(prov, "sync.stop", nil)
+	asources := storage.SendSiloEvent(prov, "sync.stop", nil)
 
 	locs := make([]string, 0)
 
@@ -104,16 +105,16 @@ func TestDeviceSync(t *testing.T) {
 	}
 
 	// If everything worked, all blocks should be present on S3.
-	assert.Equal(t, num_blocks, len(locs))
+	assert.Equal(t, numBlocks, len(locs))
 
 	// Get some statistics
-	stats := storage.SendEvent(prov, "sync.status", nil)
+	stats := storage.SendSiloEvent(prov, "sync.status", nil)
 
 	assert.Equal(t, 1, len(stats))
 	metrics := stats[0].(*sources.S3Metrics)
 
 	// Do some asserts on the S3Metrics... It should have written each block at least once by now.
-	assert.GreaterOrEqual(t, num_blocks, int(metrics.BlocksWCount))
+	assert.GreaterOrEqual(t, numBlocks, int(metrics.BlocksWCount))
 
 	prov.Close()
 }

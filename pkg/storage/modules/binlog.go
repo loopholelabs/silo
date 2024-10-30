@@ -13,35 +13,35 @@ import (
 )
 
 type BinLog struct {
-	storage.StorageProviderWithEvents
-	prov          storage.StorageProvider
+	storage.ProviderWithEvents
+	prov          storage.Provider
 	filename      string
 	ctime         time.Time
-	set_ctime     bool
+	setCtime      bool
 	fp            *os.File
-	write_lock    sync.Mutex
+	writeLock     sync.Mutex
 	readsEnabled  atomic.Bool
 	writesEnabled atomic.Bool
 }
 
 // Relay events to embedded StorageProvider
-func (i *BinLog) SendEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
-	data := i.StorageProviderWithEvents.SendEvent(event_type, event_data)
-	return append(data, storage.SendEvent(i.prov, event_type, event_data)...)
+func (i *BinLog) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
+	data := i.ProviderWithEvents.SendSiloEvent(eventType, eventData)
+	return append(data, storage.SendSiloEvent(i.prov, eventType, eventData)...)
 }
 
-func NewBinLog(prov storage.StorageProvider, filename string) (*BinLog, error) {
+func NewBinLog(prov storage.Provider, filename string) (*BinLog, error) {
 	fp, err := os.Create(filename)
 	if err != nil {
 		return nil, err
 	}
 
 	l := &BinLog{
-		prov:      prov,
-		filename:  filename,
-		fp:        fp,
-		ctime:     time.Now(),
-		set_ctime: true,
+		prov:     prov,
+		filename: filename,
+		fp:       fp,
+		ctime:    time.Now(),
+		setCtime: true,
 	}
 	// By default, we only log writes.
 	l.readsEnabled.Store(false)
@@ -51,12 +51,12 @@ func NewBinLog(prov storage.StorageProvider, filename string) (*BinLog, error) {
 
 func (i *BinLog) writeLog(data []byte) {
 	now := time.Now()
-	i.write_lock.Lock()
-	defer i.write_lock.Unlock()
+	i.writeLock.Lock()
+	defer i.writeLock.Unlock()
 
-	if i.set_ctime {
+	if i.setCtime {
 		i.ctime = now
-		i.set_ctime = false
+		i.setCtime = false
 	}
 	// Write a short header, then the packet data
 	dt := now.Sub(i.ctime).Nanoseconds()

@@ -23,7 +23,7 @@ func TestIntegrity(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, size, n)
 
-	in := NewIntegrityChecker(int64(size), blockSize)
+	in := NewChecker(int64(size), blockSize)
 
 	err = in.Hash(mem)
 	assert.NoError(t, err)
@@ -49,7 +49,7 @@ func TestIntegrityChangedData(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, size, n)
 
-	in := NewIntegrityChecker(int64(size), blockSize)
+	in := NewChecker(int64(size), blockSize)
 
 	err = in.Hash(mem)
 	assert.NoError(t, err)
@@ -80,7 +80,7 @@ func TestIntegrityHashChanged(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, size, n)
 
-	in := NewIntegrityChecker(int64(size), blockSize)
+	in := NewChecker(int64(size), blockSize)
 
 	err = in.Hash(mem)
 	assert.NoError(t, err)

@@ -10,20 +10,20 @@ import (
 )
 
 func TestMappedStorage(t *testing.T) {
-	block_size := 4096
-	store := sources.NewMemoryStorage(64 * block_size)
+	blockSize := 4096
+	store := sources.NewMemoryStorage(64 * blockSize)
 
-	ms := NewMappedStorage(store, block_size)
+	ms := NewMappedStorage(store, blockSize)
 	// Write some blocks, then read them back
 
-	data := make([]byte, block_size)
+	data := make([]byte, blockSize)
 	_, err := rand.Read(data)
 	assert.NoError(t, err)
 
 	err = ms.WriteBlock(0x12345678, data)
 	assert.NoError(t, err)
 
-	buffer := make([]byte, block_size)
+	buffer := make([]byte, blockSize)
 
 	err = ms.ReadBlock(0x12345678, buffer)
 	assert.NoError(t, err)
@@ -31,20 +31,20 @@ func TestMappedStorage(t *testing.T) {
 	assert.Equal(t, buffer, data)
 
 	err = ms.ReadBlock(0xdead, buffer)
-	assert.ErrorIs(t, err, Err_not_found)
+	assert.ErrorIs(t, err, ErrNotFound)
 
-	assert.Equal(t, uint64(block_size), ms.Size())
+	assert.Equal(t, uint64(blockSize), ms.Size())
 
 }
 
 func TestMappedStorageRemove(t *testing.T) {
-	block_size := 4096
-	store := sources.NewMemoryStorage(64 * block_size)
+	blockSize := 4096
+	store := sources.NewMemoryStorage(64 * blockSize)
 
-	ms := NewMappedStorage(store, block_size)
+	ms := NewMappedStorage(store, blockSize)
 	// Write some blocks, then read them back
 
-	data := make([]byte, block_size)
+	data := make([]byte, blockSize)
 	_, err := rand.Read(data)
 	assert.NoError(t, err)
 
@@ -52,7 +52,7 @@ func TestMappedStorageRemove(t *testing.T) {
 	err = ms.WriteBlock(id, data)
 	assert.NoError(t, err)
 
-	assert.Equal(t, uint64(block_size), ms.Size())
+	assert.Equal(t, uint64(blockSize), ms.Size())
 
 	err = ms.RemoveBlock(id)
 	assert.NoError(t, err)
@@ -61,12 +61,12 @@ func TestMappedStorageRemove(t *testing.T) {
 }
 
 func TestMappedStorageOutOfSpace(t *testing.T) {
-	block_size := 4096
-	store := sources.NewMemoryStorage(2 * block_size)
+	blockSize := 4096
+	store := sources.NewMemoryStorage(2 * blockSize)
 
-	ms := NewMappedStorage(store, block_size)
+	ms := NewMappedStorage(store, blockSize)
 
-	data := make([]byte, block_size)
+	data := make([]byte, blockSize)
 	_, err := rand.Read(data)
 	assert.NoError(t, err)
 
@@ -80,19 +80,19 @@ func TestMappedStorageOutOfSpace(t *testing.T) {
 	assert.NoError(t, err)
 
 	err = ms.WriteBlock(0x5678, data)
-	assert.ErrorIs(t, err, Err_out_of_space)
+	assert.ErrorIs(t, err, ErrOutOfSpace)
 
-	assert.Equal(t, uint64(2*block_size), ms.Size())
+	assert.Equal(t, uint64(2*blockSize), ms.Size())
 
 }
 
 func TestMappedStorageDupe(t *testing.T) {
-	block_size := 4096
-	store := sources.NewMemoryStorage(64 * block_size)
-	ms := NewMappedStorage(store, block_size)
+	blockSize := 4096
+	store := sources.NewMemoryStorage(64 * blockSize)
+	ms := NewMappedStorage(store, blockSize)
 	// Write some blocks, then read them back
 
-	data := make([]byte, block_size)
+	data := make([]byte, blockSize)
 	_, err := rand.Read(data)
 	assert.NoError(t, err)
 
@@ -100,10 +100,10 @@ func TestMappedStorageDupe(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Now create a new MappedStorage and make sure we can use it...
-	ms2 := NewMappedStorage(store, block_size)
+	ms2 := NewMappedStorage(store, blockSize)
 	ms2.SetMap(ms.GetMap())
 
-	buffer := make([]byte, block_size)
+	buffer := make([]byte, blockSize)
 
 	err = ms2.ReadBlock(0x12345678, buffer)
 	assert.NoError(t, err)
@@ -111,27 +111,27 @@ func TestMappedStorageDupe(t *testing.T) {
 	assert.Equal(t, buffer, data)
 
 	err = ms2.ReadBlock(0xdead, buffer)
-	assert.ErrorIs(t, err, Err_not_found)
+	assert.ErrorIs(t, err, ErrNotFound)
 
-	assert.Equal(t, uint64(block_size), ms.Size())
+	assert.Equal(t, uint64(blockSize), ms.Size())
 
 }
 
 func TestMappedStorageGetAddresses(t *testing.T) {
-	block_size := 4096
-	store := sources.NewMemoryStorage(64 * block_size)
+	blockSize := 4096
+	store := sources.NewMemoryStorage(64 * blockSize)
 
-	ms := NewMappedStorage(store, block_size)
+	ms := NewMappedStorage(store, blockSize)
 	// Write some blocks, then read them back
 
-	data := make([]byte, block_size)
+	data := make([]byte, blockSize)
 	_, err := rand.Read(data)
 	assert.NoError(t, err)
 
 	err = ms.WriteBlock(0x12345678, data)
 	assert.NoError(t, err)
 
-	err = ms.WriteBlock(0x12345678+uint64(block_size), data)
+	err = ms.WriteBlock(0x12345678+uint64(blockSize), data)
 	assert.NoError(t, err)
 
 	addresses := ms.GetBlockAddresses()
@@ -141,19 +141,19 @@ func TestMappedStorageGetAddresses(t *testing.T) {
 }
 
 func TestMappedStorageGetRegions(t *testing.T) {
-	block_size := 4096
-	store := sources.NewMemoryStorage(64 * block_size)
+	blockSize := 4096
+	store := sources.NewMemoryStorage(64 * blockSize)
 
-	ms := NewMappedStorage(store, block_size)
+	ms := NewMappedStorage(store, blockSize)
 	// Write some blocks, then read them back
 
-	data := make([]byte, block_size)
+	data := make([]byte, blockSize)
 	_, err := rand.Read(data)
 	assert.NoError(t, err)
 
 	// Make a region here
 	for i := 0; i < 8; i++ {
-		err = ms.WriteBlock(0x12345678+uint64(i*block_size), data)
+		err = ms.WriteBlock(0x12345678+uint64(i*blockSize), data)
 		assert.NoError(t, err)
 
 	}
@@ -163,7 +163,7 @@ func TestMappedStorageGetRegions(t *testing.T) {
 	assert.NoError(t, err)
 
 	addresses := ms.GetBlockAddresses()
-	regions := ms.GetRegions(addresses, uint64(block_size*6))
+	regions := ms.GetRegions(addresses, uint64(blockSize*6))
 
 	assert.Equal(t, map[uint64]uint64{
 		305419896: 24576,
@@ -174,31 +174,31 @@ func TestMappedStorageGetRegions(t *testing.T) {
 }
 
 func TestMappedStorageReadWriteBlocks(t *testing.T) {
-	block_size := 4096
-	store := sources.NewMemoryStorage(64 * block_size)
+	blockSize := 4096
+	store := sources.NewMemoryStorage(64 * blockSize)
 
-	ms := NewMappedStorage(store, block_size)
+	ms := NewMappedStorage(store, blockSize)
 	// Write some blocks, then read them back
 
-	data := make([]byte, block_size*2)
+	data := make([]byte, blockSize*2)
 	_, err := rand.Read(data)
 	assert.NoError(t, err)
 
 	err = ms.WriteBlocks(0x12345678, data)
 	assert.NoError(t, err)
 
-	buffer := make([]byte, block_size)
+	buffer := make([]byte, blockSize)
 
 	err = ms.ReadBlock(0x12345678, buffer)
 	assert.NoError(t, err)
 
-	assert.Equal(t, buffer, data[:block_size])
+	assert.Equal(t, buffer, data[:blockSize])
 
-	err = ms.ReadBlock(uint64(0x12345678+block_size), buffer)
+	err = ms.ReadBlock(uint64(0x12345678+blockSize), buffer)
 	assert.NoError(t, err)
-	assert.Equal(t, buffer, data[block_size:])
+	assert.Equal(t, buffer, data[blockSize:])
 
-	buffer2 := make([]byte, block_size*2)
+	buffer2 := make([]byte, blockSize*2)
 	err = ms.ReadBlocks(0x12345678, buffer2)
 	assert.NoError(t, err)
 
@@ -206,29 +206,29 @@ func TestMappedStorageReadWriteBlocks(t *testing.T) {
 }
 
 func TestDefrag(t *testing.T) {
-	block_size := 4096
-	store1 := sources.NewMemoryStorage(64 * block_size)
-	store2 := sources.NewMemoryStorage(64 * block_size)
+	blockSize := 4096
+	store1 := sources.NewMemoryStorage(64 * blockSize)
+	store2 := sources.NewMemoryStorage(64 * blockSize)
 
-	ms1 := NewMappedStorage(store1, block_size)
-	ms2 := NewMappedStorage(store2, block_size)
+	ms1 := NewMappedStorage(store1, blockSize)
+	ms2 := NewMappedStorage(store2, blockSize)
 
 	// Here's some data we're going to write
-	data := make([]byte, block_size*2)
+	data := make([]byte, blockSize*2)
 	_, err := rand.Read(data)
 	assert.NoError(t, err)
 
-	err = ms1.WriteBlock(0x12345678, data[:block_size])
+	err = ms1.WriteBlock(0x12345678, data[:blockSize])
 	assert.NoError(t, err)
 
-	other := make([]byte, block_size)
+	other := make([]byte, blockSize)
 	_, err = rand.Read(other)
 	assert.NoError(t, err)
 
 	err = ms1.WriteBlock(0xdead, other)
 	assert.NoError(t, err)
 
-	err = ms1.WriteBlock(uint64(0x12345678+block_size), data[block_size:])
+	err = ms1.WriteBlock(uint64(0x12345678+blockSize), data[blockSize:])
 	assert.NoError(t, err)
 
 	// Now delete the 'other'
@@ -238,15 +238,15 @@ func TestDefrag(t *testing.T) {
 
 	// We now have 2 blocks, and a hole in the middle...
 
-	assert.Equal(t, uint64(3*block_size), ms1.ProviderUsedSize()) // It's occupying 3 blocks in the storage.
+	assert.Equal(t, uint64(3*blockSize), ms1.ProviderUsedSize()) // It's occupying 3 blocks in the storage.
 
 	err = ms1.DefragTo(ms2)
 	assert.NoError(t, err)
 
-	assert.Equal(t, uint64(2*block_size), ms2.ProviderUsedSize()) // It's defragged to 2 blocks.
+	assert.Equal(t, uint64(2*blockSize), ms2.ProviderUsedSize()) // It's defragged to 2 blocks.
 
 	// Make sure the data is there
-	buffer := make([]byte, block_size*2)
+	buffer := make([]byte, blockSize*2)
 
 	err = ms2.ReadBlocks(0x12345678, buffer)
 	assert.NoError(t, err)
@@ -262,13 +262,13 @@ func TestDefrag(t *testing.T) {
 }
 
 func TestMappedStorageKeepOnly(t *testing.T) {
-	block_size := 4096
-	store := sources.NewMemoryStorage(64 * block_size)
+	blockSize := 4096
+	store := sources.NewMemoryStorage(64 * blockSize)
 
-	ms := NewMappedStorage(store, block_size)
+	ms := NewMappedStorage(store, blockSize)
 	// Write some blocks, then read them back
 
-	data := make([]byte, block_size)
+	data := make([]byte, blockSize)
 	_, err := rand.Read(data)
 	assert.NoError(t, err)
 
@@ -287,5 +287,5 @@ func TestMappedStorageKeepOnly(t *testing.T) {
 
 	assert.Equal(t, removed, []uint64{id2})
 
-	assert.Equal(t, uint64(block_size), ms.Size())
+	assert.Equal(t, uint64(blockSize), ms.Size())
 }

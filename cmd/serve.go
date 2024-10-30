@@ -36,60 +36,60 @@ var (
 	}
 )
 
-var serve_addr string
-var serve_conf string
-var serve_progress bool
-var serve_continuous bool
-var serve_any_order bool
+var serveAddr string
+var serveConf string
+var serveProgress bool
+var serveContinuous bool
+var serveAnyOrder bool
 
-var src_exposed []storage.ExposedStorage
-var src_storage []*storageInfo
+var srcExposed []storage.ExposedStorage
+var srcStorage []*storageInfo
 
-var serveProgress *mpb.Progress
+var serveProgressBar *mpb.Progress
 var serveBars []*mpb.Bar
 
 func init() {
 	rootCmd.AddCommand(cmdServe)
-	cmdServe.Flags().StringVarP(&serve_addr, "addr", "a", ":5170", "Address to serve from")
-	cmdServe.Flags().StringVarP(&serve_conf, "conf", "c", "silo.conf", "Configuration file")
-	cmdServe.Flags().BoolVarP(&serve_progress, "progress", "p", false, "Show progress")
-	cmdServe.Flags().BoolVarP(&serve_continuous, "continuous", "C", false, "Continuous sync")
-	cmdServe.Flags().BoolVarP(&serve_any_order, "order", "o", false, "Any order (faster)")
+	cmdServe.Flags().StringVarP(&serveAddr, "addr", "a", ":5170", "Address to serve from")
+	cmdServe.Flags().StringVarP(&serveConf, "conf", "c", "silo.conf", "Configuration file")
+	cmdServe.Flags().BoolVarP(&serveProgress, "progress", "p", false, "Show progress")
+	cmdServe.Flags().BoolVarP(&serveContinuous, "continuous", "C", false, "Continuous sync")
+	cmdServe.Flags().BoolVarP(&serveAnyOrder, "order", "o", false, "Any order (faster)")
 }
 
 type storageInfo struct {
 	//	tracker       storage.TrackingStorageProvider
-	tracker    *dirtytracker.DirtyTrackerRemote
-	lockable   storage.LockableStorageProvider
-	orderer    *blocks.PriorityBlockOrder
-	num_blocks int
-	block_size int
-	name       string
-	schema     string
+	tracker   *dirtytracker.Remote
+	lockable  storage.LockableProvider
+	orderer   *blocks.PriorityBlockOrder
+	numBlocks int
+	blockSize int
+	name      string
+	schema    string
 }
 
-func runServe(ccmd *cobra.Command, args []string) {
-	if serve_progress {
-		serveProgress = mpb.New(
+func runServe(_ *cobra.Command, _ []string) {
+	if serveProgress {
+		serveProgressBar = mpb.New(
 			mpb.WithOutput(color.Output),
 			mpb.WithAutoRefresh(),
 		)
 		serveBars = make([]*mpb.Bar, 0)
 	}
 
-	src_exposed = make([]storage.ExposedStorage, 0)
-	src_storage = make([]*storageInfo, 0)
-	fmt.Printf("Starting silo serve %s\n", serve_addr)
+	srcExposed = make([]storage.ExposedStorage, 0)
+	srcStorage = make([]*storageInfo, 0)
+	fmt.Printf("Starting silo serve %s\n", serveAddr)
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-c
-		shutdown_everything()
+		shutdownEverything()
 		os.Exit(1)
 	}()
 
-	siloConf, err := config.ReadSchema(serve_conf)
+	siloConf, err := config.ReadSchema(serveConf)
 	if err != nil {
 		panic(err)
 	}
@@ -101,14 +101,14 @@ func runServe(ccmd *cobra.Command, args []string) {
 			panic(fmt.Sprintf("Could not setup storage. %v", err))
 		}
 
-		src_storage = append(src_storage, sinfo)
+		srcStorage = append(srcStorage, sinfo)
 	}
 
 	// Setup listener here. When client connects, migrate data to it.
 
-	l, err := net.Listen("tcp", serve_addr)
+	l, err := net.Listen("tcp", serveAddr)
 	if err != nil {
-		shutdown_everything()
+		shutdownEverything()
 		panic("Listener issue...")
 	}
 
@@ -120,7 +120,7 @@ func runServe(ccmd *cobra.Command, args []string) {
 		// Now we can migrate to the client...
 
 		// Wrap the connection in a protocol
-		pro := protocol.NewProtocolRW(context.TODO(), []io.Reader{con}, []io.Writer{con}, nil)
+		pro := protocol.NewRW(context.TODO(), []io.Reader{con}, []io.Writer{con}, nil)
 		go func() {
 			_ = pro.Handle()
 		}()
@@ -130,7 +130,7 @@ func runServe(ccmd *cobra.Command, args []string) {
 
 		var wg sync.WaitGroup
 
-		for i, s := range src_storage {
+		for i, s := range srcStorage {
 			wg.Add(1)
 			go func(index int, src *storageInfo) {
 				err := migrateDevice(uint32(index), src.name, pro, src)
@@ -142,26 +142,26 @@ func runServe(ccmd *cobra.Command, args []string) {
 		}
 		wg.Wait()
 
-		if serveProgress != nil {
-			serveProgress.Wait()
+		if serveProgressBar != nil {
+			serveProgressBar.Wait()
 		}
 		fmt.Printf("\n\nMigration completed in %dms\n", time.Since(ctime).Milliseconds())
 
 		con.Close()
 	}
-	shutdown_everything()
+	shutdownEverything()
 }
 
-func shutdown_everything() {
+func shutdownEverything() {
 	// first unlock everything
 	fmt.Printf("Unlocking devices...\n")
-	for _, i := range src_storage {
+	for _, i := range srcStorage {
 		i.lockable.Unlock()
 		i.tracker.Close()
 	}
 
 	fmt.Printf("Shutting down devices cleanly...\n")
-	for _, p := range src_exposed {
+	for _, p := range srcExposed {
 		device := p.Device()
 
 		fmt.Printf("Shutdown nbd device %s\n", device)
@@ -170,9 +170,9 @@ func shutdown_everything() {
 }
 
 func setupStorageDevice(conf *config.DeviceSchema) (*storageInfo, error) {
-	block_size := 1024 * 128
+	blockSize := 1024 * 128
 
-	num_blocks := (int(conf.ByteSize()) + block_size - 1) / block_size
+	numBlocks := (int(conf.ByteSize()) + blockSize - 1) / blockSize
 
 	source, ex, err := device.NewDevice(conf)
 	if err != nil {
@@ -180,11 +180,11 @@ func setupStorageDevice(conf *config.DeviceSchema) (*storageInfo, error) {
 	}
 	if ex != nil {
 		fmt.Printf("Device %s exposed as %s\n", conf.Name, ex.Device())
-		src_exposed = append(src_exposed, ex)
+		srcExposed = append(srcExposed, ex)
 	}
 	sourceMetrics := modules.NewMetrics(source)
-	sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(sourceMetrics, block_size)
-	sourceMonitor := volatilitymonitor.NewVolatilityMonitor(sourceDirtyLocal, block_size, 10*time.Second)
+	sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(sourceMetrics, blockSize)
+	sourceMonitor := volatilitymonitor.NewVolatilityMonitor(sourceDirtyLocal, blockSize, 10*time.Second)
 	sourceStorage := modules.NewLockable(sourceMonitor)
 
 	if ex != nil {
@@ -193,51 +193,51 @@ func setupStorageDevice(conf *config.DeviceSchema) (*storageInfo, error) {
 
 	// Start monitoring blocks.
 
-	var primary_orderer storage.BlockOrder
-	primary_orderer = sourceMonitor
+	var primaryOrderer storage.BlockOrder
+	primaryOrderer = sourceMonitor
 
-	if serve_any_order {
-		primary_orderer = blocks.NewAnyBlockOrder(num_blocks, nil)
+	if serveAnyOrder {
+		primaryOrderer = blocks.NewAnyBlockOrder(numBlocks, nil)
 	}
-	orderer := blocks.NewPriorityBlockOrder(num_blocks, primary_orderer)
+	orderer := blocks.NewPriorityBlockOrder(numBlocks, primaryOrderer)
 	orderer.AddAll()
 
 	schema := string(conf.Encode())
 
 	sinfo := &storageInfo{
-		tracker:    sourceDirtyRemote,
-		lockable:   sourceStorage,
-		orderer:    orderer,
-		block_size: block_size,
-		num_blocks: num_blocks,
-		name:       conf.Name,
-		schema:     schema,
+		tracker:   sourceDirtyRemote,
+		lockable:  sourceStorage,
+		orderer:   orderer,
+		blockSize: blockSize,
+		numBlocks: numBlocks,
+		name:      conf.Name,
+		schema:    schema,
 	}
 
 	return sinfo, nil
 }
 
 // Migrate a device
-func migrateDevice(dev_id uint32, name string,
+func migrateDevice(devID uint32, name string,
 	pro protocol.Protocol,
 	sinfo *storageInfo) error {
 	size := sinfo.lockable.Size()
-	dest := protocol.NewToProtocol(uint64(size), dev_id, pro)
+	dest := protocol.NewToProtocol(size, devID, pro)
 
-	err := dest.SendDevInfo(name, uint32(sinfo.block_size), sinfo.schema)
+	err := dest.SendDevInfo(name, uint32(sinfo.blockSize), sinfo.schema)
 	if err != nil {
 		return err
 	}
 
 	statusString := " "
 
-	statusFn := func(s decor.Statistics) string {
+	statusFn := func(_ decor.Statistics) string {
 		return statusString
 	}
 
 	var bar *mpb.Bar
-	if serve_progress {
-		bar = serveProgress.AddBar(int64(size),
+	if serveProgress {
+		bar = serveProgressBar.AddBar(int64(size),
 			mpb.PrependDecorators(
 				decor.Name(name, decor.WCSyncSpaceR),
 				decor.CountersKiloByte("%d/%d", decor.WCSyncWidth),
@@ -259,13 +259,13 @@ func migrateDevice(dev_id uint32, name string,
 		_ = dest.HandleNeedAt(func(offset int64, length int32) {
 			// Prioritize blocks...
 			end := uint64(offset + int64(length))
-			if end > uint64(size) {
-				end = uint64(size)
+			if end > size {
+				end = size
 			}
 
-			b_start := int(offset / int64(sinfo.block_size))
-			b_end := int((end-1)/uint64(sinfo.block_size)) + 1
-			for b := b_start; b < b_end; b++ {
+			bStart := int(offset / int64(sinfo.blockSize))
+			bEnd := int((end-1)/uint64(sinfo.blockSize)) + 1
+			for b := bStart; b < bEnd; b++ {
 				// Ask the orderer to prioritize these blocks...
 				sinfo.orderer.PrioritiseBlock(b)
 			}
@@ -275,25 +275,25 @@ func migrateDevice(dev_id uint32, name string,
 	go func() {
 		_ = dest.HandleDontNeedAt(func(offset int64, length int32) {
 			end := uint64(offset + int64(length))
-			if end > uint64(size) {
-				end = uint64(size)
+			if end > size {
+				end = size
 			}
 
-			b_start := int(offset / int64(sinfo.block_size))
-			b_end := int((end-1)/uint64(sinfo.block_size)) + 1
-			for b := b_start; b < b_end; b++ {
+			bStart := int(offset / int64(sinfo.blockSize))
+			bEnd := int((end-1)/uint64(sinfo.blockSize)) + 1
+			for b := bStart; b < bEnd; b++ {
 				sinfo.orderer.Remove(b)
 			}
 		})
 	}()
 
-	conf := migrator.NewMigratorConfig().WithBlockSize(sinfo.block_size)
-	conf.Locker_handler = func() {
+	conf := migrator.NewConfig().WithBlockSize(sinfo.blockSize)
+	conf.LockerHandler = func() {
 		_ = dest.SendEvent(&packets.Event{Type: packets.EventPreLock})
 		sinfo.lockable.Lock()
 		_ = dest.SendEvent(&packets.Event{Type: packets.EventPostLock})
 	}
-	conf.Unlocker_handler = func() {
+	conf.UnlockerHandler = func() {
 		_ = dest.SendEvent(&packets.Event{Type: packets.EventPreUnlock})
 		sinfo.lockable.Unlock()
 		_ = dest.SendEvent(&packets.Event{Type: packets.EventPostUnlock})
@@ -301,35 +301,35 @@ func migrateDevice(dev_id uint32, name string,
 	conf.Concurrency = map[int]int{
 		storage.BlockTypeAny: 1000000,
 	}
-	conf.Error_handler = func(b *storage.BlockInfo, err error) {
+	conf.ErrorHandler = func(_ *storage.BlockInfo, err error) {
 		// For now...
 		panic(err)
 	}
 	conf.Integrity = true
 
-	last_value := uint64(0)
-	last_time := time.Now()
+	lastValue := uint64(0)
+	lastTime := time.Now()
 
-	if serve_progress {
+	if serveProgress {
 
-		conf.Progress_handler = func(p *migrator.MigrationProgress) {
-			v := uint64(p.Ready_blocks) * uint64(sinfo.block_size)
+		conf.ProgressHandler = func(p *migrator.MigrationProgress) {
+			v := uint64(p.ReadyBlocks) * uint64(sinfo.blockSize)
 			if v > size {
 				v = size
 			}
 			bar.SetCurrent(int64(v))
-			bar.EwmaIncrInt64(int64(v-last_value), time.Since(last_time))
-			last_time = time.Now()
-			last_value = v
+			bar.EwmaIncrInt64(int64(v-lastValue), time.Since(lastTime))
+			lastTime = time.Now()
+			lastValue = v
 		}
 	} else {
-		conf.Progress_handler = func(p *migrator.MigrationProgress) {
+		conf.ProgressHandler = func(p *migrator.MigrationProgress) {
 			fmt.Printf("[%s] Progress Moved: %d/%d %.2f%% Clean: %d/%d %.2f%% InProgress: %d\n",
-				name, p.Migrated_blocks, p.Total_blocks, p.Migrated_blocks_perc,
-				p.Ready_blocks, p.Total_blocks, p.Ready_blocks_perc,
-				p.Active_blocks)
+				name, p.MigratedBlocks, p.TotalBlocks, p.MigratedBlocksPerc,
+				p.ReadyBlocks, p.TotalBlocks, p.ReadyBlocksPerc,
+				p.ActiveBlocks)
 		}
-		conf.Error_handler = func(b *storage.BlockInfo, err error) {
+		conf.ErrorHandler = func(b *storage.BlockInfo, err error) {
 			fmt.Printf("[%s] Error for block %d error %v\n", name, b.Block, err)
 		}
 	}
@@ -340,10 +340,10 @@ func migrateDevice(dev_id uint32, name string,
 		return err
 	}
 
-	migrate_blocks := sinfo.num_blocks
+	migrateBlocks := sinfo.numBlocks
 
 	// Now do the migration...
-	err = mig.Migrate(migrate_blocks)
+	err = mig.Migrate(migrateBlocks)
 	if err != nil {
 		return err
 	}
@@ -363,13 +363,13 @@ func migrateDevice(dev_id uint32, name string,
 	// Optional: Enter a loop looking for more dirty blocks to migrate...
 	for {
 		blocks := mig.GetLatestDirty() //
-		if !serve_continuous && blocks == nil {
+		if !serveContinuous && blocks == nil {
 			break
 		}
 
 		if blocks != nil {
 			// Optional: Send the list of dirty blocks over...
-			err := dest.DirtyList(conf.Block_size, blocks)
+			err := dest.DirtyList(conf.BlockSize, blocks)
 			if err != nil {
 				return err
 			}

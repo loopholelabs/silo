@@ -11,8 +11,8 @@ type entry struct {
 }
 
 type Readings struct {
-	values      []*entry
-	values_lock sync.Mutex
+	values     []*entry
+	valuesLock sync.Mutex
 }
 
 func NewReadings() *Readings {
@@ -20,8 +20,8 @@ func NewReadings() *Readings {
 }
 
 func (r *Readings) Add(v float64) {
-	r.values_lock.Lock()
-	defer r.values_lock.Unlock()
+	r.valuesLock.Lock()
+	defer r.valuesLock.Unlock()
 	r.values = append(r.values, &entry{
 		time:  time.Now(),
 		value: v,
@@ -29,8 +29,8 @@ func (r *Readings) Add(v float64) {
 }
 
 func (r *Readings) GetAverage(d time.Duration) float64 {
-	r.values_lock.Lock()
-	defer r.values_lock.Unlock()
+	r.valuesLock.Lock()
+	defer r.valuesLock.Unlock()
 	ctime := time.Now().Add(-d)
 	num := 0
 	total := float64(0)
