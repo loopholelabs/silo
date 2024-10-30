@@ -312,8 +312,6 @@ func (pm *ProcessMemory) ReadSoftDirtyMemory(addrStart uint64, addrEnd uint64, p
 		bytesRead += (currentEnd - currentStart)
 	}
 
-	// Wait for any pending to finish
-
 	return bytesRead, nil
 }
 

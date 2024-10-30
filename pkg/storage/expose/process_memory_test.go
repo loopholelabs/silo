@@ -7,7 +7,6 @@ import (
 	"os/user"
 	"syscall"
 	"testing"
-	"time"
 
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
@@ -19,7 +18,7 @@ import (
 func setupDevTest(t *testing.T, size int) (*ExposedStorageNBDNL, storage.Provider, []byte) {
 	prov := sources.NewMemoryStorage(size)
 
-	n := NewExposedStorageNBDNL(prov, 8, 0, uint64(size), 4096, true)
+	n := NewExposedStorageNBDNL(prov, 8, 0, uint64(size), NBDDefaultBlockSize, true)
 
 	err := n.Init()
 	assert.NoError(t, err)
@@ -76,38 +75,28 @@ func TestProcessMemory(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Read the soft dirty memory
-	ctime := time.Now()
 	nbytes, err := pm.ReadSoftDirtyMemory(memStart, memEnd, provCheck)
-	dtime := time.Since(ctime)
+	assert.Equal(t, uint64(PageSize*((changedData+PageSize-1)/PageSize)), nbytes)
 	assert.NoError(t, err)
-	mbPerMs := float64(nbytes) / float64(1024*1024*dtime.Milliseconds())
-	fmt.Printf("Read %d bytes in %dms at %.2fMB/ms\n", nbytes, dtime.Milliseconds(), mbPerMs)
-	/*
-		// Reset
-		fmt.Printf("Clearing soft_dirty flags\n")
-		err = os.WriteFile(fmt.Sprintf("/proc/%d/clear_refs", pid), []byte("4"), 0666)
-		assert.NoError(t, err)
 
-		// Change something
-		mmdata1[0] = 57
+	// Reset soft dirty flags
+	err = pm.ClearSoftDirty()
+	assert.NoError(t, err)
 
-		// Retry
-		// Read the soft dirty memory
-		nbytes, err = pm.readSoftDirtyMemory(mem_start, mem_end, provCheck)
-		assert.NoError(t, err)
-		fmt.Printf("RETRY Read %d bytes\n", nbytes)
+	// Change something
+	mmdata1[0] = 57
 
-		// Retry...
-	*/
+	// Retry
+	// Read the soft dirty memory
+	nbytes, err = pm.ReadSoftDirtyMemory(memStart, memEnd, provCheck)
+	assert.NoError(t, err)
+	assert.Equal(t, uint64(PageSize), nbytes)
 
 	// This should push all changes to prov
-	msyncCtime := time.Now()
 	err = unix.Msync(mmdata1, unix.MS_SYNC)
-	msyncDtime := time.Since(msyncCtime)
 	assert.NoError(t, err)
 
-	fmt.Printf("TIME read %dms msync %dms\n", dtime.Milliseconds(), msyncDtime.Milliseconds())
-
+	// Make sure the storage agrees...
 	equal, err := storage.Equals(provCheck, prov, 64*1024)
 	assert.NoError(t, err)
 	assert.True(t, equal)
