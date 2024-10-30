@@ -143,6 +143,7 @@ func (d *Dispatch) Handle() error {
 
 		// Now go through processing complete packets
 		rp := 0
+	process:
 		for {
 
 			// If the context has been cancelled, quit
@@ -183,7 +184,7 @@ func (d *Dispatch) Handle() error {
 					rp += 28
 					if wp-rp < int(request.Length) {
 						rp -= 28
-						break // We don't have enough data yet... Wait for next read
+						break process // We don't have enough data yet... Wait for next read
 					}
 					d.metricPacketsIn++
 					data := make([]byte, request.Length)
