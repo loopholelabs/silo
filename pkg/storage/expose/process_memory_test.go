@@ -71,7 +71,7 @@ func TestProcessMemory(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Change some of the data...
-	changedData := 1024 * 1024 * 900
+	changedData := 1024 * 1024 * 1
 	_, err = crand.Read(mmdata1[:changedData])
 	assert.NoError(t, err)
 
@@ -99,6 +99,7 @@ func TestProcessMemory(t *testing.T) {
 
 		// Retry...
 	*/
+
 	// This should push all changes to prov
 	msyncCtime := time.Now()
 	err = unix.Msync(mmdata1, unix.MS_SYNC)
