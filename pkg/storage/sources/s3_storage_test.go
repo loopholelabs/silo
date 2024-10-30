@@ -14,11 +14,11 @@ import (
 )
 
 func TestS3Storage(t *testing.T) {
-	PORT_9000 := testutils.SetupMinio(t.Cleanup)
+	MinioPort := testutils.SetupMinio(t.Cleanup)
 
 	size := 64 * 1024
 	blockSize := 1024
-	s3store, err := sources.NewS3StorageCreate(false, fmt.Sprintf("localhost:%s", PORT_9000), "silosilo", "silosilo", "silosilo", "file", uint64(size), blockSize)
+	s3store, err := sources.NewS3StorageCreate(false, fmt.Sprintf("localhost:%s", MinioPort), "silosilo", "silosilo", "silosilo", "file", uint64(size), blockSize)
 	assert.NoError(t, err)
 
 	buffer := make([]byte, 32*1024)
@@ -40,11 +40,11 @@ func TestS3Storage(t *testing.T) {
 }
 
 func TestS3StorageCancelWrites(t *testing.T) {
-	PORT_9000 := testutils.SetupMinio(t.Cleanup)
+	MinioPort := testutils.SetupMinio(t.Cleanup)
 
 	size := 64 * 1024
 	blockSize := 1024
-	s3store, err := sources.NewS3StorageCreate(false, fmt.Sprintf("localhost:%s", PORT_9000), "silosilo", "silosilo", "silosilo", "file", uint64(size), blockSize)
+	s3store, err := sources.NewS3StorageCreate(false, fmt.Sprintf("localhost:%s", MinioPort), "silosilo", "silosilo", "silosilo", "file", uint64(size), blockSize)
 	assert.NoError(t, err)
 
 	buffer := make([]byte, 32*1024)

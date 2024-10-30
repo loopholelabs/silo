@@ -24,8 +24,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func setupDevices(t *testing.T, size int, blockSize int) (storage.StorageProvider, storage.StorageProvider) {
-	PORT_9000 := testutils.SetupMinio(t.Cleanup)
+func setupDevices(t *testing.T, size int, blockSize int) (storage.Provider, storage.Provider) {
+	MinioPort := testutils.SetupMinio(t.Cleanup)
 
 	testSyncSchemaSrc := fmt.Sprintf(`
 	device TestSync {
@@ -49,7 +49,7 @@ func setupDevices(t *testing.T, size int, blockSize int) (storage.StorageProvide
 			}
 		}
 	}
-	`, size, blockSize, "./testfile_sync_src", fmt.Sprintf("localhost:%s", PORT_9000))
+	`, size, blockSize, "./testfile_sync_src", fmt.Sprintf("localhost:%s", MinioPort))
 
 	testSyncSchemaDest := fmt.Sprintf(`
 	device TestSync {
@@ -73,7 +73,7 @@ func setupDevices(t *testing.T, size int, blockSize int) (storage.StorageProvide
 			}
 		}
 	}
-	`, size, blockSize, "./testfile_sync_dest", fmt.Sprintf("localhost:%s", PORT_9000))
+	`, size, blockSize, "./testfile_sync_dest", fmt.Sprintf("localhost:%s", MinioPort))
 
 	sSrc := new(config.SiloSchema)
 	err := sSrc.Decode([]byte(testSyncSchemaSrc))
@@ -113,7 +113,7 @@ func TestMigratorS3Assisted(t *testing.T) {
 	assert.Equal(t, 1, len(ok))
 	assert.True(t, ok[0].(bool))
 
-	num_blocks := (size + blockSize - 1) / blockSize
+	numBlocks := (size + blockSize - 1) / blockSize
 	sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(provSrc, blockSize)
 	sourceStorage := modules.NewLockable(sourceDirtyLocal)
 
@@ -129,7 +129,7 @@ func TestMigratorS3Assisted(t *testing.T) {
 	// Wait for the sync to do some bits.
 	time.Sleep(1 * time.Second)
 
-	orderer := blocks.NewAnyBlockOrder(num_blocks, nil)
+	orderer := blocks.NewAnyBlockOrder(numBlocks, nil)
 	orderer.AddAll()
 
 	// START moving data from sourceStorage to destStorage
@@ -141,7 +141,7 @@ func TestMigratorS3Assisted(t *testing.T) {
 	r2, w2 := io.Pipe()
 
 	initDev := func(ctx context.Context, p protocol.Protocol, dev uint32) {
-		destStorageFactory := func(di *packets.DevInfo) storage.StorageProvider {
+		destStorageFactory := func(_ *packets.DevInfo) storage.Provider {
 			return provDest
 		}
 
@@ -158,8 +158,8 @@ func TestMigratorS3Assisted(t *testing.T) {
 		}()
 	}
 
-	prSource := protocol.NewProtocolRW(context.TODO(), []io.Reader{r1}, []io.Writer{w2}, nil)
-	prDest := protocol.NewProtocolRW(context.TODO(), []io.Reader{r2}, []io.Writer{w1}, initDev)
+	prSource := protocol.NewRW(context.TODO(), []io.Reader{r1}, []io.Writer{w2}, nil)
+	prDest := protocol.NewRW(context.TODO(), []io.Reader{r2}, []io.Writer{w1}, initDev)
 
 	go func() {
 		_ = prSource.Handle()
@@ -174,9 +174,9 @@ func TestMigratorS3Assisted(t *testing.T) {
 	err = destination.SendDevInfo("test", uint32(blockSize), "")
 	assert.NoError(t, err)
 
-	conf := migrator.NewMigratorConfig().WithBlockSize(blockSize)
-	conf.Locker_handler = sourceStorage.Lock
-	conf.Unlocker_handler = sourceStorage.Unlock
+	conf := migrator.NewConfig().WithBlockSize(blockSize)
+	conf.LockerHandler = sourceStorage.Lock
+	conf.UnlockerHandler = sourceStorage.Unlock
 
 	mig, err := migrator.NewMigrator(sourceDirtyRemote,
 		destination,
@@ -185,7 +185,7 @@ func TestMigratorS3Assisted(t *testing.T) {
 
 	assert.NoError(t, err)
 
-	err = mig.Migrate(num_blocks)
+	err = mig.Migrate(numBlocks)
 	assert.NoError(t, err)
 
 	err = mig.WaitForCompletion()
@@ -214,11 +214,11 @@ func TestMigratorS3Assisted(t *testing.T) {
 
 	// The source should have pushed some blocks to S3 but not all.
 	assert.Greater(t, int(srcMetrics.BlocksWCount), 0)
-	assert.Less(t, int(srcMetrics.BlocksWCount), num_blocks)
+	assert.Less(t, int(srcMetrics.BlocksWCount), numBlocks)
 
 	// Do some asserts on the S3Metrics... It should have pulled some from S3, but not all
 	assert.Greater(t, int(destMetrics.BlocksRCount), 0)
-	assert.Less(t, int(destMetrics.BlocksRCount), num_blocks)
+	assert.Less(t, int(destMetrics.BlocksRCount), numBlocks)
 
 }
 
@@ -237,7 +237,7 @@ func TestMigratorS3AssistedChangeSource(t *testing.T) {
 	assert.Equal(t, 1, len(ok))
 	assert.True(t, ok[0].(bool))
 
-	num_blocks := (size + blockSize - 1) / blockSize
+	numBlocks := (size + blockSize - 1) / blockSize
 	sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(provSrc, blockSize)
 	sourceStorage := modules.NewLockable(sourceDirtyLocal)
 
@@ -253,7 +253,7 @@ func TestMigratorS3AssistedChangeSource(t *testing.T) {
 	// Wait for the sync to do some bits.
 	time.Sleep(1 * time.Second)
 
-	orderer := blocks.NewAnyBlockOrder(num_blocks, nil)
+	orderer := blocks.NewAnyBlockOrder(numBlocks, nil)
 	orderer.AddAll()
 
 	// START moving data from sourceStorage to destStorage
@@ -265,7 +265,7 @@ func TestMigratorS3AssistedChangeSource(t *testing.T) {
 	r2, w2 := io.Pipe()
 
 	initDev := func(ctx context.Context, p protocol.Protocol, dev uint32) {
-		destStorageFactory := func(di *packets.DevInfo) storage.StorageProvider {
+		destStorageFactory := func(_ *packets.DevInfo) storage.Provider {
 			return provDest
 		}
 
@@ -282,8 +282,8 @@ func TestMigratorS3AssistedChangeSource(t *testing.T) {
 		}()
 	}
 
-	prSource := protocol.NewProtocolRW(context.TODO(), []io.Reader{r1}, []io.Writer{w2}, nil)
-	prDest := protocol.NewProtocolRW(context.TODO(), []io.Reader{r2}, []io.Writer{w1}, initDev)
+	prSource := protocol.NewRW(context.TODO(), []io.Reader{r1}, []io.Writer{w2}, nil)
+	prDest := protocol.NewRW(context.TODO(), []io.Reader{r2}, []io.Writer{w1}, initDev)
 
 	go func() {
 		_ = prSource.Handle()
@@ -298,9 +298,9 @@ func TestMigratorS3AssistedChangeSource(t *testing.T) {
 	err = destination.SendDevInfo("test", uint32(blockSize), "")
 	assert.NoError(t, err)
 
-	conf := migrator.NewMigratorConfig().WithBlockSize(blockSize)
-	conf.Locker_handler = sourceStorage.Lock
-	conf.Unlocker_handler = sourceStorage.Unlock
+	conf := migrator.NewConfig().WithBlockSize(blockSize)
+	conf.LockerHandler = sourceStorage.Lock
+	conf.UnlockerHandler = sourceStorage.Unlock
 
 	mig, err := migrator.NewMigrator(sourceDirtyRemote,
 		destination,
@@ -322,7 +322,7 @@ func TestMigratorS3AssistedChangeSource(t *testing.T) {
 	assert.Equal(t, len(buffer), n)
 
 	// Do the migration here...
-	err = mig.Migrate(num_blocks)
+	err = mig.Migrate(numBlocks)
 	assert.NoError(t, err)
 
 	err = mig.WaitForCompletion()
@@ -351,10 +351,10 @@ func TestMigratorS3AssistedChangeSource(t *testing.T) {
 
 	// The source should have pushed some blocks to S3 but not all.
 	assert.Greater(t, int(srcMetrics.BlocksWCount), 0)
-	assert.Less(t, int(srcMetrics.BlocksWCount), num_blocks)
+	assert.Less(t, int(srcMetrics.BlocksWCount), numBlocks)
 
 	// Do some asserts on the S3Metrics... It should have pulled some from S3, but not all
 	assert.Greater(t, int(destMetrics.BlocksRCount), 0)
-	assert.Less(t, int(destMetrics.BlocksRCount), num_blocks)
+	assert.Less(t, int(destMetrics.BlocksRCount), numBlocks)
 
 }

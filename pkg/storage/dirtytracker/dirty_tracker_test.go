@@ -31,8 +31,8 @@ func TestReadDirtyTracker(t *testing.T) {
 	// Now do a few writes to make dirty blocks...
 	locs := []int64{10, 10000, 40000}
 	for _, l := range locs {
-		w_buffer := make([]byte, 9000)
-		_, err = trackerLocal.WriteAt(w_buffer, l)
+		wBuffer := make([]byte, 9000)
+		_, err = trackerLocal.WriteAt(wBuffer, l)
 		assert.NoError(t, err)
 	}
 
@@ -40,8 +40,8 @@ func TestReadDirtyTracker(t *testing.T) {
 	b = trackerRemote.Sync()
 	assert.Equal(t, 8, b.Count(0, b.Length()))
 	blocks := b.Collect(0, b.Length())
-	expected_blocks := []uint{0, 1, 2, 3, 4, 9, 10, 11}
-	assert.Equal(t, expected_blocks, blocks)
+	expectedBlocks := []uint{0, 1, 2, 3, 4, 9, 10, 11}
+	assert.Equal(t, expectedBlocks, blocks)
 
 	b = trackerRemote.Sync()
 
@@ -49,7 +49,7 @@ func TestReadDirtyTracker(t *testing.T) {
 	assert.Equal(t, 0, b.Count(0, b.Length()))
 }
 
-func setupDirty(t *testing.T) *DirtyTrackerRemote {
+func setupDirty(t *testing.T) *Remote {
 	// Create a new block storage, backed by memory storage
 	size := 1024 * 1024 * 32
 	mem := sources.NewMemoryStorage(size)
@@ -68,8 +68,8 @@ func setupDirty(t *testing.T) *DirtyTrackerRemote {
 	// Now do a few writes to make dirty blocks...
 	locs := []int64{10, 30, 10000, 40000}
 	for _, l := range locs {
-		w_buffer := make([]byte, 9000)
-		_, err = trackerLocal.WriteAt(w_buffer, l)
+		wBuffer := make([]byte, 9000)
+		_, err = trackerLocal.WriteAt(wBuffer, l)
 		assert.NoError(t, err)
 	}
 
@@ -82,8 +82,8 @@ func TestReadDirtyTrackerLimits(t *testing.T) {
 	// Check the dirty blocks
 	blocks := trackerRemote.GetDirtyBlocks(0, 100, 1, 0)
 	slices.Sort(blocks)
-	expected_blocks := []uint{0, 1, 2, 4, 5}
-	assert.Equal(t, expected_blocks, blocks)
+	expectedBlocks := []uint{0, 1, 2, 4, 5}
+	assert.Equal(t, expectedBlocks, blocks)
 
 	blocks = trackerRemote.GetDirtyBlocks(0, 100, 1, 0)
 
@@ -103,8 +103,8 @@ func TestReadDirtyTrackerMaxAge(t *testing.T) {
 	// Things should expire now...
 	blocks = trackerRemote.GetDirtyBlocks(10*time.Millisecond, 100, 1, 1000)
 	slices.Sort(blocks)
-	expected_blocks := []uint{0, 1, 2, 4, 5}
-	assert.Equal(t, expected_blocks, blocks)
+	expectedBlocks := []uint{0, 1, 2, 4, 5}
+	assert.Equal(t, expectedBlocks, blocks)
 }
 
 func TestReadDirtyTrackerMinChange(t *testing.T) {
@@ -113,18 +113,18 @@ func TestReadDirtyTrackerMinChange(t *testing.T) {
 	// Check the dirty blocks
 	blocks := trackerRemote.GetDirtyBlocks(time.Minute, 100, 1, 0)
 	slices.Sort(blocks)
-	expected_blocks := []uint{0, 1, 2, 4, 5}
-	assert.Equal(t, expected_blocks, blocks)
+	expectedBlocks := []uint{0, 1, 2, 4, 5}
+	assert.Equal(t, expectedBlocks, blocks)
 
 	trackerRemote = setupDirty(t)
 	blocks = trackerRemote.GetDirtyBlocks(time.Minute, 100, 1, 2)
 	slices.Sort(blocks)
-	expected_blocks = []uint{0, 1, 5}
-	assert.Equal(t, expected_blocks, blocks)
+	expectedBlocks = []uint{0, 1, 5}
+	assert.Equal(t, expectedBlocks, blocks)
 
 	trackerRemote = setupDirty(t)
 	blocks = trackerRemote.GetDirtyBlocks(time.Minute, 100, 2, 2)
 	slices.Sort(blocks)
-	expected_blocks = []uint{0, 2}
-	assert.Equal(t, expected_blocks, blocks)
+	expectedBlocks = []uint{0, 2}
+	assert.Equal(t, expectedBlocks, blocks)
 }

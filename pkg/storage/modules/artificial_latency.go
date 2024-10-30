@@ -13,39 +13,39 @@ import (
  *
  */
 type ArtificialLatency struct {
-	storage.StorageProviderWithEvents
-	lock                   sync.RWMutex
-	prov                   storage.StorageProvider
-	latency_read           time.Duration
-	latency_write          time.Duration
-	latency_read_per_byte  time.Duration
-	latency_write_per_byte time.Duration
+	storage.ProviderWithEvents
+	lock                sync.RWMutex
+	prov                storage.Provider
+	latencyRead         time.Duration
+	latencyWrite        time.Duration
+	latencyReadPerByte  time.Duration
+	latencyWritePerByte time.Duration
 }
 
 // Relay events to embedded StorageProvider
-func (i *ArtificialLatency) SendSiloEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
-	data := i.StorageProviderWithEvents.SendSiloEvent(event_type, event_data)
-	return append(data, storage.SendSiloEvent(i.prov, event_type, event_data)...)
+func (i *ArtificialLatency) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
+	data := i.ProviderWithEvents.SendSiloEvent(eventType, eventData)
+	return append(data, storage.SendSiloEvent(i.prov, eventType, eventData)...)
 }
 
-func NewArtificialLatency(prov storage.StorageProvider, latencyRead time.Duration, latencyReadPerByte time.Duration, latencyWrite time.Duration, latencyWritePerByte time.Duration) *ArtificialLatency {
+func NewArtificialLatency(prov storage.Provider, latencyRead time.Duration, latencyReadPerByte time.Duration, latencyWrite time.Duration, latencyWritePerByte time.Duration) *ArtificialLatency {
 	return &ArtificialLatency{
-		prov:                   prov,
-		latency_read:           latencyRead,
-		latency_write:          latencyWrite,
-		latency_read_per_byte:  latencyReadPerByte,
-		latency_write_per_byte: latencyWritePerByte,
+		prov:                prov,
+		latencyRead:         latencyRead,
+		latencyWrite:        latencyWrite,
+		latencyReadPerByte:  latencyReadPerByte,
+		latencyWritePerByte: latencyWritePerByte,
 	}
 }
 
 func (i *ArtificialLatency) ReadAt(buffer []byte, offset int64) (int, error) {
 	i.lock.RLock()
 	defer i.lock.RUnlock()
-	if i.latency_read != 0 {
-		time.Sleep(i.latency_read)
+	if i.latencyRead != 0 {
+		time.Sleep(i.latencyRead)
 	}
-	if i.latency_read_per_byte != 0 {
-		time.Sleep(i.latency_read_per_byte * time.Duration(len(buffer)))
+	if i.latencyReadPerByte != 0 {
+		time.Sleep(i.latencyReadPerByte * time.Duration(len(buffer)))
 	}
 	return i.prov.ReadAt(buffer, offset)
 }
@@ -53,11 +53,11 @@ func (i *ArtificialLatency) ReadAt(buffer []byte, offset int64) (int, error) {
 func (i *ArtificialLatency) WriteAt(buffer []byte, offset int64) (int, error) {
 	i.lock.Lock()
 	defer i.lock.Unlock()
-	if i.latency_write != 0 {
-		time.Sleep(i.latency_write)
+	if i.latencyWrite != 0 {
+		time.Sleep(i.latencyWrite)
 	}
-	if i.latency_write_per_byte != 0 {
-		time.Sleep(i.latency_write_per_byte * time.Duration(len(buffer)))
+	if i.latencyWritePerByte != 0 {
+		time.Sleep(i.latencyWritePerByte * time.Duration(len(buffer)))
 	}
 	return i.prov.WriteAt(buffer, offset)
 }

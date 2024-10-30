@@ -4,17 +4,13 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
-	"errors"
 
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
 )
 
-var ErrInvalidPacket = errors.New("invalid packet")
-var ErrRemoteWriteError = errors.New("remote write error")
-
 type ToProtocol struct {
-	storage.StorageProviderWithEvents
+	storage.ProviderWithEvents
 	size             uint64
 	dev              uint32
 	protocol         Protocol
@@ -32,12 +28,12 @@ func NewToProtocol(size uint64, deviceID uint32, p Protocol) *ToProtocol {
 }
 
 // Support Silo Events
-func (i *ToProtocol) SendSiloEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
-	if event_type == storage.EventType("sources") {
-		i.alternateSources = event_data.([]packets.AlternateSource)
+func (i *ToProtocol) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
+	if eventType == storage.EventType("sources") {
+		i.alternateSources = eventData.([]packets.AlternateSource)
 		// Send the list of alternate sources here...
 		h := packets.EncodeAlternateSources(i.alternateSources)
-		_, _ = i.protocol.SendPacket(i.dev, ID_PICK_ANY, h)
+		_, _ = i.protocol.SendPacket(i.dev, IDPickAny, h)
 		// For now, we do not check the error. If there was a protocol / io error, we should see it on the next send
 	}
 	return nil
@@ -45,7 +41,7 @@ func (i *ToProtocol) SendSiloEvent(event_type storage.EventType, event_data stor
 
 func (i *ToProtocol) SendEvent(e *packets.Event) error {
 	b := packets.EncodeEvent(e)
-	id, err := i.protocol.SendPacket(i.dev, ID_PICK_ANY, b)
+	id, err := i.protocol.SendPacket(i.dev, IDPickAny, b)
 	if err != nil {
 		return err
 	}
@@ -61,7 +57,7 @@ func (i *ToProtocol) SendEvent(e *packets.Event) error {
 
 func (i *ToProtocol) SendHashes(hashes map[uint][sha256.Size]byte) error {
 	h := packets.EncodeHashes(hashes)
-	id, err := i.protocol.SendPacket(i.dev, ID_PICK_ANY, h)
+	id, err := i.protocol.SendPacket(i.dev, IDPickAny, h)
 	if err != nil {
 		return err
 	}
@@ -74,27 +70,27 @@ func (i *ToProtocol) SendHashes(hashes map[uint][sha256.Size]byte) error {
 	return packets.DecodeHashesResponse(r)
 }
 
-func (i *ToProtocol) SendDevInfo(name string, block_size uint32, schema string) error {
+func (i *ToProtocol) SendDevInfo(name string, blockSize uint32, schema string) error {
 	di := &packets.DevInfo{
-		Size:       i.size,
-		Block_size: block_size,
-		Name:       name,
-		Schema:     schema,
+		Size:      i.size,
+		BlockSize: blockSize,
+		Name:      name,
+		Schema:    schema,
 	}
 	b := packets.EncodeDevInfo(di)
-	_, err := i.protocol.SendPacket(i.dev, ID_PICK_ANY, b)
+	_, err := i.protocol.SendPacket(i.dev, IDPickAny, b)
 	return err
 }
 
 func (i *ToProtocol) RemoveDev() error {
 	f := packets.EncodeRemoveDev()
-	_, err := i.protocol.SendPacket(i.dev, ID_PICK_ANY, f)
+	_, err := i.protocol.SendPacket(i.dev, IDPickAny, f)
 	return err
 }
 
-func (i *ToProtocol) DirtyList(block_size int, blocks []uint) error {
-	b := packets.EncodeDirtyList(block_size, blocks)
-	id, err := i.protocol.SendPacket(i.dev, ID_PICK_ANY, b)
+func (i *ToProtocol) DirtyList(blockSize int, blocks []uint) error {
+	b := packets.EncodeDirtyList(blockSize, blocks)
+	id, err := i.protocol.SendPacket(i.dev, IDPickAny, b)
 	if err != nil {
 		return err
 	}
@@ -112,7 +108,7 @@ func (i *ToProtocol) DirtyList(block_size int, blocks []uint) error {
 
 func (i *ToProtocol) ReadAt(buffer []byte, offset int64) (int, error) {
 	b := packets.EncodeReadAt(offset, int32(len(buffer)))
-	id, err := i.protocol.SendPacket(i.dev, ID_PICK_ANY, b)
+	id, err := i.protocol.SendPacket(i.dev, IDPickAny, b)
 	if err != nil {
 		return 0, err
 	}
@@ -146,7 +142,7 @@ func (i *ToProtocol) WriteAt(buffer []byte, offset int64) (int, error) {
 			hash := sha256.Sum256(buffer)
 			if bytes.Equal(hash[:], as.Hash[:]) {
 				data := packets.EncodeWriteAtHash(as.Offset, as.Length, as.Hash[:])
-				id, err = i.protocol.SendPacket(i.dev, ID_PICK_ANY, data)
+				id, err = i.protocol.SendPacket(i.dev, IDPickAny, data)
 				dontSendData = true
 			}
 			break
@@ -156,10 +152,10 @@ func (i *ToProtocol) WriteAt(buffer []byte, offset int64) (int, error) {
 	if !dontSendData {
 		if i.CompressedWrites {
 			data := packets.EncodeWriteAtComp(offset, buffer)
-			id, err = i.protocol.SendPacket(i.dev, ID_PICK_ANY, data)
+			id, err = i.protocol.SendPacket(i.dev, IDPickAny, data)
 		} else {
 			l, f := packets.EncodeWriterWriteAt(offset, buffer)
-			id, err = i.protocol.SendPacketWriter(i.dev, ID_PICK_ANY, l, f)
+			id, err = i.protocol.SendPacketWriter(i.dev, IDPickAny, l, f)
 		}
 	}
 	if err != nil {
@@ -173,24 +169,24 @@ func (i *ToProtocol) WriteAt(buffer []byte, offset int64) (int, error) {
 
 	// Decode the response...
 	if r == nil || len(r) < 1 {
-		return 0, ErrInvalidPacket
+		return 0, packets.ErrInvalidPacket
 	}
-	if r[0] == packets.COMMAND_WRITE_AT_RESPONSE_ERR {
-		return 0, ErrRemoteWriteError
-	} else if r[0] == packets.COMMAND_WRITE_AT_RESPONSE {
+	if r[0] == packets.CommandWriteAtResponseErr {
+		return 0, packets.ErrWriteError
+	} else if r[0] == packets.CommandWriteAtResponse {
 		if len(r) < 5 {
-			return 0, ErrInvalidPacket
+			return 0, packets.ErrInvalidPacket
 		}
 		return int(binary.LittleEndian.Uint32(r[1:])), nil
 	}
-	return 0, ErrInvalidPacket
+	return 0, packets.ErrInvalidPacket
 }
 
-func (i *ToProtocol) WriteAtWithMap(buffer []byte, offset int64, id_map map[uint64]uint64) (int, error) {
+func (i *ToProtocol) WriteAtWithMap(buffer []byte, offset int64, idMap map[uint64]uint64) (int, error) {
 	var id uint32
 	var err error
-	f := packets.EncodeWriteAtWithMap(offset, buffer, id_map)
-	id, err = i.protocol.SendPacket(i.dev, ID_PICK_ANY, f)
+	f := packets.EncodeWriteAtWithMap(offset, buffer, idMap)
+	id, err = i.protocol.SendPacket(i.dev, IDPickAny, f)
 	if err != nil {
 		return 0, err
 	}
@@ -202,22 +198,22 @@ func (i *ToProtocol) WriteAtWithMap(buffer []byte, offset int64, id_map map[uint
 
 	// Decode the response...
 	if r == nil || len(r) < 1 {
-		return 0, ErrInvalidPacket
+		return 0, packets.ErrInvalidPacket
 	}
-	if r[0] == packets.COMMAND_WRITE_AT_RESPONSE_ERR {
-		return 0, ErrRemoteWriteError
-	} else if r[0] == packets.COMMAND_WRITE_AT_RESPONSE {
+	if r[0] == packets.CommandWriteAtResponseErr {
+		return 0, packets.ErrWriteError
+	} else if r[0] == packets.CommandWriteAtResponse {
 		if len(r) < 5 {
-			return 0, ErrInvalidPacket
+			return 0, packets.ErrInvalidPacket
 		}
 		return int(binary.LittleEndian.Uint32(r[1:])), nil
 	}
-	return 0, ErrInvalidPacket
+	return 0, packets.ErrInvalidPacket
 }
 
 func (i *ToProtocol) RemoveFromMap(ids []uint64) error {
 	f := packets.EncodeRemoveFromMap(ids)
-	_, err := i.protocol.SendPacket(i.dev, ID_PICK_ANY, f)
+	_, err := i.protocol.SendPacket(i.dev, IDPickAny, f)
 	return err
 }
 
@@ -234,14 +230,14 @@ func (i *ToProtocol) Close() error {
 	return nil
 }
 
-func (i *ToProtocol) CancelWrites(offset int64, length int64) {
+func (i *ToProtocol) CancelWrites(_ int64, _ int64) {
 	// TODO: Implement
 }
 
 // Handle any NeedAt commands, and send to an orderer...
 func (i *ToProtocol) HandleNeedAt(cb func(offset int64, length int32)) error {
 	for {
-		_, data, err := i.protocol.WaitForCommand(i.dev, packets.COMMAND_NEED_AT)
+		_, data, err := i.protocol.WaitForCommand(i.dev, packets.CommandNeedAt)
 		if err != nil {
 			return err
 		}
@@ -258,7 +254,7 @@ func (i *ToProtocol) HandleNeedAt(cb func(offset int64, length int32)) error {
 // Handle any DontNeedAt commands, and send to an orderer...
 func (i *ToProtocol) HandleDontNeedAt(cb func(offset int64, length int32)) error {
 	for {
-		_, data, err := i.protocol.WaitForCommand(i.dev, packets.COMMAND_DONT_NEED_AT)
+		_, data, err := i.protocol.WaitForCommand(i.dev, packets.CommandDontNeedAt)
 		if err != nil {
 			return err
 		}

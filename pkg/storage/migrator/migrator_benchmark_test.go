@@ -19,7 +19,7 @@ func BenchmarkMigration(mb *testing.B) {
 
 	size := 4 * 1024 * 1024
 	blockSize := 64 * 1024
-	num_blocks := (size + blockSize - 1) / blockSize
+	numBlocks := (size + blockSize - 1) / blockSize
 
 	sourceStorageMem := sources.NewMemoryStorage(size)
 	sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(sourceStorageMem, blockSize)
@@ -36,14 +36,14 @@ func BenchmarkMigration(mb *testing.B) {
 		panic(err)
 	}
 
-	orderer := blocks.NewAnyBlockOrder(num_blocks, nil)
+	orderer := blocks.NewAnyBlockOrder(numBlocks, nil)
 	orderer.AddAll()
 
 	destStorage := sources.NewMemoryStorage(size)
 
-	conf := NewMigratorConfig().WithBlockSize(blockSize)
-	conf.Locker_handler = sourceStorage.Lock
-	conf.Unlocker_handler = sourceStorage.Unlock
+	conf := NewConfig().WithBlockSize(blockSize)
+	conf.LockerHandler = sourceStorage.Lock
+	conf.UnlockerHandler = sourceStorage.Unlock
 
 	mig, err := NewMigrator(sourceDirtyRemote,
 		destStorage,
@@ -61,7 +61,7 @@ func BenchmarkMigration(mb *testing.B) {
 	// Migrate some number of times...
 	for i := 0; i < mb.N; i++ {
 		orderer.AddAll()
-		err = mig.Migrate(num_blocks)
+		err = mig.Migrate(numBlocks)
 		if err != nil {
 			panic(err)
 		}
@@ -111,7 +111,7 @@ func BenchmarkMigrationPipe(mb *testing.B) {
 
 		mb.Run(testconf.name, func(b *testing.B) {
 			blockSize := testconf.blockSize
-			num_blocks := (size + blockSize - 1) / blockSize
+			numBlocks := (size + blockSize - 1) / blockSize
 
 			sourceStorageMem := sources.NewMemoryStorage(size)
 			sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(sourceStorageMem, blockSize)
@@ -128,10 +128,10 @@ func BenchmarkMigrationPipe(mb *testing.B) {
 				panic(err)
 			}
 
-			orderer := blocks.NewAnyBlockOrder(num_blocks, nil)
+			orderer := blocks.NewAnyBlockOrder(numBlocks, nil)
 			orderer.AddAll()
 
-			var destStorage storage.StorageProvider
+			var destStorage storage.Provider
 
 			num := testconf.numPipes
 
@@ -151,11 +151,11 @@ func BenchmarkMigrationPipe(mb *testing.B) {
 			}
 
 			initDev := func(ctx context.Context, p protocol.Protocol, dev uint32) {
-				destStorageFactory := func(di *packets.DevInfo) storage.StorageProvider {
+				destStorageFactory := func(di *packets.DevInfo) storage.Provider {
 					// Do some sharding here...
-					cr := func(index int, size int) (storage.StorageProvider, error) {
+					cr := func(_ int, size int) (storage.Provider, error) {
 						mem := sources.NewMemoryStorage(size)
-						//s := modules.NewArtificialLatency(mem, 5*time.Millisecond, 1*time.Nanosecond, 5*time.Millisecond, 1*time.Nanosecond)
+						// s := modules.NewArtificialLatency(mem, 5*time.Millisecond, 1*time.Nanosecond, 5*time.Millisecond, 1*time.Nanosecond)
 						return mem, nil
 					}
 					destStorage, err = modules.NewShardedStorage(int(di.Size), testconf.shardSize, cr)
@@ -176,8 +176,8 @@ func BenchmarkMigrationPipe(mb *testing.B) {
 				}()
 			}
 
-			prSourceRW := protocol.NewProtocolRW(context.TODO(), readers1, writers2, nil)
-			prDestRW := protocol.NewProtocolRW(context.TODO(), readers2, writers1, initDev)
+			prSourceRW := protocol.NewRW(context.TODO(), readers1, writers2, nil)
+			prDestRW := protocol.NewRW(context.TODO(), readers2, writers1, initDev)
 
 			go func() {
 				_ = prSourceRW.Handle()
@@ -208,9 +208,9 @@ func BenchmarkMigrationPipe(mb *testing.B) {
 				panic(err)
 			}
 
-			conf := NewMigratorConfig().WithBlockSize(blockSize)
-			conf.Locker_handler = sourceStorage.Lock
-			conf.Unlocker_handler = sourceStorage.Unlock
+			conf := NewConfig().WithBlockSize(blockSize)
+			conf.LockerHandler = sourceStorage.Lock
+			conf.UnlockerHandler = sourceStorage.Unlock
 			conf.Concurrency = map[int]int{
 				storage.BlockTypeAny:      testconf.concurrency,
 				storage.BlockTypeStandard: testconf.concurrency,
@@ -235,7 +235,7 @@ func BenchmarkMigrationPipe(mb *testing.B) {
 			// Migrate some number of times...
 			for i := 0; i < b.N; i++ {
 				orderer.AddAll()
-				err = mig.Migrate(num_blocks)
+				err = mig.Migrate(numBlocks)
 				if err != nil {
 					panic(err)
 				}

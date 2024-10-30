@@ -12,23 +12,23 @@ import (
  */
 
 type FilterRedundantWrites struct {
-	storage.StorageProviderWithEvents
-	prov                storage.StorageProvider
-	source              io.ReaderAt
-	no_change_allowance int
+	storage.ProviderWithEvents
+	prov              storage.Provider
+	source            io.ReaderAt
+	noChangeAllowance int
 }
 
 // Relay events to embedded StorageProvider
-func (i *FilterRedundantWrites) SendSiloEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
-	data := i.StorageProviderWithEvents.SendSiloEvent(event_type, event_data)
-	return append(data, storage.SendSiloEvent(i.prov, event_type, event_data)...)
+func (i *FilterRedundantWrites) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
+	data := i.ProviderWithEvents.SendSiloEvent(eventType, eventData)
+	return append(data, storage.SendSiloEvent(i.prov, eventType, eventData)...)
 }
 
-func NewFilterRedundantWrites(prov storage.StorageProvider, source io.ReaderAt, allowance int) *FilterRedundantWrites {
+func NewFilterRedundantWrites(prov storage.Provider, source io.ReaderAt, allowance int) *FilterRedundantWrites {
 	return &FilterRedundantWrites{
-		prov:                prov,
-		source:              source,
-		no_change_allowance: allowance,
+		prov:              prov,
+		source:            source,
+		noChangeAllowance: allowance,
 	}
 }
 
@@ -50,27 +50,27 @@ func (i *FilterRedundantWrites) WriteAt(buffer []byte, offset int64) (int, error
 		// Find the next start of changed data...
 		if buffer[x] != ov {
 			// Find the end of the changed data, with an allowance for unchanged data
-			write_len := 1
-			no_change_count := 0
+			writeLen := 1
+			noChangeCount := 0
 			for y, ov2 := range original[x+1:] {
-				write_len++
+				writeLen++
 				if buffer[x+1+y] != ov2 {
-					no_change_count = 0 // Reset this counter
+					noChangeCount = 0 // Reset this counter
 				} else {
-					no_change_count++
-					if no_change_count > i.no_change_allowance {
-						write_len -= (no_change_count - 1)
+					noChangeCount++
+					if noChangeCount > i.noChangeAllowance {
+						writeLen -= (noChangeCount - 1)
 						break
 					}
 				}
 			}
 
 			// Send on a write operation here...
-			n, err := i.prov.WriteAt(buffer[x:x+write_len], offset+int64(x))
-			if n != write_len || err != nil {
+			n, err := i.prov.WriteAt(buffer[x:x+writeLen], offset+int64(x))
+			if n != writeLen || err != nil {
 				return 0, err
 			}
-			x += write_len
+			x += writeLen
 		}
 	}
 

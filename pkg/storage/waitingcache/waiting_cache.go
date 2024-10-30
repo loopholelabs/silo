@@ -14,9 +14,9 @@ import (
  *
  */
 type WaitingCache struct {
-	prov             storage.StorageProvider
-	local            *WaitingCacheLocal
-	remote           *WaitingCacheRemote
+	prov             storage.Provider
+	local            *Local
+	remote           *Remote
 	writeLock        sync.Mutex
 	blockSize        int
 	size             uint64
@@ -25,7 +25,7 @@ type WaitingCache struct {
 	allowLocalWrites bool
 }
 
-func NewWaitingCache(prov storage.StorageProvider, blockSize int) (*WaitingCacheLocal, *WaitingCacheRemote) {
+func NewWaitingCache(prov storage.Provider, blockSize int) (*Local, *Remote) {
 	numBlocks := (int(prov.Size()) + blockSize - 1) / blockSize
 	wc := &WaitingCache{
 		prov:             prov,
@@ -34,22 +34,22 @@ func NewWaitingCache(prov storage.StorageProvider, blockSize int) (*WaitingCache
 		lockers:          make(map[uint]*sync.RWMutex),
 		allowLocalWrites: true,
 	}
-	wc.local = &WaitingCacheLocal{
+	wc.local = &Local{
 		wc:         wc,
 		available:  *util.NewBitfield(numBlocks),
-		NeedAt:     func(offset int64, length int32) {},
-		DontNeedAt: func(offset int64, length int32) {},
+		NeedAt:     func(_ int64, _ int32) {},
+		DontNeedAt: func(_ int64, _ int32) {},
 	}
-	wc.remote = &WaitingCacheRemote{
+	wc.remote = &Remote{
 		wc:        wc,
 		available: *util.NewBitfield(numBlocks),
 	}
 	return wc.local, wc.remote
 }
 
-func (i *WaitingCache) waitForRemoteBlocks(b_start uint, b_end uint, lockCB func(b uint)) {
+func (i *WaitingCache) waitForRemoteBlocks(bStart uint, bEnd uint, lockCB func(b uint)) {
 	// TODO: Optimize this
-	for b := b_start; b < b_end; b++ {
+	for b := bStart; b < bEnd; b++ {
 		i.waitForRemoteBlock(b, lockCB)
 	}
 }
@@ -75,9 +75,9 @@ func (i *WaitingCache) waitForRemoteBlock(b uint, lockCB func(b uint)) {
 	rwl.RLock()
 }
 
-func (i *WaitingCache) markAvailableRemoteBlocks(b_start uint, b_end uint) {
+func (i *WaitingCache) markAvailableRemoteBlocks(bStart uint, bEnd uint) {
 	// TODO: Optimize this
-	for b := b_start; b < b_end; b++ {
+	for b := bStart; b < bEnd; b++ {
 		i.markAvailableRemoteBlock(b)
 	}
 }

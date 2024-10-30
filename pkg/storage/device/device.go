@@ -24,21 +24,21 @@ import (
 )
 
 const (
-	SYSTEM_MEMORY      = "memory"
-	SYSTEM_FILE        = "file"
-	SYSTEM_SPARSE_FILE = "sparsefile"
-	SYSTEM_S3          = "s3"
-	DEFAULT_BLOCK_SIZE = 4096
+	SystemMemory     = "memory"
+	SystemFile       = "file"
+	SystemSparseFile = "sparsefile"
+	SystemS3         = "s3"
+	DefaultBlockSize = 4096
 )
 
 type Device struct {
-	Provider storage.StorageProvider
+	Provider storage.Provider
 	Exposed  storage.ExposedStorage
 }
 
 type SyncStartConfig struct {
 	AlternateSources []packets.AlternateSource
-	Destination      storage.StorageProvider
+	Destination      storage.Provider
 }
 
 func NewDevices(ds []*config.DeviceSchema) (map[string]*Device, error) {
@@ -63,19 +63,21 @@ func NewDevices(ds []*config.DeviceSchema) (map[string]*Device, error) {
 	return devices, nil
 }
 
-func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.ExposedStorage, error) {
+func NewDevice(ds *config.DeviceSchema) (storage.Provider, storage.ExposedStorage, error) {
 
-	var prov storage.StorageProvider
+	var prov storage.Provider
 	var err error
 
 	bs := int(ds.ByteBlockSize())
 	if bs == 0 {
-		bs = DEFAULT_BLOCK_SIZE
+		bs = DefaultBlockSize
 	}
 
-	if ds.System == SYSTEM_MEMORY {
+	switch ds.System {
+
+	case SystemMemory:
 		// Create some memory storage...
-		cr := func(i int, s int) (storage.StorageProvider, error) {
+		cr := func(_ int, s int) (storage.Provider, error) {
 			return sources.NewMemoryStorage(s), nil
 		}
 		// Setup some sharded memory storage (for concurrent write speed)
@@ -83,10 +85,10 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 		if err != nil {
 			return nil, nil, err
 		}
-	} else if ds.System == SYSTEM_S3 {
+	case SystemS3:
 		//
 		return nil, nil, fmt.Errorf("S3 Not Supported in device yet")
-	} else if ds.System == SYSTEM_SPARSE_FILE {
+	case SystemSparseFile:
 		file, err := os.Open(ds.Location)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
@@ -105,14 +107,14 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 				return nil, nil, err
 			}
 		}
-	} else if ds.System == SYSTEM_FILE {
+	case SystemFile:
 
 		// Check what we have been given...
 		file, err := os.Open(ds.Location)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				// It doesn't exist, so lets create it and return
-				prov, err = sources.NewFileStorageCreate(ds.Location, int64(ds.ByteSize()))
+				prov, err = sources.NewFileStorageCreate(ds.Location, ds.ByteSize())
 				if err != nil {
 					return nil, nil, err
 				}
@@ -130,7 +132,7 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 			// IsDir is short for fileInfo.Mode().IsDir()
 			if !fileInfo.IsDir() {
 				// file is a file, use it as is
-				prov, err = sources.NewFileStorage(ds.Location, int64(ds.ByteSize()))
+				prov, err = sources.NewFileStorage(ds.Location, ds.ByteSize())
 				if err != nil {
 					return nil, nil, err
 				}
@@ -138,7 +140,7 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 
 				// file is a directory, lets use it for shards
 
-				cr := func(i int, s int) (storage.StorageProvider, error) {
+				cr := func(i int, s int) (storage.Provider, error) {
 					// Check if the file exists, and is the correct size. If not, create it.
 					f := path.Join(ds.Location, fmt.Sprintf("file_%d", i))
 					file, err := os.Open(f)
@@ -171,7 +173,7 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 				}
 			}
 		}
-	} else {
+	default:
 		return nil, nil, fmt.Errorf("unsupported storage system %s", ds.System)
 
 	}
@@ -198,14 +200,12 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 				blocks = append(blocks, uint(v))
 			}
 			cow.SetBlockExists(blocks)
-		} else if errors.Is(err, os.ErrNotExist) {
-			// Doesn't exists, so it's a new cow
-		} else {
+		} else if !errors.Is(err, os.ErrNotExist) {
 			return nil, nil, err
 		}
 
 		// Make sure the cow data gets dumped on close...
-		cow.Close_fn = func() {
+		cow.CloseFn = func() {
 			blocks := cow.GetBlockExists()
 			// Write it out to file
 			data := make([]byte, 0)
@@ -232,7 +232,7 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 	var ex storage.ExposedStorage
 	if ds.Expose {
 
-		ex = expose.NewExposedStorageNBDNL(prov, 8, 0, prov.Size(), expose.NBD_DEFAULT_BLOCK_SIZE, true)
+		ex = expose.NewExposedStorageNBDNL(prov, 8, 0, prov.Size(), expose.NBDDefaultBlockSize, true)
 
 		err := ex.Init()
 		if err != nil {
@@ -258,24 +258,24 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 			return nil, nil, err
 		}
 
-		dirty_block_size := bs >> ds.Sync.Config.BlockShift
+		dirtyBlockSize := bs >> ds.Sync.Config.BlockShift
 
-		num_blocks := (int(prov.Size()) + bs - 1) / bs
+		numBlocks := (int(prov.Size()) + bs - 1) / bs
 
-		sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(prov, dirty_block_size)
+		sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(prov, dirtyBlockSize)
 		sourceStorage := modules.NewLockable(sourceDirtyLocal)
 
 		// Setup a block order
-		orderer := blocks.NewAnyBlockOrder(num_blocks, nil)
+		orderer := blocks.NewAnyBlockOrder(numBlocks, nil)
 		orderer.AddAll()
 
-		check_period, err := time.ParseDuration(ds.Sync.Config.CheckPeriod)
+		checkPeriod, err := time.ParseDuration(ds.Sync.Config.CheckPeriod)
 		if err != nil {
 			prov.Close()
 			return nil, nil, err
 		}
 
-		max_age, err := time.ParseDuration(ds.Sync.Config.MaxAge)
+		maxAge, err := time.ParseDuration(ds.Sync.Config.MaxAge)
 		if err != nil {
 			prov.Close()
 			return nil, nil, err
@@ -293,25 +293,25 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 			Lockable:         sourceStorage,
 			Destination:      s3dest,
 			Orderer:          orderer,
-			DirtyCheckPeriod: check_period,
+			DirtyCheckPeriod: checkPeriod,
 			DirtyBlockGetter: func() []uint {
 				return sourceDirtyRemote.GetDirtyBlocks(
-					max_age, ds.Sync.Config.Limit, ds.Sync.Config.BlockShift, ds.Sync.Config.MinChanged)
+					maxAge, ds.Sync.Config.Limit, ds.Sync.Config.BlockShift, ds.Sync.Config.MinChanged)
 			},
 			BlockSize:       bs,
-			ProgressHandler: func(p *migrator.MigrationProgress) {},
-			ErrorHandler:    func(b *storage.BlockInfo, err error) {},
+			ProgressHandler: func(_ *migrator.MigrationProgress) {},
+			ErrorHandler:    func(_ *storage.BlockInfo, _ error) {},
 		})
 
 		// The provider we return should feed into our sync here...
 		prov = sourceStorage
 
-		var sync_lock sync.Mutex
-		var sync_running bool
+		var syncLock sync.Mutex
+		var syncRunning bool
 		var wg sync.WaitGroup
 
 		// If the storage gets a "sync.start", we should start syncing to S3.
-		storage.AddSiloEventNotification(prov, "sync.start", func(event_type storage.EventType, data storage.EventData) storage.EventReturnData {
+		storage.AddSiloEventNotification(prov, "sync.start", func(_ storage.EventType, data storage.EventData) storage.EventReturnData {
 			if data != nil {
 				startConfig := data.(SyncStartConfig)
 
@@ -343,14 +343,14 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 				wg.Wait() // Wait for all S3 requests to complete
 			}
 
-			sync_lock.Lock()
-			if sync_running {
-				sync_lock.Unlock()
+			syncLock.Lock()
+			if syncRunning {
+				syncLock.Unlock()
 				return false
 			}
-			sync_running = true
+			syncRunning = true
 			wg.Add(1)
-			sync_lock.Unlock()
+			syncLock.Unlock()
 
 			// Sync happens here...
 			go func() {
@@ -362,27 +362,27 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 		})
 
 		// If the storage gets a "sync.status", get some status on the S3Storage
-		storage.AddSiloEventNotification(prov, "sync.status", func(event_type storage.EventType, data storage.EventData) storage.EventReturnData {
+		storage.AddSiloEventNotification(prov, "sync.status", func(_ storage.EventType, _ storage.EventData) storage.EventReturnData {
 			return s3dest.Metrics()
 		})
 
 		// If the storage gets a "sync.stop", we should cancel the sync, and return the safe blocks
-		storage.AddSiloEventNotification(prov, "sync.stop", func(event_type storage.EventType, data storage.EventData) storage.EventReturnData {
-			sync_lock.Lock()
-			if !sync_running {
-				sync_lock.Unlock()
+		storage.AddSiloEventNotification(prov, "sync.stop", func(_ storage.EventType, _ storage.EventData) storage.EventReturnData {
+			syncLock.Lock()
+			if !syncRunning {
+				syncLock.Unlock()
 				return nil
 			}
 			cancelfn()
 			// WAIT HERE for the sync to finish
 			wg.Wait()
-			sync_running = false
-			sync_lock.Unlock()
+			syncRunning = false
+			syncLock.Unlock()
 
 			// Get the list of safe blocks we can use.
 			blocks := syncer.GetSafeBlockMap()
 			// Translate these to locations so they can be sent to a destination...
-			alt_sources := make([]packets.AlternateSource, 0)
+			altSources := make([]packets.AlternateSource, 0)
 			for block, hash := range blocks {
 				as := packets.AlternateSource{
 					Offset:   int64(block * uint(bs)),
@@ -390,10 +390,10 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 					Hash:     hash,
 					Location: fmt.Sprintf("%s %s %s", ds.Sync.Endpoint, ds.Sync.Bucket, ds.Name),
 				}
-				alt_sources = append(alt_sources, as)
+				altSources = append(altSources, as)
 			}
 
-			return alt_sources
+			return altSources
 		})
 	}
 

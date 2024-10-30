@@ -10,22 +10,22 @@ import (
 )
 
 type BinLogReplay struct {
-	prov      storage.StorageProvider
-	fp        *os.File
-	ctime     time.Time
-	set_ctime bool
+	prov     storage.Provider
+	fp       *os.File
+	ctime    time.Time
+	setCtime bool
 }
 
-func NewBinLogReplay(filename string, prov storage.StorageProvider) (*BinLogReplay, error) {
+func NewBinLogReplay(filename string, prov storage.Provider) (*BinLogReplay, error) {
 	fp, err := os.Open(filename)
 	if err != nil {
 		return nil, err
 	}
 	return &BinLogReplay{
-		fp:        fp,
-		ctime:     time.Now(),
-		set_ctime: true,
-		prov:      prov,
+		fp:       fp,
+		ctime:    time.Now(),
+		setCtime: true,
+		prov:     prov,
 	}, nil
 }
 
@@ -41,15 +41,15 @@ func (i *BinLogReplay) ExecuteNext(speed float64) error {
 		return err
 	}
 
-	if i.set_ctime {
+	if i.setCtime {
 		i.ctime = time.Now()
-		i.set_ctime = false
+		i.setCtime = false
 	}
 
 	// If we need to, we'll wait here until the next log should be replayed.
-	target_dt := time.Duration(binary.LittleEndian.Uint64(header))
-	replay_dt := time.Since(i.ctime)
-	delay := speed * float64(target_dt-replay_dt)
+	targetDT := time.Duration(binary.LittleEndian.Uint64(header))
+	replayDT := time.Since(i.ctime)
+	delay := speed * float64(targetDT-replayDT)
 	if delay > 0 {
 		time.Sleep(time.Duration(delay))
 	}
@@ -62,7 +62,7 @@ func (i *BinLogReplay) ExecuteNext(speed float64) error {
 	}
 
 	// Dispatch the command
-	if data[0] == packets.COMMAND_READ_AT {
+	if data[0] == packets.CommandReadAt {
 		offset, length, err := packets.DecodeReadAt(data)
 		if err != nil {
 			return err
@@ -70,14 +70,14 @@ func (i *BinLogReplay) ExecuteNext(speed float64) error {
 		buffer := make([]byte, length)
 		_, err = i.prov.ReadAt(buffer, offset)
 		return err
-	} else if data[0] == packets.COMMAND_WRITE_AT {
+	} else if data[0] == packets.CommandWriteAt {
 		offset, buffer, err := packets.DecodeWriteAt(data)
 		if err != nil {
 			return err
 		}
 		_, err = i.prov.WriteAt(buffer, offset)
 		return err
-	} else {
-		panic("Unknown packet in binlog")
 	}
+	panic("Unknown packet in binlog")
+
 }

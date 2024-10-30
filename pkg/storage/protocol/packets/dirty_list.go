@@ -2,13 +2,12 @@ package packets
 
 import (
 	"encoding/binary"
-	"errors"
 )
 
-func EncodeDirtyList(block_size int, blocks []uint) []byte {
+func EncodeDirtyList(blockSize int, blocks []uint) []byte {
 	buff := make([]byte, 1+4+4+4*len(blocks))
-	buff[0] = COMMAND_DIRTY_LIST
-	binary.LittleEndian.PutUint32(buff[1:], uint32(block_size))
+	buff[0] = CommandDirtyList
+	binary.LittleEndian.PutUint32(buff[1:], uint32(blockSize))
 
 	binary.LittleEndian.PutUint32(buff[5:], uint32(len(blocks)))
 	for i, v := range blocks {
@@ -18,10 +17,10 @@ func EncodeDirtyList(block_size int, blocks []uint) []byte {
 }
 
 func DecodeDirtyList(buff []byte) (int, []uint, error) {
-	if buff == nil || len(buff) < 9 || buff[0] != COMMAND_DIRTY_LIST {
-		return 0, nil, errors.New("Invalid packet")
+	if buff == nil || len(buff) < 9 || buff[0] != CommandDirtyList {
+		return 0, nil, ErrInvalidPacket
 	}
-	block_size := binary.LittleEndian.Uint32(buff[1:])
+	blockSize := binary.LittleEndian.Uint32(buff[1:])
 	length := binary.LittleEndian.Uint32(buff[5:])
 	blocks := make([]uint, length)
 	if length > 0 {
@@ -29,18 +28,18 @@ func DecodeDirtyList(buff []byte) (int, []uint, error) {
 			blocks[i] = uint(binary.LittleEndian.Uint32(buff[(9 + i*4):]))
 		}
 	}
-	return int(block_size), blocks, nil
+	return int(blockSize), blocks, nil
 }
 
 func EncodeDirtyListResponse() []byte {
 	buff := make([]byte, 1)
-	buff[0] = COMMAND_DIRTY_LIST_RESPONSE
+	buff[0] = CommandDirtyListResponse
 	return buff
 }
 
 func DecodeDirtyListResponse(buff []byte) error {
-	if buff == nil || len(buff) < 1 || buff[0] != COMMAND_DIRTY_LIST_RESPONSE {
-		return errors.New("Invalid packet")
+	if buff == nil || len(buff) < 1 || buff[0] != CommandDirtyListResponse {
+		return ErrInvalidPacket
 	}
 	return nil
 }

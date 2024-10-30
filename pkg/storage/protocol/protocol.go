@@ -2,7 +2,7 @@ package protocol
 
 import "io"
 
-const ID_PICK_ANY = 0
+const IDPickAny = 0
 
 type Protocol interface {
 	// Send a packet (Returns a transaction id)

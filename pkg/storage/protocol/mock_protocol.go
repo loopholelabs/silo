@@ -11,10 +11,10 @@ import (
 )
 
 type MockProtocol struct {
-	ctx          context.Context
-	waiters      map[uint32]Waiters
-	waiters_lock sync.Mutex
-	tid          uint32
+	ctx         context.Context
+	waiters     map[uint32]Waiters
+	waitersLock sync.Mutex
+	tid         uint32
 }
 
 func NewMockProtocol(ctx context.Context) *MockProtocol {
@@ -25,7 +25,7 @@ func NewMockProtocol(ctx context.Context) *MockProtocol {
 	}
 }
 
-func (mp *MockProtocol) SendPacketWriter(dev uint32, id uint32, length uint32, data func(io.Writer) error) (uint32, error) {
+func (mp *MockProtocol) SendPacketWriter(dev uint32, id uint32, _ uint32, data func(io.Writer) error) (uint32, error) {
 	var buff bytes.Buffer
 	err := data(&buff)
 	if err != nil {
@@ -39,12 +39,12 @@ func (mp *MockProtocol) SendPacket(dev uint32, id uint32, data []byte) (uint32, 
 	cmd := data[0]
 
 	// if id is ANY, pick one
-	if id == ID_PICK_ANY {
+	if id == IDPickAny {
 		id = atomic.AddUint32(&mp.tid, 1)
 		// TODO. If id wraps around and becomes ID_PICK_ANY etc
 	}
 
-	mp.waiters_lock.Lock()
+	mp.waitersLock.Lock()
 	w, ok := mp.waiters[dev]
 	if !ok {
 		w = Waiters{
@@ -54,31 +54,31 @@ func (mp *MockProtocol) SendPacket(dev uint32, id uint32, data []byte) (uint32, 
 		mp.waiters[dev] = w
 	}
 
-	wq_id, okk := w.byID[id]
+	wqID, okk := w.byID[id]
 	if !okk {
-		wq_id = make(chan packetinfo, 8) // Some buffer here...
-		w.byID[id] = wq_id
+		wqID = make(chan packetinfo, 8) // Some buffer here...
+		w.byID[id] = wqID
 	}
 
-	wq_cmd, okk := w.byCmd[cmd]
+	wqCmd, okk := w.byCmd[cmd]
 	if !okk {
-		wq_cmd = make(chan packetinfo, 8) // Some buffer here...
-		w.byCmd[cmd] = wq_cmd
+		wqCmd = make(chan packetinfo, 8) // Some buffer here...
+		w.byCmd[cmd] = wqCmd
 	}
 
-	mp.waiters_lock.Unlock()
+	mp.waitersLock.Unlock()
 
 	// Send it to any listeners
 	// If this matches something being waited for, route it there.
 	// TODO: Don't always do this, expire, etc etc
 
 	if packets.IsResponse(cmd) {
-		wq_id <- packetinfo{
+		wqID <- packetinfo{
 			id:   id,
 			data: data,
 		}
 	} else {
-		wq_cmd <- packetinfo{
+		wqCmd <- packetinfo{
 			id:   id,
 			data: data,
 		}
@@ -88,7 +88,7 @@ func (mp *MockProtocol) SendPacket(dev uint32, id uint32, data []byte) (uint32, 
 }
 
 func (mp *MockProtocol) WaitForPacket(dev uint32, id uint32) ([]byte, error) {
-	mp.waiters_lock.Lock()
+	mp.waitersLock.Lock()
 	w, ok := mp.waiters[dev]
 	if !ok {
 		w = Waiters{
@@ -102,7 +102,7 @@ func (mp *MockProtocol) WaitForPacket(dev uint32, id uint32) ([]byte, error) {
 		wq = make(chan packetinfo, 8) // Some buffer here...
 		w.byID[id] = wq
 	}
-	mp.waiters_lock.Unlock()
+	mp.waitersLock.Unlock()
 
 	// Wait for the packet to appear on the channel
 	select {
@@ -116,7 +116,7 @@ func (mp *MockProtocol) WaitForPacket(dev uint32, id uint32) ([]byte, error) {
 }
 
 func (mp *MockProtocol) WaitForCommand(dev uint32, cmd byte) (uint32, []byte, error) {
-	mp.waiters_lock.Lock()
+	mp.waitersLock.Lock()
 	w, ok := mp.waiters[dev]
 	if !ok {
 		w = Waiters{
@@ -130,7 +130,7 @@ func (mp *MockProtocol) WaitForCommand(dev uint32, cmd byte) (uint32, []byte, er
 		wq = make(chan packetinfo, 8) // Some buffer here...
 		w.byCmd[cmd] = wq
 	}
-	mp.waiters_lock.Unlock()
+	mp.waitersLock.Unlock()
 
 	// Wait for the packet to appear on the channel
 	select {

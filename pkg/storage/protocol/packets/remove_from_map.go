@@ -2,12 +2,11 @@ package packets
 
 import (
 	"encoding/binary"
-	"errors"
 )
 
 func EncodeRemoveFromMap(ids []uint64) []byte {
 	buff := make([]byte, 1+4+8*len(ids))
-	buff[0] = COMMAND_REMOVE_FROM_MAP
+	buff[0] = CommandRemoveFromMap
 
 	binary.LittleEndian.PutUint32(buff[1:], uint32(len(ids)))
 	for i, v := range ids {
@@ -17,8 +16,8 @@ func EncodeRemoveFromMap(ids []uint64) []byte {
 }
 
 func DecodeRemoveFromMap(buff []byte) ([]uint64, error) {
-	if buff == nil || len(buff) < 5 || buff[0] != COMMAND_REMOVE_FROM_MAP {
-		return nil, errors.New("Invalid packet")
+	if buff == nil || len(buff) < 5 || buff[0] != CommandRemoveFromMap {
+		return nil, ErrInvalidPacket
 	}
 	length := binary.LittleEndian.Uint32(buff[1:])
 	ids := make([]uint64, length)
