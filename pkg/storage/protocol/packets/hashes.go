@@ -3,7 +3,6 @@ package packets
 import (
 	"crypto/sha256"
 	"encoding/binary"
-	"errors"
 )
 
 func EncodeHashes(hashes map[uint][sha256.Size]byte) []byte {
@@ -22,7 +21,7 @@ func EncodeHashes(hashes map[uint][sha256.Size]byte) []byte {
 
 func DecodeHashes(buff []byte) (map[uint][sha256.Size]byte, error) {
 	if buff == nil || len(buff) < 1 || buff[0] != COMMAND_HASHES {
-		return nil, errors.New("Invalid packet")
+		return nil, Err_invalid_packet
 	}
 	hashes := make(map[uint][sha256.Size]byte)
 	ptr := 1
@@ -31,7 +30,7 @@ func DecodeHashes(buff []byte) (map[uint][sha256.Size]byte, error) {
 			break
 		}
 		if ptr+(4+sha256.Size) > len(buff) {
-			return nil, errors.New("Invalid packet data")
+			return nil, Err_invalid_packet
 		}
 		b := binary.LittleEndian.Uint32(buff[ptr:])
 		ptr += 4
@@ -48,7 +47,7 @@ func EncodeHashesResponse() []byte {
 
 func DecodeHashesResponse(buff []byte) error {
 	if buff == nil || len(buff) != 1 || buff[0] != COMMAND_HASHES_RESPONSE {
-		return errors.New("Invalid packet")
+		return Err_invalid_packet
 	}
 	return nil
 }

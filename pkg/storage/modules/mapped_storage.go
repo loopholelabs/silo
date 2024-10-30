@@ -15,76 +15,76 @@ var Err_out_of_space = errors.New("out of space")
 var Err_not_found = errors.New("not found")
 
 type MappedStorage struct {
-	prov            storage.StorageProvider
-	IDs             []uint64
-	id_to_block     map[uint64]uint64
-	block_available util.Bitfield
-	lock            sync.Mutex
-	block_size      int
+	prov           storage.StorageProvider
+	IDs            []uint64
+	idToBlock      map[uint64]uint64
+	blockAvailable util.Bitfield
+	lock           sync.Mutex
+	blockSize      int
 
 	// Track some metrics here...
-	metric_WriteBlock                uint64
-	metric_WriteBlock_time           uint64
-	metric_WriteBlocks               uint64
-	metric_WriteBlocks_data          uint64
-	metric_WriteBlocks_time          uint64
-	metric_WriteBlocks_bulk_new      uint64
-	metric_WriteBlocks_bulk_existing uint64
+	metricWriteBlock              uint64
+	metricWriteBlockTime          uint64
+	metricWriteBlocks             uint64
+	metricWriteBlocksData         uint64
+	metricWriteBlocksTime         uint64
+	metricWriteBlocksBulkNew      uint64
+	metricWriteBlocksBulkExisting uint64
 }
 
 type MappedStorageStats struct {
-	WriteBlock                uint64
-	WriteBlock_time           time.Duration
-	WriteBlocks               uint64
-	WriteBlocks_data          uint64
-	WriteBlocks_time          time.Duration
-	WriteBlocks_bulk_new      uint64
-	WriteBlocks_bulk_existing uint64
+	WriteBlock              uint64
+	WriteBlockTime          time.Duration
+	WriteBlocks             uint64
+	WriteBlocksData         uint64
+	WriteBlocksTime         time.Duration
+	WriteBlocksBulkNew      uint64
+	WriteBlocksBulkExisting uint64
 }
 
-func NewMappedStorage(prov storage.StorageProvider, block_size int) *MappedStorage {
-	num_blocks := (prov.Size() + uint64(block_size) - 1) / uint64(block_size)
-	available := *util.NewBitfield(int(num_blocks))
+func NewMappedStorage(prov storage.StorageProvider, blockSize int) *MappedStorage {
+	numBlocks := (prov.Size() + uint64(blockSize) - 1) / uint64(blockSize)
+	available := *util.NewBitfield(int(numBlocks))
 	available.SetBits(0, available.Length())
 
 	return &MappedStorage{
-		prov:            prov,
-		IDs:             make([]uint64, num_blocks),
-		id_to_block:     make(map[uint64]uint64),
-		block_available: available,
-		block_size:      block_size,
+		prov:           prov,
+		IDs:            make([]uint64, numBlocks),
+		idToBlock:      make(map[uint64]uint64),
+		blockAvailable: available,
+		blockSize:      blockSize,
 	}
 }
 
 func (ms *MappedStorage) Stats() *MappedStorageStats {
 	return &MappedStorageStats{
-		WriteBlock:                ms.metric_WriteBlock,
-		WriteBlock_time:           time.Duration(ms.metric_WriteBlock_time),
-		WriteBlocks:               ms.metric_WriteBlocks,
-		WriteBlocks_data:          ms.metric_WriteBlocks_data,
-		WriteBlocks_time:          time.Duration(ms.metric_WriteBlocks_time),
-		WriteBlocks_bulk_new:      ms.metric_WriteBlocks_bulk_new,
-		WriteBlocks_bulk_existing: ms.metric_WriteBlocks_bulk_existing,
+		WriteBlock:              ms.metricWriteBlock,
+		WriteBlockTime:          time.Duration(ms.metricWriteBlockTime),
+		WriteBlocks:             ms.metricWriteBlocks,
+		WriteBlocksData:         ms.metricWriteBlocksData,
+		WriteBlocksTime:         time.Duration(ms.metricWriteBlocksTime),
+		WriteBlocksBulkNew:      ms.metricWriteBlocksBulkNew,
+		WriteBlocksBulkExisting: ms.metricWriteBlocksBulkExisting,
 	}
 }
 
 func (ms *MappedStorage) ResetStats() {
-	atomic.StoreUint64(&ms.metric_WriteBlock, 0)
-	atomic.StoreUint64(&ms.metric_WriteBlock_time, 0)
-	atomic.StoreUint64(&ms.metric_WriteBlocks, 0)
-	atomic.StoreUint64(&ms.metric_WriteBlocks_data, 0)
-	atomic.StoreUint64(&ms.metric_WriteBlocks_time, 0)
-	atomic.StoreUint64(&ms.metric_WriteBlocks_bulk_new, 0)
-	atomic.StoreUint64(&ms.metric_WriteBlocks_bulk_existing, 0)
+	atomic.StoreUint64(&ms.metricWriteBlock, 0)
+	atomic.StoreUint64(&ms.metricWriteBlockTime, 0)
+	atomic.StoreUint64(&ms.metricWriteBlocks, 0)
+	atomic.StoreUint64(&ms.metricWriteBlocksData, 0)
+	atomic.StoreUint64(&ms.metricWriteBlocksTime, 0)
+	atomic.StoreUint64(&ms.metricWriteBlocksBulkNew, 0)
+	atomic.StoreUint64(&ms.metricWriteBlocksBulkExisting, 0)
 }
 
 func (ms *MappedStorage) AppendMap(data map[uint64]uint64) {
 	ms.lock.Lock()
 	defer ms.lock.Unlock()
 	for k, v := range data {
-		ms.id_to_block[k] = v
+		ms.idToBlock[k] = v
 		// Set the other bits as well
-		ms.block_available.ClearBit(int(v))
+		ms.blockAvailable.ClearBit(int(v))
 		ms.IDs[v] = k
 	}
 }
@@ -99,12 +99,12 @@ func (ms *MappedStorage) GetMapForSourceRange(offset int64, length int) map[uint
 		end = ms.prov.Size()
 	}
 
-	b_start := uint(offset / int64(ms.block_size))
-	b_end := uint((end-1)/uint64(ms.block_size)) + 1
+	bStart := uint(offset / int64(ms.blockSize))
+	bEnd := uint((end-1)/uint64(ms.blockSize)) + 1
 
 	// Now we have the blocks, lets find the IDs...
-	for b := b_start; b < b_end; b++ {
-		if !ms.block_available.BitSet(int(b)) {
+	for b := bStart; b < bEnd; b++ {
+		if !ms.blockAvailable.BitSet(int(b)) {
 			id := ms.IDs[b]
 			idmap[id] = uint64(b)
 		}
@@ -117,7 +117,7 @@ func (ms *MappedStorage) GetMap() map[uint64]uint64 {
 	ms.lock.Lock()
 	defer ms.lock.Unlock()
 	idmap := make(map[uint64]uint64)
-	for id, b := range ms.id_to_block {
+	for id, b := range ms.idToBlock {
 		idmap[id] = b
 	}
 	return idmap
@@ -127,45 +127,45 @@ func (ms *MappedStorage) SetMap(newmap map[uint64]uint64) {
 	ms.lock.Lock()
 	defer ms.lock.Unlock()
 	// Clear everything...
-	ms.block_available.SetBits(0, ms.block_available.Length())
-	ms.IDs = make([]uint64, ms.block_available.Length())
-	ms.id_to_block = make(map[uint64]uint64)
+	ms.blockAvailable.SetBits(0, ms.blockAvailable.Length())
+	ms.IDs = make([]uint64, ms.blockAvailable.Length())
+	ms.idToBlock = make(map[uint64]uint64)
 	// Now set things...
 	for id, b := range newmap {
 		ms.IDs[b] = id
-		ms.id_to_block[id] = b
-		ms.block_available.ClearBit(int(b))
+		ms.idToBlock[id] = b
+		ms.blockAvailable.ClearBit(int(b))
 	}
 }
 
 func (ms *MappedStorage) Size() uint64 {
 	ms.lock.Lock()
 	defer ms.lock.Unlock()
-	return uint64(len(ms.id_to_block)) * uint64(ms.block_size)
+	return uint64(len(ms.idToBlock)) * uint64(ms.blockSize)
 }
 
 func (ms *MappedStorage) ProviderUsedSize() uint64 {
 	ms.lock.Lock()
 	defer ms.lock.Unlock()
 	maxb := uint64(0)
-	if len(ms.id_to_block) == 0 {
+	if len(ms.idToBlock) == 0 {
 		return 0
 	}
-	for _, b := range ms.id_to_block {
+	for _, b := range ms.idToBlock {
 		if b > maxb {
 			maxb = b
 		}
 	}
-	return (maxb + 1) * uint64(ms.block_size)
+	return (maxb + 1) * uint64(ms.blockSize)
 }
 
 // Optimized where we can for large blocks
 func (ms *MappedStorage) WriteBlocks(id uint64, data []byte) error {
 	ctime := time.Now()
 	defer func() {
-		atomic.AddUint64(&ms.metric_WriteBlocks, 1)
-		atomic.AddUint64(&ms.metric_WriteBlocks_data, uint64(len(data)))
-		atomic.AddUint64(&ms.metric_WriteBlocks_time, uint64(time.Since(ctime)))
+		atomic.AddUint64(&ms.metricWriteBlocks, 1)
+		atomic.AddUint64(&ms.metricWriteBlocksData, uint64(len(data)))
+		atomic.AddUint64(&ms.metricWriteBlocksTime, uint64(time.Since(ctime)))
 	}()
 
 	// First lets check if we have seen this id before, and if the blocks are continuous
@@ -175,46 +175,46 @@ func (ms *MappedStorage) WriteBlocks(id uint64, data []byte) error {
 	//ok := false
 	//can_do_bulk := false
 
-	first_block, ok := ms.id_to_block[id]
-	can_do_bulk := true
-	if len(data) > ms.block_size {
+	firstBlock, ok := ms.idToBlock[id]
+	canDoBulk := true
+	if len(data) > ms.blockSize {
 		if ok {
 			// The first block exists. Make sure all the others exist and are in a line.
 			bptr := uint64(0)
-			for ptr := ms.block_size; ptr < len(data); ptr += ms.block_size {
+			for ptr := ms.blockSize; ptr < len(data); ptr += ms.blockSize {
 				bptr++
-				block, sok := ms.id_to_block[id+uint64(ptr)]
-				if !sok || block != (first_block+bptr) {
-					can_do_bulk = false
+				block, sok := ms.idToBlock[id+uint64(ptr)]
+				if !sok || block != (firstBlock+bptr) {
+					canDoBulk = false
 					break
 				}
 			}
 		} else {
 			// The first block doesn't exist. Make sure none of the others do
-			for ptr := ms.block_size; ptr < len(data); ptr += ms.block_size {
-				_, sok := ms.id_to_block[id+uint64(ptr)]
+			for ptr := ms.blockSize; ptr < len(data); ptr += ms.blockSize {
+				_, sok := ms.idToBlock[id+uint64(ptr)]
 				if sok {
-					can_do_bulk = false
+					canDoBulk = false
 				}
 			}
 		}
 	}
 
-	if !can_do_bulk {
+	if !canDoBulk {
 		ms.lock.Unlock()
 		// We can't do a bulk write. Fallback on writing blocks individually
 
-		num_blocks := (len(data) + ms.block_size - 1) / ms.block_size
-		errchan := make(chan error, num_blocks)
+		numBlocks := (len(data) + ms.blockSize - 1) / ms.blockSize
+		errchan := make(chan error, numBlocks)
 
-		for ptr := 0; ptr < len(data); ptr += ms.block_size {
-			go func(write_ptr uint64) {
-				errchan <- ms.WriteBlock(id+write_ptr, data[write_ptr:write_ptr+uint64(ms.block_size)])
+		for ptr := 0; ptr < len(data); ptr += ms.blockSize {
+			go func(writePtr uint64) {
+				errchan <- ms.WriteBlock(id+writePtr, data[writePtr:writePtr+uint64(ms.blockSize)])
 			}(uint64(ptr))
 		}
 
 		// Wait, and read any errors...
-		for n := 0; n < num_blocks; n++ {
+		for n := 0; n < numBlocks; n++ {
 			err := <-errchan
 			if err != nil {
 				return err
@@ -229,34 +229,34 @@ func (ms *MappedStorage) WriteBlocks(id uint64, data []byte) error {
 		ms.lock.Unlock()
 		// Write some data for these blocks
 		// NB: We can do this outside the lock
-		offset := first_block * uint64(ms.block_size)
+		offset := firstBlock * uint64(ms.blockSize)
 		_, err := ms.prov.WriteAt(data, int64(offset))
-		atomic.AddUint64(&ms.metric_WriteBlocks_bulk_existing, 1)
+		atomic.AddUint64(&ms.metricWriteBlocksBulkExisting, 1)
 		return err
 	}
 
 	// We have no record of any of this data yet. Find some space to store it.
-	num_blocks := len(data) / ms.block_size
+	numBlocks := len(data) / ms.blockSize
 
-	for b := 0; b < int(ms.block_available.Length())-num_blocks; b++ {
+	for b := 0; b < int(ms.blockAvailable.Length())-numBlocks; b++ {
 		// Check if we have some space
-		if ms.block_available.BitsSet(uint(b), uint(b+num_blocks)) {
+		if ms.blockAvailable.BitsSet(uint(b), uint(b+numBlocks)) {
 
-			ms.block_available.ClearBits(uint(b), uint(b+num_blocks))
+			ms.blockAvailable.ClearBits(uint(b), uint(b+numBlocks))
 
 			ptr := uint64(0)
-			for i := b; i < b+num_blocks; i++ {
-				ms.id_to_block[id+ptr] = uint64(i)
+			for i := b; i < b+numBlocks; i++ {
+				ms.idToBlock[id+ptr] = uint64(i)
 				ms.IDs[i] = id + ptr
-				ptr += uint64(ms.block_size)
+				ptr += uint64(ms.blockSize)
 			}
 
 			// Now do the write outside the lock...
 
 			ms.lock.Unlock()
-			offset := uint64(b) * uint64(ms.block_size)
+			offset := uint64(b) * uint64(ms.blockSize)
 			_, err := ms.prov.WriteAt(data, int64(offset))
-			atomic.AddUint64(&ms.metric_WriteBlocks_bulk_new, 1)
+			atomic.AddUint64(&ms.metricWriteBlocksBulkNew, 1)
 			return err
 		}
 	}
@@ -274,12 +274,12 @@ func (ms *MappedStorage) ReadBlock(id uint64, data []byte) error {
 	ms.lock.Lock()
 	defer ms.lock.Unlock()
 
-	b, ok := ms.id_to_block[id]
+	b, ok := ms.idToBlock[id]
 	if !ok {
 		return Err_not_found
 	}
 
-	offset := b * uint64(ms.block_size)
+	offset := b * uint64(ms.blockSize)
 	_, err := ms.prov.ReadAt(data, int64(offset))
 	return err
 }
@@ -293,14 +293,14 @@ func (ms *MappedStorage) ReadBlocks(id uint64, data []byte) error {
 
 // TODO: Optimize when the data is continuous
 func (ms *MappedStorage) readBlocksInt(id uint64, data []byte) error {
-	for ptr := 0; ptr < len(data); ptr += ms.block_size {
-		b, ok := ms.id_to_block[id+uint64(ptr)]
+	for ptr := 0; ptr < len(data); ptr += ms.blockSize {
+		b, ok := ms.idToBlock[id+uint64(ptr)]
 		if !ok {
 			return Err_not_found
 		}
 
-		offset := b * uint64(ms.block_size)
-		_, err := ms.prov.ReadAt(data[ptr:ptr+ms.block_size], int64(offset))
+		offset := b * uint64(ms.blockSize)
+		_, err := ms.prov.ReadAt(data[ptr:ptr+ms.blockSize], int64(offset))
 		if err != nil {
 			return err
 		}
@@ -315,23 +315,23 @@ func (ms *MappedStorage) readBlocksInt(id uint64, data []byte) error {
 func (ms *MappedStorage) WriteBlock(id uint64, data []byte) error {
 	ctime := time.Now()
 	defer func() {
-		atomic.AddUint64(&ms.metric_WriteBlock, 1)
-		atomic.AddUint64(&ms.metric_WriteBlock_time, uint64(time.Since(ctime)))
+		atomic.AddUint64(&ms.metricWriteBlock, 1)
+		atomic.AddUint64(&ms.metricWriteBlockTime, uint64(time.Since(ctime)))
 	}()
 
 	// First lets check if we have seen this id before...
 	ms.lock.Lock()
 
-	b, ok := ms.id_to_block[id]
+	b, ok := ms.idToBlock[id]
 	if !ok {
-		newb, err := ms.block_available.CollectFirstAndClear(0, ms.block_available.Length())
+		newb, err := ms.blockAvailable.CollectFirstAndClear(0, ms.blockAvailable.Length())
 		if err != nil {
 			ms.lock.Unlock()
 			return Err_out_of_space
 		}
 		// Init the block
 		b = uint64(newb)
-		ms.id_to_block[id] = b
+		ms.idToBlock[id] = b
 		ms.IDs[b] = id
 	}
 
@@ -339,7 +339,7 @@ func (ms *MappedStorage) WriteBlock(id uint64, data []byte) error {
 
 	// Write some data for this block
 	// NB: We can do this outside the lock
-	offset := b * uint64(ms.block_size)
+	offset := b * uint64(ms.blockSize)
 	_, err := ms.prov.WriteAt(data, int64(offset))
 	return err
 }
@@ -352,13 +352,13 @@ func (ms *MappedStorage) RemoveBlock(id uint64) error {
 	ms.lock.Lock()
 	defer ms.lock.Unlock()
 
-	b, ok := ms.id_to_block[id]
+	b, ok := ms.idToBlock[id]
 	if !ok {
 		return Err_not_found
 	}
 
-	delete(ms.id_to_block, id)
-	ms.block_available.SetBit(int(b))
+	delete(ms.idToBlock, id)
+	ms.blockAvailable.SetBit(int(b))
 	return nil
 }
 
@@ -370,14 +370,14 @@ func (ms *MappedStorage) RemoveBlocks(id uint64, length uint64) error {
 	ms.lock.Lock()
 	defer ms.lock.Unlock()
 
-	for ptr := uint64(0); ptr < length; ptr += uint64(ms.block_size) {
-		b, ok := ms.id_to_block[id+ptr]
+	for ptr := uint64(0); ptr < length; ptr += uint64(ms.blockSize) {
+		b, ok := ms.idToBlock[id+ptr]
 		if !ok {
 			return Err_not_found
 		}
 
-		delete(ms.id_to_block, id+ptr)
-		ms.block_available.SetBit(int(b))
+		delete(ms.idToBlock, id+ptr)
+		ms.blockAvailable.SetBit(int(b))
 	}
 	return nil
 }
@@ -390,7 +390,7 @@ func (ms *MappedStorage) GetBlockAddresses() []uint64 {
 	ms.lock.Lock()
 	defer ms.lock.Unlock()
 	addrs := make([]uint64, 0)
-	for id := range ms.id_to_block {
+	for id := range ms.idToBlock {
 		addrs = append(addrs, id)
 	}
 	return addrs
@@ -404,12 +404,12 @@ func (ms *MappedStorage) KeepOnly(ids map[uint64]bool) []uint64 {
 	removed := make([]uint64, 0)
 	ms.lock.Lock()
 	defer ms.lock.Unlock()
-	for id, b := range ms.id_to_block {
+	for id, b := range ms.idToBlock {
 		_, ok := ids[id]
 		if !ok {
 			// Remove the block and make it available again
-			delete(ms.id_to_block, id)
-			ms.block_available.SetBit(int(b))
+			delete(ms.idToBlock, id)
+			ms.blockAvailable.SetBit(int(b))
 			removed = append(removed, id)
 		}
 	}
@@ -420,7 +420,7 @@ func (ms *MappedStorage) KeepOnly(ids map[uint64]bool) []uint64 {
  * Given a list of addresses, get a map of continuous ranges
  * max_size of 0 means unlimited.
  */
-func (ms *MappedStorage) GetRegions(addresses []uint64, max_size uint64) map[uint64]uint64 {
+func (ms *MappedStorage) GetRegions(addresses []uint64, maxSize uint64) map[uint64]uint64 {
 	ranges := make(map[uint64]uint64)
 
 	exists := make(map[uint64]bool)
@@ -435,11 +435,11 @@ func (ms *MappedStorage) GetRegions(addresses []uint64, max_size uint64) map[uin
 		if ok {
 			delete(exists, a)
 
-			ranges[a] = uint64(ms.block_size)
+			ranges[a] = uint64(ms.blockSize)
 			// Try to combine some more...
-			ptr := ms.block_size
+			ptr := ms.blockSize
 			for {
-				if max_size != 0 && ranges[a] >= max_size {
+				if maxSize != 0 && ranges[a] >= maxSize {
 					break
 				}
 				// Make sure it exists
@@ -447,8 +447,8 @@ func (ms *MappedStorage) GetRegions(addresses []uint64, max_size uint64) map[uin
 				if mok {
 					delete(exists, a+uint64(ptr))
 
-					ranges[a] += uint64(ms.block_size)
-					ptr += ms.block_size
+					ranges[a] += uint64(ms.blockSize)
+					ptr += ms.blockSize
 				} else {
 					break
 				}
@@ -468,22 +468,22 @@ func (ms *MappedStorage) DefragTo(dest *MappedStorage) error {
 
 	// First get list of USED IDs, and then get regions...
 	ids := make([]uint64, 0)
-	for id := range ms.id_to_block {
+	for id := range ms.idToBlock {
 		ids = append(ids, id)
 	}
 
-	all_regions := ms.GetRegions(ids, 0)
+	allRegions := ms.GetRegions(ids, 0)
 
-	region_ids := make([]uint64, 0)
-	for id := range all_regions {
-		region_ids = append(region_ids, id)
+	regionIDs := make([]uint64, 0)
+	for id := range allRegions {
+		regionIDs = append(regionIDs, id)
 	}
 
-	slices.Sort(region_ids)
+	slices.Sort(regionIDs)
 
 	// Now read+write all data to the destination
-	for _, id := range region_ids {
-		length := all_regions[id]
+	for _, id := range regionIDs {
+		length := allRegions[id]
 		data := make([]byte, length)
 
 		// Read the source blocks...

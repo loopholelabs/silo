@@ -214,12 +214,12 @@ func (bf *Bitfield) BitsSet(start uint, end uint) bool {
  * Set bits within the range IF they are also set in if_bf
  * NB This is NOT atomic with SetBits/ClearBits. So there may be a set/clear that is partially completed at this check.
  */
-func (bf *Bitfield) SetBitsIf(if_bf *Bitfield, start uint, end uint) {
+func (bf *Bitfield) SetBitsIf(ifBf *Bitfield, start uint, end uint) {
 	p := start >> 6
 	i := uint64(1 << (start & 63))
 	n := start
 	if n < end {
-		val := atomic.LoadUint64(&if_bf.data[p])
+		val := atomic.LoadUint64(&ifBf.data[p])
 		for {
 			// Check the bit
 			if (val & i) != 0 {
@@ -239,7 +239,7 @@ func (bf *Bitfield) SetBitsIf(if_bf *Bitfield, start uint, end uint) {
 			if i == 0 {
 				i = 1
 				p++
-				val = atomic.LoadUint64(&if_bf.data[p])
+				val = atomic.LoadUint64(&ifBf.data[p])
 			}
 		}
 	}
@@ -249,12 +249,12 @@ func (bf *Bitfield) SetBitsIf(if_bf *Bitfield, start uint, end uint) {
  * Clear bits within the range IF they are set in if_bf
  * NB This is NOT atomic with SetBits/ClearBits. So there may be a set/clear that is partially completed at this check.
  */
-func (bf *Bitfield) ClearBitsIf(if_bf *Bitfield, start uint, end uint) {
+func (bf *Bitfield) ClearBitsIf(ifBf *Bitfield, start uint, end uint) {
 	p := start >> 6
 	i := uint64(1 << (start & 63))
 	n := start
 	if n < end {
-		val := atomic.LoadUint64(&if_bf.data[p])
+		val := atomic.LoadUint64(&ifBf.data[p])
 		for {
 			// Check the bit
 			if (val & i) != 0 {
@@ -274,7 +274,7 @@ func (bf *Bitfield) ClearBitsIf(if_bf *Bitfield, start uint, end uint) {
 			if i == 0 {
 				i = 1
 				p++
-				val = atomic.LoadUint64(&if_bf.data[p])
+				val = atomic.LoadUint64(&ifBf.data[p])
 			}
 		}
 	}

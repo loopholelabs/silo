@@ -1,9 +1,5 @@
 package packets
 
-import (
-	"errors"
-)
-
 func EncodeRemoveDev() []byte {
 	buff := make([]byte, 1)
 	buff[0] = COMMAND_REMOVE_DEV
@@ -12,7 +8,7 @@ func EncodeRemoveDev() []byte {
 
 func DecodeRemoveDev(buff []byte) error {
 	if buff == nil || len(buff) < 1 || buff[0] != COMMAND_REMOVE_DEV {
-		return errors.New("Invalid packet")
+		return Err_invalid_packet
 	}
 	return nil
 }

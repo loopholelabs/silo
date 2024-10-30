@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
-	"errors"
 )
 
 type AlternateSource struct {
@@ -38,7 +37,7 @@ func EncodeAlternateSources(sources []AlternateSource) []byte {
 
 func DecodeAlternateSources(buff []byte) ([]AlternateSource, error) {
 	if buff == nil || len(buff) < 1+4 || buff[0] != COMMAND_ALTERNATE_SOURCES {
-		return nil, errors.New("invalid packet")
+		return nil, Err_invalid_packet
 	}
 
 	l := int(binary.LittleEndian.Uint32(buff[1:]))
@@ -49,9 +48,9 @@ func DecodeAlternateSources(buff []byte) ([]AlternateSource, error) {
 		offset := binary.LittleEndian.Uint64(buff[ptr:])
 		length := binary.LittleEndian.Uint64(buff[ptr+8:])
 		hash := buff[ptr+16 : ptr+16+sha256.Size]
-		loc_len := binary.LittleEndian.Uint32(buff[ptr+16+sha256.Size:])
-		loc := buff[ptr+16+sha256.Size+4 : ptr+16+sha256.Size+4+int(loc_len)]
-		ptr = ptr + 16 + sha256.Size + 4 + int(loc_len)
+		locLen := binary.LittleEndian.Uint32(buff[ptr+16+sha256.Size:])
+		loc := buff[ptr+16+sha256.Size+4 : ptr+16+sha256.Size+4+int(locLen)]
+		ptr = ptr + 16 + sha256.Size + 4 + int(locLen)
 		sources = append(sources, AlternateSource{
 			Offset:   int64(offset),
 			Length:   int64(length),

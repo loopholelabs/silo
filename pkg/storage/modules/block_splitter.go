@@ -10,22 +10,22 @@ import (
 
 type BlockSplitter struct {
 	storage.StorageProviderWithEvents
-	prov       storage.StorageProvider
-	block_size int
-	size       uint64
+	prov      storage.StorageProvider
+	blockSize int
+	size      uint64
 }
 
 // Relay events to embedded StorageProvider
-func (i *BlockSplitter) SendSiloEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
-	data := i.StorageProviderWithEvents.SendSiloEvent(event_type, event_data)
-	return append(data, storage.SendSiloEvent(i.prov, event_type, event_data)...)
+func (i *BlockSplitter) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
+	data := i.StorageProviderWithEvents.SendSiloEvent(eventType, eventData)
+	return append(data, storage.SendSiloEvent(i.prov, eventType, eventData)...)
 }
 
-func NewBlockSplitter(prov storage.StorageProvider, block_size int) *BlockSplitter {
+func NewBlockSplitter(prov storage.StorageProvider, blockSize int) *BlockSplitter {
 	return &BlockSplitter{
-		prov:       prov,
-		block_size: block_size,
-		size:       prov.Size(),
+		prov:      prov,
+		blockSize: blockSize,
+		size:      prov.Size(),
 	}
 }
 
@@ -36,43 +36,43 @@ func (i *BlockSplitter) ReadAt(buffer []byte, offset int64) (n int, err error) {
 		end = i.size
 	}
 
-	b_start := uint(offset / int64(i.block_size))
-	b_end := uint((end-1)/uint64(i.block_size)) + 1
+	bStart := uint(offset / int64(i.blockSize))
+	bEnd := uint((end-1)/uint64(i.blockSize)) + 1
 
-	blocks := b_end - b_start
+	blocks := bEnd - bStart
 	errs := make(chan error, blocks)
 
-	for b := b_start; b < b_end; b++ {
+	for b := bStart; b < bEnd; b++ {
 		go func(block_no uint) {
-			block_offset := int64(block_no) * int64(i.block_size)
+			blockOffset := int64(block_no) * int64(i.blockSize)
 			var err error
-			if block_offset > offset {
+			if blockOffset > offset {
 				// Partial read at the end
-				if len(buffer[block_offset-offset:]) < i.block_size {
-					block_buffer := make([]byte, i.block_size)
-					_, err = i.prov.ReadAt(block_buffer, block_offset)
-					copy(buffer[block_offset-offset:], block_buffer)
+				if len(buffer[blockOffset-offset:]) < i.blockSize {
+					blockBuffer := make([]byte, i.blockSize)
+					_, err = i.prov.ReadAt(blockBuffer, blockOffset)
+					copy(buffer[blockOffset-offset:], blockBuffer)
 				} else {
 					// Complete read in the middle
-					s := block_offset - offset
-					e := s + int64(i.block_size)
+					s := blockOffset - offset
+					e := s + int64(i.blockSize)
 					if e > int64(len(buffer)) {
 						e = int64(len(buffer))
 					}
-					_, err = i.prov.ReadAt(buffer[s:e], block_offset)
+					_, err = i.prov.ReadAt(buffer[s:e], blockOffset)
 				}
 			} else {
 				// Partial read at the start
-				block_buffer := make([]byte, i.block_size)
-				_, err = i.prov.ReadAt(block_buffer, block_offset)
-				copy(buffer, block_buffer[offset-block_offset:])
+				blockBuffer := make([]byte, i.blockSize)
+				_, err = i.prov.ReadAt(blockBuffer, blockOffset)
+				copy(buffer, blockBuffer[offset-blockOffset:])
 			}
 			errs <- err
 		}(b)
 	}
 
 	// Wait for completion, Check for errors and return...
-	for b := b_start; b < b_end; b++ {
+	for b := bStart; b < bEnd; b++ {
 		e := <-errs
 		if e != nil {
 			return 0, e
@@ -89,44 +89,44 @@ func (i *BlockSplitter) WriteAt(buffer []byte, offset int64) (n int, err error) 
 		end = i.size
 	}
 
-	b_start := uint(offset / int64(i.block_size))
-	b_end := uint((end-1)/uint64(i.block_size)) + 1
+	bStart := uint(offset / int64(i.blockSize))
+	bEnd := uint((end-1)/uint64(i.blockSize)) + 1
 
-	blocks := b_end - b_start
+	blocks := bEnd - bStart
 	errs := make(chan error, blocks)
 
-	for b := b_start; b < b_end; b++ {
+	for b := bStart; b < bEnd; b++ {
 		go func(block_no uint) {
-			block_offset := int64(block_no) * int64(i.block_size)
+			blockOffset := int64(block_no) * int64(i.blockSize)
 			var err error
-			if block_offset > offset {
+			if blockOffset > offset {
 				// Partial write at the end
-				if len(buffer[block_offset-offset:]) < i.block_size {
-					block_buffer := make([]byte, i.block_size)
+				if len(buffer[blockOffset-offset:]) < i.blockSize {
+					blockBuffer := make([]byte, i.blockSize)
 					// Read existing data
-					_, err = i.prov.ReadAt(block_buffer, block_offset)
+					_, err = i.prov.ReadAt(blockBuffer, blockOffset)
 					if err == nil {
 						// Update the data
-						copy(block_buffer, buffer[block_offset-offset:])
+						copy(blockBuffer, buffer[blockOffset-offset:])
 						// Write back
-						_, err = i.prov.WriteAt(block_buffer, block_offset)
+						_, err = i.prov.WriteAt(blockBuffer, blockOffset)
 					}
 				} else {
 					// Complete write in the middle
-					s := block_offset - offset
-					e := s + int64(i.block_size)
+					s := blockOffset - offset
+					e := s + int64(i.blockSize)
 					if e > int64(len(buffer)) {
 						e = int64(len(buffer))
 					}
-					_, err = i.prov.WriteAt(buffer[s:e], block_offset)
+					_, err = i.prov.WriteAt(buffer[s:e], blockOffset)
 				}
 			} else {
 				// Partial write at the start
-				block_buffer := make([]byte, i.block_size)
-				_, err = i.prov.ReadAt(block_buffer, block_offset)
+				blockBuffer := make([]byte, i.blockSize)
+				_, err = i.prov.ReadAt(blockBuffer, blockOffset)
 				if err == nil {
-					copy(block_buffer[offset-block_offset:], buffer)
-					_, err = i.prov.WriteAt(block_buffer, block_offset)
+					copy(blockBuffer[offset-blockOffset:], buffer)
+					_, err = i.prov.WriteAt(blockBuffer, blockOffset)
 				}
 			}
 			errs <- err
@@ -134,7 +134,7 @@ func (i *BlockSplitter) WriteAt(buffer []byte, offset int64) (n int, err error) 
 	}
 
 	// Wait for completion, Check for errors and return...
-	for b := b_start; b < b_end; b++ {
+	for b := bStart; b < bEnd; b++ {
 		e := <-errs
 		if e != nil {
 			return 0, e

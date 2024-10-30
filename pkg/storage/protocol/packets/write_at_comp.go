@@ -3,8 +3,9 @@ package packets
 import (
 	"bytes"
 	"encoding/binary"
-	"errors"
 )
+
+const RLE_MIN_LENGTH = 4
 
 func EncodeWriteAtComp(offset int64, data []byte) []byte {
 	var buff bytes.Buffer
@@ -17,7 +18,6 @@ func EncodeWriteAtComp(offset int64, data []byte) []byte {
 	buff.Write(b)
 
 	// Now RLE the data
-	MIN_LENGTH := 4
 	areas := make(map[int]int, 0)
 
 	ld := byte(0)
@@ -25,7 +25,7 @@ func EncodeWriteAtComp(offset int64, data []byte) []byte {
 	for i, d := range data {
 		if d != ld {
 			// Flush the current run
-			if length >= MIN_LENGTH {
+			if length >= RLE_MIN_LENGTH {
 				areas[i-length] = length
 			}
 			length = 1
@@ -35,7 +35,7 @@ func EncodeWriteAtComp(offset int64, data []byte) []byte {
 		}
 	}
 
-	if length > MIN_LENGTH {
+	if length > RLE_MIN_LENGTH {
 		areas[len(data)-length] = length
 	}
 
@@ -82,7 +82,7 @@ func EncodeWriteAtComp(offset int64, data []byte) []byte {
 
 func DecodeWriteAtComp(buff []byte) (offset int64, data []byte, err error) {
 	if buff == nil || len(buff) < 10 || buff[0] != COMMAND_WRITE_AT || buff[1] != WRITE_AT_COMP_RLE {
-		return 0, nil, errors.New("Invalid packet command")
+		return 0, nil, Err_invalid_packet
 	}
 	off := int64(binary.LittleEndian.Uint64(buff[2:]))
 

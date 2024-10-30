@@ -13,17 +13,17 @@ type Raid struct {
 }
 
 // Relay events to embedded StorageProvider
-func (i *Raid) SendSiloEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
-	data := i.StorageProviderWithEvents.SendSiloEvent(event_type, event_data)
+func (i *Raid) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
+	data := i.StorageProviderWithEvents.SendSiloEvent(eventType, eventData)
 	for _, pr := range i.prov {
-		data = append(data, storage.SendSiloEvent(pr, event_type, event_data)...)
+		data = append(data, storage.SendSiloEvent(pr, eventType, eventData)...)
 	}
 	return data
 }
 
 func NewRaid(prov []storage.StorageProvider) (*Raid, error) {
 	if len(prov) == 0 {
-		return nil, errors.New("Need at least one provider")
+		return nil, errors.New("need at least one provider")
 	}
 	return &Raid{
 		prov: prov,
@@ -44,13 +44,13 @@ func (r *Raid) ReadAt(buffer []byte, offset int64) (int, error) {
 
 			if e != err || n != count {
 				// RAID ERROR!
-				return 0, fmt.Errorf("RAID Corruption on ReadAt (%d/%d,%v/%d)", n, count, e, err)
+				return 0, fmt.Errorf("raid corruption on ReadAt (%d/%d,%v/%d)", n, count, e, err)
 			}
 			// Check the contents match
 			for c := 0; c < count; c++ {
 				if buffer[c] != buffer2[c] {
 					// RAID ERROR!
-					return 0, errors.New("RAID Corruption on ReadAt contents")
+					return 0, errors.New("raid corruption on ReadAt contents")
 				}
 			}
 		}
@@ -70,7 +70,7 @@ func (r *Raid) WriteAt(buffer []byte, offset int64) (int, error) {
 		} else {
 			if e != err || n != count {
 				// RAID ERROR!
-				return 0, fmt.Errorf("RAID Corruption on WriteAt (%d/%d,%v/%d)", n, count, e, err)
+				return 0, fmt.Errorf("raid corruption on WriteAt (%d/%d,%v/%d)", n, count, e, err)
 			}
 		}
 

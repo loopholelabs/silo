@@ -2,7 +2,6 @@ package packets
 
 import (
 	"encoding/binary"
-	"errors"
 )
 
 func EncodeRemoveFromMap(ids []uint64) []byte {
@@ -18,7 +17,7 @@ func EncodeRemoveFromMap(ids []uint64) []byte {
 
 func DecodeRemoveFromMap(buff []byte) ([]uint64, error) {
 	if buff == nil || len(buff) < 5 || buff[0] != COMMAND_REMOVE_FROM_MAP {
-		return nil, errors.New("Invalid packet")
+		return nil, Err_invalid_packet
 	}
 	length := binary.LittleEndian.Uint32(buff[1:])
 	ids := make([]uint64, length)

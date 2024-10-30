@@ -175,12 +175,12 @@ func TestDirtyList(t *testing.T) {
 }
 
 func TestDevInfo(t *testing.T) {
-	b := EncodeDevInfo(&DevInfo{Size: 12345, Block_size: 55, Name: "hello", Schema: "1234"})
+	b := EncodeDevInfo(&DevInfo{Size: 12345, BlockSize: 55, Name: "hello", Schema: "1234"})
 
 	di, err := DecodeDevInfo(b)
 	assert.NoError(t, err)
 	assert.Equal(t, uint64(12345), di.Size)
-	assert.Equal(t, uint32(55), di.Block_size)
+	assert.Equal(t, uint32(55), di.BlockSize)
 	assert.Equal(t, "hello", di.Name)
 	assert.Equal(t, "1234", di.Schema)
 

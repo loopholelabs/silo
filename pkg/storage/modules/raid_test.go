@@ -14,12 +14,12 @@ import (
 
 func TestRaid(t *testing.T) {
 	size := 1024 * 1000
-	block_size := 4096
+	blockSize := 4096
 
 	source, err := sources.NewFileStorageCreate("testraid_source", int64(size))
 	assert.NoError(t, err)
 
-	cache, err := sources.NewFileStorageSparseCreate("testraid_cache", uint64(size), block_size)
+	cache, err := sources.NewFileStorageSparseCreate("testraid_cache", uint64(size), blockSize)
 	//cache, err := sources.NewFileStorageCreate("testraid_cache", int64(size))
 	assert.NoError(t, err)
 
@@ -28,7 +28,7 @@ func TestRaid(t *testing.T) {
 		os.Remove("testraid_cache")
 	})
 
-	cow := NewCopyOnWrite(source, cache, block_size)
+	cow := NewCopyOnWrite(source, cache, blockSize)
 
 	mem := sources.NewMemoryStorage(size)
 
@@ -61,12 +61,12 @@ func TestRaid(t *testing.T) {
 
 	// Wait for them all to complete...
 
-	equal, err := storage.Equals(cow, mem, block_size)
+	equal, err := storage.Equals(cow, mem, blockSize)
 	assert.NoError(t, err)
 	assert.Equal(t, true, equal)
 
-	master_data := make([]byte, size)
-	n, err := mem.ReadAt(master_data, 0)
+	masterData := make([]byte, size)
+	n, err := mem.ReadAt(masterData, 0)
 	assert.NoError(t, err)
 	assert.Equal(t, size, n)
 
@@ -78,7 +78,7 @@ func TestRaid(t *testing.T) {
 			offset := mrand.Intn(size)
 			n, err := raid.ReadAt(buff, int64(offset))
 			assert.NoError(t, err)
-			assert.Equal(t, buff[:n], master_data[offset:offset+n])
+			assert.Equal(t, buff[:n], masterData[offset:offset+n])
 			wg.Done()
 		}()
 	}

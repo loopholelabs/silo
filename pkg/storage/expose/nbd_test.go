@@ -43,7 +43,7 @@ func TestNBDNLDevice(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		wg.Add(1)
 		go func() {
-			devfile, err := os.OpenFile(fmt.Sprintf("/dev/nbd%d", n.device_index), os.O_RDWR, 0666)
+			devfile, err := os.OpenFile(fmt.Sprintf("/dev/nbd%d", n.deviceIndex), os.O_RDWR, 0666)
 			assert.NoError(t, err)
 
 			// Try doing a read...
@@ -122,7 +122,7 @@ func TestNBDNLDeviceSmall(t *testing.T) {
 	err = ndev.Init()
 	assert.NoError(t, err)
 
-	devfile, err := os.OpenFile(fmt.Sprintf("/dev/nbd%d", ndev.device_index), os.O_RDWR, 0666)
+	devfile, err := os.OpenFile(fmt.Sprintf("/dev/nbd%d", ndev.deviceIndex), os.O_RDWR, 0666)
 	assert.NoError(t, err)
 
 	// Try doing a read...
@@ -167,7 +167,7 @@ func TestNBDNLDeviceUnalignedPartialRead(t *testing.T) {
 	err = ndev.Init()
 	assert.NoError(t, err)
 
-	devfile, err := os.OpenFile(fmt.Sprintf("/dev/nbd%d", ndev.device_index), os.O_RDWR, 0666)
+	devfile, err := os.OpenFile(fmt.Sprintf("/dev/nbd%d", ndev.deviceIndex), os.O_RDWR, 0666)
 	assert.NoError(t, err)
 
 	// Try doing a read...
@@ -204,7 +204,7 @@ func TestNBDNLDeviceUnalignedPartialWrite(t *testing.T) {
 	err = ndev.Init()
 	assert.NoError(t, err)
 
-	devfile, err := os.OpenFile(fmt.Sprintf("/dev/nbd%d", ndev.device_index), os.O_RDWR, 0666)
+	devfile, err := os.OpenFile(fmt.Sprintf("/dev/nbd%d", ndev.deviceIndex), os.O_RDWR, 0666)
 	assert.NoError(t, err)
 
 	// Try doing a read...
@@ -247,12 +247,12 @@ func TestNBDNLDeviceShutdownRead(t *testing.T) {
 
 	hooks := modules.NewHooks(prov)
 
-	var read_wg sync.WaitGroup
-	read_wg.Add(1)
+	var readWG sync.WaitGroup
+	readWG.Add(1)
 
-	hooks.Pre_read = func(buffer []byte, offset int64) (bool, int, error) {
+	hooks.PreRead = func(buffer []byte, offset int64) (bool, int, error) {
 		if offset == 0x9000 {
-			read_wg.Done()
+			readWG.Done()
 			time.Sleep(10 * time.Second)
 		}
 		return false, 0, nil
@@ -262,7 +262,7 @@ func TestNBDNLDeviceShutdownRead(t *testing.T) {
 	err = n.Init()
 	assert.NoError(t, err)
 
-	devfile, err := os.OpenFile(fmt.Sprintf("/dev/nbd%d", n.device_index), os.O_RDWR, 0666)
+	devfile, err := os.OpenFile(fmt.Sprintf("/dev/nbd%d", n.deviceIndex), os.O_RDWR, 0666)
 	assert.NoError(t, err)
 
 	t.Cleanup(func() {
@@ -283,7 +283,7 @@ func TestNBDNLDeviceShutdownRead(t *testing.T) {
 		wg.Done()
 	}()
 
-	read_wg.Wait()
+	readWG.Wait()
 	// This will be called during the ReadAt, but may take a while to completely wait for nbd subsystem to finish
 	go func() {
 		err = n.Shutdown()
@@ -312,12 +312,12 @@ func TestNBDNLDeviceShutdownWrite(t *testing.T) {
 
 	hooks := modules.NewHooks(prov)
 
-	var read_wg sync.WaitGroup
-	read_wg.Add(1)
+	var readWG sync.WaitGroup
+	readWG.Add(1)
 
-	hooks.Pre_write = func(buffer []byte, offset int64) (bool, int, error) {
+	hooks.PreWrite = func(buffer []byte, offset int64) (bool, int, error) {
 		if offset == 0x9000 {
-			read_wg.Done()
+			readWG.Done()
 			time.Sleep(10 * time.Second)
 		}
 		return false, 0, nil
@@ -327,7 +327,7 @@ func TestNBDNLDeviceShutdownWrite(t *testing.T) {
 	err = n.Init()
 	assert.NoError(t, err)
 
-	devfile, err := os.OpenFile(fmt.Sprintf("/dev/nbd%d", n.device_index), os.O_RDWR, 0666)
+	devfile, err := os.OpenFile(fmt.Sprintf("/dev/nbd%d", n.deviceIndex), os.O_RDWR, 0666)
 	assert.NoError(t, err)
 
 	t.Cleanup(func() {
@@ -350,7 +350,7 @@ func TestNBDNLDeviceShutdownWrite(t *testing.T) {
 		wg.Done()
 	}()
 
-	read_wg.Wait()
+	readWG.Wait()
 	// This will be called during the WriteAt, but may take a while to completely wait for nbd subsystem to finish
 	go func() {
 		err = n.Shutdown()

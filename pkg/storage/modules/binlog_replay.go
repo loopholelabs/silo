@@ -10,10 +10,10 @@ import (
 )
 
 type BinLogReplay struct {
-	prov      storage.StorageProvider
-	fp        *os.File
-	ctime     time.Time
-	set_ctime bool
+	prov     storage.StorageProvider
+	fp       *os.File
+	ctime    time.Time
+	setCtime bool
 }
 
 func NewBinLogReplay(filename string, prov storage.StorageProvider) (*BinLogReplay, error) {
@@ -22,10 +22,10 @@ func NewBinLogReplay(filename string, prov storage.StorageProvider) (*BinLogRepl
 		return nil, err
 	}
 	return &BinLogReplay{
-		fp:        fp,
-		ctime:     time.Now(),
-		set_ctime: true,
-		prov:      prov,
+		fp:       fp,
+		ctime:    time.Now(),
+		setCtime: true,
+		prov:     prov,
 	}, nil
 }
 
@@ -41,15 +41,15 @@ func (i *BinLogReplay) ExecuteNext(speed float64) error {
 		return err
 	}
 
-	if i.set_ctime {
+	if i.setCtime {
 		i.ctime = time.Now()
-		i.set_ctime = false
+		i.setCtime = false
 	}
 
 	// If we need to, we'll wait here until the next log should be replayed.
-	target_dt := time.Duration(binary.LittleEndian.Uint64(header))
-	replay_dt := time.Since(i.ctime)
-	delay := speed * float64(target_dt-replay_dt)
+	targetDT := time.Duration(binary.LittleEndian.Uint64(header))
+	replayDT := time.Since(i.ctime)
+	delay := speed * float64(targetDT-replayDT)
 	if delay > 0 {
 		time.Sleep(time.Duration(delay))
 	}

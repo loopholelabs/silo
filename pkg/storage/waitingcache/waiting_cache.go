@@ -47,9 +47,9 @@ func NewWaitingCache(prov storage.StorageProvider, blockSize int) (*WaitingCache
 	return wc.local, wc.remote
 }
 
-func (i *WaitingCache) waitForRemoteBlocks(b_start uint, b_end uint, lockCB func(b uint)) {
+func (i *WaitingCache) waitForRemoteBlocks(bStart uint, bEnd uint, lockCB func(b uint)) {
 	// TODO: Optimize this
-	for b := b_start; b < b_end; b++ {
+	for b := bStart; b < bEnd; b++ {
 		i.waitForRemoteBlock(b, lockCB)
 	}
 }
@@ -75,9 +75,9 @@ func (i *WaitingCache) waitForRemoteBlock(b uint, lockCB func(b uint)) {
 	rwl.RLock()
 }
 
-func (i *WaitingCache) markAvailableRemoteBlocks(b_start uint, b_end uint) {
+func (i *WaitingCache) markAvailableRemoteBlocks(bStart uint, bEnd uint) {
 	// TODO: Optimize this
-	for b := b_start; b < b_end; b++ {
+	for b := bStart; b < bEnd; b++ {
 		i.markAvailableRemoteBlock(b)
 	}
 }

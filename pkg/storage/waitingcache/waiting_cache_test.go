@@ -35,10 +35,10 @@ func TestWaitingCache(t *testing.T) {
 	ctime := time.Now()
 	_, err = waitingLocal.ReadAt(buffer, offset)
 	assert.NoError(t, err)
-	wait_time := time.Since(ctime).Milliseconds()
+	waitTime := time.Since(ctime).Milliseconds()
 
 	// We'd expect this read to take around 50ms (It's waiting for the data)
-	assert.InDelta(t, wait_time, 50, 10)
+	assert.InDelta(t, waitTime, 50, 10)
 
 	assert.Equal(t, data[offset:int(offset)+len(buffer)], buffer)
 
@@ -46,10 +46,10 @@ func TestWaitingCache(t *testing.T) {
 	ctime2 := time.Now()
 	_, err = waitingLocal.ReadAt(buffer, offset)
 	assert.NoError(t, err)
-	wait_time2 := time.Since(ctime2).Milliseconds()
+	waitTime2 := time.Since(ctime2).Milliseconds()
 
 	// We'd expect this read to be instant (The data exists now)
-	assert.InDelta(t, wait_time2, 0, 10)
+	assert.InDelta(t, waitTime2, 0, 10)
 
 }
 
@@ -78,10 +78,10 @@ func TestWaitingCachePartial(t *testing.T) {
 	ctime := time.Now()
 	_, err = waitingLocal.ReadAt(buffer, offset)
 	assert.NoError(t, err)
-	wait_time := time.Since(ctime).Milliseconds()
+	waitTime := time.Since(ctime).Milliseconds()
 
 	// We'd expect this read to take around 50ms (It's waiting for the data)
-	assert.InDelta(t, wait_time, 50, 10)
+	assert.InDelta(t, waitTime, 50, 10)
 
 	assert.Equal(t, data[offset:int(offset)+len(buffer)], buffer)
 
@@ -89,10 +89,10 @@ func TestWaitingCachePartial(t *testing.T) {
 	ctime2 := time.Now()
 	_, err = waitingLocal.ReadAt(buffer, offset)
 	assert.NoError(t, err)
-	wait_time2 := time.Since(ctime2).Milliseconds()
+	waitTime2 := time.Since(ctime2).Milliseconds()
 
 	// We'd expect this read to be instant (The data exists now)
-	assert.InDelta(t, wait_time2, 0, 10)
+	assert.InDelta(t, waitTime2, 0, 10)
 
 }
 
@@ -122,10 +122,10 @@ func TestWaitingCacheLocalWrites(t *testing.T) {
 	ctime := time.Now()
 	_, err = waitingLocal.ReadAt(buffer, offset)
 	assert.NoError(t, err)
-	wait_time := time.Since(ctime).Milliseconds()
+	waitTime := time.Since(ctime).Milliseconds()
 
 	// We'd expect this read to take around 50ms (It's waiting for the data)
-	assert.InDelta(t, wait_time, 50, 10)
+	assert.InDelta(t, waitTime, 50, 10)
 
 	assert.Equal(t, data[offset:int(offset)+len(buffer)], buffer)
 
@@ -141,10 +141,10 @@ func TestWaitingCacheLocalWrites(t *testing.T) {
 	ctime2 := time.Now()
 	_, err = waitingLocal.ReadAt(buffer, offset)
 	assert.NoError(t, err)
-	wait_time2 := time.Since(ctime2).Milliseconds()
+	waitTime2 := time.Since(ctime2).Milliseconds()
 
 	// We'd expect this read to be instant (The data exists now)
-	assert.InDelta(t, wait_time2, 0, 10)
+	assert.InDelta(t, waitTime2, 0, 10)
 
 	// It should be the local data, not the remote
 	assert.Equal(t, data[offset:int(offset)+len(buffer)], buffer)
@@ -176,9 +176,9 @@ func TestWaitingCacheLocalWrites_ARCH61(t *testing.T) {
 	ctime := time.Now()
 	_, err = waitingLocal.WriteAt(buffer, 0)
 	assert.NoError(t, err)
-	wait_time := time.Since(ctime).Milliseconds()
+	waitTime := time.Since(ctime).Milliseconds()
 
 	// We'd expect this read to take around 50ms (It's waiting for the data)
-	assert.InDelta(t, wait_time, 50, 10)
+	assert.InDelta(t, waitTime, 50, 10)
 
 }

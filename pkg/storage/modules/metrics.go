@@ -14,32 +14,32 @@ import (
  */
 type Metrics struct {
 	storage.StorageProviderWithEvents
-	prov                storage.StorageProvider
-	metric_read_ops     uint64
-	metric_read_bytes   uint64
-	metric_read_time    uint64
-	metric_read_errors  uint64
-	metric_write_ops    uint64
-	metric_write_bytes  uint64
-	metric_write_time   uint64
-	metric_write_errors uint64
-	metric_flush_ops    uint64
-	metric_flush_time   uint64
-	metric_flush_errors uint64
+	prov              storage.StorageProvider
+	metricReadOps     uint64
+	metricReadBytes   uint64
+	metricReadTime    uint64
+	metricReadErrors  uint64
+	metricWriteOps    uint64
+	metricWriteBytes  uint64
+	metricWriteTime   uint64
+	metricWriteErrors uint64
+	metricFlushOps    uint64
+	metricFlushTime   uint64
+	metricFlushErrors uint64
 }
 
 type MetricsSnapshot struct {
-	Read_ops     uint64
-	Read_bytes   uint64
-	Read_time    uint64
-	Read_errors  uint64
-	Write_ops    uint64
-	Write_bytes  uint64
-	Write_time   uint64
-	Write_errors uint64
-	Flush_ops    uint64
-	Flush_time   uint64
-	Flush_errors uint64
+	ReadOps     uint64
+	ReadBytes   uint64
+	ReadTime    uint64
+	ReadErrors  uint64
+	WriteOps    uint64
+	WriteBytes  uint64
+	WriteTime   uint64
+	WriteErrors uint64
+	FlushOps    uint64
+	FlushTime   uint64
+	FlushErrors uint64
 }
 
 func NewMetrics(prov storage.StorageProvider) *Metrics {
@@ -49,9 +49,9 @@ func NewMetrics(prov storage.StorageProvider) *Metrics {
 }
 
 // Relay events to embedded StorageProvider
-func (i *Metrics) SendSiloEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
-	data := i.StorageProviderWithEvents.SendSiloEvent(event_type, event_data)
-	return append(data, storage.SendSiloEvent(i.prov, event_type, event_data)...)
+func (i *Metrics) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
+	data := i.StorageProviderWithEvents.SendSiloEvent(eventType, eventData)
+	return append(data, storage.SendSiloEvent(i.prov, eventType, eventData)...)
 }
 
 func formatDuration(d time.Duration) string {
@@ -65,116 +65,116 @@ func formatDuration(d time.Duration) string {
 }
 
 func (i *Metrics) ShowStats(prefix string) {
-	read_ops := atomic.LoadUint64(&i.metric_read_ops)
-	read_errors := atomic.LoadUint64(&i.metric_read_errors)
-	read_time := atomic.LoadUint64(&i.metric_read_time)
-	read_avg_time := uint64(0)
-	if read_ops-read_errors > 0 {
-		read_avg_time = read_time / (read_ops - read_errors)
+	readOps := atomic.LoadUint64(&i.metricReadOps)
+	readErrors := atomic.LoadUint64(&i.metricReadErrors)
+	readTime := atomic.LoadUint64(&i.metricReadTime)
+	readAvgTime := uint64(0)
+	if readOps-readErrors > 0 {
+		readAvgTime = readTime / (readOps - readErrors)
 	}
-	read_avg_time_f := formatDuration(time.Duration(read_avg_time))
+	readAvgTimeF := formatDuration(time.Duration(readAvgTime))
 	fmt.Printf("%s: Reads=%d (%d bytes) avg latency %s, %d errors, ",
 		prefix,
-		read_ops,
-		atomic.LoadUint64(&i.metric_read_bytes),
-		read_avg_time_f,
-		read_errors,
+		readOps,
+		atomic.LoadUint64(&i.metricReadBytes),
+		readAvgTimeF,
+		readErrors,
 	)
 
-	write_ops := atomic.LoadUint64(&i.metric_write_ops)
-	write_errors := atomic.LoadUint64(&i.metric_write_errors)
-	write_time := atomic.LoadUint64(&i.metric_write_time)
-	write_avg_time := uint64(0)
-	if write_ops-write_errors > 0 {
-		write_avg_time = write_time / (write_ops - write_errors)
+	writeOps := atomic.LoadUint64(&i.metricWriteOps)
+	writeErrors := atomic.LoadUint64(&i.metricWriteErrors)
+	writeTime := atomic.LoadUint64(&i.metricWriteTime)
+	writeAvgTime := uint64(0)
+	if writeOps-writeErrors > 0 {
+		writeAvgTime = writeTime / (writeOps - writeErrors)
 	}
-	write_avg_time_f := formatDuration(time.Duration(write_avg_time))
+	writeAvgTimeF := formatDuration(time.Duration(writeAvgTime))
 	fmt.Printf("Writes=%d (%d bytes) avg latency %s, %d errors, ",
-		write_ops,
-		atomic.LoadUint64(&i.metric_write_bytes),
-		write_avg_time_f,
-		write_errors,
+		writeOps,
+		atomic.LoadUint64(&i.metricWriteBytes),
+		writeAvgTimeF,
+		writeErrors,
 	)
 
-	flush_ops := atomic.LoadUint64(&i.metric_flush_ops)
-	flush_errors := atomic.LoadUint64(&i.metric_flush_errors)
-	flush_time := atomic.LoadUint64(&i.metric_flush_time)
-	flush_avg_time := uint64(0)
-	if flush_ops-flush_errors > 0 {
-		flush_avg_time = flush_time / (flush_ops - flush_errors)
+	flushOps := atomic.LoadUint64(&i.metricFlushOps)
+	flushErrors := atomic.LoadUint64(&i.metricFlushErrors)
+	flushTime := atomic.LoadUint64(&i.metricFlushTime)
+	flushAvgTime := uint64(0)
+	if flushOps-flushErrors > 0 {
+		flushAvgTime = flushTime / (flushOps - flushErrors)
 	}
-	flush_avg_time_f := formatDuration(time.Duration(flush_avg_time))
+	flushAvgTimeF := formatDuration(time.Duration(flushAvgTime))
 
 	fmt.Printf("Flushes=%d avg latency %s, %d errors\n",
-		flush_ops,
-		flush_avg_time_f,
-		flush_errors,
+		flushOps,
+		flushAvgTimeF,
+		flushErrors,
 	)
 }
 
 func (i *Metrics) Snapshot() *MetricsSnapshot {
 	return &MetricsSnapshot{
-		Read_ops:     atomic.LoadUint64(&i.metric_read_ops),
-		Read_bytes:   atomic.LoadUint64(&i.metric_read_bytes),
-		Read_time:    atomic.LoadUint64(&i.metric_read_time),
-		Read_errors:  atomic.LoadUint64(&i.metric_read_errors),
-		Write_ops:    atomic.LoadUint64(&i.metric_write_ops),
-		Write_bytes:  atomic.LoadUint64(&i.metric_write_bytes),
-		Write_time:   atomic.LoadUint64(&i.metric_write_time),
-		Write_errors: atomic.LoadUint64(&i.metric_write_errors),
-		Flush_ops:    atomic.LoadUint64(&i.metric_flush_ops),
-		Flush_time:   atomic.LoadUint64(&i.metric_flush_time),
-		Flush_errors: atomic.LoadUint64(&i.metric_flush_errors),
+		ReadOps:     atomic.LoadUint64(&i.metricReadOps),
+		ReadBytes:   atomic.LoadUint64(&i.metricReadBytes),
+		ReadTime:    atomic.LoadUint64(&i.metricReadTime),
+		ReadErrors:  atomic.LoadUint64(&i.metricReadErrors),
+		WriteOps:    atomic.LoadUint64(&i.metricWriteOps),
+		WriteBytes:  atomic.LoadUint64(&i.metricWriteBytes),
+		WriteTime:   atomic.LoadUint64(&i.metricWriteTime),
+		WriteErrors: atomic.LoadUint64(&i.metricWriteErrors),
+		FlushOps:    atomic.LoadUint64(&i.metricFlushOps),
+		FlushTime:   atomic.LoadUint64(&i.metricFlushTime),
+		FlushErrors: atomic.LoadUint64(&i.metricFlushErrors),
 	}
 }
 
 func (i *Metrics) ResetMetrics() {
-	atomic.StoreUint64(&i.metric_read_ops, 0)
-	atomic.StoreUint64(&i.metric_read_bytes, 0)
-	atomic.StoreUint64(&i.metric_read_time, 0)
-	atomic.StoreUint64(&i.metric_read_errors, 0)
-	atomic.StoreUint64(&i.metric_write_ops, 0)
-	atomic.StoreUint64(&i.metric_write_bytes, 0)
-	atomic.StoreUint64(&i.metric_write_time, 0)
-	atomic.StoreUint64(&i.metric_write_errors, 0)
-	atomic.StoreUint64(&i.metric_flush_ops, 0)
-	atomic.StoreUint64(&i.metric_flush_time, 0)
-	atomic.StoreUint64(&i.metric_flush_errors, 0)
+	atomic.StoreUint64(&i.metricReadOps, 0)
+	atomic.StoreUint64(&i.metricReadBytes, 0)
+	atomic.StoreUint64(&i.metricReadTime, 0)
+	atomic.StoreUint64(&i.metricReadErrors, 0)
+	atomic.StoreUint64(&i.metricWriteOps, 0)
+	atomic.StoreUint64(&i.metricWriteBytes, 0)
+	atomic.StoreUint64(&i.metricWriteTime, 0)
+	atomic.StoreUint64(&i.metricWriteErrors, 0)
+	atomic.StoreUint64(&i.metricFlushOps, 0)
+	atomic.StoreUint64(&i.metricFlushTime, 0)
+	atomic.StoreUint64(&i.metricFlushErrors, 0)
 }
 
 func (i *Metrics) ReadAt(buffer []byte, offset int64) (int, error) {
-	atomic.AddUint64(&i.metric_read_ops, 1)
-	atomic.AddUint64(&i.metric_read_bytes, uint64(len(buffer)))
+	atomic.AddUint64(&i.metricReadOps, 1)
+	atomic.AddUint64(&i.metricReadBytes, uint64(len(buffer)))
 	ctime := time.Now()
 	n, e := i.prov.ReadAt(buffer, offset)
 	if e != nil {
-		atomic.AddUint64(&i.metric_read_errors, 1)
+		atomic.AddUint64(&i.metricReadErrors, 1)
 	} else {
-		atomic.AddUint64(&i.metric_read_time, uint64(time.Since(ctime).Nanoseconds()))
+		atomic.AddUint64(&i.metricReadTime, uint64(time.Since(ctime).Nanoseconds()))
 	}
 	return n, e
 }
 
 func (i *Metrics) WriteAt(buffer []byte, offset int64) (int, error) {
-	atomic.AddUint64(&i.metric_write_ops, 1)
-	atomic.AddUint64(&i.metric_write_bytes, uint64(len(buffer)))
+	atomic.AddUint64(&i.metricWriteOps, 1)
+	atomic.AddUint64(&i.metricWriteBytes, uint64(len(buffer)))
 	ctime := time.Now()
 	n, e := i.prov.WriteAt(buffer, offset)
 	if e != nil {
-		atomic.AddUint64(&i.metric_write_errors, 1)
+		atomic.AddUint64(&i.metricWriteErrors, 1)
 	} else {
-		atomic.AddUint64(&i.metric_write_time, uint64(time.Since(ctime).Nanoseconds()))
+		atomic.AddUint64(&i.metricWriteTime, uint64(time.Since(ctime).Nanoseconds()))
 	}
 	return n, e
 }
 
 func (i *Metrics) Flush() error {
-	atomic.AddUint64(&i.metric_flush_ops, 1)
+	atomic.AddUint64(&i.metricFlushOps, 1)
 	ctime := time.Now()
 	e := i.prov.Flush()
-	atomic.AddUint64(&i.metric_flush_time, uint64(time.Since(ctime).Nanoseconds()))
+	atomic.AddUint64(&i.metricFlushTime, uint64(time.Since(ctime).Nanoseconds()))
 	if e != nil {
-		atomic.AddUint64(&i.metric_flush_errors, 1)
+		atomic.AddUint64(&i.metricFlushErrors, 1)
 	}
 	return e
 }

@@ -4,14 +4,10 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
-	"errors"
 
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
 )
-
-var ErrInvalidPacket = errors.New("invalid packet")
-var ErrRemoteWriteError = errors.New("remote write error")
 
 type ToProtocol struct {
 	storage.StorageProviderWithEvents
@@ -32,9 +28,9 @@ func NewToProtocol(size uint64, deviceID uint32, p Protocol) *ToProtocol {
 }
 
 // Support Silo Events
-func (i *ToProtocol) SendSiloEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
-	if event_type == storage.EventType("sources") {
-		i.alternateSources = event_data.([]packets.AlternateSource)
+func (i *ToProtocol) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
+	if eventType == storage.EventType("sources") {
+		i.alternateSources = eventData.([]packets.AlternateSource)
 		// Send the list of alternate sources here...
 		h := packets.EncodeAlternateSources(i.alternateSources)
 		_, _ = i.protocol.SendPacket(i.dev, ID_PICK_ANY, h)
@@ -74,12 +70,12 @@ func (i *ToProtocol) SendHashes(hashes map[uint][sha256.Size]byte) error {
 	return packets.DecodeHashesResponse(r)
 }
 
-func (i *ToProtocol) SendDevInfo(name string, block_size uint32, schema string) error {
+func (i *ToProtocol) SendDevInfo(name string, blockSize uint32, schema string) error {
 	di := &packets.DevInfo{
-		Size:       i.size,
-		Block_size: block_size,
-		Name:       name,
-		Schema:     schema,
+		Size:      i.size,
+		BlockSize: blockSize,
+		Name:      name,
+		Schema:    schema,
 	}
 	b := packets.EncodeDevInfo(di)
 	_, err := i.protocol.SendPacket(i.dev, ID_PICK_ANY, b)
@@ -92,8 +88,8 @@ func (i *ToProtocol) RemoveDev() error {
 	return err
 }
 
-func (i *ToProtocol) DirtyList(block_size int, blocks []uint) error {
-	b := packets.EncodeDirtyList(block_size, blocks)
+func (i *ToProtocol) DirtyList(blockSize int, blocks []uint) error {
+	b := packets.EncodeDirtyList(blockSize, blocks)
 	id, err := i.protocol.SendPacket(i.dev, ID_PICK_ANY, b)
 	if err != nil {
 		return err
@@ -173,23 +169,23 @@ func (i *ToProtocol) WriteAt(buffer []byte, offset int64) (int, error) {
 
 	// Decode the response...
 	if r == nil || len(r) < 1 {
-		return 0, ErrInvalidPacket
+		return 0, packets.Err_invalid_packet
 	}
 	if r[0] == packets.COMMAND_WRITE_AT_RESPONSE_ERR {
-		return 0, ErrRemoteWriteError
+		return 0, packets.Err_write_error
 	} else if r[0] == packets.COMMAND_WRITE_AT_RESPONSE {
 		if len(r) < 5 {
-			return 0, ErrInvalidPacket
+			return 0, packets.Err_invalid_packet
 		}
 		return int(binary.LittleEndian.Uint32(r[1:])), nil
 	}
-	return 0, ErrInvalidPacket
+	return 0, packets.Err_invalid_packet
 }
 
-func (i *ToProtocol) WriteAtWithMap(buffer []byte, offset int64, id_map map[uint64]uint64) (int, error) {
+func (i *ToProtocol) WriteAtWithMap(buffer []byte, offset int64, idMap map[uint64]uint64) (int, error) {
 	var id uint32
 	var err error
-	f := packets.EncodeWriteAtWithMap(offset, buffer, id_map)
+	f := packets.EncodeWriteAtWithMap(offset, buffer, idMap)
 	id, err = i.protocol.SendPacket(i.dev, ID_PICK_ANY, f)
 	if err != nil {
 		return 0, err
@@ -202,17 +198,17 @@ func (i *ToProtocol) WriteAtWithMap(buffer []byte, offset int64, id_map map[uint
 
 	// Decode the response...
 	if r == nil || len(r) < 1 {
-		return 0, ErrInvalidPacket
+		return 0, packets.Err_invalid_packet
 	}
 	if r[0] == packets.COMMAND_WRITE_AT_RESPONSE_ERR {
-		return 0, ErrRemoteWriteError
+		return 0, packets.Err_write_error
 	} else if r[0] == packets.COMMAND_WRITE_AT_RESPONSE {
 		if len(r) < 5 {
-			return 0, ErrInvalidPacket
+			return 0, packets.Err_invalid_packet
 		}
 		return int(binary.LittleEndian.Uint32(r[1:])), nil
 	}
-	return 0, ErrInvalidPacket
+	return 0, packets.Err_invalid_packet
 }
 
 func (i *ToProtocol) RemoveFromMap(ids []uint64) error {

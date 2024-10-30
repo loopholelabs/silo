@@ -6,54 +6,54 @@ import (
 
 type Hooks struct {
 	storage.StorageProviderWithEvents
-	prov       storage.StorageProvider
-	Pre_read   func(buffer []byte, offset int64) (bool, int, error)
-	Post_read  func(buffer []byte, offset int64, n int, err error) (int, error)
-	Pre_write  func(buffer []byte, offset int64) (bool, int, error)
-	Post_write func(buffer []byte, offset int64, n int, err error) (int, error)
+	prov      storage.StorageProvider
+	PreRead   func(buffer []byte, offset int64) (bool, int, error)
+	PostRead  func(buffer []byte, offset int64, n int, err error) (int, error)
+	PreWrite  func(buffer []byte, offset int64) (bool, int, error)
+	PostWrite func(buffer []byte, offset int64, n int, err error) (int, error)
 }
 
 // Relay events to embedded StorageProvider
-func (i *Hooks) SendSiloEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
-	data := i.StorageProviderWithEvents.SendSiloEvent(event_type, event_data)
-	return append(data, storage.SendSiloEvent(i.prov, event_type, event_data)...)
+func (i *Hooks) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
+	data := i.StorageProviderWithEvents.SendSiloEvent(eventType, eventData)
+	return append(data, storage.SendSiloEvent(i.prov, eventType, eventData)...)
 }
 
 func NewHooks(prov storage.StorageProvider) *Hooks {
 	return &Hooks{
 		prov: prov,
-		Pre_read: func(buffer []byte, offset int64) (bool, int, error) {
+		PreRead: func(buffer []byte, offset int64) (bool, int, error) {
 			return false, 0, nil
 		},
-		Pre_write: func(buffer []byte, offset int64) (bool, int, error) {
+		PreWrite: func(buffer []byte, offset int64) (bool, int, error) {
 			return false, 0, nil
 		},
-		Post_read: func(buffer []byte, offset int64, n int, err error) (int, error) {
+		PostRead: func(buffer []byte, offset int64, n int, err error) (int, error) {
 			return n, err
 		},
-		Post_write: func(buffer []byte, offset int64, n int, err error) (int, error) {
+		PostWrite: func(buffer []byte, offset int64, n int, err error) (int, error) {
 			return n, err
 		},
 	}
 }
 
 func (i *Hooks) ReadAt(buffer []byte, offset int64) (int, error) {
-	ok, n, err := i.Pre_read(buffer, offset)
+	ok, n, err := i.PreRead(buffer, offset)
 	if ok {
 		return n, err
 	}
 	n, err = i.prov.ReadAt(buffer, offset)
-	n, err = i.Post_read(buffer, offset, n, err)
+	n, err = i.PostRead(buffer, offset, n, err)
 	return n, err
 }
 
 func (i *Hooks) WriteAt(buffer []byte, offset int64) (int, error) {
-	ok, n, err := i.Pre_write(buffer, offset)
+	ok, n, err := i.PreWrite(buffer, offset)
 	if ok {
 		return n, err
 	}
 	n, err = i.prov.WriteAt(buffer, offset)
-	n, err = i.Post_write(buffer, offset, n, err)
+	n, err = i.PostWrite(buffer, offset, n, err)
 	return n, err
 }
 

@@ -57,16 +57,16 @@ var BlockTypePriority = 2
  * Check if two storageProviders hold the same data.
  *
  */
-func Equals(sp1 StorageProvider, sp2 StorageProvider, block_size int) (bool, error) {
+func Equals(sp1 StorageProvider, sp2 StorageProvider, blockSize int) (bool, error) {
 	if sp1.Size() != sp2.Size() {
 		return false, nil
 	}
 
 	size := int(sp1.Size())
 
-	sourceBuff := make([]byte, block_size)
-	destBuff := make([]byte, block_size)
-	for i := 0; i < size; i += block_size {
+	sourceBuff := make([]byte, blockSize)
+	destBuff := make([]byte, blockSize)
+	for i := 0; i < size; i += blockSize {
 		sourceBuff = sourceBuff[:cap(sourceBuff)]
 		destBuff = destBuff[:cap(destBuff)]
 
@@ -85,7 +85,7 @@ func Equals(sp1 StorageProvider, sp2 StorageProvider, block_size int) (bool, err
 		}
 		for j := 0; j < n; j++ {
 			if sourceBuff[j] != destBuff[j] {
-				fmt.Printf("Equals: Block %d differs\n", i/block_size)
+				fmt.Printf("Equals: Block %d differs\n", i/blockSize)
 				return false, nil
 			}
 		}
@@ -98,19 +98,19 @@ func Equals(sp1 StorageProvider, sp2 StorageProvider, block_size int) (bool, err
  * Map a function over blocks within the range.
  *
  */
-func MapOverBlocks(offset int64, length int32, block_size int, f func(b int, complete bool)) {
+func MapOverBlocks(offset int64, length int32, blockSize int, f func(b int, complete bool)) {
 	end := uint64(offset + int64(length))
 
-	b_start := int(offset / int64(block_size))
-	b_end := int((end-1)/uint64(block_size)) + 1
-	for b := b_start; b < b_end; b++ {
+	bStart := int(offset / int64(blockSize))
+	bEnd := int((end-1)/uint64(blockSize)) + 1
+	for b := bStart; b < bEnd; b++ {
 		complete := true
 		// If the first block is incomplete
-		if offset > (int64(b_start) * int64(block_size)) {
+		if offset > (int64(bStart) * int64(blockSize)) {
 			complete = false
 		}
 		// If the last block is incomplete
-		if (end % uint64(block_size)) > 0 {
+		if (end % uint64(blockSize)) > 0 {
 			complete = false
 		}
 

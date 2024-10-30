@@ -167,9 +167,9 @@ func TestCopyOnWriteCRCIssue(t *testing.T) {
 
 	rosource := sources.NewMemoryStorage(size)
 
-	fstore_log := NewLogger(fstore, "fstore")
+	fstoreLog := NewLogger(fstore, "fstore")
 
-	cow := NewCopyOnWrite(rosource, fstore_log, blockSize)
+	cow := NewCopyOnWrite(rosource, fstoreLog, blockSize)
 
 	reference := sources.NewMemoryStorage(size)
 

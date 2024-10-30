@@ -19,7 +19,7 @@ import (
 )
 
 func TestSyncToS3(t *testing.T) {
-	PORT_9000 := testutils.SetupMinio(t.Cleanup)
+	MinioPort := testutils.SetupMinio(t.Cleanup)
 
 	size := 1024 * 1024
 	blockSize := 4096
@@ -66,7 +66,7 @@ func TestSyncToS3(t *testing.T) {
 	orderer.AddAll()
 
 	// START moving data from sourceStorage to destStorage
-	destStorage, err := sources.NewS3StorageCreate(false, fmt.Sprintf("localhost:%s", PORT_9000), "silosilo", "silosilo", "silosilo", "file", uint64(size), blockSize)
+	destStorage, err := sources.NewS3StorageCreate(false, fmt.Sprintf("localhost:%s", MinioPort), "silosilo", "silosilo", "silosilo", "file", uint64(size), blockSize)
 
 	assert.NoError(t, err)
 

@@ -2,7 +2,6 @@ package packets
 
 import (
 	"encoding/binary"
-	"errors"
 )
 
 func EncodeDontNeedAt(offset int64, length int32) []byte {
@@ -15,7 +14,7 @@ func EncodeDontNeedAt(offset int64, length int32) []byte {
 
 func DecodeDontNeedAt(buff []byte) (int64, int32, error) {
 	if buff == nil || len(buff) < 13 || buff[0] != COMMAND_DONT_NEED_AT {
-		return 0, 0, errors.New("Invalid packet")
+		return 0, 0, Err_invalid_packet
 	}
 	off := int64(binary.LittleEndian.Uint64(buff[1:]))
 	length := int32(binary.LittleEndian.Uint32(buff[9:]))

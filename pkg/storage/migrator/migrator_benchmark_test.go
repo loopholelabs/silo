@@ -19,7 +19,7 @@ func BenchmarkMigration(mb *testing.B) {
 
 	size := 4 * 1024 * 1024
 	blockSize := 64 * 1024
-	num_blocks := (size + blockSize - 1) / blockSize
+	numBlocks := (size + blockSize - 1) / blockSize
 
 	sourceStorageMem := sources.NewMemoryStorage(size)
 	sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(sourceStorageMem, blockSize)
@@ -36,14 +36,14 @@ func BenchmarkMigration(mb *testing.B) {
 		panic(err)
 	}
 
-	orderer := blocks.NewAnyBlockOrder(num_blocks, nil)
+	orderer := blocks.NewAnyBlockOrder(numBlocks, nil)
 	orderer.AddAll()
 
 	destStorage := sources.NewMemoryStorage(size)
 
 	conf := NewMigratorConfig().WithBlockSize(blockSize)
-	conf.Locker_handler = sourceStorage.Lock
-	conf.Unlocker_handler = sourceStorage.Unlock
+	conf.LockerHandler = sourceStorage.Lock
+	conf.UnlockerHandler = sourceStorage.Unlock
 
 	mig, err := NewMigrator(sourceDirtyRemote,
 		destStorage,
@@ -61,7 +61,7 @@ func BenchmarkMigration(mb *testing.B) {
 	// Migrate some number of times...
 	for i := 0; i < mb.N; i++ {
 		orderer.AddAll()
-		err = mig.Migrate(num_blocks)
+		err = mig.Migrate(numBlocks)
 		if err != nil {
 			panic(err)
 		}
@@ -209,8 +209,8 @@ func BenchmarkMigrationPipe(mb *testing.B) {
 			}
 
 			conf := NewMigratorConfig().WithBlockSize(blockSize)
-			conf.Locker_handler = sourceStorage.Lock
-			conf.Unlocker_handler = sourceStorage.Unlock
+			conf.LockerHandler = sourceStorage.Lock
+			conf.UnlockerHandler = sourceStorage.Unlock
 			conf.Concurrency = map[int]int{
 				storage.BlockTypeAny:      testconf.concurrency,
 				storage.BlockTypeStandard: testconf.concurrency,

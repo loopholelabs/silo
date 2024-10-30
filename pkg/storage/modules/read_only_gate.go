@@ -18,9 +18,9 @@ type ReadOnlyGate struct {
 }
 
 // Relay events to embedded StorageProvider
-func (i *ReadOnlyGate) SendSiloEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
-	data := i.StorageProviderWithEvents.SendSiloEvent(event_type, event_data)
-	return append(data, storage.SendSiloEvent(i.prov, event_type, event_data)...)
+func (i *ReadOnlyGate) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
+	data := i.StorageProviderWithEvents.SendSiloEvent(eventType, eventData)
+	return append(data, storage.SendSiloEvent(i.prov, eventType, eventData)...)
 }
 
 func NewReadOnlyGate(prov storage.StorageProvider) *ReadOnlyGate {

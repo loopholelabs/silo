@@ -9,20 +9,20 @@ import (
 )
 
 type IntegrityChecker struct {
-	block_size int
-	size       int64
-	num_blocks int
-	hashes     map[uint][sha256.Size]byte
-	lock       sync.Mutex
+	blockSize int
+	size      int64
+	numBlocks int
+	hashes    map[uint][sha256.Size]byte
+	lock      sync.Mutex
 }
 
-func NewIntegrityChecker(size int64, block_size int) *IntegrityChecker {
-	num_blocks := (size + int64(block_size) - 1) / int64(block_size)
+func NewIntegrityChecker(size int64, blockSize int) *IntegrityChecker {
+	numBlocks := (size + int64(blockSize) - 1) / int64(blockSize)
 	return &IntegrityChecker{
-		block_size: block_size,
-		size:       size,
-		num_blocks: int(num_blocks),
-		hashes:     make(map[uint][sha256.Size]byte, num_blocks),
+		blockSize: blockSize,
+		size:      size,
+		numBlocks: int(numBlocks),
+		hashes:    make(map[uint][sha256.Size]byte, numBlocks),
 	}
 }
 
@@ -59,9 +59,9 @@ func (i *IntegrityChecker) GetHashes() map[uint][sha256.Size]byte {
  * TODO: Calculate blocks concurrently
  */
 func (i *IntegrityChecker) Check(prov storage.StorageProvider) (bool, error) {
-	block_buffer := make([]byte, i.block_size)
-	for b := 0; b < i.num_blocks; b++ {
-		n, err := prov.ReadAt(block_buffer, int64(b*i.block_size))
+	block_buffer := make([]byte, i.blockSize)
+	for b := 0; b < i.numBlocks; b++ {
+		n, err := prov.ReadAt(block_buffer, int64(b*i.blockSize))
 		if err != nil {
 			return false, err
 		}
@@ -90,13 +90,13 @@ func (i *IntegrityChecker) Check(prov storage.StorageProvider) (bool, error) {
  * TODO: Calculate blocks concurrently
  */
 func (i *IntegrityChecker) Hash(prov storage.StorageProvider) error {
-	block_buffer := make([]byte, i.block_size)
-	for b := 0; b < i.num_blocks; b++ {
-		n, err := prov.ReadAt(block_buffer, int64(b*i.block_size))
+	blockBuffer := make([]byte, i.blockSize)
+	for b := 0; b < i.numBlocks; b++ {
+		n, err := prov.ReadAt(blockBuffer, int64(b*i.blockSize))
 		if err != nil {
 			return err
 		}
-		i.HashBlock(uint(b), block_buffer[:n])
+		i.HashBlock(uint(b), blockBuffer[:n])
 	}
 	return nil
 }

@@ -1,9 +1,5 @@
 package packets
 
-import (
-	"errors"
-)
-
 type EventType byte
 
 const EventPreLock = EventType(0)
@@ -46,13 +42,13 @@ func EncodeEvent(e *Event) []byte {
 
 func DecodeEvent(buff []byte) (*Event, error) {
 	if buff == nil || len(buff) < 2 || buff[0] != COMMAND_EVENT {
-		return nil, errors.New("Invalid packet")
+		return nil, Err_invalid_packet
 	}
 	e := &Event{Type: EventType(buff[1])}
 	if e.Type == EventCustom {
 		// Decode the other bits
 		if len(buff) < 3 {
-			return nil, errors.New("Invalid packet")
+			return nil, Err_invalid_packet
 		}
 		e.CustomType = buff[2]
 		e.CustomPayload = buff[3:]
@@ -68,7 +64,7 @@ func EncodeEventResponse() []byte {
 
 func DecodeEventResponse(buff []byte) error {
 	if buff == nil || len(buff) < 1 || buff[0] != COMMAND_EVENT_RESPONSE {
-		return errors.New("Invalid packet")
+		return Err_invalid_packet
 	}
 	return nil
 }

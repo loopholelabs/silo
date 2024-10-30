@@ -20,7 +20,7 @@ import (
 func TestMigratorSimpleMapped(t *testing.T) {
 	size := 1024 * 1024
 	blockSize := 4096
-	num_blocks := (size + blockSize - 1) / blockSize
+	numBlocks := (size + blockSize - 1) / blockSize
 
 	sourceStorageMem := sources.NewMemoryStorage(size)
 	sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(sourceStorageMem, blockSize)
@@ -39,7 +39,7 @@ func TestMigratorSimpleMapped(t *testing.T) {
 		assert.NoError(t, err)
 	}
 
-	orderer := blocks.NewAnyBlockOrder(num_blocks, nil)
+	orderer := blocks.NewAnyBlockOrder(numBlocks, nil)
 	orderer.AddAll()
 
 	// START moving data from sourceStorage to destStorage
@@ -48,8 +48,8 @@ func TestMigratorSimpleMapped(t *testing.T) {
 	destMappedStorage := modules.NewMappedStorage(destStorage, blockSize)
 
 	conf := NewMigratorConfig().WithBlockSize(blockSize)
-	conf.Locker_handler = sourceStorage.Lock
-	conf.Unlocker_handler = sourceStorage.Unlock
+	conf.LockerHandler = sourceStorage.Lock
+	conf.UnlockerHandler = sourceStorage.Unlock
 
 	mig, err := NewMigrator(sourceDirtyRemote,
 		destStorage,
@@ -67,8 +67,8 @@ func TestMigratorSimpleMapped(t *testing.T) {
 	mig.SetSourceMapped(mappedStorage, writer)
 
 	// Migrate only the blocks we need...
-	used_blocks := (int(mappedStorage.Size()) + blockSize - 1) / blockSize
-	err = mig.Migrate(used_blocks)
+	usedBlocks := (int(mappedStorage.Size()) + blockSize - 1) / blockSize
+	err = mig.Migrate(usedBlocks)
 	assert.NoError(t, err)
 
 	err = mig.WaitForCompletion()
@@ -80,7 +80,7 @@ func TestMigratorSimpleMapped(t *testing.T) {
 	assert.True(t, eq)
 
 	// Make sure the maps are the same...
-	src_map := mappedStorage.GetMap()
-	dest_map := destMappedStorage.GetMap()
-	assert.Equal(t, src_map, dest_map)
+	srcMap := mappedStorage.GetMap()
+	destMap := destMappedStorage.GetMap()
+	assert.Equal(t, srcMap, destMap)
 }

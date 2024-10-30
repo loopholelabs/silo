@@ -2,7 +2,6 @@ package packets
 
 import (
 	"encoding/binary"
-	"errors"
 )
 
 func EncodeReadAt(offset int64, length int32) []byte {
@@ -15,7 +14,7 @@ func EncodeReadAt(offset int64, length int32) []byte {
 
 func DecodeReadAt(buff []byte) (int64, int32, error) {
 	if buff == nil || len(buff) < 13 || buff[0] != COMMAND_READ_AT {
-		return 0, 0, errors.New("Invalid packet")
+		return 0, 0, Err_invalid_packet
 	}
 	off := int64(binary.LittleEndian.Uint64(buff[1:]))
 	length := int32(binary.LittleEndian.Uint32(buff[9:]))
@@ -44,18 +43,18 @@ func EncodeReadAtResponse(rar *ReadAtResponse) []byte {
 
 func DecodeReadAtResponse(buff []byte) (*ReadAtResponse, error) {
 	if buff == nil {
-		return nil, errors.New("Invalid packet")
+		return nil, Err_invalid_packet
 	}
 
 	if buff[0] == COMMAND_READ_AT_RESPONSE_ERR {
 		return &ReadAtResponse{
-			Error: errors.New("Remote error"),
+			Error: Err_read_error,
 			Bytes: 0,
 			Data:  make([]byte, 0),
 		}, nil
 	} else if buff[0] == COMMAND_READ_AT_RESPONSE {
 		if len(buff) < 5 {
-			return nil, errors.New("Invalid packet")
+			return nil, Err_invalid_packet
 		}
 		return &ReadAtResponse{
 			Error: nil,
@@ -64,5 +63,5 @@ func DecodeReadAtResponse(buff []byte) (*ReadAtResponse, error) {
 		}, nil
 	}
 
-	return nil, errors.New("Unknown packet")
+	return nil, Err_invalid_packet
 }

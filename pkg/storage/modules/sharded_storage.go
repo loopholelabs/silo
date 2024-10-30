@@ -14,16 +14,16 @@ import (
 
 type ShardedStorage struct {
 	storage.StorageProviderWithEvents
-	blocks     []storage.StorageProvider
-	block_size int
-	size       int
+	blocks    []storage.StorageProvider
+	blockSize int
+	size      int
 }
 
 // Relay events to embedded StorageProvider
-func (i *ShardedStorage) SendSiloEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
-	data := i.StorageProviderWithEvents.SendSiloEvent(event_type, event_data)
+func (i *ShardedStorage) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
+	data := i.StorageProviderWithEvents.SendSiloEvent(eventType, eventData)
 	for _, pr := range i.blocks {
-		data = append(data, storage.SendSiloEvent(pr, event_type, event_data)...)
+		data = append(data, storage.SendSiloEvent(pr, eventType, eventData)...)
 	}
 	return data
 }
@@ -33,9 +33,9 @@ func NewShardedStorage(size int, blocksize int, creator func(index int, size int
 		return nil, fmt.Errorf("Invalid block size of 0")
 	}
 	bms := &ShardedStorage{
-		blocks:     make([]storage.StorageProvider, 0),
-		block_size: blocksize,
-		size:       size,
+		blocks:    make([]storage.StorageProvider, 0),
+		blockSize: blocksize,
+		size:      size,
 	}
 	left := size
 	n := 0
@@ -56,20 +56,20 @@ func NewShardedStorage(size int, blocksize int, creator func(index int, size int
 }
 
 func (i *ShardedStorage) ReadAt(buffer []byte, offset int64) (int, error) {
-	errs := make(chan error, 2+(len(buffer)/i.block_size))
-	counts := make(chan int, 2+(len(buffer)/i.block_size))
+	errs := make(chan error, 2+(len(buffer)/i.blockSize))
+	counts := make(chan int, 2+(len(buffer)/i.blockSize))
 
 	left := len(buffer)
 	ptr := 0
-	num_reads := 0
+	numReads := 0
 	for {
 		if left == 0 || offset >= int64(i.size) {
 			break
 		}
-		s := offset / int64(i.block_size)
-		si := offset - (s * int64(i.block_size)) // Index into block
+		s := offset / int64(i.blockSize)
+		si := offset - (s * int64(i.blockSize)) // Index into block
 
-		e := (ptr + i.block_size - int(si))
+		e := (ptr + i.blockSize - int(si))
 		if e > len(buffer) {
 			e = len(buffer)
 		}
@@ -82,7 +82,7 @@ func (i *ShardedStorage) ReadAt(buffer []byte, offset int64) (int, error) {
 			counts <- n
 		}(i.blocks[s], buffer[ptr:e], si)
 
-		num_reads++
+		numReads++
 
 		offset += int64(count)
 		ptr += count
@@ -90,7 +90,7 @@ func (i *ShardedStorage) ReadAt(buffer []byte, offset int64) (int, error) {
 	}
 
 	count := 0
-	for i := 0; i < num_reads; i++ {
+	for i := 0; i < numReads; i++ {
 		e := <-errs
 		if e != nil {
 			return 0, e
@@ -103,20 +103,20 @@ func (i *ShardedStorage) ReadAt(buffer []byte, offset int64) (int, error) {
 }
 
 func (i *ShardedStorage) WriteAt(buffer []byte, offset int64) (int, error) {
-	errs := make(chan error, 2+(len(buffer)/i.block_size))
-	counts := make(chan int, 2+(len(buffer)/i.block_size))
+	errs := make(chan error, 2+(len(buffer)/i.blockSize))
+	counts := make(chan int, 2+(len(buffer)/i.blockSize))
 
 	left := len(buffer)
 	ptr := 0
-	num_reads := 0
+	numWrites := 0
 	for {
 		if left == 0 || offset >= int64(i.size) {
 			break
 		}
-		s := offset / int64(i.block_size)
-		si := offset - (s * int64(i.block_size))
+		s := offset / int64(i.blockSize)
+		si := offset - (s * int64(i.blockSize))
 
-		e := (ptr + i.block_size - int(si))
+		e := (ptr + i.blockSize - int(si))
 		if e > len(buffer) {
 			e = len(buffer)
 		}
@@ -129,7 +129,7 @@ func (i *ShardedStorage) WriteAt(buffer []byte, offset int64) (int, error) {
 			counts <- n
 		}(i.blocks[s], buffer[ptr:e], si)
 
-		num_reads++
+		numWrites++
 
 		offset += int64(count)
 		ptr += count
@@ -137,7 +137,7 @@ func (i *ShardedStorage) WriteAt(buffer []byte, offset int64) (int, error) {
 	}
 
 	count := 0
-	for i := 0; i < num_reads; i++ {
+	for i := 0; i < numWrites; i++ {
 		e := <-errs
 		if e != nil {
 			return 0, e

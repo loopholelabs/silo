@@ -205,7 +205,7 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 		}
 
 		// Make sure the cow data gets dumped on close...
-		cow.Close_fn = func() {
+		cow.CloseFn = func() {
 			blocks := cow.GetBlockExists()
 			// Write it out to file
 			data := make([]byte, 0)
@@ -258,24 +258,24 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 			return nil, nil, err
 		}
 
-		dirty_block_size := bs >> ds.Sync.Config.BlockShift
+		dirtyBlockSize := bs >> ds.Sync.Config.BlockShift
 
-		num_blocks := (int(prov.Size()) + bs - 1) / bs
+		numBlocks := (int(prov.Size()) + bs - 1) / bs
 
-		sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(prov, dirty_block_size)
+		sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(prov, dirtyBlockSize)
 		sourceStorage := modules.NewLockable(sourceDirtyLocal)
 
 		// Setup a block order
-		orderer := blocks.NewAnyBlockOrder(num_blocks, nil)
+		orderer := blocks.NewAnyBlockOrder(numBlocks, nil)
 		orderer.AddAll()
 
-		check_period, err := time.ParseDuration(ds.Sync.Config.CheckPeriod)
+		checkPeriod, err := time.ParseDuration(ds.Sync.Config.CheckPeriod)
 		if err != nil {
 			prov.Close()
 			return nil, nil, err
 		}
 
-		max_age, err := time.ParseDuration(ds.Sync.Config.MaxAge)
+		maxAge, err := time.ParseDuration(ds.Sync.Config.MaxAge)
 		if err != nil {
 			prov.Close()
 			return nil, nil, err
@@ -293,10 +293,10 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 			Lockable:         sourceStorage,
 			Destination:      s3dest,
 			Orderer:          orderer,
-			DirtyCheckPeriod: check_period,
+			DirtyCheckPeriod: checkPeriod,
 			DirtyBlockGetter: func() []uint {
 				return sourceDirtyRemote.GetDirtyBlocks(
-					max_age, ds.Sync.Config.Limit, ds.Sync.Config.BlockShift, ds.Sync.Config.MinChanged)
+					maxAge, ds.Sync.Config.Limit, ds.Sync.Config.BlockShift, ds.Sync.Config.MinChanged)
 			},
 			BlockSize:       bs,
 			ProgressHandler: func(p *migrator.MigrationProgress) {},
@@ -306,12 +306,12 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 		// The provider we return should feed into our sync here...
 		prov = sourceStorage
 
-		var sync_lock sync.Mutex
-		var sync_running bool
+		var syncLock sync.Mutex
+		var syncRunning bool
 		var wg sync.WaitGroup
 
 		// If the storage gets a "sync.start", we should start syncing to S3.
-		storage.AddSiloEventNotification(prov, "sync.start", func(event_type storage.EventType, data storage.EventData) storage.EventReturnData {
+		storage.AddSiloEventNotification(prov, "sync.start", func(eventType storage.EventType, data storage.EventData) storage.EventReturnData {
 			if data != nil {
 				startConfig := data.(SyncStartConfig)
 
@@ -343,14 +343,14 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 				wg.Wait() // Wait for all S3 requests to complete
 			}
 
-			sync_lock.Lock()
-			if sync_running {
-				sync_lock.Unlock()
+			syncLock.Lock()
+			if syncRunning {
+				syncLock.Unlock()
 				return false
 			}
-			sync_running = true
+			syncRunning = true
 			wg.Add(1)
-			sync_lock.Unlock()
+			syncLock.Unlock()
 
 			// Sync happens here...
 			go func() {
@@ -362,27 +362,27 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 		})
 
 		// If the storage gets a "sync.status", get some status on the S3Storage
-		storage.AddSiloEventNotification(prov, "sync.status", func(event_type storage.EventType, data storage.EventData) storage.EventReturnData {
+		storage.AddSiloEventNotification(prov, "sync.status", func(eventType storage.EventType, data storage.EventData) storage.EventReturnData {
 			return s3dest.Metrics()
 		})
 
 		// If the storage gets a "sync.stop", we should cancel the sync, and return the safe blocks
-		storage.AddSiloEventNotification(prov, "sync.stop", func(event_type storage.EventType, data storage.EventData) storage.EventReturnData {
-			sync_lock.Lock()
-			if !sync_running {
-				sync_lock.Unlock()
+		storage.AddSiloEventNotification(prov, "sync.stop", func(eventType storage.EventType, data storage.EventData) storage.EventReturnData {
+			syncLock.Lock()
+			if !syncRunning {
+				syncLock.Unlock()
 				return nil
 			}
 			cancelfn()
 			// WAIT HERE for the sync to finish
 			wg.Wait()
-			sync_running = false
-			sync_lock.Unlock()
+			syncRunning = false
+			syncLock.Unlock()
 
 			// Get the list of safe blocks we can use.
 			blocks := syncer.GetSafeBlockMap()
 			// Translate these to locations so they can be sent to a destination...
-			alt_sources := make([]packets.AlternateSource, 0)
+			altSources := make([]packets.AlternateSource, 0)
 			for block, hash := range blocks {
 				as := packets.AlternateSource{
 					Offset:   int64(block * uint(bs)),
@@ -390,10 +390,10 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 					Hash:     hash,
 					Location: fmt.Sprintf("%s %s %s", ds.Sync.Endpoint, ds.Sync.Bucket, ds.Name),
 				}
-				alt_sources = append(alt_sources, as)
+				altSources = append(altSources, as)
 			}
 
-			return alt_sources
+			return altSources
 		})
 	}
 

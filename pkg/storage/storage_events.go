@@ -17,10 +17,10 @@ type StorageProviderWithEventsIfc interface {
 }
 
 // Try to send an event for a given StorageProvider
-func SendSiloEvent(s StorageProvider, event_type EventType, event_data EventData) []EventReturnData {
+func SendSiloEvent(s StorageProvider, eventType EventType, eventData EventData) []EventReturnData {
 	lcsp, ok := s.(StorageProviderWithEventsIfc)
 	if ok {
-		return lcsp.SendSiloEvent(event_type, event_data)
+		return lcsp.SendSiloEvent(eventType, eventData)
 	}
 	return nil
 }
@@ -50,17 +50,17 @@ type StorageProviderWithEvents struct {
 }
 
 // Send an event, and notify any callbacks
-func (spl *StorageProviderWithEvents) SendSiloEvent(event_type EventType, event_data EventData) []EventReturnData {
+func (spl *StorageProviderWithEvents) SendSiloEvent(eventType EventType, eventData EventData) []EventReturnData {
 	spl.lock.Lock()
 	defer spl.lock.Unlock()
 	if spl.callbacks == nil {
 		return nil
 	}
-	cbs, ok := spl.callbacks[event_type]
+	cbs, ok := spl.callbacks[eventType]
 	if ok {
 		rets := make([]EventReturnData, 0)
 		for _, cb := range cbs {
-			rets = append(rets, cb(event_type, event_data))
+			rets = append(rets, cb(eventType, eventData))
 		}
 		return rets
 	}
@@ -68,16 +68,16 @@ func (spl *StorageProviderWithEvents) SendSiloEvent(event_type EventType, event_
 }
 
 // Add a new callback for the given state.
-func (spl *StorageProviderWithEvents) AddSiloEventNotification(event_type EventType, callback EventCallback) {
+func (spl *StorageProviderWithEvents) AddSiloEventNotification(eventType EventType, callback EventCallback) {
 	spl.lock.Lock()
 	defer spl.lock.Unlock()
 	if spl.callbacks == nil {
 		spl.callbacks = make(map[EventType][]EventCallback)
 	}
-	_, ok := spl.callbacks[event_type]
+	_, ok := spl.callbacks[eventType]
 	if ok {
-		spl.callbacks[event_type] = append(spl.callbacks[event_type], callback)
+		spl.callbacks[eventType] = append(spl.callbacks[eventType], callback)
 	} else {
-		spl.callbacks[event_type] = []EventCallback{callback}
+		spl.callbacks[eventType] = []EventCallback{callback}
 	}
 }

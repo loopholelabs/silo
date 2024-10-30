@@ -22,9 +22,9 @@ type VolatilityMonitor struct {
 }
 
 // Relay events to embedded StorageProvider
-func (i *VolatilityMonitor) SendSiloEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
-	data := i.StorageProviderWithEvents.SendSiloEvent(event_type, event_data)
-	return append(data, storage.SendSiloEvent(i.prov, event_type, event_data)...)
+func (i *VolatilityMonitor) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
+	data := i.StorageProviderWithEvents.SendSiloEvent(eventType, eventData)
+	return append(data, storage.SendSiloEvent(i.prov, eventType, eventData)...)
 }
 
 func NewVolatilityMonitor(prov storage.StorageProvider, blockSize int, expiry time.Duration) *VolatilityMonitor {
@@ -45,7 +45,7 @@ func NewVolatilityMonitor(prov storage.StorageProvider, blockSize int, expiry ti
 
 func (i *VolatilityMonitor) GetNext() *storage.BlockInfo {
 	block := -1 // All done
-	block_count := 0
+	blockCount := 0
 
 	// Find something to return...
 	i.blockDataLock.Lock()
@@ -59,10 +59,10 @@ func (i *VolatilityMonitor) GetNext() *storage.BlockInfo {
 				c = bd.Count(i.expiry)
 			}
 
-			if block == -1 || (c <= block_count) {
+			if block == -1 || (c <= blockCount) {
 				block = int(n)
-				block_count = c
-				if block_count == 0 {
+				blockCount = c
+				if blockCount == 0 {
 					break // Special case - this is a static block. Not going to find better.
 				}
 			}
@@ -121,13 +121,13 @@ func (i *VolatilityMonitor) WriteAt(buffer []byte, offset int64) (int, error) {
 		end = i.size
 	}
 
-	b_start := uint(offset / int64(i.blockSize))
-	b_end := uint((end-1)/uint64(i.blockSize)) + 1
+	bStart := uint(offset / int64(i.blockSize))
+	bEnd := uint((end-1)/uint64(i.blockSize)) + 1
 
 	n, err := i.prov.WriteAt(buffer, offset)
 
 	if err == nil {
-		for block := b_start; block < b_end; block++ {
+		for block := bStart; block < bEnd; block++ {
 			if i.available.BitSet(int(block)) {
 				i.blockDataLock.Lock()
 				bd, ok := i.blockData[block]

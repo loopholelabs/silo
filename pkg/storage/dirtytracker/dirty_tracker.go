@@ -17,15 +17,15 @@ import (
  */
 
 type DirtyTracker struct {
-	prov           storage.StorageProvider
-	size           uint64
-	block_size     int
-	num_blocks     int
-	dirty_log      *util.Bitfield
-	tracking       *util.Bitfield
-	tracking_times map[uint]time.Time
-	tracking_lock  sync.Mutex
-	write_lock     sync.RWMutex
+	prov          storage.StorageProvider
+	size          uint64
+	blockSize     int
+	numBlocks     int
+	dirtyLog      *util.Bitfield
+	tracking      *util.Bitfield
+	trackingTimes map[uint]time.Time
+	trackingLock  sync.Mutex
+	writeLock     sync.RWMutex
 }
 
 type DirtyTrackerLocal struct {
@@ -34,9 +34,9 @@ type DirtyTrackerLocal struct {
 }
 
 // Relay events to embedded StorageProvider
-func (i *DirtyTrackerLocal) SendSiloEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
-	data := i.StorageProviderWithEvents.SendSiloEvent(event_type, event_data)
-	return append(data, storage.SendSiloEvent(i.dt.prov, event_type, event_data)...)
+func (i *DirtyTrackerLocal) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
+	data := i.StorageProviderWithEvents.SendSiloEvent(eventType, eventData)
+	return append(data, storage.SendSiloEvent(i.dt.prov, eventType, eventData)...)
 }
 
 func (dtl *DirtyTrackerLocal) ReadAt(buffer []byte, offset int64) (int, error) {
@@ -69,9 +69,9 @@ type DirtyTrackerRemote struct {
 }
 
 // Relay events to embedded StorageProvider
-func (i *DirtyTrackerRemote) SendSiloEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
-	data := i.StorageProviderWithEvents.SendSiloEvent(event_type, event_data)
-	return append(data, storage.SendSiloEvent(i.dt.prov, event_type, event_data)...)
+func (i *DirtyTrackerRemote) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
+	data := i.StorageProviderWithEvents.SendSiloEvent(eventType, eventData)
+	return append(data, storage.SendSiloEvent(i.dt.prov, eventType, eventData)...)
 }
 
 func (dtl *DirtyTrackerRemote) ReadAt(buffer []byte, offset int64) (int, error) {
@@ -102,13 +102,13 @@ func NewDirtyTracker(prov storage.StorageProvider, blockSize int) (*DirtyTracker
 	size := int(prov.Size())
 	numBlocks := (size + blockSize - 1) / blockSize
 	dt := &DirtyTracker{
-		size:           prov.Size(),
-		block_size:     blockSize,
-		num_blocks:     numBlocks,
-		prov:           prov,
-		tracking:       util.NewBitfield(numBlocks),
-		dirty_log:      util.NewBitfield(numBlocks),
-		tracking_times: make(map[uint]time.Time),
+		size:          prov.Size(),
+		blockSize:     blockSize,
+		numBlocks:     numBlocks,
+		prov:          prov,
+		tracking:      util.NewBitfield(numBlocks),
+		dirtyLog:      util.NewBitfield(numBlocks),
+		trackingTimes: make(map[uint]time.Time),
 	}
 	return &DirtyTrackerLocal{dt: dt}, &DirtyTrackerRemote{dt: dt}
 }
@@ -119,11 +119,11 @@ func (i *DirtyTracker) trackArea(length int64, offset int64) {
 		end = i.size
 	}
 
-	b_start := uint(offset / int64(i.block_size))
-	b_end := uint((end-1)/uint64(i.block_size)) + 1
+	bStart := uint(offset / int64(i.blockSize))
+	bEnd := uint((end-1)/uint64(i.blockSize)) + 1
 
 	// Enable tracking for this area
-	i.tracking.SetBits(b_start, b_end)
+	i.tracking.SetBits(bStart, bEnd)
 }
 
 /**
@@ -139,12 +139,12 @@ func (i *DirtyTrackerRemote) TrackAt(offset int64, length int64) {
  *
  */
 func (i *DirtyTrackerRemote) MeasureDirty() int {
-	i.dt.tracking_lock.Lock()
-	defer i.dt.tracking_lock.Unlock()
+	i.dt.trackingLock.Lock()
+	defer i.dt.trackingLock.Unlock()
 
-	fmt.Printf("Dirty blocks=%d size=%d %d / %d\n", i.dt.num_blocks, i.dt.size, i.dt.tracking.Count(0, uint(i.dt.num_blocks)), i.dt.dirty_log.Count(0, uint(i.dt.num_blocks)))
+	fmt.Printf("Dirty blocks=%d size=%d %d / %d\n", i.dt.numBlocks, i.dt.size, i.dt.tracking.Count(0, uint(i.dt.numBlocks)), i.dt.dirtyLog.Count(0, uint(i.dt.numBlocks)))
 
-	return len(i.dt.tracking_times)
+	return len(i.dt.trackingTimes)
 }
 
 /**
@@ -152,15 +152,15 @@ func (i *DirtyTrackerRemote) MeasureDirty() int {
  *
  */
 func (i *DirtyTrackerRemote) MeasureDirtyAge() time.Time {
-	i.dt.tracking_lock.Lock()
-	defer i.dt.tracking_lock.Unlock()
-	min_age := time.Now()
-	for _, t := range i.dt.tracking_times {
-		if t.Before(min_age) {
-			min_age = t
+	i.dt.trackingLock.Lock()
+	defer i.dt.trackingLock.Unlock()
+	minAge := time.Now()
+	for _, t := range i.dt.trackingTimes {
+		if t.Before(minAge) {
+			minAge = t
 		}
 	}
-	return min_age
+	return minAge
 }
 
 /**
@@ -171,60 +171,60 @@ func (i *DirtyTrackerRemote) MeasureDirtyAge() time.Time {
  * - group_by_shift - Groups subblocks into blocks using the given shift
  * - min_changed    - Minimum subblock changes in a block
  */
-func (i *DirtyTrackerRemote) GetDirtyBlocks(max_age time.Duration, limit int, group_by_shift int, min_changed int) []uint {
+func (i *DirtyTrackerRemote) GetDirtyBlocks(maxAge time.Duration, limit int, groupByShift int, minChanged int) []uint {
 	// Prevent any writes while we get dirty blocks
-	i.dt.write_lock.Lock()
-	defer i.dt.write_lock.Unlock()
+	i.dt.writeLock.Lock()
+	defer i.dt.writeLock.Unlock()
 
-	grouped_blocks := make(map[uint][]uint)
+	groupedBlocks := make(map[uint][]uint)
 
 	// First look for any dirty blocks past max_age
-	i.dt.tracking_lock.Lock()
-	for b, t := range i.dt.tracking_times {
-		if time.Since(t) > max_age {
-			grouped_b := b >> group_by_shift
-			v, ok := grouped_blocks[grouped_b]
+	i.dt.trackingLock.Lock()
+	for b, t := range i.dt.trackingTimes {
+		if time.Since(t) > maxAge {
+			groupedB := b >> groupByShift
+			v, ok := groupedBlocks[groupedB]
 			if ok {
-				grouped_blocks[grouped_b] = append(v, b)
+				groupedBlocks[groupedB] = append(v, b)
 			} else {
-				grouped_blocks[grouped_b] = []uint{b}
+				groupedBlocks[groupedB] = []uint{b}
 			}
-			if len(grouped_blocks) == limit {
+			if len(groupedBlocks) == limit {
 				break
 			}
 		}
 	}
-	i.dt.tracking_lock.Unlock()
+	i.dt.trackingLock.Unlock()
 
 	// Now we look for changed blocks, and sort by how much.
-	if len(grouped_blocks) < limit {
-		grouped_blocks_changed := make(map[uint][]uint)
+	if len(groupedBlocks) < limit {
+		groupedBlocksChanged := make(map[uint][]uint)
 		// Now we also look for extra blocks based on how much they have changed...
-		bls := i.dt.dirty_log.Collect(0, uint(i.dt.num_blocks))
+		bls := i.dt.dirtyLog.Collect(0, uint(i.dt.numBlocks))
 		for _, b := range bls {
-			grouped_b := b >> group_by_shift
-			v, ok := grouped_blocks_changed[grouped_b]
+			groupedB := b >> groupByShift
+			v, ok := groupedBlocksChanged[groupedB]
 			if ok {
-				grouped_blocks_changed[grouped_b] = append(v, b)
+				groupedBlocksChanged[groupedB] = append(v, b)
 			} else {
-				grouped_blocks_changed[grouped_b] = []uint{b}
+				groupedBlocksChanged[groupedB] = []uint{b}
 			}
 		}
 
 		// Now sort by how much changed
-		keys := make([]uint, 0, len(grouped_blocks_changed))
-		for key := range grouped_blocks_changed {
+		keys := make([]uint, 0, len(groupedBlocksChanged))
+		for key := range groupedBlocksChanged {
 			keys = append(keys, key)
 		}
 
 		// Sort the blocks by how many sub-blocks are dirty.
 		sort.SliceStable(keys, func(i, j int) bool {
-			return len(grouped_blocks_changed[keys[i]]) > len(grouped_blocks_changed[keys[j]])
+			return len(groupedBlocksChanged[keys[i]]) > len(groupedBlocksChanged[keys[j]])
 		})
 
 		// Now add them into grouped_blocks if we can...
 		for {
-			if len(grouped_blocks) == limit {
+			if len(groupedBlocks) == limit {
 				break
 			}
 			if len(keys) == 0 {
@@ -234,22 +234,22 @@ func (i *DirtyTrackerRemote) GetDirtyBlocks(max_age time.Duration, limit int, gr
 			k := keys[0]
 			keys = keys[1:]
 
-			if len(grouped_blocks_changed[k]) >= min_changed {
+			if len(groupedBlocksChanged[k]) >= minChanged {
 				// This may overwrite an existing entry which is max_age, but we'll have the same block + others here
-				grouped_blocks[k] = grouped_blocks_changed[k]
+				groupedBlocks[k] = groupedBlocksChanged[k]
 			}
 		}
 	}
 
 	// Clear out the tracking data here... It'll get added for tracking again on a readAt()
 	rblocks := make([]uint, 0)
-	for rb, blocks := range grouped_blocks {
+	for rb, blocks := range groupedBlocks {
 		for _, b := range blocks {
 			i.dt.tracking.ClearBit(int(b))
-			i.dt.dirty_log.ClearBit(int(b))
-			i.dt.tracking_lock.Lock()
-			delete(i.dt.tracking_times, b)
-			i.dt.tracking_lock.Unlock()
+			i.dt.dirtyLog.ClearBit(int(b))
+			i.dt.trackingLock.Lock()
+			delete(i.dt.trackingTimes, b)
+			i.dt.trackingLock.Unlock()
 		}
 		rblocks = append(rblocks, rb)
 	}
@@ -258,23 +258,23 @@ func (i *DirtyTrackerRemote) GetDirtyBlocks(max_age time.Duration, limit int, gr
 
 func (i *DirtyTrackerRemote) GetAllDirtyBlocks() *util.Bitfield {
 	// Prevent any writes while we do the Sync()
-	i.dt.write_lock.Lock()
-	defer i.dt.write_lock.Unlock()
+	i.dt.writeLock.Lock()
+	defer i.dt.writeLock.Unlock()
 
-	info := i.dt.dirty_log.Clone()
+	info := i.dt.dirtyLog.Clone()
 
 	// Remove the dirty blocks from tracking... (They will get added again when a Read is performed to migrate the data)
-	i.dt.tracking.ClearBitsIf(info, 0, uint(i.dt.num_blocks))
+	i.dt.tracking.ClearBitsIf(info, 0, uint(i.dt.numBlocks))
 
 	// Clear the dirty log.
-	i.dt.dirty_log.Clear()
+	i.dt.dirtyLog.Clear()
 
 	blocks := info.Collect(0, info.Length())
-	i.dt.tracking_lock.Lock()
+	i.dt.trackingLock.Lock()
 	for _, b := range blocks {
-		delete(i.dt.tracking_times, b)
+		delete(i.dt.trackingTimes, b)
 	}
-	i.dt.tracking_lock.Unlock()
+	i.dt.trackingLock.Unlock()
 
 	return info
 }
@@ -289,8 +289,8 @@ func (i *DirtyTracker) localReadAt(buffer []byte, offset int64) (int, error) {
 }
 
 func (i *DirtyTracker) localWriteAt(buffer []byte, offset int64) (int, error) {
-	i.write_lock.RLock()
-	defer i.write_lock.RUnlock()
+	i.writeLock.RLock()
+	defer i.writeLock.RUnlock()
 
 	n, err := i.prov.WriteAt(buffer, offset)
 
@@ -300,18 +300,18 @@ func (i *DirtyTracker) localWriteAt(buffer []byte, offset int64) (int, error) {
 			end = i.size
 		}
 
-		b_start := uint(offset / int64(i.block_size))
-		b_end := uint((end-1)/uint64(i.block_size)) + 1
+		bStart := uint(offset / int64(i.blockSize))
+		bEnd := uint((end-1)/uint64(i.blockSize)) + 1
 
-		i.dirty_log.SetBitsIf(i.tracking, b_start, b_end)
+		i.dirtyLog.SetBitsIf(i.tracking, bStart, bEnd)
 
 		// Update tracking times for last block write
-		i.tracking_lock.Lock()
+		i.trackingLock.Lock()
 		now := time.Now()
-		for b := b_start; b < b_end; b++ {
-			i.tracking_times[b] = now
+		for b := bStart; b < bEnd; b++ {
+			i.trackingTimes[b] = now
 		}
-		i.tracking_lock.Unlock()
+		i.trackingLock.Unlock()
 	}
 	return n, err
 }

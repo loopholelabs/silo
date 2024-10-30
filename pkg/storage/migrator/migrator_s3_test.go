@@ -17,11 +17,11 @@ import (
 )
 
 func TestMigratorToS3(t *testing.T) {
-	PORT_9000 := testutils.SetupMinio(t.Cleanup)
+	MinioPort := testutils.SetupMinio(t.Cleanup)
 
 	size := 1024 * 1024
 	blockSize := 4096
-	num_blocks := (size + blockSize - 1) / blockSize
+	numBlocks := (size + blockSize - 1) / blockSize
 
 	// First we setup some local storage
 	sourceStorageMem := sources.NewMemoryStorage(size)
@@ -54,18 +54,18 @@ func TestMigratorToS3(t *testing.T) {
 	}()
 
 	// Start monitoring blocks, and wait a bit...
-	orderer := blocks.NewPriorityBlockOrder(num_blocks, sourceMonitor)
+	orderer := blocks.NewPriorityBlockOrder(numBlocks, sourceMonitor)
 	orderer.AddAll()
 
 	// START moving data from sourceStorage to destStorage
-	destStorage, err := sources.NewS3StorageCreate(false, fmt.Sprintf("localhost:%s", PORT_9000), "silosilo", "silosilo", "silosilo", "file", uint64(size), blockSize)
+	destStorage, err := sources.NewS3StorageCreate(false, fmt.Sprintf("localhost:%s", MinioPort), "silosilo", "silosilo", "silosilo", "file", uint64(size), blockSize)
 
 	assert.NoError(t, err)
 
 	conf := NewMigratorConfig().WithBlockSize(blockSize)
-	conf.Locker_handler = sourceStorage.Lock
-	conf.Unlocker_handler = sourceStorage.Unlock
-	conf.Error_handler = func(b *storage.BlockInfo, err error) {
+	conf.LockerHandler = sourceStorage.Lock
+	conf.UnlockerHandler = sourceStorage.Unlock
+	conf.ErrorHandler = func(b *storage.BlockInfo, err error) {
 		assert.Fail(t, fmt.Sprintf("Error migrating block %d: %v", b.Block, err))
 	}
 
@@ -76,7 +76,7 @@ func TestMigratorToS3(t *testing.T) {
 
 	assert.NoError(t, err)
 
-	err = mig.Migrate(num_blocks)
+	err = mig.Migrate(numBlocks)
 	assert.NoError(t, err)
 
 	err = mig.WaitForCompletion()
@@ -98,8 +98,8 @@ func TestMigratorToS3(t *testing.T) {
 	err = mig.WaitForCompletion()
 	assert.NoError(t, err)
 
-	assert.Equal(t, int64(0), mig.metric_blocks_canceled)
-	assert.Equal(t, int64(0), mig.metric_blocks_duplicates)
+	assert.Equal(t, int64(0), mig.metricBlocksCanceled)
+	assert.Equal(t, int64(0), mig.metricBlocksDuplicates)
 
 	// This will end with migration completed, and consumer Locked.
 	eq, err := storage.Equals(sourceStorageMem, destStorage, blockSize)

@@ -57,12 +57,12 @@ func BenchmarkDevReadNL(mb *testing.B) {
 
 				// Here's the actual benchmark...
 
-				num_readers := 1
+				numReaders := 1
 
 				devfiles := make([]*os.File, 0)
 
-				for i := 0; i < num_readers; i++ {
-					df, err := os.OpenFile(fmt.Sprintf("/dev/nbd%d", n.device_index), os.O_RDWR, 0666)
+				for i := 0; i < numReaders; i++ {
+					df, err := os.OpenFile(fmt.Sprintf("/dev/nbd%d", n.deviceIndex), os.O_RDWR, 0666)
 					if err != nil {
 						panic("Error opening dev file\n")
 					}
@@ -78,18 +78,18 @@ func BenchmarkDevReadNL(mb *testing.B) {
 
 				var wg sync.WaitGroup
 
-				read_size := int64(v)
+				readSize := int64(v)
 
 				offsets := make([]int, b.N)
 				buffers := make(chan []byte, 100)
 
 				for i := 0; i < 100; i++ {
-					buffer := make([]byte, read_size)
+					buffer := make([]byte, readSize)
 					buffers <- buffer
 				}
 
 				for i := 0; i < b.N; i++ {
-					offsets[i] = (rand.Intn(diskSize-int(read_size)) / 4096) * 4096
+					offsets[i] = (rand.Intn(diskSize-int(readSize)) / 4096) * 4096
 				}
 
 				b.ResetTimer()
@@ -110,7 +110,7 @@ func BenchmarkDevReadNL(mb *testing.B) {
 					}(<-buffers, offsets[i])
 				}
 
-				b.SetBytes(int64(read_size))
+				b.SetBytes(int64(readSize))
 
 				wg.Wait()
 
@@ -184,12 +184,12 @@ func BenchmarkDevReadNLLatency(mb *testing.B) {
 
 					// Here's the actual benchmark...
 
-					num_readers := 8
+					numReaders := 8
 
 					devfiles := make([]*os.File, 0)
 
-					for i := 0; i < num_readers; i++ {
-						df, err := os.OpenFile(fmt.Sprintf("/dev/nbd%d", n.device_index), os.O_RDWR, 0666)
+					for i := 0; i < numReaders; i++ {
+						df, err := os.OpenFile(fmt.Sprintf("/dev/nbd%d", n.deviceIndex), os.O_RDWR, 0666)
 						if err != nil {
 							panic("Error opening dev file\n")
 						}
@@ -205,18 +205,18 @@ func BenchmarkDevReadNLLatency(mb *testing.B) {
 
 					var wg sync.WaitGroup
 
-					read_size := int64(65536)
+					readSize := int64(65536)
 
 					offsets := make([]int, b.N)
 					buffers := make(chan []byte, 100)
 
 					for i := 0; i < 100; i++ {
-						buffer := make([]byte, read_size)
+						buffer := make([]byte, readSize)
 						buffers <- buffer
 					}
 
 					for i := 0; i < b.N; i++ {
-						offsets[i] = (rand.Intn(diskSize-int(read_size)) / 4096) * 4096
+						offsets[i] = (rand.Intn(diskSize-int(readSize)) / 4096) * 4096
 					}
 
 					b.ResetTimer()
@@ -238,7 +238,7 @@ func BenchmarkDevReadNLLatency(mb *testing.B) {
 						}(<-buffers, offsets[i])
 					}
 
-					b.SetBytes(int64(read_size))
+					b.SetBytes(int64(readSize))
 
 					wg.Wait()
 				})
@@ -287,7 +287,7 @@ func BenchmarkDevWriteNL(b *testing.B) {
 
 	// Here's the actual benchmark...
 
-	devfile, err := os.OpenFile(fmt.Sprintf("/dev/nbd%d", n.device_index), os.O_RDWR, 0666)
+	devfile, err := os.OpenFile(fmt.Sprintf("/dev/nbd%d", n.deviceIndex), os.O_RDWR, 0666)
 	if err != nil {
 		panic("Error opening dev file\n")
 	}
@@ -301,22 +301,22 @@ func BenchmarkDevWriteNL(b *testing.B) {
 
 	offset := int64(0)
 	totalData := int64(0)
-	write_size := int64(4096)
+	writeSize := int64(4096)
 
 	for i := 0; i < b.N; i++ {
 		wg.Add(1)
 		concurrent <- true
-		length := write_size
-		offset += write_size
+		length := writeSize
+		offset += writeSize
 		if offset+length >= int64(diskSize) {
 			offset = 0
 		}
 		totalData += length
 
 		// Test write speed...
-		go func(f_offset int64, f_length int64) {
-			buffer := make([]byte, f_length)
-			_, err := devfile.WriteAt(buffer, f_offset)
+		go func(fOffset int64, fLength int64) {
+			buffer := make([]byte, fLength)
+			_, err := devfile.WriteAt(buffer, fOffset)
 			if err != nil {
 				fmt.Printf("Error writing file %v\n", err)
 			}
@@ -326,7 +326,7 @@ func BenchmarkDevWriteNL(b *testing.B) {
 		}(offset, length)
 	}
 
-	b.SetBytes(int64(write_size))
+	b.SetBytes(int64(writeSize))
 
 	wg.Wait()
 
