@@ -21,7 +21,7 @@ func EncodeWriteAtHash(offset int64, length int64, hash []byte) []byte {
 
 func DecodeWriteAtHash(buff []byte) (offset int64, length int64, hash []byte, err error) {
 	if buff == nil || len(buff) < 18 || buff[0] != COMMAND_WRITE_AT || buff[1] != WRITE_AT_HASH {
-		return 0, 0, nil, Err_invalid_packet
+		return 0, 0, nil, ErrInvalidPacket
 	}
 	off := int64(binary.LittleEndian.Uint64(buff[2:]))
 	l := int64(binary.LittleEndian.Uint64(buff[10:]))

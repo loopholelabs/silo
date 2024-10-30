@@ -11,8 +11,8 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/util"
 )
 
-var Err_out_of_space = errors.New("out of space")
-var Err_not_found = errors.New("not found")
+var ErrOutOfSpace = errors.New("out of space")
+var ErrNotFound = errors.New("not found")
 
 type MappedStorage struct {
 	prov           storage.StorageProvider
@@ -171,9 +171,9 @@ func (ms *MappedStorage) WriteBlocks(id uint64, data []byte) error {
 	// First lets check if we have seen this id before, and if the blocks are continuous
 	ms.lock.Lock()
 
-	//first_block := uint64(0)
-	//ok := false
-	//can_do_bulk := false
+	// first_block := uint64(0)
+	// ok := false
+	// can_do_bulk := false
 
 	firstBlock, ok := ms.idToBlock[id]
 	canDoBulk := true
@@ -262,7 +262,7 @@ func (ms *MappedStorage) WriteBlocks(id uint64, data []byte) error {
 	}
 
 	ms.lock.Unlock()
-	return Err_out_of_space
+	return ErrOutOfSpace
 }
 
 /**
@@ -276,7 +276,7 @@ func (ms *MappedStorage) ReadBlock(id uint64, data []byte) error {
 
 	b, ok := ms.idToBlock[id]
 	if !ok {
-		return Err_not_found
+		return ErrNotFound
 	}
 
 	offset := b * uint64(ms.blockSize)
@@ -296,7 +296,7 @@ func (ms *MappedStorage) readBlocksInt(id uint64, data []byte) error {
 	for ptr := 0; ptr < len(data); ptr += ms.blockSize {
 		b, ok := ms.idToBlock[id+uint64(ptr)]
 		if !ok {
-			return Err_not_found
+			return ErrNotFound
 		}
 
 		offset := b * uint64(ms.blockSize)
@@ -327,7 +327,7 @@ func (ms *MappedStorage) WriteBlock(id uint64, data []byte) error {
 		newb, err := ms.blockAvailable.CollectFirstAndClear(0, ms.blockAvailable.Length())
 		if err != nil {
 			ms.lock.Unlock()
-			return Err_out_of_space
+			return ErrOutOfSpace
 		}
 		// Init the block
 		b = uint64(newb)
@@ -354,7 +354,7 @@ func (ms *MappedStorage) RemoveBlock(id uint64) error {
 
 	b, ok := ms.idToBlock[id]
 	if !ok {
-		return Err_not_found
+		return ErrNotFound
 	}
 
 	delete(ms.idToBlock, id)
@@ -373,7 +373,7 @@ func (ms *MappedStorage) RemoveBlocks(id uint64, length uint64) error {
 	for ptr := uint64(0); ptr < length; ptr += uint64(ms.blockSize) {
 		b, ok := ms.idToBlock[id+ptr]
 		if !ok {
-			return Err_not_found
+			return ErrNotFound
 		}
 
 		delete(ms.idToBlock, id+ptr)

@@ -403,7 +403,7 @@ func TestProtocolWriteAtWithMap(t *testing.T) {
 	err := sourceToProtocol.SendDevInfo("test", 4096, "")
 	assert.NoError(t, err)
 
-	sourceStore := sources.NewMemoryStorage(int(size))
+	sourceStore := sources.NewMemoryStorage(size)
 	sourceMappedStore := modules.NewMappedStorage(sourceStore, 4096)
 
 	buff := make([]byte, 4096)
@@ -430,12 +430,12 @@ func TestProtocolWriteAtWithMap(t *testing.T) {
 
 	// Now check it was written to the source in the right place etc...
 	for _, id := range []uint64{123, 789} {
-		buffer_local := make([]byte, 4096)
-		buffer_remote := make([]byte, 4096)
-		err = mappedStore.ReadBlock(id, buffer_local)
+		bufferLocal := make([]byte, 4096)
+		bufferRemote := make([]byte, 4096)
+		err = mappedStore.ReadBlock(id, bufferLocal)
 		assert.NoError(t, err)
-		err = mappedStore.ReadBlock(id, buffer_remote)
+		err = mappedStore.ReadBlock(id, bufferRemote)
 		assert.NoError(t, err)
-		assert.Equal(t, buffer_local, buffer_remote)
+		assert.Equal(t, bufferLocal, bufferRemote)
 	}
 }

@@ -14,7 +14,7 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/util"
 )
 
-type MigratorConfig struct {
+type Config struct {
 	BlockSize       int
 	LockerHandler   func()
 	UnlockerHandler func()
@@ -28,14 +28,14 @@ type MigratorConfig struct {
 	RecentWriteAge  time.Duration
 }
 
-func NewMigratorConfig() *MigratorConfig {
-	return &MigratorConfig{
+func NewConfig() *Config {
+	return &Config{
 		BlockSize:       0,
 		LockerHandler:   func() {},
 		UnlockerHandler: func() {},
-		ErrorHandler:    func(b *storage.BlockInfo, err error) {},
-		ProgressHandler: func(p *MigrationProgress) {},
-		BlockHandler:    func(b *storage.BlockInfo, id uint64, data []byte) {},
+		ErrorHandler:    func(_ *storage.BlockInfo, _ error) {},
+		ProgressHandler: func(_ *MigrationProgress) {},
+		BlockHandler:    func(_ *storage.BlockInfo, _ uint64, _ []byte) {},
 		Concurrency: map[int]int{
 			storage.BlockTypeAny:      32,
 			storage.BlockTypeStandard: 32,
@@ -49,7 +49,7 @@ func NewMigratorConfig() *MigratorConfig {
 	}
 }
 
-func (mc *MigratorConfig) WithBlockSize(bs int) *MigratorConfig {
+func (mc *Config) WithBlockSize(bs int) *Config {
 	mc.BlockSize = bs
 	return mc
 }
@@ -104,7 +104,7 @@ type Migrator struct {
 func NewMigrator(source storage.TrackingStorageProvider,
 	dest storage.StorageProvider,
 	blockOrder storage.BlockOrder,
-	config *MigratorConfig) (*Migrator, error) {
+	config *Config) (*Migrator, error) {
 
 	numBlocks := (int(source.Size()) + config.BlockSize - 1) / config.BlockSize
 	m := &Migrator{
@@ -263,14 +263,14 @@ func (m *Migrator) Unlock() {
  * An attempt is made to cancel any existing writes for the blocks first.
  */
 func (m *Migrator) MigrateDirty(blocks []uint) error {
-	return m.MigrateDirtyWithId(blocks, 0)
+	return m.MigrateDirtyWithID(blocks, 0)
 }
 
 /**
  *
  * You can give a tracking ID which will turn up at block_fn on success
  */
-func (m *Migrator) MigrateDirtyWithId(blocks []uint, tid uint64) error {
+func (m *Migrator) MigrateDirtyWithID(blocks []uint, tid uint64) error {
 	m.startMigration()
 
 	for _, pos := range blocks {
@@ -411,7 +411,7 @@ func (m *Migrator) migrateBlock(block int) ([]byte, error) {
 
 	// TODO: Pool these somewhere...
 	buff := make([]byte, m.blockSize)
-	offset := int(block) * m.blockSize
+	offset := block * m.blockSize
 	// Read from source
 	n, err := m.sourceTracker.ReadAt(buff, int64(offset))
 	if err != nil {

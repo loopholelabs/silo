@@ -105,14 +105,14 @@ func TestBitfieldClear(t *testing.T) {
 
 func TestBitfieldSetBitsIf(t *testing.T) {
 	bf := NewBitfield(1000)
-	bf_if := NewBitfield(1000)
+	bfIf := NewBitfield(1000)
 
 	bf.SetBit(99)
 
-	bf_if.SetBit(99)
-	bf_if.SetBit(100)
+	bfIf.SetBit(99)
+	bfIf.SetBit(100)
 
-	bf.SetBitsIf(bf_if, 90, 105)
+	bf.SetBitsIf(bfIf, 90, 105)
 
 	for i := 0; i < 1000; i++ {
 		if i == 99 || i == 100 {

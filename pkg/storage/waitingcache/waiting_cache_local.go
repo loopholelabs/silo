@@ -68,12 +68,12 @@ func (wcl *WaitingCacheLocal) WriteAt(buffer []byte, offset int64) (int, error) 
 
 	// If the first block is incomplete, we need to wait for it from remote
 	if offset > (int64(bStart) * int64(wcl.wc.blockSize)) {
-		wcl.wc.waitForRemoteBlock(bStart, func(b uint) {})
+		wcl.wc.waitForRemoteBlock(bStart, func(_ uint) {})
 		bStart++
 	}
 	// If the last block is incomplete, we need to wait for it from remote
 	if (end % uint64(wcl.wc.blockSize)) > 0 {
-		wcl.wc.waitForRemoteBlock(bEnd-1, func(b uint) {})
+		wcl.wc.waitForRemoteBlock(bEnd-1, func(_ uint) {})
 		bEnd--
 	}
 
@@ -95,8 +95,8 @@ func (wcl *WaitingCacheLocal) WriteAt(buffer []byte, offset int64) (int, error) 
 }
 
 func (wcl *WaitingCacheLocal) Availability() (int, int) {
-	num_blocks := (int(wcl.wc.prov.Size()) + wcl.wc.blockSize - 1) / wcl.wc.blockSize
-	return wcl.wc.remote.available.Count(0, uint(num_blocks)), num_blocks
+	numBlocks := (int(wcl.wc.prov.Size()) + wcl.wc.blockSize - 1) / wcl.wc.blockSize
+	return wcl.wc.remote.available.Count(0, uint(numBlocks)), numBlocks
 }
 
 func (wcl *WaitingCacheLocal) Flush() error {

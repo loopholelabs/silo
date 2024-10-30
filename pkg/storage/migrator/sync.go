@@ -41,11 +41,11 @@ type Syncer struct {
 	ctx             context.Context
 	config          *SyncConfig
 	blockStatusLock sync.Mutex
-	blockStatus     []Block_status
+	blockStatus     []BlockStatus
 	currentDirtyID  uint64
 }
 
-type Block_status struct {
+type BlockStatus struct {
 	UpdatingID  uint64
 	CurrentID   uint64
 	CurrentHash [sha256.Size]byte
@@ -54,9 +54,9 @@ type Block_status struct {
 func NewSyncer(ctx context.Context, sinfo *SyncConfig) *Syncer {
 	numBlocks := (sinfo.Tracker.Size() + uint64(sinfo.BlockSize) - 1) / uint64(sinfo.BlockSize)
 
-	status := make([]Block_status, numBlocks)
+	status := make([]BlockStatus, numBlocks)
 	for b := 0; b < int(numBlocks); b++ {
-		status[b] = Block_status{
+		status[b] = BlockStatus{
 			UpdatingID:  0,
 			CurrentID:   0,
 			CurrentHash: [sha256.Size]byte{},
@@ -91,7 +91,7 @@ func (s *Syncer) GetSafeBlockMap() map[uint][sha256.Size]byte {
  *
  */
 func (s *Syncer) Sync(syncAllFirst bool, continuous bool) (*MigrationProgress, error) {
-	conf := NewMigratorConfig().WithBlockSize(s.config.BlockSize)
+	conf := NewConfig().WithBlockSize(s.config.BlockSize)
 	conf.LockerHandler = func() {
 		if s.config.LockerHandler != nil {
 			s.config.LockerHandler()
@@ -217,7 +217,7 @@ func (s *Syncer) Sync(syncAllFirst bool, continuous bool) (*MigrationProgress, e
 				s.blockStatus[b].UpdatingID = id
 			}
 			s.blockStatusLock.Unlock()
-			err = mig.MigrateDirtyWithId(blocks, id)
+			err = mig.MigrateDirtyWithID(blocks, id)
 			if err != nil {
 				return mig.Status(), err
 			}

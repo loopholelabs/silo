@@ -169,17 +169,17 @@ func (i *ToProtocol) WriteAt(buffer []byte, offset int64) (int, error) {
 
 	// Decode the response...
 	if r == nil || len(r) < 1 {
-		return 0, packets.Err_invalid_packet
+		return 0, packets.ErrInvalidPacket
 	}
 	if r[0] == packets.COMMAND_WRITE_AT_RESPONSE_ERR {
-		return 0, packets.Err_write_error
+		return 0, packets.ErrWriteError
 	} else if r[0] == packets.COMMAND_WRITE_AT_RESPONSE {
 		if len(r) < 5 {
-			return 0, packets.Err_invalid_packet
+			return 0, packets.ErrInvalidPacket
 		}
 		return int(binary.LittleEndian.Uint32(r[1:])), nil
 	}
-	return 0, packets.Err_invalid_packet
+	return 0, packets.ErrInvalidPacket
 }
 
 func (i *ToProtocol) WriteAtWithMap(buffer []byte, offset int64, idMap map[uint64]uint64) (int, error) {
@@ -198,17 +198,17 @@ func (i *ToProtocol) WriteAtWithMap(buffer []byte, offset int64, idMap map[uint6
 
 	// Decode the response...
 	if r == nil || len(r) < 1 {
-		return 0, packets.Err_invalid_packet
+		return 0, packets.ErrInvalidPacket
 	}
 	if r[0] == packets.COMMAND_WRITE_AT_RESPONSE_ERR {
-		return 0, packets.Err_write_error
+		return 0, packets.ErrWriteError
 	} else if r[0] == packets.COMMAND_WRITE_AT_RESPONSE {
 		if len(r) < 5 {
-			return 0, packets.Err_invalid_packet
+			return 0, packets.ErrInvalidPacket
 		}
 		return int(binary.LittleEndian.Uint32(r[1:])), nil
 	}
-	return 0, packets.Err_invalid_packet
+	return 0, packets.ErrInvalidPacket
 }
 
 func (i *ToProtocol) RemoveFromMap(ids []uint64) error {
@@ -230,7 +230,7 @@ func (i *ToProtocol) Close() error {
 	return nil
 }
 
-func (i *ToProtocol) CancelWrites(offset int64, length int64) {
+func (i *ToProtocol) CancelWrites(_ int64, _ int64) {
 	// TODO: Implement
 }
 

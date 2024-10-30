@@ -68,7 +68,7 @@ type storageInfo struct {
 	schema    string
 }
 
-func runServe(ccmd *cobra.Command, args []string) {
+func runServe(_ *cobra.Command, _ []string) {
 	if serveProgress {
 		serveProgressBar = mpb.New(
 			mpb.WithOutput(color.Output),
@@ -222,7 +222,7 @@ func migrateDevice(devID uint32, name string,
 	pro protocol.Protocol,
 	sinfo *storageInfo) error {
 	size := sinfo.lockable.Size()
-	dest := protocol.NewToProtocol(uint64(size), devID, pro)
+	dest := protocol.NewToProtocol(size, devID, pro)
 
 	err := dest.SendDevInfo(name, uint32(sinfo.blockSize), sinfo.schema)
 	if err != nil {
@@ -231,7 +231,7 @@ func migrateDevice(devID uint32, name string,
 
 	statusString := " "
 
-	statusFn := func(s decor.Statistics) string {
+	statusFn := func(_ decor.Statistics) string {
 		return statusString
 	}
 
@@ -259,13 +259,13 @@ func migrateDevice(devID uint32, name string,
 		_ = dest.HandleNeedAt(func(offset int64, length int32) {
 			// Prioritize blocks...
 			end := uint64(offset + int64(length))
-			if end > uint64(size) {
-				end = uint64(size)
+			if end > size {
+				end = size
 			}
 
-			b_start := int(offset / int64(sinfo.blockSize))
-			b_end := int((end-1)/uint64(sinfo.blockSize)) + 1
-			for b := b_start; b < b_end; b++ {
+			bStart := int(offset / int64(sinfo.blockSize))
+			bEnd := int((end-1)/uint64(sinfo.blockSize)) + 1
+			for b := bStart; b < bEnd; b++ {
 				// Ask the orderer to prioritize these blocks...
 				sinfo.orderer.PrioritiseBlock(b)
 			}
@@ -275,19 +275,19 @@ func migrateDevice(devID uint32, name string,
 	go func() {
 		_ = dest.HandleDontNeedAt(func(offset int64, length int32) {
 			end := uint64(offset + int64(length))
-			if end > uint64(size) {
-				end = uint64(size)
+			if end > size {
+				end = size
 			}
 
-			b_start := int(offset / int64(sinfo.blockSize))
-			b_end := int((end-1)/uint64(sinfo.blockSize)) + 1
-			for b := b_start; b < b_end; b++ {
+			bStart := int(offset / int64(sinfo.blockSize))
+			bEnd := int((end-1)/uint64(sinfo.blockSize)) + 1
+			for b := bStart; b < bEnd; b++ {
 				sinfo.orderer.Remove(b)
 			}
 		})
 	}()
 
-	conf := migrator.NewMigratorConfig().WithBlockSize(sinfo.blockSize)
+	conf := migrator.NewConfig().WithBlockSize(sinfo.blockSize)
 	conf.LockerHandler = func() {
 		_ = dest.SendEvent(&packets.Event{Type: packets.EventPreLock})
 		sinfo.lockable.Lock()
@@ -301,7 +301,7 @@ func migrateDevice(devID uint32, name string,
 	conf.Concurrency = map[int]int{
 		storage.BlockTypeAny: 1000000,
 	}
-	conf.ErrorHandler = func(b *storage.BlockInfo, err error) {
+	conf.ErrorHandler = func(_ *storage.BlockInfo, err error) {
 		// For now...
 		panic(err)
 	}

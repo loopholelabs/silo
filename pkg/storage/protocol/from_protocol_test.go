@@ -7,6 +7,7 @@ import (
 
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestFromProtocol(t *testing.T) {
@@ -15,7 +16,7 @@ func TestFromProtocol(t *testing.T) {
 
 	proto := NewMockProtocol(ctx)
 
-	factory := func(di *packets.DevInfo) storage.StorageProvider {
+	factory := func(_ *packets.DevInfo) storage.StorageProvider {
 		return nil
 	}
 
@@ -39,4 +40,7 @@ func TestFromProtocol(t *testing.T) {
 
 	// Both should quit now...
 	wg.Wait()
+
+	// Should get here ok
+	assert.True(t, true)
 }

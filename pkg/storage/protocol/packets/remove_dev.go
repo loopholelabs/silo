@@ -8,7 +8,7 @@ func EncodeRemoveDev() []byte {
 
 func DecodeRemoveDev(buff []byte) error {
 	if buff == nil || len(buff) < 1 || buff[0] != COMMAND_REMOVE_DEV {
-		return Err_invalid_packet
+		return ErrInvalidPacket
 	}
 	return nil
 }

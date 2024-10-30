@@ -31,36 +31,36 @@ type sendPacketInfo struct {
 	data []byte
 }
 
-func (p *MockPro) SendPacketWriter(dev uint32, id uint32, length uint32, data func(w io.Writer) error) (uint32, error) {
+func (p *MockPro) SendPacketWriter(dev uint32, id uint32, _ uint32, data func(w io.Writer) error) (uint32, error) {
 	var buff bytes.Buffer
 	err := data(&buff)
 	if err != nil {
 		return 0, err
 	}
-	mock_id := uint32(999)
+	mockID := uint32(999)
 	p.sendPackets <- &sendPacketInfo{
 		dev:  dev,
-		id:   mock_id,
+		id:   mockID,
 		data: buff.Bytes(),
 	}
 	return id, nil
 }
 
 func (p *MockPro) SendPacket(dev uint32, id uint32, data []byte) (uint32, error) {
-	mock_id := uint32(999)
+	mockID := uint32(999)
 	p.sendPackets <- &sendPacketInfo{
 		dev:  dev,
-		id:   mock_id,
+		id:   mockID,
 		data: data,
 	}
 	return id, nil
 }
 
-func (p *MockPro) WaitForPacket(dev uint32, id uint32) ([]byte, error) {
+func (p *MockPro) WaitForPacket(_ uint32, _ uint32) ([]byte, error) {
 	return <-p.waitPackets, nil
 }
 
-func (p *MockPro) WaitForCommand(dev uint32, cmd byte) (uint32, []byte, error) {
+func (p *MockPro) WaitForCommand(_ uint32, _ byte) (uint32, []byte, error) {
 	return 123, <-p.waitCommands, nil
 }
 

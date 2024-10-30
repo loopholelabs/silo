@@ -13,9 +13,9 @@ type Raid struct {
 }
 
 // Relay events to embedded StorageProvider
-func (i *Raid) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
-	data := i.StorageProviderWithEvents.SendSiloEvent(eventType, eventData)
-	for _, pr := range i.prov {
+func (r *Raid) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
+	data := r.StorageProviderWithEvents.SendSiloEvent(eventType, eventData)
+	for _, pr := range r.prov {
 		data = append(data, storage.SendSiloEvent(pr, eventType, eventData)...)
 	}
 	return data
@@ -67,11 +67,9 @@ func (r *Raid) WriteAt(buffer []byte, offset int64) (int, error) {
 		if index == 0 {
 			err = e
 			count = n
-		} else {
-			if e != err || n != count {
-				// RAID ERROR!
-				return 0, fmt.Errorf("raid corruption on WriteAt (%d/%d,%v/%d)", n, count, e, err)
-			}
+		} else if e != err || n != count {
+			// RAID ERROR!
+			return 0, fmt.Errorf("raid corruption on WriteAt (%d/%d,%v/%d)", n, count, e, err)
 		}
 
 	}
@@ -104,6 +102,6 @@ func (r *Raid) Close() error {
 	return err
 }
 
-func (i *Raid) CancelWrites(offset int64, length int64) {
+func (r *Raid) CancelWrites(_ int64, _ int64) {
 	// TODO: Implement
 }

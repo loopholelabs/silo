@@ -37,8 +37,8 @@ func NewWaitingCache(prov storage.StorageProvider, blockSize int) (*WaitingCache
 	wc.local = &WaitingCacheLocal{
 		wc:         wc,
 		available:  *util.NewBitfield(numBlocks),
-		NeedAt:     func(offset int64, length int32) {},
-		DontNeedAt: func(offset int64, length int32) {},
+		NeedAt:     func(_ int64, _ int32) {},
+		DontNeedAt: func(_ int64, _ int32) {},
 	}
 	wc.remote = &WaitingCacheRemote{
 		wc:        wc,

@@ -20,7 +20,7 @@ func TestRaid(t *testing.T) {
 	assert.NoError(t, err)
 
 	cache, err := sources.NewFileStorageSparseCreate("testraid_cache", uint64(size), blockSize)
-	//cache, err := sources.NewFileStorageCreate("testraid_cache", int64(size))
+	// cache, err := sources.NewFileStorageCreate("testraid_cache", int64(size))
 	assert.NoError(t, err)
 
 	t.Cleanup(func() {
@@ -46,7 +46,7 @@ func TestRaid(t *testing.T) {
 			buff := make([]byte, 100)
 			_, err := rand.Read(buff)
 			assert.NoError(t, err)
-			//offset := mrand.Intn(size)
+			// offset := mrand.Intn(size)
 			_, err = raid.WriteAt(buff, int64(o))
 			assert.NoError(t, err)
 			wg.Done()
@@ -91,7 +91,7 @@ func TestRaid(t *testing.T) {
 
 		// Load existing cache up
 		cache2, err := sources.NewFileStorageSparse("testraid_cache", uint64(size), block_size)
-		//cache, err := sources.NewFileStorage("testraid_cache", int64(size))
+		// cache, err := sources.NewFileStorage("testraid_cache", int64(size))
 		assert.NoError(t, err)
 
 		cow2 := NewCopyOnWrite(source, cache2, block_size)

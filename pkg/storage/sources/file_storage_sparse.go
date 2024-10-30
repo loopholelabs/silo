@@ -115,9 +115,8 @@ func (i *FileStorageSparse) readBlock(buffer []byte, b uint) error {
 		// Read the data where it is...
 		_, err := i.fp.ReadAt(buffer, int64(off))
 		return err
-	} else {
-		return errors.New("cannot do a partial block write on incomplete block")
 	}
+	return errors.New("cannot do a partial block write on incomplete block")
 }
 
 func (i *FileStorageSparse) ReadAt(buffer []byte, offset int64) (int, error) {
@@ -220,13 +219,12 @@ func (i *FileStorageSparse) WriteAt(buffer []byte, offset int64) (int, error) {
 				}
 				if err != nil {
 					return 0, err
-				} else {
-					// Merge the data in, and write it back...
-					count += copy(blockBuffer, buffer[blockOffset-offset:bufferEnd])
-					err := i.writeBlock(blockBuffer, b)
-					if err != nil {
-						return 0, nil
-					}
+				}
+				// Merge the data in, and write it back...
+				count += copy(blockBuffer, buffer[blockOffset-offset:bufferEnd])
+				err = i.writeBlock(blockBuffer, b)
+				if err != nil {
+					return 0, nil
 				}
 			} else {
 				s := blockOffset - offset
@@ -246,13 +244,12 @@ func (i *FileStorageSparse) WriteAt(buffer []byte, offset int64) (int, error) {
 			err := i.readBlock(blockBuffer, b)
 			if err != nil {
 				return 0, err
-			} else {
-				// Merge the data in, and write it back...
-				count += copy(blockBuffer[offset-blockOffset:], buffer[:bufferEnd])
-				err := i.writeBlock(blockBuffer, b)
-				if err != nil {
-					return 0, nil
-				}
+			}
+			// Merge the data in, and write it back...
+			count += copy(blockBuffer[offset-blockOffset:], buffer[:bufferEnd])
+			err = i.writeBlock(blockBuffer, b)
+			if err != nil {
+				return 0, nil
 			}
 		}
 	}
@@ -269,7 +266,7 @@ func (i *FileStorageSparse) Flush() error {
 }
 
 func (i *FileStorageSparse) Size() uint64 {
-	return uint64(i.size)
+	return i.size
 }
 
-func (i *FileStorageSparse) CancelWrites(offset int64, length int64) {}
+func (i *FileStorageSparse) CancelWrites(_ int64, _ int64) {}

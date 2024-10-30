@@ -37,7 +37,7 @@ func EncodeAlternateSources(sources []AlternateSource) []byte {
 
 func DecodeAlternateSources(buff []byte) ([]AlternateSource, error) {
 	if buff == nil || len(buff) < 1+4 || buff[0] != COMMAND_ALTERNATE_SOURCES {
-		return nil, Err_invalid_packet
+		return nil, ErrInvalidPacket
 	}
 
 	l := int(binary.LittleEndian.Uint32(buff[1:]))

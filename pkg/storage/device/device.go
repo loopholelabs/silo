@@ -75,7 +75,7 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 
 	if ds.System == SYSTEM_MEMORY {
 		// Create some memory storage...
-		cr := func(i int, s int) (storage.StorageProvider, error) {
+		cr := func(_ int, s int) (storage.StorageProvider, error) {
 			return sources.NewMemoryStorage(s), nil
 		}
 		// Setup some sharded memory storage (for concurrent write speed)
@@ -112,7 +112,7 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				// It doesn't exist, so lets create it and return
-				prov, err = sources.NewFileStorageCreate(ds.Location, int64(ds.ByteSize()))
+				prov, err = sources.NewFileStorageCreate(ds.Location, ds.ByteSize())
 				if err != nil {
 					return nil, nil, err
 				}
@@ -130,7 +130,7 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 			// IsDir is short for fileInfo.Mode().IsDir()
 			if !fileInfo.IsDir() {
 				// file is a file, use it as is
-				prov, err = sources.NewFileStorage(ds.Location, int64(ds.ByteSize()))
+				prov, err = sources.NewFileStorage(ds.Location, ds.ByteSize())
 				if err != nil {
 					return nil, nil, err
 				}
@@ -299,8 +299,8 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 					maxAge, ds.Sync.Config.Limit, ds.Sync.Config.BlockShift, ds.Sync.Config.MinChanged)
 			},
 			BlockSize:       bs,
-			ProgressHandler: func(p *migrator.MigrationProgress) {},
-			ErrorHandler:    func(b *storage.BlockInfo, err error) {},
+			ProgressHandler: func(_ *migrator.MigrationProgress) {},
+			ErrorHandler:    func(_ *storage.BlockInfo, _ error) {},
 		})
 
 		// The provider we return should feed into our sync here...
@@ -311,7 +311,7 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 		var wg sync.WaitGroup
 
 		// If the storage gets a "sync.start", we should start syncing to S3.
-		storage.AddSiloEventNotification(prov, "sync.start", func(eventType storage.EventType, data storage.EventData) storage.EventReturnData {
+		storage.AddSiloEventNotification(prov, "sync.start", func(_ storage.EventType, data storage.EventData) storage.EventReturnData {
 			if data != nil {
 				startConfig := data.(SyncStartConfig)
 
@@ -362,12 +362,12 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 		})
 
 		// If the storage gets a "sync.status", get some status on the S3Storage
-		storage.AddSiloEventNotification(prov, "sync.status", func(eventType storage.EventType, data storage.EventData) storage.EventReturnData {
+		storage.AddSiloEventNotification(prov, "sync.status", func(_ storage.EventType, _ storage.EventData) storage.EventReturnData {
 			return s3dest.Metrics()
 		})
 
 		// If the storage gets a "sync.stop", we should cancel the sync, and return the safe blocks
-		storage.AddSiloEventNotification(prov, "sync.stop", func(eventType storage.EventType, data storage.EventData) storage.EventReturnData {
+		storage.AddSiloEventNotification(prov, "sync.stop", func(_ storage.EventType, _ storage.EventData) storage.EventReturnData {
 			syncLock.Lock()
 			if !syncRunning {
 				syncLock.Unlock()

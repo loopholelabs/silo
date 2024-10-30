@@ -13,8 +13,8 @@ func EncodeWriteAtWithMap(offset int64, data []byte, idmap map[uint64]uint64) []
 	// Encode the map here...
 	ptr := 13
 	for k, v := range idmap {
-		binary.LittleEndian.PutUint64(buff[ptr:], uint64(k))
-		binary.LittleEndian.PutUint64(buff[ptr+8:], uint64(v))
+		binary.LittleEndian.PutUint64(buff[ptr:], k)
+		binary.LittleEndian.PutUint64(buff[ptr+8:], v)
 		ptr += 16
 	}
 
@@ -24,7 +24,7 @@ func EncodeWriteAtWithMap(offset int64, data []byte, idmap map[uint64]uint64) []
 
 func DecodeWriteAtWithMap(buff []byte) (int64, []byte, map[uint64]uint64, error) {
 	if buff == nil || len(buff) < 13 || buff[0] != COMMAND_WRITE_AT_WITH_MAP {
-		return 0, nil, nil, Err_invalid_packet
+		return 0, nil, nil, ErrInvalidPacket
 	}
 	off := int64(binary.LittleEndian.Uint64(buff[1:]))
 	idlen := binary.LittleEndian.Uint32(buff[9:])

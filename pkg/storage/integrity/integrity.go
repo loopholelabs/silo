@@ -59,14 +59,14 @@ func (i *IntegrityChecker) GetHashes() map[uint][sha256.Size]byte {
  * TODO: Calculate blocks concurrently
  */
 func (i *IntegrityChecker) Check(prov storage.StorageProvider) (bool, error) {
-	block_buffer := make([]byte, i.blockSize)
+	blockBuffer := make([]byte, i.blockSize)
 	for b := 0; b < i.numBlocks; b++ {
-		n, err := prov.ReadAt(block_buffer, int64(b*i.blockSize))
+		n, err := prov.ReadAt(blockBuffer, int64(b*i.blockSize))
 		if err != nil {
 			return false, err
 		}
 		// Calculate the hash...
-		v := sha256.Sum256(block_buffer[:n])
+		v := sha256.Sum256(blockBuffer[:n])
 		// Make sure it's same as the value we have...
 		i.lock.Lock()
 		hash, ok := i.hashes[uint(b)]

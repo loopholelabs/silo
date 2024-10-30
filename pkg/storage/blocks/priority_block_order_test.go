@@ -11,8 +11,8 @@ import (
  *
  */
 func TestPriorityBlockOrder(t *testing.T) {
-	abo_any := NewAnyBlockOrder(128, nil)
-	abo := NewPriorityBlockOrder(128, abo_any)
+	aboAny := NewAnyBlockOrder(128, nil)
+	abo := NewPriorityBlockOrder(128, aboAny)
 
 	for i := 0; i < 128; i++ {
 		abo.Add(i)

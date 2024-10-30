@@ -21,7 +21,7 @@ func EncodeHashes(hashes map[uint][sha256.Size]byte) []byte {
 
 func DecodeHashes(buff []byte) (map[uint][sha256.Size]byte, error) {
 	if buff == nil || len(buff) < 1 || buff[0] != COMMAND_HASHES {
-		return nil, Err_invalid_packet
+		return nil, ErrInvalidPacket
 	}
 	hashes := make(map[uint][sha256.Size]byte)
 	ptr := 1
@@ -30,7 +30,7 @@ func DecodeHashes(buff []byte) (map[uint][sha256.Size]byte, error) {
 			break
 		}
 		if ptr+(4+sha256.Size) > len(buff) {
-			return nil, Err_invalid_packet
+			return nil, ErrInvalidPacket
 		}
 		b := binary.LittleEndian.Uint32(buff[ptr:])
 		ptr += 4
@@ -47,7 +47,7 @@ func EncodeHashesResponse() []byte {
 
 func DecodeHashesResponse(buff []byte) error {
 	if buff == nil || len(buff) != 1 || buff[0] != COMMAND_HASHES_RESPONSE {
-		return Err_invalid_packet
+		return ErrInvalidPacket
 	}
 	return nil
 }

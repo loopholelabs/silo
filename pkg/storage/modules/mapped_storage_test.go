@@ -10,20 +10,20 @@ import (
 )
 
 func TestMappedStorage(t *testing.T) {
-	block_size := 4096
-	store := sources.NewMemoryStorage(64 * block_size)
+	blockSize := 4096
+	store := sources.NewMemoryStorage(64 * blockSize)
 
-	ms := NewMappedStorage(store, block_size)
+	ms := NewMappedStorage(store, blockSize)
 	// Write some blocks, then read them back
 
-	data := make([]byte, block_size)
+	data := make([]byte, blockSize)
 	_, err := rand.Read(data)
 	assert.NoError(t, err)
 
 	err = ms.WriteBlock(0x12345678, data)
 	assert.NoError(t, err)
 
-	buffer := make([]byte, block_size)
+	buffer := make([]byte, blockSize)
 
 	err = ms.ReadBlock(0x12345678, buffer)
 	assert.NoError(t, err)
@@ -31,9 +31,9 @@ func TestMappedStorage(t *testing.T) {
 	assert.Equal(t, buffer, data)
 
 	err = ms.ReadBlock(0xdead, buffer)
-	assert.ErrorIs(t, err, Err_not_found)
+	assert.ErrorIs(t, err, ErrNotFound)
 
-	assert.Equal(t, uint64(block_size), ms.Size())
+	assert.Equal(t, uint64(blockSize), ms.Size())
 
 }
 
@@ -80,7 +80,7 @@ func TestMappedStorageOutOfSpace(t *testing.T) {
 	assert.NoError(t, err)
 
 	err = ms.WriteBlock(0x5678, data)
-	assert.ErrorIs(t, err, Err_out_of_space)
+	assert.ErrorIs(t, err, ErrOutOfSpace)
 
 	assert.Equal(t, uint64(2*blockSize), ms.Size())
 
@@ -111,7 +111,7 @@ func TestMappedStorageDupe(t *testing.T) {
 	assert.Equal(t, buffer, data)
 
 	err = ms2.ReadBlock(0xdead, buffer)
-	assert.ErrorIs(t, err, Err_not_found)
+	assert.ErrorIs(t, err, ErrNotFound)
 
 	assert.Equal(t, uint64(blockSize), ms.Size())
 

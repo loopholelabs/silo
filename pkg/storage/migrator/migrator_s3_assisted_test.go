@@ -141,7 +141,7 @@ func TestMigratorS3Assisted(t *testing.T) {
 	r2, w2 := io.Pipe()
 
 	initDev := func(ctx context.Context, p protocol.Protocol, dev uint32) {
-		destStorageFactory := func(di *packets.DevInfo) storage.StorageProvider {
+		destStorageFactory := func(_ *packets.DevInfo) storage.StorageProvider {
 			return provDest
 		}
 
@@ -174,7 +174,7 @@ func TestMigratorS3Assisted(t *testing.T) {
 	err = destination.SendDevInfo("test", uint32(blockSize), "")
 	assert.NoError(t, err)
 
-	conf := migrator.NewMigratorConfig().WithBlockSize(blockSize)
+	conf := migrator.NewConfig().WithBlockSize(blockSize)
 	conf.LockerHandler = sourceStorage.Lock
 	conf.UnlockerHandler = sourceStorage.Unlock
 
@@ -265,7 +265,7 @@ func TestMigratorS3AssistedChangeSource(t *testing.T) {
 	r2, w2 := io.Pipe()
 
 	initDev := func(ctx context.Context, p protocol.Protocol, dev uint32) {
-		destStorageFactory := func(di *packets.DevInfo) storage.StorageProvider {
+		destStorageFactory := func(_ *packets.DevInfo) storage.StorageProvider {
 			return provDest
 		}
 
@@ -298,7 +298,7 @@ func TestMigratorS3AssistedChangeSource(t *testing.T) {
 	err = destination.SendDevInfo("test", uint32(blockSize), "")
 	assert.NoError(t, err)
 
-	conf := migrator.NewMigratorConfig().WithBlockSize(blockSize)
+	conf := migrator.NewConfig().WithBlockSize(blockSize)
 	conf.LockerHandler = sourceStorage.Lock
 	conf.UnlockerHandler = sourceStorage.Unlock
 

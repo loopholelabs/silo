@@ -199,7 +199,7 @@ func (bf *Bitfield) BitsSet(start uint, end uint) bool {
 			if n == end {
 				break
 			}
-			i = i << 1
+			i <<= 1
 			if i == 0 {
 				i = 1
 				p++
@@ -235,7 +235,7 @@ func (bf *Bitfield) SetBitsIf(ifBf *Bitfield, start uint, end uint) {
 			if n == end {
 				break
 			}
-			i = i << 1
+			i <<= 1
 			if i == 0 {
 				i = 1
 				p++
@@ -270,7 +270,7 @@ func (bf *Bitfield) ClearBitsIf(ifBf *Bitfield, start uint, end uint) {
 			if n == end {
 				break
 			}
-			i = i << 1
+			i <<= 1
 			if i == 0 {
 				i = 1
 				p++
@@ -301,7 +301,7 @@ func (bf *Bitfield) Count(start uint, end uint) int {
 			if n == end {
 				break
 			}
-			i = i << 1
+			i <<= 1
 			if i == 0 {
 				i = 1
 				p++
@@ -339,7 +339,7 @@ func (bf *Bitfield) Exec(start uint, end uint, cb func(position uint) bool) {
 			if n == end {
 				break
 			}
-			i = i << 1
+			i <<= 1
 			if i == 0 {
 				i = 1
 				p++
@@ -371,7 +371,7 @@ func (bf *Bitfield) Collect(start uint, end uint) []uint {
 			if n == end {
 				break
 			}
-			i = i << 1
+			i <<= 1
 			if i == 0 {
 				i = 1
 				p++
@@ -407,7 +407,7 @@ func (bf *Bitfield) CollectFirstAndClear(start uint, end uint) (uint, error) {
 			if n == end {
 				break
 			}
-			i = i << 1
+			i <<= 1
 			if i == 0 {
 				i = 1
 				p++

@@ -86,7 +86,7 @@ func TestNBDNLDeviceBlocksizes(t *testing.T) {
 			n = NewExposedStorageNBDNL(prov, 8, 0, uint64(size), uint64(bs), true)
 
 			err = n.Init()
-			assert.NoError(t, err)
+			assert.NoError(tt, err)
 		})
 	}
 }
@@ -250,7 +250,7 @@ func TestNBDNLDeviceShutdownRead(t *testing.T) {
 	var readWG sync.WaitGroup
 	readWG.Add(1)
 
-	hooks.PreRead = func(buffer []byte, offset int64) (bool, int, error) {
+	hooks.PreRead = func(_ []byte, offset int64) (bool, int, error) {
 		if offset == 0x9000 {
 			readWG.Done()
 			time.Sleep(10 * time.Second)
@@ -315,7 +315,7 @@ func TestNBDNLDeviceShutdownWrite(t *testing.T) {
 	var readWG sync.WaitGroup
 	readWG.Add(1)
 
-	hooks.PreWrite = func(buffer []byte, offset int64) (bool, int, error) {
+	hooks.PreWrite = func(_ []byte, offset int64) (bool, int, error) {
 		if offset == 0x9000 {
 			readWG.Done()
 			time.Sleep(10 * time.Second)

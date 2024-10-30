@@ -59,9 +59,8 @@ func formatDuration(d time.Duration) string {
 		return fmt.Sprintf("%dns", d.Nanoseconds())
 	} else if d < time.Second {
 		return fmt.Sprintf("%dms", d.Milliseconds())
-	} else {
-		return fmt.Sprintf("%.3fs", float64(d)/float64(time.Second))
 	}
+	return fmt.Sprintf("%.3fs", float64(d)/float64(time.Second))
 }
 
 func (i *Metrics) ShowStats(prefix string) {

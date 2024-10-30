@@ -82,4 +82,4 @@ func (i *FileStorage) Close() error {
 	return i.fp.Close()
 }
 
-func (i *FileStorage) CancelWrites(offset int64, length int64) {}
+func (i *FileStorage) CancelWrites(_ int64, _ int64) {}

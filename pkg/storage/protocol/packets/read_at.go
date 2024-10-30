@@ -14,7 +14,7 @@ func EncodeReadAt(offset int64, length int32) []byte {
 
 func DecodeReadAt(buff []byte) (int64, int32, error) {
 	if buff == nil || len(buff) < 13 || buff[0] != COMMAND_READ_AT {
-		return 0, 0, Err_invalid_packet
+		return 0, 0, ErrInvalidPacket
 	}
 	off := int64(binary.LittleEndian.Uint64(buff[1:]))
 	length := int32(binary.LittleEndian.Uint32(buff[9:]))
@@ -32,29 +32,28 @@ func EncodeReadAtResponse(rar *ReadAtResponse) []byte {
 		buff := make([]byte, 1)
 		buff[0] = COMMAND_READ_AT_RESPONSE_ERR
 		return buff
-	} else {
-		buff := make([]byte, 1+4+len(rar.Data))
-		buff[0] = COMMAND_READ_AT_RESPONSE
-		binary.LittleEndian.PutUint32(buff[1:], uint32(rar.Bytes))
-		copy(buff[5:], rar.Data)
-		return buff
 	}
+	buff := make([]byte, 1+4+len(rar.Data))
+	buff[0] = COMMAND_READ_AT_RESPONSE
+	binary.LittleEndian.PutUint32(buff[1:], uint32(rar.Bytes))
+	copy(buff[5:], rar.Data)
+	return buff
 }
 
 func DecodeReadAtResponse(buff []byte) (*ReadAtResponse, error) {
 	if buff == nil {
-		return nil, Err_invalid_packet
+		return nil, ErrInvalidPacket
 	}
 
 	if buff[0] == COMMAND_READ_AT_RESPONSE_ERR {
 		return &ReadAtResponse{
-			Error: Err_read_error,
+			Error: ErrReadError,
 			Bytes: 0,
 			Data:  make([]byte, 0),
 		}, nil
 	} else if buff[0] == COMMAND_READ_AT_RESPONSE {
 		if len(buff) < 5 {
-			return nil, Err_invalid_packet
+			return nil, ErrInvalidPacket
 		}
 		return &ReadAtResponse{
 			Error: nil,
@@ -63,5 +62,5 @@ func DecodeReadAtResponse(buff []byte) (*ReadAtResponse, error) {
 		}, nil
 	}
 
-	return nil, Err_invalid_packet
+	return nil, ErrInvalidPacket
 }

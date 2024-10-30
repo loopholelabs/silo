@@ -313,7 +313,7 @@ func (d *Dispatch) cmdWrite(cmdHandle uint64, cmdFrom uint64, cmdLength uint32, 
  * cmdTrim
  *
  */
-func (d *Dispatch) cmdTrim(handle uint64, from uint64, length uint32) error {
+func (d *Dispatch) cmdTrim(handle uint64, _ uint64, _ uint32) error {
 	// TODO: Ask the provider
 	/*
 		e := d.prov.Trim(from, length)

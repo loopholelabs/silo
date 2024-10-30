@@ -32,10 +32,10 @@ func BenchmarkDevReadNL(mb *testing.B) {
 			name := fmt.Sprintf("readsize_%d_cons_%d", v, c)
 			mb.Run(name, func(b *testing.B) {
 
-				store := sources.NewMemoryStorage(int(diskSize))
+				store := sources.NewMemoryStorage(diskSize)
 				driver := modules.NewMetrics(store)
 
-				n := NewExposedStorageNBDNL(driver, c, 0, uint64(driver.Size()), 4096, true)
+				n := NewExposedStorageNBDNL(driver, c, 0, driver.Size(), 4096, true)
 
 				err := n.Init()
 				if err != nil {
@@ -78,7 +78,7 @@ func BenchmarkDevReadNL(mb *testing.B) {
 
 				var wg sync.WaitGroup
 
-				readSize := int64(v)
+				readSize := v
 
 				offsets := make([]int, b.N)
 				buffers := make(chan []byte, 100)
@@ -110,7 +110,7 @@ func BenchmarkDevReadNL(mb *testing.B) {
 					}(<-buffers, offsets[i])
 				}
 
-				b.SetBytes(int64(readSize))
+				b.SetBytes(readSize)
 
 				wg.Wait()
 
@@ -145,7 +145,7 @@ func BenchmarkDevReadNLLatency(mb *testing.B) {
 				name := fmt.Sprintf("latency_%dms_cons_%d_async_%t", lts.Milliseconds(), cns, asy)
 				mb.Run(name, func(b *testing.B) {
 
-					store := sources.NewMemoryStorage(int(diskSize))
+					store := sources.NewMemoryStorage(diskSize)
 					lstore := modules.NewArtificialLatency(store, lts, 0, lts, 0)
 					//					logstore := modules.NewLogger(lstore)
 					driver := modules.NewMetrics(lstore)
@@ -161,7 +161,7 @@ func BenchmarkDevReadNLLatency(mb *testing.B) {
 						}
 					}
 
-					n := NewExposedStorageNBDNL(driver, cns, 0, uint64(driver.Size()), 4096, asy)
+					n := NewExposedStorageNBDNL(driver, cns, 0, driver.Size(), 4096, asy)
 
 					err := n.Init()
 					if err != nil {
@@ -238,7 +238,7 @@ func BenchmarkDevReadNLLatency(mb *testing.B) {
 						}(<-buffers, offsets[i])
 					}
 
-					b.SetBytes(int64(readSize))
+					b.SetBytes(readSize)
 
 					wg.Wait()
 				})
@@ -261,11 +261,11 @@ func BenchmarkDevWriteNL(b *testing.B) {
 
 	// Setup...
 	// Lets simulate a little latency here
-	store := sources.NewMemoryStorage(int(diskSize))
+	store := sources.NewMemoryStorage(diskSize)
 	//	store_latency := modules.NewArtificialLatency(store, 100*time.Millisecond, 0, 100*time.Millisecond, 0)
 	driver := modules.NewMetrics(store)
 
-	n := NewExposedStorageNBDNL(driver, 1, 0, uint64(driver.Size()), 4096, true)
+	n := NewExposedStorageNBDNL(driver, 1, 0, driver.Size(), 4096, true)
 
 	err = n.Init()
 	if err != nil {
@@ -326,7 +326,7 @@ func BenchmarkDevWriteNL(b *testing.B) {
 		}(offset, length)
 	}
 
-	b.SetBytes(int64(writeSize))
+	b.SetBytes(writeSize)
 
 	wg.Wait()
 

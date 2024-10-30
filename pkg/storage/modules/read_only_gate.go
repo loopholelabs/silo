@@ -57,7 +57,7 @@ func (i *ReadOnlyGate) Close() error {
 	return i.prov.Close()
 }
 
-func (i *ReadOnlyGate) CancelWrites(offset int64, length int64) {
+func (i *ReadOnlyGate) CancelWrites(_ int64, _ int64) {
 	// TODO: Implement
 }
 

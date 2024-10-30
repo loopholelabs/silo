@@ -69,7 +69,7 @@ func init() {
  * Connect to a silo source and stream whatever devices are available.
  *
  */
-func runConnect(ccmd *cobra.Command, args []string) {
+func runConnect(_ *cobra.Command, _ []string) {
 	if connectProgress {
 		dstProgress = mpb.New(
 			mpb.WithOutput(color.Output),
@@ -105,9 +105,9 @@ func runConnect(ccmd *cobra.Command, args []string) {
 	dstWGFirst = true
 	dstWG.Add(1) // We need to at least wait for one to complete.
 
-	proto_ctx, protoCancelfn := context.WithCancel(context.TODO())
+	protoCtx, protoCancelfn := context.WithCancel(context.TODO())
 
-	pro := protocol.NewProtocolRW(proto_ctx, []io.Reader{con}, []io.Writer{con}, handleIncomingDevice)
+	pro := protocol.NewProtocolRW(protoCtx, []io.Reader{con}, []io.Writer{con}, handleIncomingDevice)
 
 	// Let the protocol do its thing.
 	go func() {
@@ -175,7 +175,7 @@ func handleIncomingDevice(ctx context.Context, pro protocol.Protocol, dev uint32
 
 		blockSize = uint(di.BlockSize)
 
-		statusFn := func(s decor.Statistics) string {
+		statusFn := func(_ decor.Statistics) string {
 			return statusString + statusVerify
 		}
 
@@ -184,7 +184,7 @@ func handleIncomingDevice(ctx context.Context, pro protocol.Protocol, dev uint32
 				mpb.PrependDecorators(
 					decor.Name(di.Name, decor.WCSyncSpaceR),
 					decor.Name(" "),
-					decor.Any(func(s decor.Statistics) string { return statusExposed }, decor.WC{W: 4}),
+					decor.Any(func(_ decor.Statistics) string { return statusExposed }, decor.WC{W: 4}),
 					decor.Name(" "),
 					decor.CountersKiloByte("%d/%d", decor.WCSyncWidth),
 				),
@@ -202,16 +202,16 @@ func handleIncomingDevice(ctx context.Context, pro protocol.Protocol, dev uint32
 		}
 
 		// You can change this to use sources.NewFileStorage etc etc
-		cr := func(i int, s int) (storage.StorageProvider, error) {
+		cr := func(_ int, s int) (storage.StorageProvider, error) {
 			return sources.NewMemoryStorage(s), nil
 		}
 		// Setup some sharded memory storage (for concurrent write speed)
-		shard_size := di.Size
+		shardSize := di.Size
 		if di.Size > 64*1024 {
-			shard_size = di.Size / 1024
+			shardSize = di.Size / 1024
 		}
 
-		destStorage, err = modules.NewShardedStorage(int(di.Size), int(shard_size), cr)
+		destStorage, err = modules.NewShardedStorage(int(di.Size), int(shardSize), cr)
 		if err != nil {
 			panic(err) // FIXME
 		}
@@ -222,7 +222,7 @@ func handleIncomingDevice(ctx context.Context, pro protocol.Protocol, dev uint32
 			lastValue := uint64(0)
 			lastTime := time.Now()
 
-			destMonitorStorage.PostWrite = func(buffer []byte, offset int64, n int, err error) (int, error) {
+			destMonitorStorage.PostWrite = func(_ []byte, _ int64, n int, err error) (int, error) {
 				// Update the progress bar
 				available, total := destWaitingLocal.Availability()
 				v := uint64(available) * di.Size / uint64(total)
@@ -290,15 +290,15 @@ func handleIncomingDevice(ctx context.Context, pro protocol.Protocol, dev uint32
 	go func() {
 		_ = dest.HandleEvent(func(e *packets.Event) {
 			if e.Type == packets.EventPostLock {
-				statusString = "L" //red.Sprintf("L")
+				statusString = "L" // red.Sprintf("L")
 			} else if e.Type == packets.EventPreLock {
-				statusString = "l" //red.Sprintf("l")
+				statusString = "l" // red.Sprintf("l")
 			} else if e.Type == packets.EventPostUnlock {
-				statusString = "U" //green.Sprintf("U")
+				statusString = "U" // green.Sprintf("U")
 			} else if e.Type == packets.EventPreUnlock {
-				statusString = "u" //green.Sprintf("u")
+				statusString = "u" // green.Sprintf("u")
 			}
-			//fmt.Printf("= %d = Event %s\n", dev, protocol.EventsByType[e.Type])
+			// fmt.Printf("= %d = Event %s\n", dev, protocol.EventsByType[e.Type])
 			// Check we have all data...
 			if e.Type == packets.EventCompleted {
 
@@ -322,7 +322,7 @@ func handleIncomingDevice(ctx context.Context, pro protocol.Protocol, dev uint32
 	handlerWG.Add(1)
 	go func() {
 		_ = dest.HandleHashes(func(hashes map[uint][sha256.Size]byte) {
-			//fmt.Printf("[%d] Got %d hashes...\n", dev, len(hashes))
+			// fmt.Printf("[%d] Got %d hashes...\n", dev, len(hashes))
 			if len(hashes) > 0 {
 				in := integrity.NewIntegrityChecker(int64(destStorage.Size()), int(blockSize))
 				in.SetHashes(hashes)

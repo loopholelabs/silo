@@ -31,8 +31,8 @@ func TestReadDirtyTracker(t *testing.T) {
 	// Now do a few writes to make dirty blocks...
 	locs := []int64{10, 10000, 40000}
 	for _, l := range locs {
-		w_buffer := make([]byte, 9000)
-		_, err = trackerLocal.WriteAt(w_buffer, l)
+		wBuffer := make([]byte, 9000)
+		_, err = trackerLocal.WriteAt(wBuffer, l)
 		assert.NoError(t, err)
 	}
 
@@ -68,8 +68,8 @@ func setupDirty(t *testing.T) *DirtyTrackerRemote {
 	// Now do a few writes to make dirty blocks...
 	locs := []int64{10, 30, 10000, 40000}
 	for _, l := range locs {
-		w_buffer := make([]byte, 9000)
-		_, err = trackerLocal.WriteAt(w_buffer, l)
+		wBuffer := make([]byte, 9000)
+		_, err = trackerLocal.WriteAt(wBuffer, l)
 		assert.NoError(t, err)
 	}
 

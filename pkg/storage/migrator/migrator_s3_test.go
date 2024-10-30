@@ -62,7 +62,7 @@ func TestMigratorToS3(t *testing.T) {
 
 	assert.NoError(t, err)
 
-	conf := NewMigratorConfig().WithBlockSize(blockSize)
+	conf := NewConfig().WithBlockSize(blockSize)
 	conf.LockerHandler = sourceStorage.Lock
 	conf.UnlockerHandler = sourceStorage.Unlock
 	conf.ErrorHandler = func(b *storage.BlockInfo, err error) {

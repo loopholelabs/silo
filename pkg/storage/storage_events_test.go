@@ -118,7 +118,7 @@ func TestStorageEvents(t *testing.T) {
 
 	ssnl := NewSomeStorageNoEvents()
 
-	ok = storage.AddSiloEventNotification(ssnl, "testing", func(from storage.EventType, to storage.EventData) storage.EventReturnData {
+	ok = storage.AddSiloEventNotification(ssnl, "testing", func(_ storage.EventType, _ storage.EventData) storage.EventReturnData {
 		assert.Fail(t, "shouldn't happen")
 		return nil
 	})
@@ -235,7 +235,7 @@ func TestStorageEventsForModules(tt *testing.T) {
 			addModule(mod11)
 			mod12 := modules.NewReadOnlyGate(mod11)
 			addModule(mod12)
-			mod13, err := modules.NewShardedStorage(size, size, func(index int, size int) (storage.StorageProvider, error) {
+			mod13, err := modules.NewShardedStorage(size, size, func(_ int, _ int) (storage.StorageProvider, error) {
 				return mod12, nil
 			})
 			assert.NoError(t, err)

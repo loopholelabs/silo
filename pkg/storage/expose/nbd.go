@@ -62,28 +62,28 @@ func (n *ExposedStorageNBDNL) SetProvider(prov storage.StorageProvider) {
 }
 
 // Impl StorageProvider here so we can route calls to provider
-func (i *ExposedStorageNBDNL) ReadAt(buffer []byte, offset int64) (int, error) {
-	return i.prov.ReadAt(buffer, offset)
+func (n *ExposedStorageNBDNL) ReadAt(buffer []byte, offset int64) (int, error) {
+	return n.prov.ReadAt(buffer, offset)
 }
 
-func (i *ExposedStorageNBDNL) WriteAt(buffer []byte, offset int64) (int, error) {
-	return i.prov.WriteAt(buffer, offset)
+func (n *ExposedStorageNBDNL) WriteAt(buffer []byte, offset int64) (int, error) {
+	return n.prov.WriteAt(buffer, offset)
 }
 
-func (i *ExposedStorageNBDNL) Flush() error {
-	return i.prov.Flush()
+func (n *ExposedStorageNBDNL) Flush() error {
+	return n.prov.Flush()
 }
 
-func (i *ExposedStorageNBDNL) Size() uint64 {
-	return i.prov.Size()
+func (n *ExposedStorageNBDNL) Size() uint64 {
+	return n.prov.Size()
 }
 
-func (i *ExposedStorageNBDNL) Close() error {
-	return i.prov.Close()
+func (n *ExposedStorageNBDNL) Close() error {
+	return n.prov.Close()
 }
 
-func (i *ExposedStorageNBDNL) CancelWrites(offset int64, length int64) {
-	i.prov.CancelWrites(offset, length)
+func (n *ExposedStorageNBDNL) CancelWrites(offset int64, length int64) {
+	n.prov.CancelWrites(offset, length)
 }
 
 func (n *ExposedStorageNBDNL) Device() string {
@@ -125,7 +125,7 @@ func (n *ExposedStorageNBDNL) Init() error {
 			n.dispatchers = append(n.dispatchers, d)
 		}
 		var opts []nbdnl.ConnectOption
-		opts = append(opts, nbdnl.WithBlockSize(uint64(n.blockSize)))
+		opts = append(opts, nbdnl.WithBlockSize(n.blockSize))
 		opts = append(opts, nbdnl.WithTimeout(n.timeout))
 		opts = append(opts, nbdnl.WithDeadconnTimeout(n.timeout))
 

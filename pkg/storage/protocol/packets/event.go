@@ -32,23 +32,22 @@ func EncodeEvent(e *Event) []byte {
 		buff[2] = e.CustomType
 		copy(buff[3:], e.CustomPayload)
 		return buff
-	} else {
-		buff := make([]byte, 1+1)
-		buff[0] = COMMAND_EVENT
-		buff[1] = byte(e.Type)
-		return buff
 	}
+	buff := make([]byte, 1+1)
+	buff[0] = COMMAND_EVENT
+	buff[1] = byte(e.Type)
+	return buff
 }
 
 func DecodeEvent(buff []byte) (*Event, error) {
 	if buff == nil || len(buff) < 2 || buff[0] != COMMAND_EVENT {
-		return nil, Err_invalid_packet
+		return nil, ErrInvalidPacket
 	}
 	e := &Event{Type: EventType(buff[1])}
 	if e.Type == EventCustom {
 		// Decode the other bits
 		if len(buff) < 3 {
-			return nil, Err_invalid_packet
+			return nil, ErrInvalidPacket
 		}
 		e.CustomType = buff[2]
 		e.CustomPayload = buff[3:]
@@ -64,7 +63,7 @@ func EncodeEventResponse() []byte {
 
 func DecodeEventResponse(buff []byte) error {
 	if buff == nil || len(buff) < 1 || buff[0] != COMMAND_EVENT_RESPONSE {
-		return Err_invalid_packet
+		return ErrInvalidPacket
 	}
 	return nil
 }

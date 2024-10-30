@@ -477,14 +477,14 @@ func (fp *FromProtocol) HandleDirtyList(cb func(blocks []uint)) error {
 	}
 }
 
-func (i *FromProtocol) NeedAt(offset int64, length int32) error {
+func (fp *FromProtocol) NeedAt(offset int64, length int32) error {
 	b := packets.EncodeNeedAt(offset, length)
-	_, err := i.protocol.SendPacket(i.dev, ID_PICK_ANY, b)
+	_, err := fp.protocol.SendPacket(fp.dev, ID_PICK_ANY, b)
 	return err
 }
 
-func (i *FromProtocol) DontNeedAt(offset int64, length int32) error {
+func (fp *FromProtocol) DontNeedAt(offset int64, length int32) error {
 	b := packets.EncodeDontNeedAt(offset, length)
-	_, err := i.protocol.SendPacket(i.dev, ID_PICK_ANY, b)
+	_, err := fp.protocol.SendPacket(fp.dev, ID_PICK_ANY, b)
 	return err
 }

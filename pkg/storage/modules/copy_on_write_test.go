@@ -212,11 +212,11 @@ func TestCopyOnWriteCRCIssue(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, eq)
 
-	buff_cow := make([]byte, cow.Size())
-	_, err = cow.ReadAt(buff_cow, 0)
+	buffCow := make([]byte, cow.Size())
+	_, err = cow.ReadAt(buffCow, 0)
 	assert.NoError(t, err)
 
-	buff_ref := make([]byte, reference.Size())
-	_, err = reference.ReadAt(buff_ref, 0)
+	buffRef := make([]byte, reference.Size())
+	_, err = reference.ReadAt(buffRef, 0)
 	assert.NoError(t, err)
 }

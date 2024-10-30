@@ -35,7 +35,7 @@ func setup(num int) *ToProtocol {
 	}
 
 	storeFactory := func(di *packets.DevInfo) storage.StorageProvider {
-		cr := func(i int, size int) (storage.StorageProvider, error) {
+		cr := func(_ int, _ int) (storage.StorageProvider, error) {
 			return sources.NewMemoryStorage(int(di.Size)), nil
 		}
 		var err error

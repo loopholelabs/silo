@@ -88,7 +88,7 @@ func TestSyncToS3(t *testing.T) {
 			// return sourceDirtyRemote.GetDirtyBlocks(1*time.Second, 16, 10, 4)
 		},
 		BlockSize: blockSize,
-		ProgressHandler: func(p *MigrationProgress) {
+		ProgressHandler: func(_ *MigrationProgress) {
 			// Don't need to do anything here...
 		},
 		ErrorHandler: func(b *storage.BlockInfo, err error) {
@@ -156,7 +156,7 @@ func TestSyncSimple(t *testing.T) {
 			// return sourceDirtyRemote.GetDirtyBlocks(1*time.Second, 16, 10, 4)
 		},
 		BlockSize: blockSize,
-		ProgressHandler: func(p *MigrationProgress) {
+		ProgressHandler: func(_ *MigrationProgress) {
 			// Don't need to do anything here...
 		},
 		ErrorHandler: func(b *storage.BlockInfo, err error) {

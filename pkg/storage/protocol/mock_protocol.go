@@ -25,7 +25,7 @@ func NewMockProtocol(ctx context.Context) *MockProtocol {
 	}
 }
 
-func (mp *MockProtocol) SendPacketWriter(dev uint32, id uint32, length uint32, data func(io.Writer) error) (uint32, error) {
+func (mp *MockProtocol) SendPacketWriter(dev uint32, id uint32, _ uint32, data func(io.Writer) error) (uint32, error) {
 	var buff bytes.Buffer
 	err := data(&buff)
 	if err != nil {
@@ -54,10 +54,10 @@ func (mp *MockProtocol) SendPacket(dev uint32, id uint32, data []byte) (uint32, 
 		mp.waiters[dev] = w
 	}
 
-	wqId, okk := w.byID[id]
+	wqID, okk := w.byID[id]
 	if !okk {
-		wqId = make(chan packetinfo, 8) // Some buffer here...
-		w.byID[id] = wqId
+		wqID = make(chan packetinfo, 8) // Some buffer here...
+		w.byID[id] = wqID
 	}
 
 	wqCmd, okk := w.byCmd[cmd]
@@ -73,7 +73,7 @@ func (mp *MockProtocol) SendPacket(dev uint32, id uint32, data []byte) (uint32, 
 	// TODO: Don't always do this, expire, etc etc
 
 	if packets.IsResponse(cmd) {
-		wqId <- packetinfo{
+		wqID <- packetinfo{
 			id:   id,
 			data: data,
 		}

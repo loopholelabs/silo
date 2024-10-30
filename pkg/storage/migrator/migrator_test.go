@@ -53,7 +53,7 @@ func TestMigratorSimple(t *testing.T) {
 
 	destStorage := sources.NewMemoryStorage(size)
 
-	conf := NewMigratorConfig().WithBlockSize(blockSize)
+	conf := NewConfig().WithBlockSize(blockSize)
 	conf.LockerHandler = sourceStorage.Lock
 	conf.UnlockerHandler = sourceStorage.Unlock
 
@@ -106,7 +106,7 @@ func TestMigratorPartial(t *testing.T) {
 
 	destStorage := sources.NewMemoryStorage(size)
 
-	conf := NewMigratorConfig().WithBlockSize(blockSize)
+	conf := NewConfig().WithBlockSize(blockSize)
 	conf.LockerHandler = sourceStorage.Lock
 	conf.UnlockerHandler = sourceStorage.Unlock
 
@@ -199,7 +199,7 @@ func TestMigratorSimplePipe(t *testing.T) {
 	err = destination.SendDevInfo("test", uint32(blockSize), "")
 	assert.NoError(t, err)
 
-	conf := NewMigratorConfig().WithBlockSize(blockSize)
+	conf := NewConfig().WithBlockSize(blockSize)
 	conf.LockerHandler = sourceStorage.Lock
 	conf.UnlockerHandler = sourceStorage.Unlock
 
@@ -277,7 +277,7 @@ func TestMigratorSimplePipeDirtySent(t *testing.T) {
 			_ = destFrom.HandleDevInfo()
 		}()
 		go func() {
-			_ = destFrom.HandleDirtyList(func(blocks []uint) {})
+			_ = destFrom.HandleDirtyList(func(_ []uint) {})
 		}()
 	}
 
@@ -297,7 +297,7 @@ func TestMigratorSimplePipeDirtySent(t *testing.T) {
 	err = destination.SendDevInfo("test", uint32(blockSize), "")
 	assert.NoError(t, err)
 
-	conf := NewMigratorConfig().WithBlockSize(blockSize)
+	conf := NewConfig().WithBlockSize(blockSize)
 	conf.LockerHandler = sourceStorage.Lock
 	conf.UnlockerHandler = sourceStorage.Unlock
 
@@ -369,7 +369,7 @@ func TestMigratorSimplePipeDirtyMissing(t *testing.T) {
 	r1, w1 := io.Pipe()
 	r2, w2 := io.Pipe()
 
-	var dest_wg sync.WaitGroup
+	var destWG sync.WaitGroup
 
 	initDev := func(ctx context.Context, p protocol.Protocol, dev uint32) {
 		destStorageFactory := func(di *packets.DevInfo) storage.StorageProvider {
@@ -379,23 +379,23 @@ func TestMigratorSimplePipeDirtyMissing(t *testing.T) {
 
 		// Pipe from the protocol to destWaiting
 		destFrom = protocol.NewFromProtocol(ctx, dev, destStorageFactory, p)
-		dest_wg.Add(4)
+		destWG.Add(4)
 		go func() {
 			_ = destFrom.HandleReadAt()
-			dest_wg.Done()
+			destWG.Done()
 		}()
 		go func() {
 			_ = destFrom.HandleWriteAt()
-			dest_wg.Done()
+			destWG.Done()
 		}()
 		go func() {
 			_ = destFrom.HandleDevInfo()
-			dest_wg.Done()
+			destWG.Done()
 		}()
 		go func() {
-			_ = destFrom.HandleDirtyList(func(blocks []uint) {
+			_ = destFrom.HandleDirtyList(func(_ []uint) {
 			})
-			dest_wg.Done()
+			destWG.Done()
 		}()
 	}
 
@@ -417,7 +417,7 @@ func TestMigratorSimplePipeDirtyMissing(t *testing.T) {
 	err = destination.SendDevInfo("test", uint32(blockSize), "")
 	assert.NoError(t, err)
 
-	conf := NewMigratorConfig().WithBlockSize(blockSize)
+	conf := NewConfig().WithBlockSize(blockSize)
 	conf.LockerHandler = sourceStorage.Lock
 	conf.UnlockerHandler = sourceStorage.Unlock
 
@@ -442,7 +442,7 @@ func TestMigratorSimplePipeDirtyMissing(t *testing.T) {
 
 	// Wait for stuff
 	cancelfn()
-	dest_wg.Wait()
+	destWG.Wait()
 
 	// This will end with migration completed, and consumer Locked.
 	eq, err := storage.Equals(sourceStorageMem, destStorage, blockSize)
@@ -517,7 +517,7 @@ func TestMigratorWithReaderWriter(t *testing.T) {
 	destStorage := sources.NewMemoryStorage(size)
 	destWaitingLocal, destWaitingRemote := waitingcache.NewWaitingCache(destStorage, blockSize)
 
-	conf := NewMigratorConfig().WithBlockSize(blockSize)
+	conf := NewConfig().WithBlockSize(blockSize)
 	conf.LockerHandler = sourceStorage.Lock
 	conf.UnlockerHandler = sourceStorage.Unlock
 
@@ -658,7 +658,7 @@ func TestMigratorWithReaderWriterWrite(t *testing.T) {
 	destStorage := sources.NewMemoryStorage(size)
 	destWaitingLocal, destWaitingRemote := waitingcache.NewWaitingCache(destStorage, blockSize)
 
-	conf := NewMigratorConfig().WithBlockSize(blockSize)
+	conf := NewConfig().WithBlockSize(blockSize)
 	conf.LockerHandler = sourceStorage.Lock
 	conf.UnlockerHandler = sourceStorage.Unlock
 	// Get rid of concurrency
@@ -678,9 +678,9 @@ func TestMigratorWithReaderWriterWrite(t *testing.T) {
 			end = uint64(size)
 		}
 
-		b_start := int(offset / int64(blockSize))
-		b_end := int((end-1)/uint64(blockSize)) + 1
-		for b := b_start; b < b_end; b++ {
+		bStart := int(offset / int64(blockSize))
+		bEnd := int((end-1)/uint64(blockSize)) + 1
+		for b := bStart; b < bEnd; b++ {
 			// Ask the orderer to prioritize these blocks...
 			orderer.PrioritiseBlock(b)
 		}
@@ -692,9 +692,9 @@ func TestMigratorWithReaderWriterWrite(t *testing.T) {
 			end = uint64(size)
 		}
 
-		b_start := int(offset / int64(blockSize))
-		b_end := int((end-1)/uint64(blockSize)) + 1
-		for b := b_start; b < b_end; b++ {
+		bStart := int(offset / int64(blockSize))
+		bEnd := int((end-1)/uint64(blockSize)) + 1
+		for b := bStart; b < bEnd; b++ {
 			orderer.Remove(b)
 		}
 	}
@@ -798,10 +798,10 @@ func TestMigratorSimpleCowSparse(t *testing.T) {
 
 	destStorage := sources.NewMemoryStorage(size)
 
-	conf := NewMigratorConfig().WithBlockSize(blockSize)
+	conf := NewConfig().WithBlockSize(blockSize)
 	conf.LockerHandler = sourceStorage.Lock
 	conf.UnlockerHandler = sourceStorage.Unlock
-	conf.ErrorHandler = func(block *storage.BlockInfo, err error) {
+	conf.ErrorHandler = func(_ *storage.BlockInfo, err error) {
 		panic(err)
 	}
 

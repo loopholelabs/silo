@@ -19,7 +19,7 @@ func (wcl *WaitingCacheRemote) SendSiloEvent(eventType storage.EventType, eventD
 	return append(data, storage.SendSiloEvent(wcl.wc.prov, eventType, eventData)...)
 }
 
-func (wcl *WaitingCacheRemote) ReadAt(buffer []byte, offset int64) (int, error) {
+func (wcl *WaitingCacheRemote) ReadAt(_ []byte, _ int64) (int, error) {
 	// Remote reads are unsupported at the moment.
 	return 0, io.EOF
 }
@@ -51,7 +51,7 @@ func (wcl *WaitingCacheRemote) WriteAt(buffer []byte, offset int64) (int, error)
 
 	if wcl.wc.allowLocalWrites {
 		// Check if we have local data that needs merging (From local writes)
-		avail := wcl.wc.local.available.Collect(uint(bStart), uint(bEnd))
+		avail := wcl.wc.local.available.Collect(bStart, bEnd)
 
 		if len(avail) != 0 {
 			pbuffer := make([]byte, len(buffer))

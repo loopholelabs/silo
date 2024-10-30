@@ -175,6 +175,6 @@ func (i *ShardedStorage) Close() error {
 	return err
 }
 
-func (i *ShardedStorage) CancelWrites(offset int64, length int64) {
+func (i *ShardedStorage) CancelWrites(_ int64, _ int64) {
 	// TODO: Implement
 }

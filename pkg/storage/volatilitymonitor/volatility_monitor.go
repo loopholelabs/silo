@@ -60,7 +60,7 @@ func (i *VolatilityMonitor) GetNext() *storage.BlockInfo {
 			}
 
 			if block == -1 || (c <= blockCount) {
-				block = int(n)
+				block = n
 				blockCount = c
 				if blockCount == 0 {
 					break // Special case - this is a static block. Not going to find better.
@@ -73,9 +73,8 @@ func (i *VolatilityMonitor) GetNext() *storage.BlockInfo {
 		delete(i.blockData, uint(block))
 		i.available.ClearBit(block)
 		return &storage.BlockInfo{Block: block}
-	} else {
-		return storage.BlockInfoFinish
 	}
+	return storage.BlockInfoFinish
 }
 
 func (i *VolatilityMonitor) AddAll() {

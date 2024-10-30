@@ -77,7 +77,7 @@ func (i *BinLogReplay) ExecuteNext(speed float64) error {
 		}
 		_, err = i.prov.WriteAt(buffer, offset)
 		return err
-	} else {
-		panic("Unknown packet in binlog")
 	}
+	panic("Unknown packet in binlog")
+
 }

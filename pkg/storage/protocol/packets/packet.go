@@ -2,9 +2,9 @@ package packets
 
 import "errors"
 
-var Err_invalid_packet = errors.New("invalid packet")
-var Err_read_error = errors.New("remote read error")
-var Err_write_error = errors.New("remote write error")
+var ErrInvalidPacket = errors.New("invalid packet")
+var ErrReadError = errors.New("remote read error")
+var ErrWriteError = errors.New("remote write error")
 
 const COMMAND_REQUEST = byte(0)
 const COMMAND_RESPONSE = byte(0x80)

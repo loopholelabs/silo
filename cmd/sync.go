@@ -85,7 +85,7 @@ func init() {
  * Run sync command
  *
  */
-func runSync(ccmd *cobra.Command, args []string) {
+func runSync(_ *cobra.Command, _ []string) {
 	syncExposed = make([]storage.ExposedStorage, 0)
 	syncStorage = make([]*syncStorageInfo, 0)
 	fmt.Printf("Starting silo s3 sync\n")
@@ -235,7 +235,7 @@ func syncMigrateS3(_ uint32, name string,
 
 	destMetrics := modules.NewMetrics(sinfo.destMetrics)
 
-	conf := migrator.NewMigratorConfig().WithBlockSize(syncBlockSize)
+	conf := migrator.NewConfig().WithBlockSize(syncBlockSize)
 	conf.LockerHandler = func() {
 		sinfo.lockable.Lock()
 	}
@@ -261,9 +261,9 @@ func syncMigrateS3(_ uint32, name string,
 	}
 
 	// Show logging for S3 writes
-	log_dest := modules.NewLogger(destMetrics, "S3")
+	logDest := modules.NewLogger(destMetrics, "S3")
 
-	mig, err := migrator.NewMigrator(sinfo.tracker, log_dest, sinfo.orderer, conf)
+	mig, err := migrator.NewMigrator(sinfo.tracker, logDest, sinfo.orderer, conf)
 
 	if err != nil {
 		return err
@@ -302,9 +302,9 @@ func syncMigrateS3(_ uint32, name string,
 
 	numBlocks := (sinfo.tracker.Size() + uint64(syncBlockSize) - 1) / uint64(syncBlockSize)
 
-	is_new := true
+	isNew := true
 
-	if is_new {
+	if isNew {
 		// Since it's a new source, it's all zeros. We don't need to do an initial migration.
 		for b := 0; b < int(numBlocks); b++ {
 			mig.SetMigratedBlock(b)
@@ -363,8 +363,8 @@ func syncMigrateS3(_ uint32, name string,
 	cancelFn() // Stop the write loop
 
 	ood := sinfo.tracker.MeasureDirty()
-	ood_age := sinfo.tracker.MeasureDirtyAge()
-	fmt.Printf("DIRTY STATUS %dms old, with %d blocks\n", time.Since(ood_age).Milliseconds(), ood)
+	oodAge := sinfo.tracker.MeasureDirtyAge()
+	fmt.Printf("DIRTY STATUS %dms old, with %d blocks\n", time.Since(oodAge).Milliseconds(), ood)
 
 	err = mig.WaitForCompletion()
 	if err != nil {

@@ -97,7 +97,7 @@ func TestProtocolRWCancelFromHandler(t *testing.T) {
 	var wg sync.WaitGroup
 
 	prSource := NewProtocolRW(ctx, []io.Reader{r1}, []io.Writer{w2}, nil)
-	prDest := NewProtocolRW(ctx, []io.Reader{r2}, []io.Writer{w1}, func(ctx context.Context, p Protocol, dev uint32) {
+	prDest := NewProtocolRW(ctx, []io.Reader{r2}, []io.Writer{w1}, func(_ context.Context, _ Protocol, _ uint32) {
 		cancelFn()
 	})
 
@@ -142,7 +142,7 @@ func TestProtocolRWSendAfterCancel(t *testing.T) {
 	var wg sync.WaitGroup
 
 	prSource := NewProtocolRW(ctx, []io.Reader{r1}, []io.Writer{w2}, nil)
-	prDest := NewProtocolRW(ctx, []io.Reader{r2}, []io.Writer{w1}, func(ctx context.Context, p Protocol, dev uint32) {
+	prDest := NewProtocolRW(ctx, []io.Reader{r2}, []io.Writer{w1}, func(_ context.Context, _ Protocol, _ uint32) {
 		cancelFn()
 	})
 
@@ -173,7 +173,7 @@ func TestProtocolRWSendAfterCancel(t *testing.T) {
 	_, err = prDest.SendPacket(1, 0, []byte{1, 2, 3})
 	assert.ErrorIs(t, err, context.Canceled)
 
-	_, err = prDest.SendPacketWriter(1, 0, 0, func(w io.Writer) error { return nil })
+	_, err = prDest.SendPacketWriter(1, 0, 0, func(_ io.Writer) error { return nil })
 	assert.ErrorIs(t, err, context.Canceled)
 
 }

@@ -79,8 +79,8 @@ func (p *TestProtocolBandwidth) waitForBandwidth() {
 		if duration.Nanoseconds() > 0 {
 			// duration may be less than a second, in which case we should adjust bytes...
 			sf := float64(time.Second.Nanoseconds()) / float64(duration.Nanoseconds())
-			adj_bytes := uint64(float64(bytes) * sf)
-			if adj_bytes < p.recvBandwidth {
+			adjBytes := uint64(float64(bytes) * sf)
+			if adjBytes < p.recvBandwidth {
 				p.expireBandwidth(1 * time.Second)
 				break
 			}

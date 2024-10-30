@@ -203,7 +203,7 @@ func (p *ProtocolRW) handlePacket(dev uint32, id uint32, data []byte) error {
 	p.InitDev(dev)
 
 	if data == nil || len(data) < 1 {
-		return packets.Err_invalid_packet
+		return packets.ErrInvalidPacket
 	}
 
 	cmd := data[0]
@@ -218,10 +218,10 @@ func (p *ProtocolRW) handlePacket(dev uint32, id uint32, data []byte) error {
 		p.waiters[dev] = w
 	}
 
-	wqId, okk := w.byID[id]
+	wqID, okk := w.byID[id]
 	if !okk {
-		wqId = make(chan packetinfo, 8) // Some buffer here...
-		w.byID[id] = wqId
+		wqID = make(chan packetinfo, 8) // Some buffer here...
+		w.byID[id] = wqID
 	}
 
 	wqCmd, okk := w.byCmd[cmd]
@@ -233,7 +233,7 @@ func (p *ProtocolRW) handlePacket(dev uint32, id uint32, data []byte) error {
 	p.waitersLock.Unlock()
 
 	if packets.IsResponse(cmd) {
-		wqId <- packetinfo{
+		wqID <- packetinfo{
 			id:   id,
 			data: data,
 		}
@@ -246,39 +246,39 @@ func (p *ProtocolRW) handlePacket(dev uint32, id uint32, data []byte) error {
 	return nil
 }
 
-func (mp *ProtocolRW) WaitForPacket(dev uint32, id uint32) ([]byte, error) {
-	mp.waitersLock.Lock()
-	w := mp.waiters[dev]
+func (p *ProtocolRW) WaitForPacket(dev uint32, id uint32) ([]byte, error) {
+	p.waitersLock.Lock()
+	w := p.waiters[dev]
 	wq, okk := w.byID[id]
 	if !okk {
 		wq = make(chan packetinfo, 8) // Some buffer here...
 		w.byID[id] = wq
 	}
-	mp.waitersLock.Unlock()
+	p.waitersLock.Unlock()
 
 	select {
 	case p := <-wq:
 		// TODO: Remove the channel, as we only expect a SINGLE response with this ID.
 		return p.data, nil
-	case <-mp.ctx.Done():
-		return nil, mp.ctx.Err()
+	case <-p.ctx.Done():
+		return nil, p.ctx.Err()
 	}
 }
 
-func (mp *ProtocolRW) WaitForCommand(dev uint32, cmd byte) (uint32, []byte, error) {
-	mp.waitersLock.Lock()
-	w := mp.waiters[dev]
+func (p *ProtocolRW) WaitForCommand(dev uint32, cmd byte) (uint32, []byte, error) {
+	p.waitersLock.Lock()
+	w := p.waiters[dev]
 	wq, okk := w.byCmd[cmd]
 	if !okk {
 		wq = make(chan packetinfo, 8) // Some buffer here...
 		w.byCmd[cmd] = wq
 	}
-	mp.waitersLock.Unlock()
+	p.waitersLock.Unlock()
 
 	select {
 	case p := <-wq:
 		return p.id, p.data, nil
-	case <-mp.ctx.Done():
-		return 0, nil, mp.ctx.Err()
+	case <-p.ctx.Done():
+		return 0, nil, p.ctx.Err()
 	}
 }

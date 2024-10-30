@@ -71,7 +71,7 @@ func parseByteValue(val string) int64 {
 	if err != nil {
 		panic(err)
 	}
-	return int64(i) * multiplier
+	return i * multiplier
 }
 
 func (ds *DeviceSchema) ByteSize() int64 {

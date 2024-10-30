@@ -7,10 +7,10 @@ import (
 type Hooks struct {
 	storage.StorageProviderWithEvents
 	prov      storage.StorageProvider
-	PreRead   func(buffer []byte, offset int64) (bool, int, error)
-	PostRead  func(buffer []byte, offset int64, n int, err error) (int, error)
-	PreWrite  func(buffer []byte, offset int64) (bool, int, error)
-	PostWrite func(buffer []byte, offset int64, n int, err error) (int, error)
+	PreRead   func(_ []byte, _ int64) (bool, int, error)
+	PostRead  func(_ []byte, _ int64, _ int, _ error) (int, error)
+	PreWrite  func(_ []byte, _ int64) (bool, int, error)
+	PostWrite func(_ []byte, _ int64, _ int, _ error) (int, error)
 }
 
 // Relay events to embedded StorageProvider
@@ -22,16 +22,16 @@ func (i *Hooks) SendSiloEvent(eventType storage.EventType, eventData storage.Eve
 func NewHooks(prov storage.StorageProvider) *Hooks {
 	return &Hooks{
 		prov: prov,
-		PreRead: func(buffer []byte, offset int64) (bool, int, error) {
+		PreRead: func(_ []byte, _ int64) (bool, int, error) {
 			return false, 0, nil
 		},
-		PreWrite: func(buffer []byte, offset int64) (bool, int, error) {
+		PreWrite: func(_ []byte, _ int64) (bool, int, error) {
 			return false, 0, nil
 		},
-		PostRead: func(buffer []byte, offset int64, n int, err error) (int, error) {
+		PostRead: func(_ []byte, _ int64, n int, err error) (int, error) {
 			return n, err
 		},
-		PostWrite: func(buffer []byte, offset int64, n int, err error) (int, error) {
+		PostWrite: func(_ []byte, _ int64, n int, err error) (int, error) {
 			return n, err
 		},
 	}

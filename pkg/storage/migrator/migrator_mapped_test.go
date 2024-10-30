@@ -47,7 +47,7 @@ func TestMigratorSimpleMapped(t *testing.T) {
 	destStorage := sources.NewMemoryStorage(size)
 	destMappedStorage := modules.NewMappedStorage(destStorage, blockSize)
 
-	conf := NewMigratorConfig().WithBlockSize(blockSize)
+	conf := NewConfig().WithBlockSize(blockSize)
 	conf.LockerHandler = sourceStorage.Lock
 	conf.UnlockerHandler = sourceStorage.Unlock
 
@@ -62,7 +62,7 @@ func TestMigratorSimpleMapped(t *testing.T) {
 		// Write to the destination map and storage...
 		destMappedStorage.AppendMap(idmap)
 		return destStorage.WriteAt(data, offset)
-		//return len(data), nil
+		// return len(data), nil
 	}
 	mig.SetSourceMapped(mappedStorage, writer)
 

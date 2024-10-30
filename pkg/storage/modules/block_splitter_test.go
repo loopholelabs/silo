@@ -17,7 +17,7 @@ func TestBlockSplitterRead(t *testing.T) {
 	mem := sources.NewMemoryStorage(size)
 	//	source := NewArtificialLatency(mem, 10*time.Millisecond, 100*time.Nanosecond, 10*time.Millisecond, 100*time.Nanosecond)
 	metrics := NewMetrics(mem)
-	//log := NewLogger(metrics)
+	// log := NewLogger(metrics)
 	split := NewBlockSplitter(metrics, 100) // Block size of 100 bytes
 
 	// Fill it with stuff
