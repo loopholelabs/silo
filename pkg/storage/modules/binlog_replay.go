@@ -10,13 +10,13 @@ import (
 )
 
 type BinLogReplay struct {
-	prov     storage.StorageProvider
+	prov     storage.Provider
 	fp       *os.File
 	ctime    time.Time
 	setCtime bool
 }
 
-func NewBinLogReplay(filename string, prov storage.StorageProvider) (*BinLogReplay, error) {
+func NewBinLogReplay(filename string, prov storage.Provider) (*BinLogReplay, error) {
 	fp, err := os.Open(filename)
 	if err != nil {
 		return nil, err
@@ -62,7 +62,7 @@ func (i *BinLogReplay) ExecuteNext(speed float64) error {
 	}
 
 	// Dispatch the command
-	if data[0] == packets.COMMAND_READ_AT {
+	if data[0] == packets.CommandReadAt {
 		offset, length, err := packets.DecodeReadAt(data)
 		if err != nil {
 			return err
@@ -70,7 +70,7 @@ func (i *BinLogReplay) ExecuteNext(speed float64) error {
 		buffer := make([]byte, length)
 		_, err = i.prov.ReadAt(buffer, offset)
 		return err
-	} else if data[0] == packets.COMMAND_WRITE_AT {
+	} else if data[0] == packets.CommandWriteAt {
 		offset, buffer, err := packets.DecodeWriteAt(data)
 		if err != nil {
 			return err

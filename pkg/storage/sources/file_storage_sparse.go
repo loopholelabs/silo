@@ -9,7 +9,7 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage"
 )
 
-const BLOCK_HEADER_SIZE = 8
+const blockHeaderSize = 8
 
 /**
  * Simple sparse file storage provider
@@ -20,7 +20,7 @@ const BLOCK_HEADER_SIZE = 8
  *
  */
 type FileStorageSparse struct {
-	storage.StorageProviderWithEvents
+	storage.ProviderWithEvents
 	f           string
 	fp          *os.File
 	size        uint64
@@ -56,7 +56,7 @@ func NewFileStorageSparse(f string, size uint64, blockSize int) (*FileStorageSpa
 	// Scan through the file and get the offsets...
 	offsets := make(map[uint]uint64)
 
-	header := make([]byte, BLOCK_HEADER_SIZE)
+	header := make([]byte, blockHeaderSize)
 	p := int64(0)
 	for {
 		l, err := fp.ReadAt(header, p)
@@ -70,7 +70,7 @@ func NewFileStorageSparse(f string, size uint64, blockSize int) (*FileStorageSpa
 		if err != nil {
 			return nil, err
 		}
-		p += int64(BLOCK_HEADER_SIZE + blockSize)
+		p += int64(blockHeaderSize + blockSize)
 	}
 
 	return &FileStorageSparse{
@@ -79,7 +79,7 @@ func NewFileStorageSparse(f string, size uint64, blockSize int) (*FileStorageSpa
 		size:        size,
 		blockSize:   blockSize,
 		offsets:     offsets,
-		currentSize: uint64(len(offsets) * (BLOCK_HEADER_SIZE + blockSize)),
+		currentSize: uint64(len(offsets) * (blockHeaderSize + blockSize)),
 	}, nil
 }
 
@@ -92,15 +92,15 @@ func (i *FileStorageSparse) writeBlock(buffer []byte, b uint) error {
 	}
 
 	// Need to append the data to the end of the file...
-	blockHeader := make([]byte, BLOCK_HEADER_SIZE)
+	blockHeader := make([]byte, blockHeaderSize)
 	binary.LittleEndian.PutUint64(blockHeader, uint64(b))
-	i.offsets[b] = i.currentSize + BLOCK_HEADER_SIZE
+	i.offsets[b] = i.currentSize + blockHeaderSize
 	_, err := i.fp.Seek(int64(i.currentSize), 0) // Go to the end of the file
 	if err != nil {
 		return err
 	}
 
-	i.currentSize += BLOCK_HEADER_SIZE + uint64(i.blockSize)
+	i.currentSize += blockHeaderSize + uint64(i.blockSize)
 	_, err = i.fp.Write(blockHeader)
 	if err != nil {
 		return err

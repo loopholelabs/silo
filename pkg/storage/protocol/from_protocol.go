@@ -12,8 +12,8 @@ import (
 
 type FromProtocol struct {
 	dev             uint32
-	prov            storage.StorageProvider
-	providerFactory func(*packets.DevInfo) storage.StorageProvider
+	prov            storage.Provider
+	providerFactory func(*packets.DevInfo) storage.Provider
 	protocol        Protocol
 	init            chan bool
 	ctx             context.Context
@@ -26,7 +26,7 @@ type FromProtocol struct {
 	alternateSources     []packets.AlternateSource
 }
 
-func NewFromProtocol(ctx context.Context, dev uint32, provFactory func(*packets.DevInfo) storage.StorageProvider, protocol Protocol) *FromProtocol {
+func NewFromProtocol(ctx context.Context, dev uint32, provFactory func(*packets.DevInfo) storage.Provider, protocol Protocol) *FromProtocol {
 	fp := &FromProtocol{
 		dev:              dev,
 		providerFactory:  provFactory,
@@ -152,7 +152,7 @@ func (fp *FromProtocol) HandleEvent(cb func(*packets.Event)) error {
 	}
 
 	for {
-		id, data, err := fp.protocol.WaitForCommand(fp.dev, packets.COMMAND_EVENT)
+		id, data, err := fp.protocol.WaitForCommand(fp.dev, packets.CommandEvent)
 		if err != nil {
 			return err
 		}
@@ -179,7 +179,7 @@ func (fp *FromProtocol) HandleHashes(cb func(map[uint][sha256.Size]byte)) error 
 	}
 
 	for {
-		id, data, err := fp.protocol.WaitForCommand(fp.dev, packets.COMMAND_HASHES)
+		id, data, err := fp.protocol.WaitForCommand(fp.dev, packets.CommandHashes)
 		if err != nil {
 			return err
 		}
@@ -200,7 +200,7 @@ func (fp *FromProtocol) HandleHashes(cb func(map[uint][sha256.Size]byte)) error 
 
 // Handle a DevInfo, and create the storage
 func (fp *FromProtocol) HandleDevInfo() error {
-	_, data, err := fp.protocol.WaitForCommand(fp.dev, packets.COMMAND_DEV_INFO)
+	_, data, err := fp.protocol.WaitForCommand(fp.dev, packets.CommandDevInfo)
 	if err != nil {
 		return err
 	}
@@ -219,7 +219,7 @@ func (fp *FromProtocol) HandleDevInfo() error {
 	// Internal - store alternateSources here...
 	go func() {
 		for {
-			_, data, err := fp.protocol.WaitForCommand(fp.dev, packets.COMMAND_ALTERNATE_SOURCES)
+			_, data, err := fp.protocol.WaitForCommand(fp.dev, packets.CommandAlternateSources)
 			if err != nil {
 				return
 			}
@@ -257,7 +257,7 @@ func (fp *FromProtocol) HandleReadAt() error {
 		}
 		errLock.Unlock()
 
-		id, data, err := fp.protocol.WaitForCommand(fp.dev, packets.COMMAND_READ_AT)
+		id, data, err := fp.protocol.WaitForCommand(fp.dev, packets.CommandReadAt)
 		if err != nil {
 			return err
 		}
@@ -304,12 +304,12 @@ func (fp *FromProtocol) HandleWriteAt() error {
 		}
 		errLock.Unlock()
 
-		id, data, err := fp.protocol.WaitForCommand(fp.dev, packets.COMMAND_WRITE_AT)
+		id, data, err := fp.protocol.WaitForCommand(fp.dev, packets.CommandWriteAt)
 		if err != nil {
 			return err
 		}
 
-		if len(data) > 1 && data[1] == packets.WRITE_AT_HASH {
+		if len(data) > 1 && data[1] == packets.WriteAtHash {
 			// It could be a WriteAtHash command...
 			_, length, _, errWriteAtHash := packets.DecodeWriteAtHash(data)
 			if errWriteAtHash != nil {
@@ -332,7 +332,7 @@ func (fp *FromProtocol) HandleWriteAt() error {
 			var offset int64
 			var writeData []byte
 
-			if len(data) > 1 && data[1] == packets.WRITE_AT_COMP_RLE {
+			if len(data) > 1 && data[1] == packets.WriteAtCompRLE {
 				offset, writeData, err = packets.DecodeWriteAtComp(data)
 			} else {
 				offset, writeData, err = packets.DecodeWriteAt(data)
@@ -370,7 +370,7 @@ func (fp *FromProtocol) HandleWriteAtWithMap(cb func(offset int64, data []byte, 
 	}
 
 	for {
-		id, data, err := fp.protocol.WaitForCommand(fp.dev, packets.COMMAND_WRITE_AT_WITH_MAP)
+		id, data, err := fp.protocol.WaitForCommand(fp.dev, packets.CommandWriteAtWithMap)
 		if err != nil {
 			return err
 		}
@@ -403,7 +403,7 @@ func (fp *FromProtocol) HandleRemoveFromMap(cb func(ids []uint64)) error {
 	}
 
 	for {
-		_, data, err := fp.protocol.WaitForCommand(fp.dev, packets.COMMAND_REMOVE_FROM_MAP)
+		_, data, err := fp.protocol.WaitForCommand(fp.dev, packets.CommandRemoveFromMap)
 		if err != nil {
 			return err
 		}
@@ -430,7 +430,7 @@ func (fp *FromProtocol) HandleRemoveDev(cb func()) error {
 		return err
 	}
 
-	_, data, err := fp.protocol.WaitForCommand(fp.dev, packets.COMMAND_REMOVE_DEV)
+	_, data, err := fp.protocol.WaitForCommand(fp.dev, packets.CommandRemoveDev)
 	if err != nil {
 		return err
 	}
@@ -452,7 +452,7 @@ func (fp *FromProtocol) HandleDirtyList(cb func(blocks []uint)) error {
 	}
 
 	for {
-		gid, data, err := fp.protocol.WaitForCommand(fp.dev, packets.COMMAND_DIRTY_LIST)
+		gid, data, err := fp.protocol.WaitForCommand(fp.dev, packets.CommandDirtyList)
 		if err != nil {
 			return err
 		}
@@ -479,12 +479,12 @@ func (fp *FromProtocol) HandleDirtyList(cb func(blocks []uint)) error {
 
 func (fp *FromProtocol) NeedAt(offset int64, length int32) error {
 	b := packets.EncodeNeedAt(offset, length)
-	_, err := fp.protocol.SendPacket(fp.dev, ID_PICK_ANY, b)
+	_, err := fp.protocol.SendPacket(fp.dev, IDPickAny, b)
 	return err
 }
 
 func (fp *FromProtocol) DontNeedAt(offset int64, length int32) error {
 	b := packets.EncodeDontNeedAt(offset, length)
-	_, err := fp.protocol.SendPacket(fp.dev, ID_PICK_ANY, b)
+	_, err := fp.protocol.SendPacket(fp.dev, IDPickAny, b)
 	return err
 }

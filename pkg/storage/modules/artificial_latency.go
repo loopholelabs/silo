@@ -13,9 +13,9 @@ import (
  *
  */
 type ArtificialLatency struct {
-	storage.StorageProviderWithEvents
+	storage.ProviderWithEvents
 	lock                sync.RWMutex
-	prov                storage.StorageProvider
+	prov                storage.Provider
 	latencyRead         time.Duration
 	latencyWrite        time.Duration
 	latencyReadPerByte  time.Duration
@@ -24,11 +24,11 @@ type ArtificialLatency struct {
 
 // Relay events to embedded StorageProvider
 func (i *ArtificialLatency) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
-	data := i.StorageProviderWithEvents.SendSiloEvent(eventType, eventData)
+	data := i.ProviderWithEvents.SendSiloEvent(eventType, eventData)
 	return append(data, storage.SendSiloEvent(i.prov, eventType, eventData)...)
 }
 
-func NewArtificialLatency(prov storage.StorageProvider, latencyRead time.Duration, latencyReadPerByte time.Duration, latencyWrite time.Duration, latencyWritePerByte time.Duration) *ArtificialLatency {
+func NewArtificialLatency(prov storage.Provider, latencyRead time.Duration, latencyReadPerByte time.Duration, latencyWrite time.Duration, latencyWritePerByte time.Duration) *ArtificialLatency {
 	return &ArtificialLatency{
 		prov:                prov,
 		latencyRead:         latencyRead,

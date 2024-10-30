@@ -16,7 +16,7 @@ func TestFromProtocol(t *testing.T) {
 
 	proto := NewMockProtocol(ctx)
 
-	factory := func(_ *packets.DevInfo) storage.StorageProvider {
+	factory := func(_ *packets.DevInfo) storage.Provider {
 		return nil
 	}
 

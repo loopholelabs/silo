@@ -17,7 +17,7 @@ import (
  */
 
 type DirtyTracker struct {
-	prov          storage.StorageProvider
+	prov          storage.Provider
 	size          uint64
 	blockSize     int
 	numBlocks     int
@@ -28,77 +28,77 @@ type DirtyTracker struct {
 	writeLock     sync.RWMutex
 }
 
-type DirtyTrackerLocal struct {
-	storage.StorageProviderWithEvents
+type Local struct {
+	storage.ProviderWithEvents
 	dt *DirtyTracker
 }
 
 // Relay events to embedded StorageProvider
-func (dtl *DirtyTrackerLocal) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
-	data := dtl.StorageProviderWithEvents.SendSiloEvent(eventType, eventData)
+func (dtl *Local) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
+	data := dtl.ProviderWithEvents.SendSiloEvent(eventType, eventData)
 	return append(data, storage.SendSiloEvent(dtl.dt.prov, eventType, eventData)...)
 }
 
-func (dtl *DirtyTrackerLocal) ReadAt(buffer []byte, offset int64) (int, error) {
+func (dtl *Local) ReadAt(buffer []byte, offset int64) (int, error) {
 	return dtl.dt.localReadAt(buffer, offset)
 }
 
-func (dtl *DirtyTrackerLocal) WriteAt(buffer []byte, offset int64) (int, error) {
+func (dtl *Local) WriteAt(buffer []byte, offset int64) (int, error) {
 	return dtl.dt.localWriteAt(buffer, offset)
 }
 
-func (dtl *DirtyTrackerLocal) Flush() error {
+func (dtl *Local) Flush() error {
 	return dtl.dt.localFlush()
 }
 
-func (dtl *DirtyTrackerLocal) Size() uint64 {
+func (dtl *Local) Size() uint64 {
 	return dtl.dt.localSize()
 }
 
-func (dtl *DirtyTrackerLocal) Close() error {
+func (dtl *Local) Close() error {
 	return dtl.dt.prov.Close()
 }
 
-func (dtl *DirtyTrackerLocal) CancelWrites(offset int64, length int64) {
+func (dtl *Local) CancelWrites(offset int64, length int64) {
 	dtl.dt.prov.CancelWrites(offset, length)
 }
 
-type DirtyTrackerRemote struct {
-	storage.StorageProviderWithEvents
+type Remote struct {
+	storage.ProviderWithEvents
 	dt *DirtyTracker
 }
 
 // Relay events to embedded StorageProvider
-func (dtr *DirtyTrackerRemote) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
-	data := dtr.StorageProviderWithEvents.SendSiloEvent(eventType, eventData)
+func (dtr *Remote) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
+	data := dtr.ProviderWithEvents.SendSiloEvent(eventType, eventData)
 	return append(data, storage.SendSiloEvent(dtr.dt.prov, eventType, eventData)...)
 }
 
-func (dtr *DirtyTrackerRemote) ReadAt(buffer []byte, offset int64) (int, error) {
+func (dtr *Remote) ReadAt(buffer []byte, offset int64) (int, error) {
 	return dtr.dt.remoteReadAt(buffer, offset)
 }
 
-func (dtr *DirtyTrackerRemote) WriteAt(buffer []byte, offset int64) (int, error) {
+func (dtr *Remote) WriteAt(buffer []byte, offset int64) (int, error) {
 	return dtr.dt.remoteWriteAt(buffer, offset)
 }
 
-func (dtr *DirtyTrackerRemote) Flush() error {
+func (dtr *Remote) Flush() error {
 	return dtr.dt.remoteFlush()
 }
 
-func (dtr *DirtyTrackerRemote) Size() uint64 {
+func (dtr *Remote) Size() uint64 {
 	return dtr.dt.remoteSize()
 }
 
-func (dtr *DirtyTrackerRemote) Close() error {
+func (dtr *Remote) Close() error {
 	return dtr.dt.prov.Close()
 }
 
-func (dtr *DirtyTrackerRemote) CancelWrites(offset int64, length int64) {
+func (dtr *Remote) CancelWrites(offset int64, length int64) {
 	dtr.dt.prov.CancelWrites(offset, length)
 }
 
-func NewDirtyTracker(prov storage.StorageProvider, blockSize int) (*DirtyTrackerLocal, *DirtyTrackerRemote) {
+func NewDirtyTracker(prov storage.Provider, blockSize int) (*Local, *Remote) {
 	size := int(prov.Size())
 	numBlocks := (size + blockSize - 1) / blockSize
 	dt := &DirtyTracker{
@@ -110,7 +110,7 @@ func NewDirtyTracker(prov storage.StorageProvider, blockSize int) (*DirtyTracker
 		dirtyLog:      util.NewBitfield(numBlocks),
 		trackingTimes: make(map[uint]time.Time),
 	}
-	return &DirtyTrackerLocal{dt: dt}, &DirtyTrackerRemote{dt: dt}
+	return &Local{dt: dt}, &Remote{dt: dt}
 }
 
 func (dt *DirtyTracker) trackArea(length int64, offset int64) {
@@ -130,7 +130,7 @@ func (dt *DirtyTracker) trackArea(length int64, offset int64) {
  * Start tracking at the given offset and length
  *
  */
-func (dtr *DirtyTrackerRemote) TrackAt(offset int64, length int64) {
+func (dtr *Remote) TrackAt(offset int64, length int64) {
 	dtr.dt.trackArea(length, offset)
 }
 
@@ -138,7 +138,7 @@ func (dtr *DirtyTrackerRemote) TrackAt(offset int64, length int64) {
  * Get a quick measure of how many blocks are currently dirty
  *
  */
-func (dtr *DirtyTrackerRemote) MeasureDirty() int {
+func (dtr *Remote) MeasureDirty() int {
 	dtr.dt.trackingLock.Lock()
 	defer dtr.dt.trackingLock.Unlock()
 
@@ -151,7 +151,7 @@ func (dtr *DirtyTrackerRemote) MeasureDirty() int {
  * Get a quick measure of the oldest dirty block
  *
  */
-func (dtr *DirtyTrackerRemote) MeasureDirtyAge() time.Time {
+func (dtr *Remote) MeasureDirtyAge() time.Time {
 	dtr.dt.trackingLock.Lock()
 	defer dtr.dt.trackingLock.Unlock()
 	minAge := time.Now()
@@ -171,7 +171,7 @@ func (dtr *DirtyTrackerRemote) MeasureDirtyAge() time.Time {
  * - group_by_shift - Groups subblocks into blocks using the given shift
  * - min_changed    - Minimum subblock changes in a block
  */
-func (dtr *DirtyTrackerRemote) GetDirtyBlocks(maxAge time.Duration, limit int, groupByShift int, minChanged int) []uint {
+func (dtr *Remote) GetDirtyBlocks(maxAge time.Duration, limit int, groupByShift int, minChanged int) []uint {
 	// Prevent any writes while we get dirty blocks
 	dtr.dt.writeLock.Lock()
 	defer dtr.dt.writeLock.Unlock()
@@ -256,7 +256,7 @@ func (dtr *DirtyTrackerRemote) GetDirtyBlocks(maxAge time.Duration, limit int, g
 	return rblocks
 }
 
-func (dtr *DirtyTrackerRemote) GetAllDirtyBlocks() *util.Bitfield {
+func (dtr *Remote) GetAllDirtyBlocks() *util.Bitfield {
 	// Prevent any writes while we do the Sync()
 	dtr.dt.writeLock.Lock()
 	defer dtr.dt.writeLock.Unlock()
@@ -279,7 +279,7 @@ func (dtr *DirtyTrackerRemote) GetAllDirtyBlocks() *util.Bitfield {
 	return info
 }
 
-func (dtr *DirtyTrackerRemote) Sync() *util.Bitfield {
+func (dtr *Remote) Sync() *util.Bitfield {
 	info := dtr.GetAllDirtyBlocks()
 	return info
 }

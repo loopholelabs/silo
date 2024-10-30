@@ -6,18 +6,18 @@ import (
 )
 
 type DummyTracker struct {
-	storage.StorageProviderWithEvents
-	prov storage.StorageProvider
+	storage.ProviderWithEvents
+	prov storage.Provider
 	bf   *util.Bitfield
 }
 
 // Relay events to embedded StorageProvider
 func (i *DummyTracker) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
-	data := i.StorageProviderWithEvents.SendSiloEvent(eventType, eventData)
+	data := i.ProviderWithEvents.SendSiloEvent(eventType, eventData)
 	return append(data, storage.SendSiloEvent(i.prov, eventType, eventData)...)
 }
 
-func NewDummyTracker(prov storage.StorageProvider, blockSize int) *DummyTracker {
+func NewDummyTracker(prov storage.Provider, blockSize int) *DummyTracker {
 	numBlocks := (int(prov.Size()) + blockSize - 1) / blockSize
 	l := &DummyTracker{
 		prov: prov,

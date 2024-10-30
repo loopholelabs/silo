@@ -13,7 +13,7 @@ type DevInfo struct {
 
 func EncodeDevInfo(di *DevInfo) []byte {
 	buff := make([]byte, 1+8+4+2+len(di.Name)+4+len(di.Schema))
-	buff[0] = COMMAND_DEV_INFO
+	buff[0] = CommandDevInfo
 	binary.LittleEndian.PutUint64(buff[1:], di.Size)
 	binary.LittleEndian.PutUint32(buff[9:], di.BlockSize)
 	binary.LittleEndian.PutUint16(buff[13:], uint16(len(di.Name)))
@@ -25,7 +25,7 @@ func EncodeDevInfo(di *DevInfo) []byte {
 }
 
 func DecodeDevInfo(buff []byte) (*DevInfo, error) {
-	if buff == nil || len(buff) < 19 || buff[0] != COMMAND_DEV_INFO {
+	if buff == nil || len(buff) < 19 || buff[0] != CommandDevInfo {
 		return nil, ErrInvalidPacket
 	}
 	size := binary.LittleEndian.Uint64(buff[1:])

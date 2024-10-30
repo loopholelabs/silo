@@ -10,40 +10,40 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage"
 )
 
-const NBDDISPATCH_BUFFER_SIZE = 4 * 1024 * 1024
+const dispatchBufferSize = 4 * 1024 * 1024
 
 /**
  * Exposes a storage provider as an nbd device
  *
  */
-const NBD_COMMAND = 0xab00
-const NBD_SET_SOCK = 0 | NBD_COMMAND
-const NBD_SET_BLKSIZE = 1 | NBD_COMMAND
-const NBD_SET_SIZE = 2 | NBD_COMMAND
-const NBD_DO_IT = 3 | NBD_COMMAND
-const NBD_CLEAR_SOCK = 4 | NBD_COMMAND
-const NBD_CLEAR_QUE = 5 | NBD_COMMAND
-const NBD_PRINT_DEBUG = 6 | NBD_COMMAND
-const NBD_SET_SIZE_BLOCKS = 7 | NBD_COMMAND
-const NBD_DISCONNECT = 8 | NBD_COMMAND
-const NBD_SET_TIMEOUT = 9 | NBD_COMMAND
-const NBD_SET_FLAGS = 10 | NBD_COMMAND
+const NBDCommand = 0xab00
+const NBDSetSock = 0 | NBDCommand
+const NBDSetBlksize = 1 | NBDCommand
+const NBDSetSize = 2 | NBDCommand
+const NBDDoIt = 3 | NBDCommand
+const NBDClearSock = 4 | NBDCommand
+const NBDClearQue = 5 | NBDCommand
+const NBDPrintDebug = 6 | NBDCommand
+const NBDSetSizeBlocks = 7 | NBDCommand
+const NBDDisconnect = 8 | NBDCommand
+const NBDSetTimeout = 9 | NBDCommand
+const NBDSetFlags = 10 | NBDCommand
 
 // NBD Commands
-const NBD_CMD_READ = 0
-const NBD_CMD_WRITE = 1
-const NBD_CMD_DISCONNECT = 2
-const NBD_CMD_FLUSH = 3
-const NBD_CMD_TRIM = 4
+const NBDCmdRead = 0
+const NBDCmdWrite = 1
+const NBDCmdDisconnect = 2
+const NBDCmdFlush = 3
+const NBDCmdTrim = 4
 
 // NBD Flags
-const NBD_FLAG_HAS_FLAGS = (1 << 0)
-const NBD_FLAG_READ_ONLY = (1 << 1)
-const NBD_FLAG_SEND_FLUSH = (1 << 2)
-const NBD_FLAG_SEND_TRIM = (1 << 5)
+const NBDFlagHasFlags = (1 << 0)
+const NBDFlagReadOnly = (1 << 1)
+const NBDFlagSendFlush = (1 << 2)
+const NBDFlagSendTrim = (1 << 5)
 
-const NBD_REQUEST_MAGIC = 0x25609513
-const NBD_RESPONSE_MAGIC = 0x67446698
+const NBDRequestMagic = 0x25609513
+const NBDResponseMagic = 0x67446698
 
 // NBD Request packet
 type Request struct {
@@ -68,14 +68,14 @@ type Dispatch struct {
 	fp               io.ReadWriteCloser
 	responseHeader   []byte
 	writeLock        sync.Mutex
-	prov             storage.StorageProvider
+	prov             storage.Provider
 	fatal            chan error
 	pendingResponses sync.WaitGroup
 	metricPacketsIn  uint64
 	metricPacketsOut uint64
 }
 
-func NewDispatch(ctx context.Context, fp io.ReadWriteCloser, prov storage.StorageProvider) *Dispatch {
+func NewDispatch(ctx context.Context, fp io.ReadWriteCloser, prov storage.Provider) *Dispatch {
 
 	d := &Dispatch{
 		asyncWrites:    true,
@@ -87,7 +87,7 @@ func NewDispatch(ctx context.Context, fp io.ReadWriteCloser, prov storage.Storag
 		ctx:            ctx,
 	}
 
-	binary.BigEndian.PutUint32(d.responseHeader, NBD_RESPONSE_MAGIC)
+	binary.BigEndian.PutUint32(d.responseHeader, NBDResponseMagic)
 	return d
 }
 
@@ -129,7 +129,7 @@ func (d *Dispatch) writeResponse(respError uint32, respHandle uint64, chunk []by
  *
  */
 func (d *Dispatch) Handle() error {
-	buffer := make([]byte, NBDDISPATCH_BUFFER_SIZE)
+	buffer := make([]byte, dispatchBufferSize)
 	wp := 0
 
 	request := Request{}
@@ -163,22 +163,23 @@ func (d *Dispatch) Handle() error {
 				request.From = binary.BigEndian.Uint64(header[16:24])
 				request.Length = binary.BigEndian.Uint32(header[24:28])
 
-				if request.Magic != NBD_REQUEST_MAGIC {
+				if request.Magic != NBDRequestMagic {
 					return fmt.Errorf("received invalid MAGIC")
 				}
 
-				if request.Type == NBD_CMD_DISCONNECT {
+				switch request.Type {
+				case NBDCmdDisconnect:
 					return nil // All done
-				} else if request.Type == NBD_CMD_FLUSH {
+				case NBDCmdFlush:
 					return fmt.Errorf("not supported: Flush")
-				} else if request.Type == NBD_CMD_READ {
+				case NBDCmdRead:
 					rp += 28
 					d.metricPacketsIn++
 					err := d.cmdRead(request.Handle, request.From, request.Length)
 					if err != nil {
 						return err
 					}
-				} else if request.Type == NBD_CMD_WRITE {
+				case NBDCmdWrite:
 					rp += 28
 					if wp-rp < int(request.Length) {
 						rp -= 28
@@ -192,14 +193,14 @@ func (d *Dispatch) Handle() error {
 					if err != nil {
 						return err
 					}
-				} else if request.Type == NBD_CMD_TRIM {
+				case NBDCmdTrim:
 					rp += 28
 					d.metricPacketsIn++
 					err = d.cmdTrim(request.Handle, request.From, request.Length)
 					if err != nil {
 						return err
 					}
-				} else {
+				default:
 					return fmt.Errorf("nbd not implemented %d", request.Type)
 				}
 

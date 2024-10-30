@@ -8,9 +8,9 @@ import (
 )
 
 type CopyOnWrite struct {
-	storage.StorageProviderWithEvents
-	source    storage.StorageProvider
-	cache     storage.StorageProvider
+	storage.ProviderWithEvents
+	source    storage.Provider
+	cache     storage.Provider
 	exists    *util.Bitfield
 	size      uint64
 	blockSize int
@@ -21,12 +21,12 @@ type CopyOnWrite struct {
 
 // Relay events to embedded StorageProvider
 func (i *CopyOnWrite) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
-	data := i.StorageProviderWithEvents.SendSiloEvent(eventType, eventData)
+	data := i.ProviderWithEvents.SendSiloEvent(eventType, eventData)
 	data = append(data, storage.SendSiloEvent(i.cache, eventType, eventData)...)
 	return append(data, storage.SendSiloEvent(i.source, eventType, eventData)...)
 }
 
-func NewCopyOnWrite(source storage.StorageProvider, cache storage.StorageProvider, blockSize int) *CopyOnWrite {
+func NewCopyOnWrite(source storage.Provider, cache storage.Provider, blockSize int) *CopyOnWrite {
 	numBlocks := (source.Size() + uint64(blockSize) - 1) / uint64(blockSize)
 	return &CopyOnWrite{
 		source:    source,

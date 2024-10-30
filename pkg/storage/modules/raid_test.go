@@ -33,7 +33,7 @@ func TestRaid(t *testing.T) {
 	mem := sources.NewMemoryStorage(size)
 
 	// Setup raid devices, and make sure they all agree.
-	raid, err := NewRaid([]storage.StorageProvider{cow, mem})
+	raid, err := NewRaid([]storage.Provider{cow, mem})
 	assert.NoError(t, err)
 
 	var wg sync.WaitGroup

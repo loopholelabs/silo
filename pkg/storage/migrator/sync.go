@@ -16,11 +16,11 @@ import (
 type SyncConfig struct {
 	Logger           types.RootLogger
 	Name             string
-	Tracker          *dirtytracker.DirtyTrackerRemote // A dirty block tracker
-	Lockable         storage.LockableStorageProvider  // Lockable
+	Tracker          *dirtytracker.Remote     // A dirty block tracker
+	Lockable         storage.LockableProvider // Lockable
 	LockerHandler    func()
 	UnlockerHandler  func()
-	Destination      storage.StorageProvider
+	Destination      storage.Provider
 	Orderer          storage.BlockOrder
 	DirtyCheckPeriod time.Duration
 	DirtyBlockGetter func() []uint

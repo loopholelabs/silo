@@ -13,8 +13,8 @@ import (
  *
  */
 type Metrics struct {
-	storage.StorageProviderWithEvents
-	prov              storage.StorageProvider
+	storage.ProviderWithEvents
+	prov              storage.Provider
 	metricReadOps     uint64
 	metricReadBytes   uint64
 	metricReadTime    uint64
@@ -42,7 +42,7 @@ type MetricsSnapshot struct {
 	FlushErrors uint64
 }
 
-func NewMetrics(prov storage.StorageProvider) *Metrics {
+func NewMetrics(prov storage.Provider) *Metrics {
 	return &Metrics{
 		prov: prov,
 	}
@@ -50,7 +50,7 @@ func NewMetrics(prov storage.StorageProvider) *Metrics {
 
 // Relay events to embedded StorageProvider
 func (i *Metrics) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
-	data := i.StorageProviderWithEvents.SendSiloEvent(eventType, eventData)
+	data := i.ProviderWithEvents.SendSiloEvent(eventType, eventData)
 	return append(data, storage.SendSiloEvent(i.prov, eventType, eventData)...)
 }
 

@@ -27,20 +27,20 @@ type Event struct {
 func EncodeEvent(e *Event) []byte {
 	if e.Type == EventCustom {
 		buff := make([]byte, 1+1+1+len(e.CustomPayload))
-		buff[0] = COMMAND_EVENT
+		buff[0] = CommandEvent
 		buff[1] = byte(e.Type)
 		buff[2] = e.CustomType
 		copy(buff[3:], e.CustomPayload)
 		return buff
 	}
 	buff := make([]byte, 1+1)
-	buff[0] = COMMAND_EVENT
+	buff[0] = CommandEvent
 	buff[1] = byte(e.Type)
 	return buff
 }
 
 func DecodeEvent(buff []byte) (*Event, error) {
-	if buff == nil || len(buff) < 2 || buff[0] != COMMAND_EVENT {
+	if buff == nil || len(buff) < 2 || buff[0] != CommandEvent {
 		return nil, ErrInvalidPacket
 	}
 	e := &Event{Type: EventType(buff[1])}
@@ -57,12 +57,12 @@ func DecodeEvent(buff []byte) (*Event, error) {
 
 func EncodeEventResponse() []byte {
 	buff := make([]byte, 1)
-	buff[0] = COMMAND_EVENT_RESPONSE
+	buff[0] = CommandEventResponse
 	return buff
 }
 
 func DecodeEventResponse(buff []byte) error {
-	if buff == nil || len(buff) < 1 || buff[0] != COMMAND_EVENT_RESPONSE {
+	if buff == nil || len(buff) < 1 || buff[0] != CommandEventResponse {
 		return ErrInvalidPacket
 	}
 	return nil

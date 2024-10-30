@@ -21,7 +21,7 @@ type Waiters struct {
 	byID  map[uint32]chan packetinfo
 }
 
-type ProtocolRW struct {
+type RW struct {
 	ctx            context.Context
 	readers        []io.Reader
 	writers        []io.Writer
@@ -36,8 +36,8 @@ type ProtocolRW struct {
 	newdevProtocol Protocol
 }
 
-func NewProtocolRW(ctx context.Context, readers []io.Reader, writers []io.Writer, newdevFN func(context.Context, Protocol, uint32)) *ProtocolRW {
-	prw := &ProtocolRW{
+func NewRW(ctx context.Context, readers []io.Reader, writers []io.Writer, newdevFN func(context.Context, Protocol, uint32)) *RW {
+	prw := &RW{
 		ctx:        ctx,
 		waiters:    make(map[uint32]Waiters),
 		newdevFn:   newdevFN,
@@ -56,11 +56,11 @@ func NewProtocolRW(ctx context.Context, readers []io.Reader, writers []io.Writer
 	return prw
 }
 
-func (p *ProtocolRW) SetNewDevProtocol(proto Protocol) {
+func (p *RW) SetNewDevProtocol(proto Protocol) {
 	p.newdevProtocol = proto
 }
 
-func (p *ProtocolRW) InitDev(dev uint32) {
+func (p *RW) InitDev(dev uint32) {
 	p.activeDevsLock.Lock()
 	_, ok := p.activeDevs[dev]
 	if !ok {
@@ -81,7 +81,7 @@ func (p *ProtocolRW) InitDev(dev uint32) {
 	p.activeDevsLock.Unlock()
 }
 
-func (p *ProtocolRW) SendPacketWriter(dev uint32, id uint32, length uint32, data func(w io.Writer) error) (uint32, error) {
+func (p *RW) SendPacketWriter(dev uint32, id uint32, length uint32, data func(w io.Writer) error) (uint32, error) {
 	// If the context was cancelled, we should return that error
 	select {
 	case <-p.ctx.Done():
@@ -93,7 +93,7 @@ func (p *ProtocolRW) SendPacketWriter(dev uint32, id uint32, length uint32, data
 	p.InitDev(dev)
 
 	// Encode and send it down the writer...
-	if id == ID_PICK_ANY {
+	if id == IDPickAny {
 		id = atomic.AddUint32(&p.txID, 1)
 	}
 
@@ -115,7 +115,7 @@ func (p *ProtocolRW) SendPacketWriter(dev uint32, id uint32, length uint32, data
 }
 
 // Send a packet
-func (p *ProtocolRW) SendPacket(dev uint32, id uint32, data []byte) (uint32, error) {
+func (p *RW) SendPacket(dev uint32, id uint32, data []byte) (uint32, error) {
 	// If the context was cancelled, we should return that error
 	select {
 	case <-p.ctx.Done():
@@ -127,7 +127,7 @@ func (p *ProtocolRW) SendPacket(dev uint32, id uint32, data []byte) (uint32, err
 	p.InitDev(dev)
 
 	// Encode and send it down the writer...
-	if id == ID_PICK_ANY {
+	if id == IDPickAny {
 		id = atomic.AddUint32(&p.txID, 1)
 	}
 
@@ -149,7 +149,7 @@ func (p *ProtocolRW) SendPacket(dev uint32, id uint32, data []byte) (uint32, err
 	return id, err
 }
 
-func (p *ProtocolRW) Handle() error {
+func (p *RW) Handle() error {
 	errs := make(chan error, len(p.readers))
 
 	for _, r := range p.readers {
@@ -199,7 +199,7 @@ func (p *ProtocolRW) Handle() error {
 	}
 }
 
-func (p *ProtocolRW) handlePacket(dev uint32, id uint32, data []byte) error {
+func (p *RW) handlePacket(dev uint32, id uint32, data []byte) error {
 	p.InitDev(dev)
 
 	if data == nil || len(data) < 1 {
@@ -246,7 +246,7 @@ func (p *ProtocolRW) handlePacket(dev uint32, id uint32, data []byte) error {
 	return nil
 }
 
-func (p *ProtocolRW) WaitForPacket(dev uint32, id uint32) ([]byte, error) {
+func (p *RW) WaitForPacket(dev uint32, id uint32) ([]byte, error) {
 	p.waitersLock.Lock()
 	w := p.waiters[dev]
 	wq, okk := w.byID[id]
@@ -265,7 +265,7 @@ func (p *ProtocolRW) WaitForPacket(dev uint32, id uint32) ([]byte, error) {
 	}
 }
 
-func (p *ProtocolRW) WaitForCommand(dev uint32, cmd byte) (uint32, []byte, error) {
+func (p *RW) WaitForCommand(dev uint32, cmd byte) (uint32, []byte, error) {
 	p.waitersLock.Lock()
 	w := p.waiters[dev]
 	wq, okk := w.byCmd[cmd]

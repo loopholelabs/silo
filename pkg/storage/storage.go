@@ -7,7 +7,7 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/util"
 )
 
-type StorageProvider interface {
+type Provider interface {
 	io.ReaderAt
 	io.WriterAt
 	Size() uint64
@@ -16,14 +16,14 @@ type StorageProvider interface {
 	CancelWrites(offset int64, length int64)
 }
 
-type LockableStorageProvider interface {
-	StorageProvider
+type LockableProvider interface {
+	Provider
 	Lock()
 	Unlock()
 }
 
-type TrackingStorageProvider interface {
-	StorageProvider
+type TrackingProvider interface {
+	Provider
 	Sync() *util.Bitfield
 }
 
@@ -31,7 +31,7 @@ type ExposedStorage interface {
 	Init() error
 	Shutdown() error
 	Device() string
-	SetProvider(prov StorageProvider)
+	SetProvider(prov Provider)
 }
 
 type BlockOrder interface {
@@ -57,7 +57,7 @@ var BlockTypePriority = 2
  * Check if two storageProviders hold the same data.
  *
  */
-func Equals(sp1 StorageProvider, sp2 StorageProvider, blockSize int) (bool, error) {
+func Equals(sp1 Provider, sp2 Provider, blockSize int) (bool, error) {
 	if sp1.Size() != sp2.Size() {
 		return false, nil
 	}

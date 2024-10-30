@@ -8,8 +8,8 @@ import (
 func EncodeWriteAtHash(offset int64, length int64, hash []byte) []byte {
 	var buff bytes.Buffer
 
-	buff.WriteByte(COMMAND_WRITE_AT)
-	buff.WriteByte(WRITE_AT_HASH)
+	buff.WriteByte(CommandWriteAt)
+	buff.WriteByte(WriteAtHash)
 	b := make([]byte, 8)
 	binary.LittleEndian.PutUint64(b, uint64(offset))
 	buff.Write(b)
@@ -20,7 +20,7 @@ func EncodeWriteAtHash(offset int64, length int64, hash []byte) []byte {
 }
 
 func DecodeWriteAtHash(buff []byte) (offset int64, length int64, hash []byte, err error) {
-	if buff == nil || len(buff) < 18 || buff[0] != COMMAND_WRITE_AT || buff[1] != WRITE_AT_HASH {
+	if buff == nil || len(buff) < 18 || buff[0] != CommandWriteAt || buff[1] != WriteAtHash {
 		return 0, 0, nil, ErrInvalidPacket
 	}
 	off := int64(binary.LittleEndian.Uint64(buff[2:]))

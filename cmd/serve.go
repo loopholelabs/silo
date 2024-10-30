@@ -59,8 +59,8 @@ func init() {
 
 type storageInfo struct {
 	//	tracker       storage.TrackingStorageProvider
-	tracker   *dirtytracker.DirtyTrackerRemote
-	lockable  storage.LockableStorageProvider
+	tracker   *dirtytracker.Remote
+	lockable  storage.LockableProvider
 	orderer   *blocks.PriorityBlockOrder
 	numBlocks int
 	blockSize int
@@ -120,7 +120,7 @@ func runServe(_ *cobra.Command, _ []string) {
 		// Now we can migrate to the client...
 
 		// Wrap the connection in a protocol
-		pro := protocol.NewProtocolRW(context.TODO(), []io.Reader{con}, []io.Writer{con}, nil)
+		pro := protocol.NewRW(context.TODO(), []io.Reader{con}, []io.Writer{con}, nil)
 		go func() {
 			_ = pro.Handle()
 		}()

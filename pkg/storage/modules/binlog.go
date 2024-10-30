@@ -13,8 +13,8 @@ import (
 )
 
 type BinLog struct {
-	storage.StorageProviderWithEvents
-	prov          storage.StorageProvider
+	storage.ProviderWithEvents
+	prov          storage.Provider
 	filename      string
 	ctime         time.Time
 	setCtime      bool
@@ -26,11 +26,11 @@ type BinLog struct {
 
 // Relay events to embedded StorageProvider
 func (i *BinLog) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
-	data := i.StorageProviderWithEvents.SendSiloEvent(eventType, eventData)
+	data := i.ProviderWithEvents.SendSiloEvent(eventType, eventData)
 	return append(data, storage.SendSiloEvent(i.prov, eventType, eventData)...)
 }
 
-func NewBinLog(prov storage.StorageProvider, filename string) (*BinLog, error) {
+func NewBinLog(prov storage.Provider, filename string) (*BinLog, error) {
 	fp, err := os.Create(filename)
 	if err != nil {
 		return nil, err

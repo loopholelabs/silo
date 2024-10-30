@@ -5,8 +5,8 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/util"
 )
 
-type WaitingCacheLocal struct {
-	storage.StorageProviderWithEvents
+type Local struct {
+	storage.ProviderWithEvents
 	wc         *WaitingCache
 	available  util.Bitfield
 	NeedAt     func(offset int64, length int32)
@@ -14,12 +14,12 @@ type WaitingCacheLocal struct {
 }
 
 // Relay events to embedded StorageProvider
-func (wcl *WaitingCacheLocal) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
-	data := wcl.StorageProviderWithEvents.SendSiloEvent(eventType, eventData)
+func (wcl *Local) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
+	data := wcl.ProviderWithEvents.SendSiloEvent(eventType, eventData)
 	return append(data, storage.SendSiloEvent(wcl.wc.prov, eventType, eventData)...)
 }
 
-func (wcl *WaitingCacheLocal) ReadAt(buffer []byte, offset int64) (int, error) {
+func (wcl *Local) ReadAt(buffer []byte, offset int64) (int, error) {
 	end := uint64(offset + int64(len(buffer)))
 	if end > wcl.wc.size {
 		end = wcl.wc.size
@@ -57,7 +57,7 @@ func (i *WaitingCache) markAvailableBlockLocal(b uint) {
 	i.lockersLock.Unlock()
 }
 
-func (wcl *WaitingCacheLocal) WriteAt(buffer []byte, offset int64) (int, error) {
+func (wcl *Local) WriteAt(buffer []byte, offset int64) (int, error) {
 	end := uint64(offset + int64(len(buffer)))
 	if end > wcl.wc.size {
 		end = wcl.wc.size
@@ -94,29 +94,29 @@ func (wcl *WaitingCacheLocal) WriteAt(buffer []byte, offset int64) (int, error) 
 	return n, err
 }
 
-func (wcl *WaitingCacheLocal) Availability() (int, int) {
+func (wcl *Local) Availability() (int, int) {
 	numBlocks := (int(wcl.wc.prov.Size()) + wcl.wc.blockSize - 1) / wcl.wc.blockSize
 	return wcl.wc.remote.available.Count(0, uint(numBlocks)), numBlocks
 }
 
-func (wcl *WaitingCacheLocal) Flush() error {
+func (wcl *Local) Flush() error {
 	return wcl.wc.prov.Flush()
 }
 
-func (wcl *WaitingCacheLocal) Size() uint64 {
+func (wcl *Local) Size() uint64 {
 	return wcl.wc.prov.Size()
 }
 
-func (wcl *WaitingCacheLocal) Close() error {
+func (wcl *Local) Close() error {
 	return wcl.wc.prov.Close()
 }
 
-func (wcl *WaitingCacheLocal) DirtyBlocks(blocks []uint) {
+func (wcl *Local) DirtyBlocks(blocks []uint) {
 	for _, v := range blocks {
 		wcl.wc.markUnavailableRemoteBlock(v)
 	}
 }
 
-func (wcl *WaitingCacheLocal) CancelWrites(offset int64, length int64) {
+func (wcl *Local) CancelWrites(offset int64, length int64) {
 	wcl.wc.prov.CancelWrites(offset, length)
 }

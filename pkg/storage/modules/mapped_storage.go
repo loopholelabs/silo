@@ -15,7 +15,7 @@ var ErrOutOfSpace = errors.New("out of space")
 var ErrNotFound = errors.New("not found")
 
 type MappedStorage struct {
-	prov           storage.StorageProvider
+	prov           storage.Provider
 	IDs            []uint64
 	idToBlock      map[uint64]uint64
 	blockAvailable util.Bitfield
@@ -42,7 +42,7 @@ type MappedStorageStats struct {
 	WriteBlocksBulkExisting uint64
 }
 
-func NewMappedStorage(prov storage.StorageProvider, blockSize int) *MappedStorage {
+func NewMappedStorage(prov storage.Provider, blockSize int) *MappedStorage {
 	numBlocks := (prov.Size() + uint64(blockSize) - 1) / uint64(blockSize)
 	available := *util.NewBitfield(int(numBlocks))
 	available.SetBits(0, available.Length())

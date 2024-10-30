@@ -39,7 +39,7 @@ func (mp *MockProtocol) SendPacket(dev uint32, id uint32, data []byte) (uint32, 
 	cmd := data[0]
 
 	// if id is ANY, pick one
-	if id == ID_PICK_ANY {
+	if id == IDPickAny {
 		id = atomic.AddUint32(&mp.tid, 1)
 		// TODO. If id wraps around and becomes ID_PICK_ANY etc
 	}

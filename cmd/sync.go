@@ -53,8 +53,8 @@ var syncExposed []storage.ExposedStorage
 var syncStorage []*syncStorageInfo
 
 type syncStorageInfo struct {
-	tracker     *dirtytracker.DirtyTrackerRemote
-	lockable    storage.LockableStorageProvider
+	tracker     *dirtytracker.Remote
+	lockable    storage.LockableProvider
 	orderer     *blocks.PriorityBlockOrder
 	numBlocks   int
 	blockSize   int
@@ -175,7 +175,7 @@ func syncSetupDevice(conf *config.DeviceSchema) (*syncStorageInfo, error) {
 	orderer.AddAll()
 
 	// Create a destination to migrate to
-	var dest storage.StorageProvider
+	var dest storage.Provider
 	if syncDummy {
 		dest = modules.NewNothing(sourceStorage.Size())
 	} else {

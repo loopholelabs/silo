@@ -24,7 +24,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func setupDevices(t *testing.T, size int, blockSize int) (storage.StorageProvider, storage.StorageProvider) {
+func setupDevices(t *testing.T, size int, blockSize int) (storage.Provider, storage.Provider) {
 	MinioPort := testutils.SetupMinio(t.Cleanup)
 
 	testSyncSchemaSrc := fmt.Sprintf(`
@@ -141,7 +141,7 @@ func TestMigratorS3Assisted(t *testing.T) {
 	r2, w2 := io.Pipe()
 
 	initDev := func(ctx context.Context, p protocol.Protocol, dev uint32) {
-		destStorageFactory := func(_ *packets.DevInfo) storage.StorageProvider {
+		destStorageFactory := func(_ *packets.DevInfo) storage.Provider {
 			return provDest
 		}
 
@@ -158,8 +158,8 @@ func TestMigratorS3Assisted(t *testing.T) {
 		}()
 	}
 
-	prSource := protocol.NewProtocolRW(context.TODO(), []io.Reader{r1}, []io.Writer{w2}, nil)
-	prDest := protocol.NewProtocolRW(context.TODO(), []io.Reader{r2}, []io.Writer{w1}, initDev)
+	prSource := protocol.NewRW(context.TODO(), []io.Reader{r1}, []io.Writer{w2}, nil)
+	prDest := protocol.NewRW(context.TODO(), []io.Reader{r2}, []io.Writer{w1}, initDev)
 
 	go func() {
 		_ = prSource.Handle()
@@ -265,7 +265,7 @@ func TestMigratorS3AssistedChangeSource(t *testing.T) {
 	r2, w2 := io.Pipe()
 
 	initDev := func(ctx context.Context, p protocol.Protocol, dev uint32) {
-		destStorageFactory := func(_ *packets.DevInfo) storage.StorageProvider {
+		destStorageFactory := func(_ *packets.DevInfo) storage.Provider {
 			return provDest
 		}
 
@@ -282,8 +282,8 @@ func TestMigratorS3AssistedChangeSource(t *testing.T) {
 		}()
 	}
 
-	prSource := protocol.NewProtocolRW(context.TODO(), []io.Reader{r1}, []io.Writer{w2}, nil)
-	prDest := protocol.NewProtocolRW(context.TODO(), []io.Reader{r2}, []io.Writer{w1}, initDev)
+	prSource := protocol.NewRW(context.TODO(), []io.Reader{r1}, []io.Writer{w2}, nil)
+	prDest := protocol.NewRW(context.TODO(), []io.Reader{r2}, []io.Writer{w1}, initDev)
 
 	go func() {
 		_ = prSource.Handle()

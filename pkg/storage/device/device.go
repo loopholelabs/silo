@@ -24,21 +24,21 @@ import (
 )
 
 const (
-	SYSTEM_MEMORY      = "memory"
-	SYSTEM_FILE        = "file"
-	SYSTEM_SPARSE_FILE = "sparsefile"
-	SYSTEM_S3          = "s3"
-	DEFAULT_BLOCK_SIZE = 4096
+	SystemMemory     = "memory"
+	SystemFile       = "file"
+	SystemSparseFile = "sparsefile"
+	SystemS3         = "s3"
+	DefaultBlockSize = 4096
 )
 
 type Device struct {
-	Provider storage.StorageProvider
+	Provider storage.Provider
 	Exposed  storage.ExposedStorage
 }
 
 type SyncStartConfig struct {
 	AlternateSources []packets.AlternateSource
-	Destination      storage.StorageProvider
+	Destination      storage.Provider
 }
 
 func NewDevices(ds []*config.DeviceSchema) (map[string]*Device, error) {
@@ -63,19 +63,21 @@ func NewDevices(ds []*config.DeviceSchema) (map[string]*Device, error) {
 	return devices, nil
 }
 
-func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.ExposedStorage, error) {
+func NewDevice(ds *config.DeviceSchema) (storage.Provider, storage.ExposedStorage, error) {
 
-	var prov storage.StorageProvider
+	var prov storage.Provider
 	var err error
 
 	bs := int(ds.ByteBlockSize())
 	if bs == 0 {
-		bs = DEFAULT_BLOCK_SIZE
+		bs = DefaultBlockSize
 	}
 
-	if ds.System == SYSTEM_MEMORY {
+	switch ds.System {
+
+	case SystemMemory:
 		// Create some memory storage...
-		cr := func(_ int, s int) (storage.StorageProvider, error) {
+		cr := func(_ int, s int) (storage.Provider, error) {
 			return sources.NewMemoryStorage(s), nil
 		}
 		// Setup some sharded memory storage (for concurrent write speed)
@@ -83,10 +85,10 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 		if err != nil {
 			return nil, nil, err
 		}
-	} else if ds.System == SYSTEM_S3 {
+	case SystemS3:
 		//
 		return nil, nil, fmt.Errorf("S3 Not Supported in device yet")
-	} else if ds.System == SYSTEM_SPARSE_FILE {
+	case SystemSparseFile:
 		file, err := os.Open(ds.Location)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
@@ -105,7 +107,7 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 				return nil, nil, err
 			}
 		}
-	} else if ds.System == SYSTEM_FILE {
+	case SystemFile:
 
 		// Check what we have been given...
 		file, err := os.Open(ds.Location)
@@ -138,7 +140,7 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 
 				// file is a directory, lets use it for shards
 
-				cr := func(i int, s int) (storage.StorageProvider, error) {
+				cr := func(i int, s int) (storage.Provider, error) {
 					// Check if the file exists, and is the correct size. If not, create it.
 					f := path.Join(ds.Location, fmt.Sprintf("file_%d", i))
 					file, err := os.Open(f)
@@ -171,7 +173,7 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 				}
 			}
 		}
-	} else {
+	default:
 		return nil, nil, fmt.Errorf("unsupported storage system %s", ds.System)
 
 	}
@@ -198,9 +200,7 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 				blocks = append(blocks, uint(v))
 			}
 			cow.SetBlockExists(blocks)
-		} else if errors.Is(err, os.ErrNotExist) {
-			// Doesn't exists, so it's a new cow
-		} else {
+		} else if !errors.Is(err, os.ErrNotExist) {
 			return nil, nil, err
 		}
 
@@ -232,7 +232,7 @@ func NewDevice(ds *config.DeviceSchema) (storage.StorageProvider, storage.Expose
 	var ex storage.ExposedStorage
 	if ds.Expose {
 
-		ex = expose.NewExposedStorageNBDNL(prov, 8, 0, prov.Size(), expose.NBD_DEFAULT_BLOCK_SIZE, true)
+		ex = expose.NewExposedStorageNBDNL(prov, 8, 0, prov.Size(), expose.NBDDefaultBlockSize, true)
 
 		err := ex.Init()
 		if err != nil {

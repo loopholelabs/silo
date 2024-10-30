@@ -107,7 +107,7 @@ func runConnect(_ *cobra.Command, _ []string) {
 
 	protoCtx, protoCancelfn := context.WithCancel(context.TODO())
 
-	pro := protocol.NewProtocolRW(protoCtx, []io.Reader{con}, []io.Writer{con}, handleIncomingDevice)
+	pro := protocol.NewRW(protoCtx, []io.Reader{con}, []io.Writer{con}, handleIncomingDevice)
 
 	// Let the protocol do its thing.
 	go func() {
@@ -140,9 +140,9 @@ func runConnect(_ *cobra.Command, _ []string) {
 
 // Handle a new incoming device. This is called when a packet is received for a device we haven't heard about before.
 func handleIncomingDevice(ctx context.Context, pro protocol.Protocol, dev uint32) {
-	var destStorage storage.StorageProvider
-	var destWaitingLocal *waitingcache.WaitingCacheLocal
-	var destWaitingRemote *waitingcache.WaitingCacheRemote
+	var destStorage storage.Provider
+	var destWaitingLocal *waitingcache.Local
+	var destWaitingRemote *waitingcache.Remote
 	var destMonitorStorage *modules.Hooks
 	var dest *protocol.FromProtocol
 
@@ -163,7 +163,7 @@ func handleIncomingDevice(ctx context.Context, pro protocol.Protocol, dev uint32
 	dstWGFirst = false
 
 	// This is a storage factory which will be called when we recive DevInfo.
-	storageFactory := func(di *packets.DevInfo) storage.StorageProvider {
+	storageFactory := func(di *packets.DevInfo) storage.Provider {
 		//		fmt.Printf("= %d = Received DevInfo name=%s size=%d blocksize=%d schema=%s\n", dev, di.Name, di.Size, di.Block_size, di.Schema)
 
 		// Decode the schema
@@ -202,7 +202,7 @@ func handleIncomingDevice(ctx context.Context, pro protocol.Protocol, dev uint32
 		}
 
 		// You can change this to use sources.NewFileStorage etc etc
-		cr := func(_ int, s int) (storage.StorageProvider, error) {
+		cr := func(_ int, s int) (storage.Provider, error) {
 			return sources.NewMemoryStorage(s), nil
 		}
 		// Setup some sharded memory storage (for concurrent write speed)
@@ -289,18 +289,20 @@ func handleIncomingDevice(ctx context.Context, pro protocol.Protocol, dev uint32
 	// Handle events from the source
 	go func() {
 		_ = dest.HandleEvent(func(e *packets.Event) {
-			if e.Type == packets.EventPostLock {
+			switch e.Type {
+
+			case packets.EventPostLock:
 				statusString = "L" // red.Sprintf("L")
-			} else if e.Type == packets.EventPreLock {
+			case packets.EventPreLock:
 				statusString = "l" // red.Sprintf("l")
-			} else if e.Type == packets.EventPostUnlock {
+			case packets.EventPostUnlock:
 				statusString = "U" // green.Sprintf("U")
-			} else if e.Type == packets.EventPreUnlock {
+			case packets.EventPreUnlock:
 				statusString = "u" // green.Sprintf("u")
-			}
-			// fmt.Printf("= %d = Event %s\n", dev, protocol.EventsByType[e.Type])
-			// Check we have all data...
-			if e.Type == packets.EventCompleted {
+
+				// fmt.Printf("= %d = Event %s\n", dev, protocol.EventsByType[e.Type])
+				// Check we have all data...
+			case packets.EventCompleted:
 
 				// We completed the migration, but we should wait for handlers to finish before we ok things...
 				//				fmt.Printf("Completed, now wait for handlers...\n")
@@ -324,7 +326,7 @@ func handleIncomingDevice(ctx context.Context, pro protocol.Protocol, dev uint32
 		_ = dest.HandleHashes(func(hashes map[uint][sha256.Size]byte) {
 			// fmt.Printf("[%d] Got %d hashes...\n", dev, len(hashes))
 			if len(hashes) > 0 {
-				in := integrity.NewIntegrityChecker(int64(destStorage.Size()), int(blockSize))
+				in := integrity.NewChecker(int64(destStorage.Size()), int(blockSize))
 				in.SetHashes(hashes)
 				correct, err := in.Check(destStorage)
 				if err != nil {
@@ -353,7 +355,7 @@ func handleIncomingDevice(ctx context.Context, pro protocol.Protocol, dev uint32
 }
 
 // Called to setup an exposed storage device
-func dstDeviceSetup(prov storage.StorageProvider) (storage.ExposedStorage, error) {
+func dstDeviceSetup(prov storage.Provider) (storage.ExposedStorage, error) {
 	p := expose.NewExposedStorageNBDNL(prov, 1, 0, prov.Size(), 4096, true)
 	var err error
 

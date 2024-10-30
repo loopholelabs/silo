@@ -9,19 +9,19 @@ import (
  */
 
 type BlockSplitter struct {
-	storage.StorageProviderWithEvents
-	prov      storage.StorageProvider
+	storage.ProviderWithEvents
+	prov      storage.Provider
 	blockSize int
 	size      uint64
 }
 
 // Relay events to embedded StorageProvider
 func (i *BlockSplitter) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
-	data := i.StorageProviderWithEvents.SendSiloEvent(eventType, eventData)
+	data := i.ProviderWithEvents.SendSiloEvent(eventType, eventData)
 	return append(data, storage.SendSiloEvent(i.prov, eventType, eventData)...)
 }
 
-func NewBlockSplitter(prov storage.StorageProvider, blockSize int) *BlockSplitter {
+func NewBlockSplitter(prov storage.Provider, blockSize int) *BlockSplitter {
 	return &BlockSplitter{
 		prov:      prov,
 		blockSize: blockSize,

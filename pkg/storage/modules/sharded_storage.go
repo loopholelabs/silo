@@ -13,27 +13,27 @@ import (
 )
 
 type ShardedStorage struct {
-	storage.StorageProviderWithEvents
-	blocks    []storage.StorageProvider
+	storage.ProviderWithEvents
+	blocks    []storage.Provider
 	blockSize int
 	size      int
 }
 
 // Relay events to embedded StorageProvider
 func (i *ShardedStorage) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
-	data := i.StorageProviderWithEvents.SendSiloEvent(eventType, eventData)
+	data := i.ProviderWithEvents.SendSiloEvent(eventType, eventData)
 	for _, pr := range i.blocks {
 		data = append(data, storage.SendSiloEvent(pr, eventType, eventData)...)
 	}
 	return data
 }
 
-func NewShardedStorage(size int, blocksize int, creator func(index int, size int) (storage.StorageProvider, error)) (*ShardedStorage, error) {
+func NewShardedStorage(size int, blocksize int, creator func(index int, size int) (storage.Provider, error)) (*ShardedStorage, error) {
 	if blocksize == 0 {
 		return nil, fmt.Errorf("Invalid block size of 0")
 	}
 	bms := &ShardedStorage{
-		blocks:    make([]storage.StorageProvider, 0),
+		blocks:    make([]storage.Provider, 0),
 		blockSize: blocksize,
 		size:      size,
 	}
@@ -76,7 +76,7 @@ func (i *ShardedStorage) ReadAt(buffer []byte, offset int64) (int, error) {
 		count := e - ptr
 
 		// Do reads concurrently
-		go func(prov storage.StorageProvider, dest []byte, off int64) {
+		go func(prov storage.Provider, dest []byte, off int64) {
 			n, err := prov.ReadAt(dest, off)
 			errs <- err
 			counts <- n
@@ -123,7 +123,7 @@ func (i *ShardedStorage) WriteAt(buffer []byte, offset int64) (int, error) {
 		count := e - ptr
 
 		// Do writes concurrently
-		go func(prov storage.StorageProvider, dest []byte, off int64) {
+		go func(prov storage.Provider, dest []byte, off int64) {
 			n, err := prov.WriteAt(dest, off)
 			errs <- err
 			counts <- n

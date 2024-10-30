@@ -57,6 +57,11 @@ func TestSiloConfig(t *testing.T) {
 	// Check things look ok...
 	assert.Equal(t, 8, len(s.Device))
 
+	assert.Equal(t, int64(1024*1024*1024), s.Device[0].ByteSize())
+	assert.Equal(t, int64(2*1024*1024), s.Device[1].ByteSize())
+	assert.Equal(t, int64(100*1024*1024), s.Device[2].ByteSize())
+	assert.Equal(t, int64(1234567), s.Device[3].ByteSize())
+
 	_, err = s.Encode()
 	assert.NoError(t, err)
 	// TODO: Check data is as expected

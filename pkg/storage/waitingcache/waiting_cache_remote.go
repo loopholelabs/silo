@@ -7,24 +7,24 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/util"
 )
 
-type WaitingCacheRemote struct {
-	storage.StorageProviderWithEvents
+type Remote struct {
+	storage.ProviderWithEvents
 	wc        *WaitingCache
 	available util.Bitfield
 }
 
 // Relay events to embedded StorageProvider
-func (wcl *WaitingCacheRemote) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
-	data := wcl.StorageProviderWithEvents.SendSiloEvent(eventType, eventData)
+func (wcl *Remote) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
+	data := wcl.ProviderWithEvents.SendSiloEvent(eventType, eventData)
 	return append(data, storage.SendSiloEvent(wcl.wc.prov, eventType, eventData)...)
 }
 
-func (wcl *WaitingCacheRemote) ReadAt(_ []byte, _ int64) (int, error) {
+func (wcl *Remote) ReadAt(_ []byte, _ int64) (int, error) {
 	// Remote reads are unsupported at the moment.
 	return 0, io.EOF
 }
 
-func (wcl *WaitingCacheRemote) WriteAt(buffer []byte, offset int64) (int, error) {
+func (wcl *Remote) WriteAt(buffer []byte, offset int64) (int, error) {
 	end := uint64(offset + int64(len(buffer)))
 	if end > wcl.wc.size {
 		end = wcl.wc.size
@@ -82,18 +82,18 @@ func (wcl *WaitingCacheRemote) WriteAt(buffer []byte, offset int64) (int, error)
 	return n, err
 }
 
-func (wcl *WaitingCacheRemote) Flush() error {
+func (wcl *Remote) Flush() error {
 	return wcl.wc.prov.Flush()
 }
 
-func (wcl *WaitingCacheRemote) Size() uint64 {
+func (wcl *Remote) Size() uint64 {
 	return wcl.wc.prov.Size()
 }
 
-func (wcl *WaitingCacheRemote) Close() error {
+func (wcl *Remote) Close() error {
 	return wcl.wc.prov.Close()
 }
 
-func (wcl *WaitingCacheRemote) CancelWrites(offset int64, length int64) {
+func (wcl *Remote) CancelWrites(offset int64, length int64) {
 	wcl.wc.prov.CancelWrites(offset, length)
 }

@@ -20,7 +20,7 @@ import (
 )
 
 type SomeStorage struct {
-	storage.StorageProviderWithEvents
+	storage.ProviderWithEvents
 }
 
 func NewSomeStorage() *SomeStorage {
@@ -134,7 +134,7 @@ func TestStorageEvents(t *testing.T) {
  */
 
 type moduleData struct {
-	prov           storage.StorageProvider
+	prov           storage.Provider
 	eventsReceived uint64
 }
 
@@ -176,7 +176,7 @@ func TestStorageEventsForModules(tt *testing.T) {
 			allModules := make([]*moduleData, 0)
 
 			// Add a module into our list
-			addModule := func(s storage.StorageProvider) {
+			addModule := func(s storage.Provider) {
 				i := len(allModules)
 
 				modData := &moduleData{
@@ -230,12 +230,12 @@ func TestStorageEventsForModules(tt *testing.T) {
 			addModule(mod9)
 			mod10 := modules.NewMetrics(mod9)
 			addModule(mod10)
-			mod11, err := modules.NewRaid([]storage.StorageProvider{mod10})
+			mod11, err := modules.NewRaid([]storage.Provider{mod10})
 			assert.NoError(t, err)
 			addModule(mod11)
 			mod12 := modules.NewReadOnlyGate(mod11)
 			addModule(mod12)
-			mod13, err := modules.NewShardedStorage(size, size, func(_ int, _ int) (storage.StorageProvider, error) {
+			mod13, err := modules.NewShardedStorage(size, size, func(_ int, _ int) (storage.Provider, error) {
 				return mod12, nil
 			})
 			assert.NoError(t, err)

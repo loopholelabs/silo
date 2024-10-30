@@ -5,8 +5,8 @@ import (
 )
 
 type Hooks struct {
-	storage.StorageProviderWithEvents
-	prov      storage.StorageProvider
+	storage.ProviderWithEvents
+	prov      storage.Provider
 	PreRead   func(_ []byte, _ int64) (bool, int, error)
 	PostRead  func(_ []byte, _ int64, _ int, _ error) (int, error)
 	PreWrite  func(_ []byte, _ int64) (bool, int, error)
@@ -15,11 +15,11 @@ type Hooks struct {
 
 // Relay events to embedded StorageProvider
 func (i *Hooks) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
-	data := i.StorageProviderWithEvents.SendSiloEvent(eventType, eventData)
+	data := i.ProviderWithEvents.SendSiloEvent(eventType, eventData)
 	return append(data, storage.SendSiloEvent(i.prov, eventType, eventData)...)
 }
 
-func NewHooks(prov storage.StorageProvider) *Hooks {
+func NewHooks(prov storage.Provider) *Hooks {
 	return &Hooks{
 		prov: prov,
 		PreRead: func(_ []byte, _ int64) (bool, int, error) {

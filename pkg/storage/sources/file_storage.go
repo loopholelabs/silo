@@ -13,7 +13,7 @@ import (
  *
  */
 type FileStorage struct {
-	storage.StorageProviderWithEvents
+	storage.ProviderWithEvents
 	fp   *os.File
 	size int64
 	wg   sync.WaitGroup

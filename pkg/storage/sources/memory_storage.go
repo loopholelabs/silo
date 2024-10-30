@@ -12,7 +12,7 @@ import (
  *
  */
 type MemoryStorage struct {
-	storage.StorageProviderWithEvents
+	storage.ProviderWithEvents
 	data []byte
 	lock sync.RWMutex
 }

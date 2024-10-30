@@ -131,7 +131,7 @@ func BenchmarkMigrationPipe(mb *testing.B) {
 			orderer := blocks.NewAnyBlockOrder(numBlocks, nil)
 			orderer.AddAll()
 
-			var destStorage storage.StorageProvider
+			var destStorage storage.Provider
 
 			num := testconf.numPipes
 
@@ -151,9 +151,9 @@ func BenchmarkMigrationPipe(mb *testing.B) {
 			}
 
 			initDev := func(ctx context.Context, p protocol.Protocol, dev uint32) {
-				destStorageFactory := func(di *packets.DevInfo) storage.StorageProvider {
+				destStorageFactory := func(di *packets.DevInfo) storage.Provider {
 					// Do some sharding here...
-					cr := func(_ int, size int) (storage.StorageProvider, error) {
+					cr := func(_ int, size int) (storage.Provider, error) {
 						mem := sources.NewMemoryStorage(size)
 						// s := modules.NewArtificialLatency(mem, 5*time.Millisecond, 1*time.Nanosecond, 5*time.Millisecond, 1*time.Nanosecond)
 						return mem, nil
@@ -176,8 +176,8 @@ func BenchmarkMigrationPipe(mb *testing.B) {
 				}()
 			}
 
-			prSourceRW := protocol.NewProtocolRW(context.TODO(), readers1, writers2, nil)
-			prDestRW := protocol.NewProtocolRW(context.TODO(), readers2, writers1, initDev)
+			prSourceRW := protocol.NewRW(context.TODO(), readers1, writers2, nil)
+			prDestRW := protocol.NewRW(context.TODO(), readers2, writers1, initDev)
 
 			go func() {
 				_ = prSourceRW.Handle()

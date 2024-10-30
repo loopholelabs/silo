@@ -8,20 +8,20 @@ import (
 )
 
 type Raid struct {
-	storage.StorageProviderWithEvents
-	prov []storage.StorageProvider
+	storage.ProviderWithEvents
+	prov []storage.Provider
 }
 
 // Relay events to embedded StorageProvider
 func (r *Raid) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
-	data := r.StorageProviderWithEvents.SendSiloEvent(eventType, eventData)
+	data := r.ProviderWithEvents.SendSiloEvent(eventType, eventData)
 	for _, pr := range r.prov {
 		data = append(data, storage.SendSiloEvent(pr, eventType, eventData)...)
 	}
 	return data
 }
 
-func NewRaid(prov []storage.StorageProvider) (*Raid, error) {
+func NewRaid(prov []storage.Provider) (*Raid, error) {
 	if len(prov) == 0 {
 		return nil, errors.New("need at least one provider")
 	}

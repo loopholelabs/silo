@@ -15,7 +15,7 @@ import (
 
 func TestProtocolWriteAt(t *testing.T) {
 	size := 1024 * 1024
-	var store storage.StorageProvider
+	var store storage.Provider
 
 	// Setup a protocol in the middle, and make sure our reads/writes get through ok
 
@@ -23,7 +23,7 @@ func TestProtocolWriteAt(t *testing.T) {
 
 	sourceToProtocol := NewToProtocol(uint64(size), 1, pr)
 
-	storeFactory := func(di *packets.DevInfo) storage.StorageProvider {
+	storeFactory := func(di *packets.DevInfo) storage.Provider {
 		store = sources.NewMemoryStorage(int(di.Size))
 		return store
 	}
@@ -65,7 +65,7 @@ func TestProtocolWriteAt(t *testing.T) {
 
 func TestProtocolWriteAtComp(t *testing.T) {
 	size := 1024 * 1024
-	var store storage.StorageProvider
+	var store storage.Provider
 
 	// Setup a protocol in the middle, and make sure our reads/writes get through ok
 
@@ -75,7 +75,7 @@ func TestProtocolWriteAtComp(t *testing.T) {
 
 	sourceToProtocol.CompressedWrites = true
 
-	storeFactory := func(di *packets.DevInfo) storage.StorageProvider {
+	storeFactory := func(di *packets.DevInfo) storage.Provider {
 		store = sources.NewMemoryStorage(int(di.Size))
 		return store
 	}
@@ -118,7 +118,7 @@ func TestProtocolWriteAtComp(t *testing.T) {
 
 func TestProtocolReadAt(t *testing.T) {
 	size := 1024 * 1024
-	var store storage.StorageProvider
+	var store storage.Provider
 
 	// Setup a protocol in the middle, and make sure our reads/writes get through ok
 
@@ -130,7 +130,7 @@ func TestProtocolReadAt(t *testing.T) {
 
 	sourceToProtocol := NewToProtocol(uint64(size), 1, pr)
 
-	storeFactory := func(di *packets.DevInfo) storage.StorageProvider {
+	storeFactory := func(di *packets.DevInfo) storage.Provider {
 		store = sources.NewMemoryStorage(int(di.Size))
 
 		n, err := store.WriteAt(buff, 12)
@@ -169,7 +169,7 @@ func TestProtocolReadAt(t *testing.T) {
 
 func TestProtocolRWWriteAt(t *testing.T) {
 	size := 1024 * 1024
-	var store storage.StorageProvider
+	var store storage.Provider
 
 	// Setup a protocol in the middle, and make sure our reads/writes get through ok
 
@@ -179,13 +179,13 @@ func TestProtocolRWWriteAt(t *testing.T) {
 
 	destDev := make(chan uint32, 8)
 
-	storeFactory := func(di *packets.DevInfo) storage.StorageProvider {
+	storeFactory := func(di *packets.DevInfo) storage.Provider {
 		store = sources.NewMemoryStorage(int(di.Size))
 		return store
 	}
 
-	prSource := NewProtocolRW(context.TODO(), []io.Reader{r1}, []io.Writer{w2}, nil)
-	prDest := NewProtocolRW(context.TODO(), []io.Reader{r2}, []io.Writer{w1}, func(ctx context.Context, p Protocol, dev uint32) {
+	prSource := NewRW(context.TODO(), []io.Reader{r1}, []io.Writer{w2}, nil)
+	prDest := NewRW(context.TODO(), []io.Reader{r2}, []io.Writer{w1}, func(ctx context.Context, p Protocol, dev uint32) {
 		destDev <- dev
 		destFromProtocol := NewFromProtocol(ctx, dev, storeFactory, p)
 
@@ -238,7 +238,7 @@ func TestProtocolRWWriteAt(t *testing.T) {
 
 func TestProtocolRWReadAt(t *testing.T) {
 	size := 1024 * 1024
-	var store storage.StorageProvider
+	var store storage.Provider
 
 	buff := make([]byte, 4096)
 	_, err := rand.Read(buff)
@@ -250,7 +250,7 @@ func TestProtocolRWReadAt(t *testing.T) {
 	r1, w1 := io.Pipe()
 	r2, w2 := io.Pipe()
 
-	storeFactory := func(di *packets.DevInfo) storage.StorageProvider {
+	storeFactory := func(di *packets.DevInfo) storage.Provider {
 		store = sources.NewMemoryStorage(int(di.Size))
 		n, err := store.WriteAt(buff, 12)
 
@@ -274,8 +274,8 @@ func TestProtocolRWReadAt(t *testing.T) {
 		}()
 	}
 
-	prSource := NewProtocolRW(context.TODO(), []io.Reader{r1}, []io.Writer{w2}, nil)
-	prDest := NewProtocolRW(context.TODO(), []io.Reader{r2}, []io.Writer{w1}, initDev)
+	prSource := NewRW(context.TODO(), []io.Reader{r1}, []io.Writer{w2}, nil)
+	prDest := NewRW(context.TODO(), []io.Reader{r2}, []io.Writer{w1}, initDev)
 
 	sourceToProtocol := NewToProtocol(uint64(size), 1, prSource)
 
@@ -302,13 +302,13 @@ func TestProtocolRWReadAt(t *testing.T) {
 
 func TestProtocolEvents(t *testing.T) {
 	size := 1024 * 1024
-	var store storage.StorageProvider
+	var store storage.Provider
 
 	pr := NewMockProtocol(context.TODO())
 
 	sourceToProtocol := NewToProtocol(uint64(size), 1, pr)
 
-	storeFactory := func(di *packets.DevInfo) storage.StorageProvider {
+	storeFactory := func(di *packets.DevInfo) storage.Provider {
 		store = sources.NewMemoryStorage(int(di.Size))
 		return store
 	}
@@ -360,14 +360,14 @@ func TestProtocolEvents(t *testing.T) {
 
 func TestProtocolWriteAtWithMap(t *testing.T) {
 	size := 1024 * 1024
-	var store storage.StorageProvider
+	var store storage.Provider
 	var mappedStore *modules.MappedStorage
 
 	pr := NewMockProtocol(context.TODO())
 
 	sourceToProtocol := NewToProtocol(uint64(size), 1, pr)
 
-	storeFactory := func(di *packets.DevInfo) storage.StorageProvider {
+	storeFactory := func(di *packets.DevInfo) storage.Provider {
 		store = sources.NewMemoryStorage(int(di.Size))
 		mappedStore = modules.NewMappedStorage(store, 4096)
 		return store

@@ -10,15 +10,15 @@ import "sync"
  * StorageProviders should also relay events to any StorageProviders they wrap.
  */
 
-type StorageProviderWithEventsIfc interface {
-	StorageProvider
+type ProviderWithEventsIfc interface {
+	Provider
 	SendSiloEvent(EventType, EventData) []EventReturnData
 	AddSiloEventNotification(EventType, EventCallback)
 }
 
 // Try to send an event for a given StorageProvider
-func SendSiloEvent(s StorageProvider, eventType EventType, eventData EventData) []EventReturnData {
-	lcsp, ok := s.(StorageProviderWithEventsIfc)
+func SendSiloEvent(s Provider, eventType EventType, eventData EventData) []EventReturnData {
+	lcsp, ok := s.(ProviderWithEventsIfc)
 	if ok {
 		return lcsp.SendSiloEvent(eventType, eventData)
 	}
@@ -26,8 +26,8 @@ func SendSiloEvent(s StorageProvider, eventType EventType, eventData EventData) 
 }
 
 // Try to add an event notification on a StorageProvider
-func AddSiloEventNotification(s StorageProvider, state EventType, callback EventCallback) bool {
-	lcsp, ok := s.(StorageProviderWithEventsIfc)
+func AddSiloEventNotification(s Provider, state EventType, callback EventCallback) bool {
+	lcsp, ok := s.(ProviderWithEventsIfc)
 	if ok {
 		lcsp.AddSiloEventNotification(state, callback)
 	}
@@ -44,13 +44,13 @@ type EventReturnData interface{}
 
 type EventCallback func(event EventType, data EventData) EventReturnData
 
-type StorageProviderWithEvents struct {
+type ProviderWithEvents struct {
 	lock      sync.Mutex
 	callbacks map[EventType][]EventCallback
 }
 
 // Send an event, and notify any callbacks
-func (spl *StorageProviderWithEvents) SendSiloEvent(eventType EventType, eventData EventData) []EventReturnData {
+func (spl *ProviderWithEvents) SendSiloEvent(eventType EventType, eventData EventData) []EventReturnData {
 	spl.lock.Lock()
 	defer spl.lock.Unlock()
 	if spl.callbacks == nil {
@@ -68,7 +68,7 @@ func (spl *StorageProviderWithEvents) SendSiloEvent(eventType EventType, eventDa
 }
 
 // Add a new callback for the given state.
-func (spl *StorageProviderWithEvents) AddSiloEventNotification(eventType EventType, callback EventCallback) {
+func (spl *ProviderWithEvents) AddSiloEventNotification(eventType EventType, callback EventCallback) {
 	spl.lock.Lock()
 	defer spl.lock.Unlock()
 	if spl.callbacks == nil {

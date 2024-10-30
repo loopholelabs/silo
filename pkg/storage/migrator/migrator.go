@@ -67,10 +67,10 @@ type MigrationProgress struct {
 }
 
 type Migrator struct {
-	sourceTracker          storage.TrackingStorageProvider // Tracks writes so we know which are dirty
+	sourceTracker          storage.TrackingProvider // Tracks writes so we know which are dirty
 	sourceMapped           *modules.MappedStorage
 	destWriteWithMap       func([]byte, int64, map[uint64]uint64) (int, error)
-	dest                   storage.StorageProvider
+	dest                   storage.Provider
 	sourceLockFn           func()
 	sourceUnlockFn         func()
 	errorFn                func(block *storage.BlockInfo, err error)
@@ -94,15 +94,15 @@ type Migrator struct {
 	ctime                  time.Time
 	concurrency            map[int]chan bool
 	wg                     sync.WaitGroup
-	integrity              *integrity.IntegrityChecker
+	integrity              *integrity.Checker
 	cancelWrites           bool
 	dedupeWrites           bool
 	recentWriteAge         time.Duration
 	migrationStarted       bool
 }
 
-func NewMigrator(source storage.TrackingStorageProvider,
-	dest storage.StorageProvider,
+func NewMigrator(source storage.TrackingProvider,
+	dest storage.Provider,
 	blockOrder storage.BlockOrder,
 	config *Config) (*Migrator, error) {
 
@@ -145,7 +145,7 @@ func NewMigrator(source storage.TrackingStorageProvider,
 	}
 
 	if config.Integrity {
-		m.integrity = integrity.NewIntegrityChecker(int64(m.dest.Size()), m.blockSize)
+		m.integrity = integrity.NewChecker(int64(m.dest.Size()), m.blockSize)
 	}
 	return m, nil
 }

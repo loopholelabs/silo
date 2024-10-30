@@ -14,9 +14,9 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage"
 )
 
-const NBD_DEFAULT_BLOCK_SIZE = 4096
+const NBDDefaultBlockSize = 4096
 
-const NBD_ALIGN_SECTOR_SIZE = 512
+const NBDAlignSectorSize = 512
 
 /**
  * Exposes a storage provider as an nbd device using netlink
@@ -31,16 +31,16 @@ type ExposedStorageNBDNL struct {
 	blockSize      uint64
 
 	socks       []io.Closer
-	prov        storage.StorageProvider
+	prov        storage.Provider
 	deviceIndex int
 	async       bool
 	dispatchers []*Dispatch
 }
 
-func NewExposedStorageNBDNL(prov storage.StorageProvider, numConnections int, timeout time.Duration, size uint64, blockSize uint64, async bool) *ExposedStorageNBDNL {
+func NewExposedStorageNBDNL(prov storage.Provider, numConnections int, timeout time.Duration, size uint64, blockSize uint64, async bool) *ExposedStorageNBDNL {
 
 	// The size must be a multiple of sector size
-	size = NBD_ALIGN_SECTOR_SIZE * ((size + NBD_ALIGN_SECTOR_SIZE - 1) / NBD_ALIGN_SECTOR_SIZE)
+	size = NBDAlignSectorSize * ((size + NBDAlignSectorSize - 1) / NBDAlignSectorSize)
 
 	ctx, cancelfn := context.WithCancel(context.TODO())
 
@@ -57,7 +57,7 @@ func NewExposedStorageNBDNL(prov storage.StorageProvider, numConnections int, ti
 	}
 }
 
-func (n *ExposedStorageNBDNL) SetProvider(prov storage.StorageProvider) {
+func (n *ExposedStorageNBDNL) SetProvider(prov storage.Provider) {
 	n.prov = prov
 }
 

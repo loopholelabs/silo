@@ -17,7 +17,7 @@ func EncodeAlternateSources(sources []AlternateSource) []byte {
 	var buff bytes.Buffer
 
 	head := make([]byte, 1+4)
-	head[0] = COMMAND_ALTERNATE_SOURCES
+	head[0] = CommandAlternateSources
 	binary.LittleEndian.PutUint32(head[1:], uint32(len(sources)))
 
 	buff.Write(head)
@@ -36,7 +36,7 @@ func EncodeAlternateSources(sources []AlternateSource) []byte {
 }
 
 func DecodeAlternateSources(buff []byte) ([]AlternateSource, error) {
-	if buff == nil || len(buff) < 1+4 || buff[0] != COMMAND_ALTERNATE_SOURCES {
+	if buff == nil || len(buff) < 1+4 || buff[0] != CommandAlternateSources {
 		return nil, ErrInvalidPacket
 	}
 

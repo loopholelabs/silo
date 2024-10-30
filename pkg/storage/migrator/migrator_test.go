@@ -157,7 +157,7 @@ func TestMigratorSimplePipe(t *testing.T) {
 
 	// START moving data from sourceStorage to destStorage
 
-	var destStorage storage.StorageProvider
+	var destStorage storage.Provider
 	var destFrom *protocol.FromProtocol
 
 	// Create a simple pipe
@@ -165,7 +165,7 @@ func TestMigratorSimplePipe(t *testing.T) {
 	r2, w2 := io.Pipe()
 
 	initDev := func(ctx context.Context, p protocol.Protocol, dev uint32) {
-		destStorageFactory := func(di *packets.DevInfo) storage.StorageProvider {
+		destStorageFactory := func(di *packets.DevInfo) storage.Provider {
 			destStorage = sources.NewMemoryStorage(int(di.Size))
 			return destStorage
 		}
@@ -183,8 +183,8 @@ func TestMigratorSimplePipe(t *testing.T) {
 		}()
 	}
 
-	prSource := protocol.NewProtocolRW(context.TODO(), []io.Reader{r1}, []io.Writer{w2}, nil)
-	prDest := protocol.NewProtocolRW(context.TODO(), []io.Reader{r2}, []io.Writer{w1}, initDev)
+	prSource := protocol.NewRW(context.TODO(), []io.Reader{r1}, []io.Writer{w2}, nil)
+	prDest := protocol.NewRW(context.TODO(), []io.Reader{r2}, []io.Writer{w1}, initDev)
 
 	go func() {
 		_ = prSource.Handle()
@@ -252,7 +252,7 @@ func TestMigratorSimplePipeDirtySent(t *testing.T) {
 
 	// START moving data from sourceStorage to destStorage
 
-	var destStorage storage.StorageProvider
+	var destStorage storage.Provider
 	var destFrom *protocol.FromProtocol
 
 	// Create a simple pipe
@@ -260,7 +260,7 @@ func TestMigratorSimplePipeDirtySent(t *testing.T) {
 	r2, w2 := io.Pipe()
 
 	initDev := func(ctx context.Context, p protocol.Protocol, dev uint32) {
-		destStorageFactory := func(di *packets.DevInfo) storage.StorageProvider {
+		destStorageFactory := func(di *packets.DevInfo) storage.Provider {
 			destStorage = sources.NewMemoryStorage(int(di.Size))
 			return destStorage
 		}
@@ -281,8 +281,8 @@ func TestMigratorSimplePipeDirtySent(t *testing.T) {
 		}()
 	}
 
-	prSource := protocol.NewProtocolRW(context.TODO(), []io.Reader{r1}, []io.Writer{w2}, nil)
-	prDest := protocol.NewProtocolRW(context.TODO(), []io.Reader{r2}, []io.Writer{w1}, initDev)
+	prSource := protocol.NewRW(context.TODO(), []io.Reader{r1}, []io.Writer{w2}, nil)
+	prDest := protocol.NewRW(context.TODO(), []io.Reader{r2}, []io.Writer{w1}, initDev)
 
 	go func() {
 		_ = prSource.Handle()
@@ -362,7 +362,7 @@ func TestMigratorSimplePipeDirtyMissing(t *testing.T) {
 
 	// START moving data from sourceStorage to destStorage
 
-	var destStorage storage.StorageProvider
+	var destStorage storage.Provider
 	var destFrom *protocol.FromProtocol
 
 	// Create a simple pipe
@@ -372,7 +372,7 @@ func TestMigratorSimplePipeDirtyMissing(t *testing.T) {
 	var destWG sync.WaitGroup
 
 	initDev := func(ctx context.Context, p protocol.Protocol, dev uint32) {
-		destStorageFactory := func(di *packets.DevInfo) storage.StorageProvider {
+		destStorageFactory := func(di *packets.DevInfo) storage.Provider {
 			destStorage = sources.NewMemoryStorage(int(di.Size))
 			return destStorage
 		}
@@ -401,8 +401,8 @@ func TestMigratorSimplePipeDirtyMissing(t *testing.T) {
 
 	ctx, cancelfn := context.WithCancel(context.TODO())
 
-	prSource := protocol.NewProtocolRW(ctx, []io.Reader{r1}, []io.Writer{w2}, nil)
-	prDest := protocol.NewProtocolRW(ctx, []io.Reader{r2}, []io.Writer{w1}, initDev)
+	prSource := protocol.NewRW(ctx, []io.Reader{r1}, []io.Writer{w2}, nil)
+	prDest := protocol.NewRW(ctx, []io.Reader{r2}, []io.Writer{w1}, initDev)
 
 	go func() {
 		_ = prSource.Handle()

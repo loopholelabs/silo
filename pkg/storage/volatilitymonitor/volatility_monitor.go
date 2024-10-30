@@ -9,8 +9,8 @@ import (
 )
 
 type VolatilityMonitor struct {
-	storage.StorageProviderWithEvents
-	prov          storage.StorageProvider
+	storage.ProviderWithEvents
+	prov          storage.Provider
 	expiry        time.Duration
 	size          uint64
 	numBlocks     int
@@ -23,11 +23,11 @@ type VolatilityMonitor struct {
 
 // Relay events to embedded StorageProvider
 func (i *VolatilityMonitor) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
-	data := i.StorageProviderWithEvents.SendSiloEvent(eventType, eventData)
+	data := i.ProviderWithEvents.SendSiloEvent(eventType, eventData)
 	return append(data, storage.SendSiloEvent(i.prov, eventType, eventData)...)
 }
 
-func NewVolatilityMonitor(prov storage.StorageProvider, blockSize int, expiry time.Duration) *VolatilityMonitor {
+func NewVolatilityMonitor(prov storage.Provider, blockSize int, expiry time.Duration) *VolatilityMonitor {
 	numBlocks := (int(prov.Size()) + blockSize - 1) / blockSize
 	return &VolatilityMonitor{
 		prov:      prov,

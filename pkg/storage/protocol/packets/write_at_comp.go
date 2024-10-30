@@ -5,13 +5,13 @@ import (
 	"encoding/binary"
 )
 
-const RLE_MIN_LENGTH = 4
+const rleMinLength = 4
 
 func EncodeWriteAtComp(offset int64, data []byte) []byte {
 	var buff bytes.Buffer
 
-	buff.WriteByte(COMMAND_WRITE_AT)
-	buff.WriteByte(WRITE_AT_COMP_RLE)
+	buff.WriteByte(CommandWriteAt)
+	buff.WriteByte(WriteAtCompRLE)
 
 	b := make([]byte, 8)
 	binary.LittleEndian.PutUint64(b, uint64(offset))
@@ -25,7 +25,7 @@ func EncodeWriteAtComp(offset int64, data []byte) []byte {
 	for i, d := range data {
 		if d != ld {
 			// Flush the current run
-			if length >= RLE_MIN_LENGTH {
+			if length >= rleMinLength {
 				areas[i-length] = length
 			}
 			length = 1
@@ -35,7 +35,7 @@ func EncodeWriteAtComp(offset int64, data []byte) []byte {
 		}
 	}
 
-	if length > RLE_MIN_LENGTH {
+	if length > rleMinLength {
 		areas[len(data)-length] = length
 	}
 
@@ -81,7 +81,7 @@ func EncodeWriteAtComp(offset int64, data []byte) []byte {
 }
 
 func DecodeWriteAtComp(buff []byte) (offset int64, data []byte, err error) {
-	if buff == nil || len(buff) < 10 || buff[0] != COMMAND_WRITE_AT || buff[1] != WRITE_AT_COMP_RLE {
+	if buff == nil || len(buff) < 10 || buff[0] != CommandWriteAt || buff[1] != WriteAtCompRLE {
 		return 0, nil, ErrInvalidPacket
 	}
 	off := int64(binary.LittleEndian.Uint64(buff[2:]))

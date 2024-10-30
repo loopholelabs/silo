@@ -49,7 +49,7 @@ func TestReadDirtyTracker(t *testing.T) {
 	assert.Equal(t, 0, b.Count(0, b.Length()))
 }
 
-func setupDirty(t *testing.T) *DirtyTrackerRemote {
+func setupDirty(t *testing.T) *Remote {
 	// Create a new block storage, backed by memory storage
 	size := 1024 * 1024 * 32
 	mem := sources.NewMemoryStorage(size)

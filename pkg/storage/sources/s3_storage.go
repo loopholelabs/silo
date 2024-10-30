@@ -16,11 +16,13 @@ import (
 )
 
 var (
+
+	//nolint:all
 	errNoSuchKey = errors.New("The specified key does not exist.") // Minio doesn't export errors
 )
 
 type S3Storage struct {
-	storage.StorageProviderWithEvents
+	storage.ProviderWithEvents
 	dummy                    bool
 	client                   *minio.Client
 	bucket                   string

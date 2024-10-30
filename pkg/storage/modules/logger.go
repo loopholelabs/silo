@@ -9,19 +9,19 @@ import (
 )
 
 type Logger struct {
-	storage.StorageProviderWithEvents
-	prov    storage.StorageProvider
+	storage.ProviderWithEvents
+	prov    storage.Provider
 	prefix  string
 	enabled atomic.Bool
 }
 
 // Relay events to embedded StorageProvider
 func (i *Logger) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
-	data := i.StorageProviderWithEvents.SendSiloEvent(eventType, eventData)
+	data := i.ProviderWithEvents.SendSiloEvent(eventType, eventData)
 	return append(data, storage.SendSiloEvent(i.prov, eventType, eventData)...)
 }
 
-func NewLogger(prov storage.StorageProvider, prefix string) *Logger {
+func NewLogger(prov storage.Provider, prefix string) *Logger {
 	l := &Logger{
 		prov:   prov,
 		prefix: prefix,

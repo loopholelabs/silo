@@ -8,7 +8,7 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage"
 )
 
-type IntegrityChecker struct {
+type Checker struct {
 	blockSize int
 	size      int64
 	numBlocks int
@@ -16,9 +16,9 @@ type IntegrityChecker struct {
 	lock      sync.Mutex
 }
 
-func NewIntegrityChecker(size int64, blockSize int) *IntegrityChecker {
+func NewChecker(size int64, blockSize int) *Checker {
 	numBlocks := (size + int64(blockSize) - 1) / int64(blockSize)
-	return &IntegrityChecker{
+	return &Checker{
 		blockSize: blockSize,
 		size:      size,
 		numBlocks: int(numBlocks),
@@ -30,20 +30,20 @@ func NewIntegrityChecker(size int64, blockSize int) *IntegrityChecker {
  * Update the hash for a particular block
  *
  */
-func (i *IntegrityChecker) SetHash(block uint, hash [sha256.Size]byte) {
+func (i *Checker) SetHash(block uint, hash [sha256.Size]byte) {
 	i.lock.Lock()
 	defer i.lock.Unlock()
 	i.hashes[block] = hash
 }
 
-func (i *IntegrityChecker) SetHashes(hashes map[uint][sha256.Size]byte) {
+func (i *Checker) SetHashes(hashes map[uint][sha256.Size]byte) {
 	i.lock.Lock()
 	defer i.lock.Unlock()
 	i.hashes = hashes
 }
 
 // Grab a snapshot of hashes...
-func (i *IntegrityChecker) GetHashes() map[uint][sha256.Size]byte {
+func (i *Checker) GetHashes() map[uint][sha256.Size]byte {
 	v := make(map[uint][sha256.Size]byte)
 	i.lock.Lock()
 	defer i.lock.Unlock()
@@ -58,7 +58,7 @@ func (i *IntegrityChecker) GetHashes() map[uint][sha256.Size]byte {
  *
  * TODO: Calculate blocks concurrently
  */
-func (i *IntegrityChecker) Check(prov storage.StorageProvider) (bool, error) {
+func (i *Checker) Check(prov storage.Provider) (bool, error) {
 	blockBuffer := make([]byte, i.blockSize)
 	for b := 0; b < i.numBlocks; b++ {
 		n, err := prov.ReadAt(blockBuffer, int64(b*i.blockSize))
@@ -89,7 +89,7 @@ func (i *IntegrityChecker) Check(prov storage.StorageProvider) (bool, error) {
  *
  * TODO: Calculate blocks concurrently
  */
-func (i *IntegrityChecker) Hash(prov storage.StorageProvider) error {
+func (i *Checker) Hash(prov storage.Provider) error {
 	blockBuffer := make([]byte, i.blockSize)
 	for b := 0; b < i.numBlocks; b++ {
 		n, err := prov.ReadAt(blockBuffer, int64(b*i.blockSize))
@@ -105,7 +105,7 @@ func (i *IntegrityChecker) Hash(prov storage.StorageProvider) error {
  * Hash a block and store it in our map...
  *
  */
-func (i *IntegrityChecker) HashBlock(block uint, data []byte) {
+func (i *Checker) HashBlock(block uint, data []byte) {
 	h := sha256.Sum256(data)
 	i.lock.Lock()
 	defer i.lock.Unlock()
