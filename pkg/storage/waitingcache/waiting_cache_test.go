@@ -182,3 +182,25 @@ func TestWaitingCacheLocalWrites_ARCH61(t *testing.T) {
 	assert.InDelta(t, waitTime, 50, 10)
 
 }
+
+func TestWaitingCacheLocalWriteRead(t *testing.T) {
+
+	// Create a new block storage, backed by memory storage
+	size := 1024 * 1024 * 2
+	mem := sources.NewMemoryStorage(size)
+	metrics := modules.NewMetrics(mem)
+	waitingLocal, _ := NewWaitingCache(metrics, 4096)
+
+	data := make([]byte, 8192)
+	_, err := rand.Read(data)
+	assert.NoError(t, err)
+
+	_, err = waitingLocal.WriteAt(data, 0)
+	assert.NoError(t, err)
+
+	data2 := make([]byte, len(data))
+	_, err = waitingLocal.ReadAt(data2, 0)
+	assert.NoError(t, err)
+
+	assert.Equal(t, data, data2)
+}

@@ -29,32 +29,12 @@ func (wcl *Local) ReadAt(buffer []byte, offset int64) (int, error) {
 	bEnd := uint((end-1)/uint64(wcl.wc.blockSize)) + 1
 
 	// WAIT until all the data is available.
-	wcl.wc.waitForRemoteBlocks(bStart, bEnd, func(b uint) {
+	wcl.wc.waitForBlocks(bStart, bEnd, func(b uint) {
 		// This is called when we are the FIRST reader for a block.
 		// This essentially dedupes for heavy read tasks - only a single NeedAt per block will get sent.
 		wcl.NeedAt(int64(b)*int64(wcl.wc.blockSize), int32(wcl.wc.blockSize))
 	})
 	return wcl.wc.prov.ReadAt(buffer, offset)
-}
-
-// TODO: Fix the logic here a bit
-func (i *WaitingCache) markAvailableBlockLocal(b uint) {
-	i.lockersLock.Lock()
-	avail := i.local.available.BitSet(int(b))
-	rwl, ok := i.lockers[b]
-	if !avail {
-		i.local.available.SetBit(int(b))
-	}
-	i.lockersLock.Unlock()
-
-	if !avail && ok {
-		rwl.Unlock()
-	}
-
-	// Now we can get rid of the lock...
-	i.lockersLock.Lock()
-	delete(i.lockers, b)
-	i.lockersLock.Unlock()
 }
 
 func (wcl *Local) WriteAt(buffer []byte, offset int64) (int, error) {
@@ -68,12 +48,12 @@ func (wcl *Local) WriteAt(buffer []byte, offset int64) (int, error) {
 
 	// If the first block is incomplete, we need to wait for it from remote
 	if offset > (int64(bStart) * int64(wcl.wc.blockSize)) {
-		wcl.wc.waitForRemoteBlock(bStart, func(_ uint) {})
+		wcl.wc.waitForBlock(bStart, func(_ uint) {})
 		bStart++
 	}
 	// If the last block is incomplete, we need to wait for it from remote
 	if (end % uint64(wcl.wc.blockSize)) > 0 {
-		wcl.wc.waitForRemoteBlock(bEnd-1, func(_ uint) {})
+		wcl.wc.waitForBlock(bEnd-1, func(_ uint) {})
 		bEnd--
 	}
 
