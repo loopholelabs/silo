@@ -18,6 +18,7 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/config"
 	"github.com/loopholelabs/silo/pkg/storage/dirtytracker"
 	"github.com/loopholelabs/silo/pkg/storage/expose"
+	"github.com/loopholelabs/silo/pkg/storage/metrics"
 	"github.com/loopholelabs/silo/pkg/storage/migrator"
 	"github.com/loopholelabs/silo/pkg/storage/modules"
 	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
@@ -70,6 +71,11 @@ func NewDevice(ds *config.DeviceSchema) (storage.Provider, storage.ExposedStorag
 }
 
 func NewDeviceWithLogging(ds *config.DeviceSchema, log types.RootLogger) (storage.Provider, storage.ExposedStorage, error) {
+	return NewDeviceWithLoggingMetrics(ds, log, nil)
+}
+
+func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.RootLogger, met *metrics.Metrics) (storage.Provider, storage.ExposedStorage, error) {
+
 	if log != nil {
 		log.Debug().Str("name", ds.Name).Msg("creating new device")
 	}
@@ -282,6 +288,10 @@ func NewDeviceWithLogging(ds *config.DeviceSchema, log types.RootLogger) (storag
 		if err != nil {
 			prov.Close()
 			return nil, nil, err
+		}
+
+		if met != nil {
+			met.AddS3Storage(ds.Name, s3dest)
 		}
 
 		dirtyBlockSize := bs >> ds.Sync.Config.BlockShift
