@@ -11,6 +11,8 @@ type Hooks struct {
 	PostRead  func(_ []byte, _ int64, _ int, _ error) (int, error)
 	PreWrite  func(_ []byte, _ int64) (bool, int, error)
 	PostWrite func(_ []byte, _ int64, _ int, _ error) (int, error)
+	PreClose  func() error
+	PostClose func(_ error) error
 }
 
 // Relay events to embedded StorageProvider
@@ -33,6 +35,12 @@ func NewHooks(prov storage.Provider) *Hooks {
 		},
 		PostWrite: func(_ []byte, _ int64, n int, err error) (int, error) {
 			return n, err
+		},
+		PreClose: func() error {
+			return nil
+		},
+		PostClose: func(err error) error {
+			return err
 		},
 	}
 }
@@ -66,7 +74,12 @@ func (i *Hooks) Size() uint64 {
 }
 
 func (i *Hooks) Close() error {
-	return i.prov.Close()
+	err := i.PreClose()
+	if err != nil {
+		return err
+	}
+	err = i.prov.Close()
+	return i.PostClose(err)
 }
 
 func (i *Hooks) CancelWrites(offset int64, length int64) {

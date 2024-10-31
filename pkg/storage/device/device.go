@@ -355,23 +355,7 @@ func NewDevice(ds *config.DeviceSchema) (storage.Provider, storage.ExposedStorag
 			return true
 		}
 
-		// If the storage gets a "sync.start", we should start syncing to S3.
-		storage.AddSiloEventNotification(prov, "sync.start", startSync)
-
-		// If the storage gets a "sync.status", get some status on the S3Storage
-		storage.AddSiloEventNotification(prov, "sync.status", func(_ storage.EventType, _ storage.EventData) storage.EventReturnData {
-			return s3dest.Metrics()
-		})
-
-		// If the storage gets a "sync.running", return
-		storage.AddSiloEventNotification(prov, "sync.running", func(_ storage.EventType, _ storage.EventData) storage.EventReturnData {
-			syncLock.Lock()
-			defer syncLock.Unlock()
-			return syncRunning
-		})
-
-		// If the storage gets a "sync.stop", we should cancel the sync, and return the safe blocks
-		storage.AddSiloEventNotification(prov, "sync.stop", func(_ storage.EventType, _ storage.EventData) storage.EventReturnData {
+		stopSync := func(_ storage.EventType, _ storage.EventData) storage.EventReturnData {
 			syncLock.Lock()
 			if !syncRunning {
 				syncLock.Unlock()
@@ -398,12 +382,38 @@ func NewDevice(ds *config.DeviceSchema) (storage.Provider, storage.ExposedStorag
 			}
 
 			return altSources
+		}
+
+		// If the storage gets a "sync.stop", we should cancel the sync, and return the safe blocks
+		storage.AddSiloEventNotification(prov, "sync.stop", stopSync)
+
+		// If the storage gets a "sync.start", we should start syncing to S3.
+		storage.AddSiloEventNotification(prov, "sync.start", startSync)
+
+		// If the storage gets a "sync.status", get some status on the S3Storage
+		storage.AddSiloEventNotification(prov, "sync.status", func(_ storage.EventType, _ storage.EventData) storage.EventReturnData {
+			return s3dest.Metrics()
+		})
+
+		// If the storage gets a "sync.running", return
+		storage.AddSiloEventNotification(prov, "sync.running", func(_ storage.EventType, _ storage.EventData) storage.EventReturnData {
+			syncLock.Lock()
+			defer syncLock.Unlock()
+			return syncRunning
 		})
 
 		if ds.Sync.AutoStart {
 			// Start the sync here...
 			startSync("sync.start", nil)
 		}
+
+		hooks := modules.NewHooks(prov)
+		hooks.PostClose = func(err error) error {
+			// We should stop any sync here...
+			stopSync("sync.stop", nil)
+			return err
+		}
+		prov = hooks
 	}
 
 	return prov, ex, nil

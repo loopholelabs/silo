@@ -241,6 +241,10 @@ func TestMigratorS3Assisted(t *testing.T) {
 	assert.Equal(t, false, storage.SendSiloEvent(provSrc, "sync.running", nil)[0].(bool))
 	assert.Equal(t, true, storage.SendSiloEvent(provDest, "sync.running", nil)[0].(bool))
 
+	err = provDest.Close()
+	assert.NoError(t, err)
+	assert.Equal(t, false, storage.SendSiloEvent(provDest, "sync.running", nil)[0].(bool))
+
 }
 
 /**
@@ -391,5 +395,9 @@ func TestMigratorS3AssistedChangeSource(t *testing.T) {
 	// Sync should be running on the dest and NOT on src
 	assert.Equal(t, false, storage.SendSiloEvent(provSrc, "sync.running", nil)[0].(bool))
 	assert.Equal(t, true, storage.SendSiloEvent(provDest, "sync.running", nil)[0].(bool))
+
+	err = provDest.Close()
+	assert.NoError(t, err)
+	assert.Equal(t, false, storage.SendSiloEvent(provDest, "sync.running", nil)[0].(bool))
 
 }
