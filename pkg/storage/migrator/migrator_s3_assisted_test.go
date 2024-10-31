@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -35,6 +36,7 @@ func setupDevices(t *testing.T, size int, blockSize int) (storage.Provider, stor
 		location = "%s"
 		sync {
 			secure = false
+			autostart = true
 			accesskey = "silosilo"
 			secretkey = "silosilo"
 			endpoint = "%s"
@@ -59,6 +61,7 @@ func setupDevices(t *testing.T, size int, blockSize int) (storage.Provider, stor
 		location = "%s"
 		sync {
 			secure = false
+			autostart = false
 			accesskey = "silosilo"
 			secretkey = "silosilo"
 			endpoint = "%s"
@@ -95,6 +98,10 @@ func setupDevices(t *testing.T, size int, blockSize int) (storage.Provider, stor
 	require.Equal(t, 1, len(devSrc))
 	require.Equal(t, 1, len(devDest))
 
+	// Make sure the sync is running on src, but NOT on dest.
+	assert.Equal(t, true, storage.SendSiloEvent(devSrc["TestSync"].Provider, "sync.running", nil)[0].(bool))
+	assert.Equal(t, false, storage.SendSiloEvent(devDest["TestSync"].Provider, "sync.running", nil)[0].(bool))
+
 	return devSrc["TestSync"].Provider, devDest["TestSync"].Provider
 }
 
@@ -107,11 +114,6 @@ func TestMigratorS3Assisted(t *testing.T) {
 	blockSize := 64 * 1024
 
 	provSrc, provDest := setupDevices(t, size, blockSize)
-
-	//
-	ok := storage.SendSiloEvent(provSrc, "sync.start", nil)
-	assert.Equal(t, 1, len(ok))
-	assert.True(t, ok[0].(bool))
 
 	numBlocks := (size + blockSize - 1) / blockSize
 	sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(provSrc, blockSize)
@@ -140,6 +142,9 @@ func TestMigratorS3Assisted(t *testing.T) {
 	r1, w1 := io.Pipe()
 	r2, w2 := io.Pipe()
 
+	var wgComplete sync.WaitGroup
+
+	wgComplete.Add(1)
 	initDev := func(ctx context.Context, p protocol.Protocol, dev uint32) {
 		destStorageFactory := func(_ *packets.DevInfo) storage.Provider {
 			return provDest
@@ -155,6 +160,13 @@ func TestMigratorS3Assisted(t *testing.T) {
 		}()
 		go func() {
 			_ = destFrom.HandleDevInfo()
+		}()
+		go func() {
+			_ = destFrom.HandleEvent(func(p *packets.Event) {
+				if p.Type == packets.EventCompleted {
+					wgComplete.Done()
+				}
+			})
 		}()
 	}
 
@@ -191,8 +203,13 @@ func TestMigratorS3Assisted(t *testing.T) {
 	err = mig.WaitForCompletion()
 	assert.NoError(t, err)
 
+	destination.SendEvent(&packets.Event{Type: packets.EventCompleted})
+
+	// Wait for a completion event, which will include the sync / grab from S3.
+	wgComplete.Wait()
+
 	// This will GRAB the data in alternateSources from S3, and return when it's done.
-	storage.SendSiloEvent(provDest, "sync.start", device.SyncStartConfig{AlternateSources: destFrom.GetAlternateSources(), Destination: provDest})
+	// storage.SendSiloEvent(provDest, "sync.start", device.SyncStartConfig{AlternateSources: destFrom.GetAlternateSources(), Destination: provDest})
 
 	// This will end with migration completed, and consumer Locked.
 	eq, err := storage.Equals(provSrc, provDest, blockSize)
@@ -220,6 +237,10 @@ func TestMigratorS3Assisted(t *testing.T) {
 	assert.Greater(t, int(destMetrics.BlocksRCount), 0)
 	assert.Less(t, int(destMetrics.BlocksRCount), numBlocks)
 
+	// Sync should be running on the dest and NOT on src
+	assert.Equal(t, false, storage.SendSiloEvent(provSrc, "sync.running", nil)[0].(bool))
+	assert.Equal(t, true, storage.SendSiloEvent(provDest, "sync.running", nil)[0].(bool))
+
 }
 
 /**
@@ -231,11 +252,6 @@ func TestMigratorS3AssistedChangeSource(t *testing.T) {
 	blockSize := 64 * 1024
 
 	provSrc, provDest := setupDevices(t, size, blockSize)
-
-	//
-	ok := storage.SendSiloEvent(provSrc, "sync.start", nil)
-	assert.Equal(t, 1, len(ok))
-	assert.True(t, ok[0].(bool))
 
 	numBlocks := (size + blockSize - 1) / blockSize
 	sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(provSrc, blockSize)
@@ -264,6 +280,10 @@ func TestMigratorS3AssistedChangeSource(t *testing.T) {
 	r1, w1 := io.Pipe()
 	r2, w2 := io.Pipe()
 
+	var wgComplete sync.WaitGroup
+
+	wgComplete.Add(1)
+
 	initDev := func(ctx context.Context, p protocol.Protocol, dev uint32) {
 		destStorageFactory := func(_ *packets.DevInfo) storage.Provider {
 			return provDest
@@ -279,6 +299,13 @@ func TestMigratorS3AssistedChangeSource(t *testing.T) {
 		}()
 		go func() {
 			_ = destFrom.HandleDevInfo()
+		}()
+		go func() {
+			_ = destFrom.HandleEvent(func(p *packets.Event) {
+				if p.Type == packets.EventCompleted {
+					wgComplete.Done()
+				}
+			})
 		}()
 	}
 
@@ -328,8 +355,12 @@ func TestMigratorS3AssistedChangeSource(t *testing.T) {
 	err = mig.WaitForCompletion()
 	assert.NoError(t, err)
 
+	destination.SendEvent(&packets.Event{Type: packets.EventCompleted})
+
+	wgComplete.Wait() // Wait for the sync/grab from S3
+
 	// This will GRAB the data in alternateSources from S3, and return when it's done.
-	storage.SendSiloEvent(provDest, "sync.start", device.SyncStartConfig{AlternateSources: destFrom.GetAlternateSources(), Destination: provDest})
+	// storage.SendSiloEvent(provDest, "sync.start", device.SyncStartConfig{AlternateSources: destFrom.GetAlternateSources(), Destination: provDest})
 
 	// This will end with migration completed, and consumer Locked.
 	eq, err := storage.Equals(provSrc, provDest, blockSize)
@@ -356,5 +387,9 @@ func TestMigratorS3AssistedChangeSource(t *testing.T) {
 	// Do some asserts on the S3Metrics... It should have pulled some from S3, but not all
 	assert.Greater(t, int(destMetrics.BlocksRCount), 0)
 	assert.Less(t, int(destMetrics.BlocksRCount), numBlocks)
+
+	// Sync should be running on the dest and NOT on src
+	assert.Equal(t, false, storage.SendSiloEvent(provSrc, "sync.running", nil)[0].(bool))
+	assert.Equal(t, true, storage.SendSiloEvent(provDest, "sync.running", nil)[0].(bool))
 
 }

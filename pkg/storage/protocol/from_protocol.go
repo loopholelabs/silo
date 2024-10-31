@@ -161,6 +161,14 @@ func (fp *FromProtocol) HandleEvent(cb func(*packets.Event)) error {
 			return err
 		}
 
+		if ev.Type == packets.EventCompleted {
+			// Deal with the sync here, and WAIT if needed.
+			storage.SendSiloEvent(fp.prov, "sync.start", storage.SyncStartConfig{
+				AlternateSources: fp.GetAlternateSources(),
+				Destination:      fp.prov,
+			})
+		}
+
 		// Relay the event, wait, and then respond.
 		cb(ev)
 

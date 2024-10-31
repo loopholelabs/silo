@@ -36,11 +36,6 @@ type Device struct {
 	Exposed  storage.ExposedStorage
 }
 
-type SyncStartConfig struct {
-	AlternateSources []packets.AlternateSource
-	Destination      storage.Provider
-}
-
 func NewDevices(ds []*config.DeviceSchema) (map[string]*Device, error) {
 	devices := make(map[string]*Device)
 	for _, c := range ds {
@@ -310,10 +305,9 @@ func NewDevice(ds *config.DeviceSchema) (storage.Provider, storage.ExposedStorag
 		var syncRunning bool
 		var wg sync.WaitGroup
 
-		// If the storage gets a "sync.start", we should start syncing to S3.
-		storage.AddSiloEventNotification(prov, "sync.start", func(_ storage.EventType, data storage.EventData) storage.EventReturnData {
+		startSync := func(_ storage.EventType, data storage.EventData) storage.EventReturnData {
 			if data != nil {
-				startConfig := data.(SyncStartConfig)
+				startConfig := data.(storage.SyncStartConfig)
 
 				var wg sync.WaitGroup
 
@@ -359,11 +353,21 @@ func NewDevice(ds *config.DeviceSchema) (storage.Provider, storage.ExposedStorag
 				wg.Done()
 			}()
 			return true
-		})
+		}
+
+		// If the storage gets a "sync.start", we should start syncing to S3.
+		storage.AddSiloEventNotification(prov, "sync.start", startSync)
 
 		// If the storage gets a "sync.status", get some status on the S3Storage
 		storage.AddSiloEventNotification(prov, "sync.status", func(_ storage.EventType, _ storage.EventData) storage.EventReturnData {
 			return s3dest.Metrics()
+		})
+
+		// If the storage gets a "sync.running", return
+		storage.AddSiloEventNotification(prov, "sync.running", func(_ storage.EventType, _ storage.EventData) storage.EventReturnData {
+			syncLock.Lock()
+			defer syncLock.Unlock()
+			return syncRunning
 		})
 
 		// If the storage gets a "sync.stop", we should cancel the sync, and return the safe blocks
@@ -395,6 +399,11 @@ func NewDevice(ds *config.DeviceSchema) (storage.Provider, storage.ExposedStorag
 
 			return altSources
 		})
+
+		if ds.Sync.AutoStart {
+			// Start the sync here...
+			startSync("sync.start", nil)
+		}
 	}
 
 	return prov, ex, nil

@@ -29,6 +29,7 @@ func TestDeviceSync(t *testing.T) {
 		location = "./testdata/testfile_sync"
 		sync {
 			secure = false
+			autostart = true
 			accesskey = "silosilo"
 			secretkey = "silosilo"
 			endpoint = "%s"
@@ -67,9 +68,6 @@ func TestDeviceSync(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 1024*1024, n)
 
-	// Tell the sync to start.
-	storage.SendSiloEvent(prov, "sync.start", nil)
-
 	// Do a few write here, and wait a little bit for sync to happen...
 	for i := 0; i < numBlocks; i++ {
 		wbuffer := make([]byte, blockSize)
@@ -82,6 +80,8 @@ func TestDeviceSync(t *testing.T) {
 
 	// Should be enough time here to migrate the changed data blocks, since we have set the config.
 	time.Sleep(500 * time.Millisecond)
+
+	assert.Equal(t, true, storage.SendSiloEvent(prov, "sync.running", nil)[0].(bool))
 
 	// Tell the sync to stop, and return the AlternateSource details.
 	asources := storage.SendSiloEvent(prov, "sync.stop", nil)
@@ -115,6 +115,8 @@ func TestDeviceSync(t *testing.T) {
 
 	// Do some asserts on the S3Metrics... It should have written each block at least once by now.
 	assert.GreaterOrEqual(t, numBlocks, int(metrics.BlocksWCount))
+
+	assert.Equal(t, false, storage.SendSiloEvent(prov, "sync.running", nil)[0].(bool))
 
 	prov.Close()
 }
