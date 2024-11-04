@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
 	"github.com/loopholelabs/silo/pkg/storage/util"
 )
 
@@ -52,6 +53,11 @@ var BlockTypeAny = -1
 var BlockTypeStandard = 0
 var BlockTypeDirty = 1
 var BlockTypePriority = 2
+
+type SyncStartConfig struct {
+	AlternateSources []packets.AlternateSource
+	Destination      Provider
+}
 
 /**
  * Check if two storageProviders hold the same data.

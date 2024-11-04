@@ -45,6 +45,7 @@ type SyncS3Schema struct {
 	Endpoint  string            `hcl:"endpoint,attr"`
 	Bucket    string            `hcl:"bucket,attr"`
 	Config    *SyncConfigSchema `hcl:"config,block"`
+	AutoStart bool              `hcl:"autostart,attr"`
 }
 
 func parseByteValue(val string) int64 {

@@ -29,6 +29,7 @@ func TestDeviceSync(t *testing.T) {
 		location = "./testdata/testfile_sync"
 		sync {
 			secure = false
+			autostart = true
 			accesskey = "silosilo"
 			secretkey = "silosilo"
 			endpoint = "%s"
@@ -67,9 +68,6 @@ func TestDeviceSync(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 1024*1024, n)
 
-	// Tell the sync to start.
-	storage.SendSiloEvent(prov, "sync.start", nil)
-
 	// Do a few write here, and wait a little bit for sync to happen...
 	for i := 0; i < numBlocks; i++ {
 		wbuffer := make([]byte, blockSize)
@@ -82,6 +80,8 @@ func TestDeviceSync(t *testing.T) {
 
 	// Should be enough time here to migrate the changed data blocks, since we have set the config.
 	time.Sleep(500 * time.Millisecond)
+
+	assert.Equal(t, true, storage.SendSiloEvent(prov, "sync.running", nil)[0].(bool))
 
 	// Tell the sync to stop, and return the AlternateSource details.
 	asources := storage.SendSiloEvent(prov, "sync.stop", nil)
@@ -116,5 +116,80 @@ func TestDeviceSync(t *testing.T) {
 	// Do some asserts on the S3Metrics... It should have written each block at least once by now.
 	assert.GreaterOrEqual(t, numBlocks, int(metrics.BlocksWCount))
 
+	assert.Equal(t, false, storage.SendSiloEvent(prov, "sync.running", nil)[0].(bool))
+
 	prov.Close()
+}
+
+func TestDeviceSyncClose(t *testing.T) {
+	MinioPort := testutils.SetupMinio(t.Cleanup)
+
+	blockSize := 64 * 1024
+
+	testSyncSchema := fmt.Sprintf(`
+	device TestSync {
+		system = "file"
+		size = "1m"
+		blocksize = "64k"
+		location = "./testdata/testfile_sync"
+		sync {
+			secure = false
+			autostart = true
+			accesskey = "silosilo"
+			secretkey = "silosilo"
+			endpoint = "%s"
+			bucket = "silosilo"
+			config {
+				onlydirty = true
+				blockshift = 2
+				maxage = "100ms"
+				minchanged = 4
+				limit = 256
+				checkperiod = "100ms"
+			}
+		}
+	}
+	`, fmt.Sprintf("localhost:%s", MinioPort))
+
+	s := new(config.SiloSchema)
+	err := s.Decode([]byte(testSyncSchema))
+	assert.NoError(t, err)
+	devs, err := NewDevices(s.Device)
+	assert.NoError(t, err)
+	t.Cleanup(func() {
+		os.Remove("./testdata/testfile_sync")
+	})
+
+	assert.Equal(t, 1, len(devs))
+
+	prov := devs["TestSync"].Provider
+
+	numBlocks := (int(prov.Size()) + blockSize - 1) / blockSize
+
+	buffer := make([]byte, 1024*1024)
+	_, err = rand.Read(buffer)
+	assert.NoError(t, err)
+	n, err := prov.WriteAt(buffer, 0)
+	assert.NoError(t, err)
+	assert.Equal(t, 1024*1024, n)
+
+	// Do a few write here, and wait a little bit for sync to happen...
+	for i := 0; i < numBlocks; i++ {
+		wbuffer := make([]byte, blockSize)
+		_, err = rand.Read(wbuffer)
+		assert.NoError(t, err)
+		n, err = prov.WriteAt(wbuffer, int64(i*blockSize))
+		assert.NoError(t, err)
+		assert.Equal(t, 64*1024, n)
+	}
+
+	// Should be enough time here to migrate the changed data blocks, since we have set the config.
+	time.Sleep(500 * time.Millisecond)
+
+	err = prov.Close()
+	assert.NoError(t, err)
+
+	// sync should have stopped
+	assert.Equal(t, false, storage.SendSiloEvent(prov, "sync.running", nil)[0].(bool))
+
 }
