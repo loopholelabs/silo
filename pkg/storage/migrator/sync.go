@@ -46,6 +46,7 @@ type Syncer struct {
 }
 
 type BlockStatus struct {
+	Set         bool
 	UpdatingID  uint64
 	CurrentID   uint64
 	CurrentHash [sha256.Size]byte
@@ -57,6 +58,7 @@ func NewSyncer(ctx context.Context, sinfo *SyncConfig) *Syncer {
 	status := make([]BlockStatus, numBlocks)
 	for b := 0; b < int(numBlocks); b++ {
 		status[b] = BlockStatus{
+			Set:         false,
 			UpdatingID:  0,
 			CurrentID:   0,
 			CurrentHash: [sha256.Size]byte{},
@@ -79,7 +81,7 @@ func (s *Syncer) GetSafeBlockMap() map[uint][sha256.Size]byte {
 	blocks := make(map[uint][sha256.Size]byte, 0)
 
 	for b, status := range s.blockStatus {
-		if status.CurrentID > 0 && status.CurrentID == status.UpdatingID {
+		if status.Set && status.CurrentID == status.UpdatingID {
 			blocks[uint(b)] = status.CurrentHash
 		}
 	}
@@ -154,7 +156,10 @@ func (s *Syncer) Sync(syncAllFirst bool, continuous bool) (*MigrationProgress, e
 		hash := sha256.Sum256(data)
 
 		s.blockStatusLock.Lock()
-		if id > s.blockStatus[b.Block].CurrentID {
+		if !s.blockStatus[b.Block].Set {
+			s.blockStatus[b.Block].Set = true
+			s.blockStatus[b.Block].CurrentHash = hash
+		} else if id > s.blockStatus[b.Block].CurrentID {
 			s.blockStatus[b.Block].CurrentID = id
 			s.blockStatus[b.Block].CurrentHash = hash
 		}
