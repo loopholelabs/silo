@@ -158,6 +158,7 @@ func (s *Syncer) Sync(syncAllFirst bool, continuous bool) (*MigrationProgress, e
 		s.blockStatusLock.Lock()
 		if !s.blockStatus[b.Block].Set {
 			s.blockStatus[b.Block].Set = true
+			s.blockStatus[b.Block].CurrentID = id
 			s.blockStatus[b.Block].CurrentHash = hash
 		} else if id > s.blockStatus[b.Block].CurrentID {
 			s.blockStatus[b.Block].CurrentID = id
