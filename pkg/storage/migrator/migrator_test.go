@@ -21,6 +21,7 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/volatilitymonitor"
 	"github.com/loopholelabs/silo/pkg/storage/waitingcache"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 /**
@@ -728,6 +729,8 @@ func TestMigratorWithReaderWriterWrite(t *testing.T) {
 
 	// Write some stuff to local, which will be removed from the list of blocks to migrate
 	b := make([]byte, 8192)
+	_, err = crand.Read(b)
+	assert.NoError(t, err)
 	o := 8
 	n, err = destWaitingLocal.WriteAt(b, int64(o*blockSize))
 	assert.NoError(t, err)
@@ -739,7 +742,35 @@ func TestMigratorWithReaderWriterWrite(t *testing.T) {
 	err = mig.WaitForCompletion()
 	assert.NoError(t, err)
 
-	assert.Equal(t, int64(numBlocks-numLocalBlocks), mig.metricBlocksMigrated)
+	for {
+		blocks := mig.GetLatestDirty()
+		if blocks == nil {
+			break
+		}
+		destWaitingLocal.DirtyBlocks(blocks)
+
+		err := mig.MigrateDirty(blocks)
+		assert.NoError(t, err)
+	}
+
+	err = mig.WaitForCompletion()
+	assert.NoError(t, err)
+
+	// This will finish with source locked
+
+	require.True(t, sourceStorage.IsLocked())
+
+	assert.Equal(t, numBlocks-numLocalBlocks, mig.migratedBlocks.Count(0, mig.migratedBlocks.Length()))
+
+	// Update the source as well...
+	n, err = sourceDirtyLocal.WriteAt(b, int64(o*blockSize))
+	assert.NoError(t, err)
+	assert.Equal(t, len(b), n)
+
+	// Check the storage is equal?
+	eq, err := storage.Equals(destWaitingLocal, sourceDirtyLocal, 4096)
+	assert.NoError(t, err)
+	assert.True(t, eq)
 }
 
 func TestMigratorSimpleCowSparse(t *testing.T) {

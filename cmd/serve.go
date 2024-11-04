@@ -170,10 +170,6 @@ func shutdownEverything() {
 }
 
 func setupStorageDevice(conf *config.DeviceSchema) (*storageInfo, error) {
-	blockSize := 1024 * 128
-
-	numBlocks := (int(conf.ByteSize()) + blockSize - 1) / blockSize
-
 	source, ex, err := device.NewDevice(conf)
 	if err != nil {
 		return nil, err
@@ -182,6 +178,15 @@ func setupStorageDevice(conf *config.DeviceSchema) (*storageInfo, error) {
 		fmt.Printf("Device %s exposed as %s\n", conf.Name, ex.Device())
 		srcExposed = append(srcExposed, ex)
 	}
+
+	blockSize := 1024 * 128
+
+	if conf.BlockSize != "" {
+		blockSize = int(conf.ByteBlockSize())
+	}
+
+	numBlocks := (int(conf.ByteSize()) + blockSize - 1) / blockSize
+
 	sourceMetrics := modules.NewMetrics(source)
 	sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(sourceMetrics, blockSize)
 	sourceMonitor := volatilitymonitor.NewVolatilityMonitor(sourceDirtyLocal, blockSize, 10*time.Second)

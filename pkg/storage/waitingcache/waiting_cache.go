@@ -47,14 +47,19 @@ func NewWaitingCache(prov storage.Provider, blockSize int) (*Local, *Remote) {
 	return wc.local, wc.remote
 }
 
-func (i *WaitingCache) waitForRemoteBlocks(bStart uint, bEnd uint, lockCB func(b uint)) {
+func (i *WaitingCache) waitForBlocks(bStart uint, bEnd uint, lockCB func(b uint)) {
 	// TODO: Optimize this
 	for b := bStart; b < bEnd; b++ {
-		i.waitForRemoteBlock(b, lockCB)
+		i.waitForBlock(b, lockCB)
 	}
 }
 
-func (i *WaitingCache) waitForRemoteBlock(b uint, lockCB func(b uint)) {
+func (i *WaitingCache) waitForBlock(b uint, lockCB func(b uint)) {
+	// If we have it locally, return.
+	if i.local.available.BitSet(int(b)) {
+		return
+	}
+
 	i.lockersLock.Lock()
 	avail := i.remote.available.BitSet(int(b))
 	if avail {
@@ -73,6 +78,26 @@ func (i *WaitingCache) waitForRemoteBlock(b uint, lockCB func(b uint)) {
 
 	// Lock for reading (This will wait until the write lock has been unlocked by a writer for this block).
 	rwl.RLock()
+}
+
+// TODO: Fix the logic here a bit
+func (i *WaitingCache) markAvailableBlockLocal(b uint) {
+	i.lockersLock.Lock()
+	avail := i.local.available.BitSet(int(b))
+	rwl, ok := i.lockers[b]
+	if !avail {
+		i.local.available.SetBit(int(b))
+	}
+	i.lockersLock.Unlock()
+
+	if !avail && ok {
+		rwl.Unlock()
+	}
+
+	// Now we can get rid of the lock...
+	i.lockersLock.Lock()
+	delete(i.lockers, b)
+	i.lockersLock.Unlock()
 }
 
 func (i *WaitingCache) markAvailableRemoteBlocks(bStart uint, bEnd uint) {
