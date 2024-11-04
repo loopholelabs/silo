@@ -114,7 +114,7 @@ func TestDeviceSync(t *testing.T) {
 	metrics := stats[0].(*sources.S3Metrics)
 
 	// Do some asserts on the S3Metrics... It should have written each block at least once by now.
-	assert.GreaterOrEqual(t, numBlocks, int(metrics.BlocksWCount))
+	assert.GreaterOrEqual(t, int(metrics.BlocksWCount), numBlocks)
 
 	assert.Equal(t, false, storage.SendSiloEvent(prov, "sync.running", nil)[0].(bool))
 
