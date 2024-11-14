@@ -134,95 +134,112 @@ func TestMigratorPartial(t *testing.T) {
  * Test a simple migration through a pipe. No writer no reader.
  *
  */
-func TestMigratorSimplePipe(t *testing.T) {
-	size := 1024 * 1024
-	blockSize := 4096
-	numBlocks := (size + blockSize - 1) / blockSize
-
-	sourceStorageMem := sources.NewMemoryStorage(size)
-	sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(sourceStorageMem, blockSize)
-	sourceStorage := modules.NewLockable(sourceDirtyLocal)
-
-	// Set up some data here.
-	buffer := make([]byte, size)
-	for i := 0; i < size; i++ {
-		buffer[i] = 9
+func TestMigratorSimplePipe(tt *testing.T) {
+	tests := map[string]*protocol.BufferedWriterConfig{
+		"noBuffering": nil,
+		"someBuffering": {
+			Timeout:    50 * time.Millisecond,
+			DelayTimer: false,
+			MaxLength:  1024 * 1024,
+		},
+		"delayBuffering": {
+			Timeout:    50 * time.Millisecond,
+			DelayTimer: true,
+			MaxLength:  1024 * 1024,
+		},
 	}
+	for name, cc := range tests {
+		tt.Run(name, func(t *testing.T) {
+			size := 1024 * 1024
+			blockSize := 4096
+			numBlocks := (size + blockSize - 1) / blockSize
 
-	n, err := sourceStorage.WriteAt(buffer, 0)
-	assert.NoError(t, err)
-	assert.Equal(t, len(buffer), n)
+			sourceStorageMem := sources.NewMemoryStorage(size)
+			sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(sourceStorageMem, blockSize)
+			sourceStorage := modules.NewLockable(sourceDirtyLocal)
 
-	orderer := blocks.NewAnyBlockOrder(numBlocks, nil)
-	orderer.AddAll()
+			// Set up some data here.
+			buffer := make([]byte, size)
+			for i := 0; i < size; i++ {
+				buffer[i] = 9
+			}
 
-	// START moving data from sourceStorage to destStorage
+			n, err := sourceStorage.WriteAt(buffer, 0)
+			assert.NoError(t, err)
+			assert.Equal(t, len(buffer), n)
 
-	var destStorage storage.Provider
-	var destFrom *protocol.FromProtocol
+			orderer := blocks.NewAnyBlockOrder(numBlocks, nil)
+			orderer.AddAll()
 
-	// Create a simple pipe
-	r1, w1 := io.Pipe()
-	r2, w2 := io.Pipe()
+			// START moving data from sourceStorage to destStorage
 
-	initDev := func(ctx context.Context, p protocol.Protocol, dev uint32) {
-		destStorageFactory := func(di *packets.DevInfo) storage.Provider {
-			destStorage = sources.NewMemoryStorage(int(di.Size))
-			return destStorage
-		}
+			var destStorage storage.Provider
+			var destFrom *protocol.FromProtocol
 
-		// Pipe from the protocol to destWaiting
-		destFrom = protocol.NewFromProtocol(ctx, dev, destStorageFactory, p)
-		go func() {
-			_ = destFrom.HandleReadAt()
-		}()
-		go func() {
-			_ = destFrom.HandleWriteAt()
-		}()
-		go func() {
-			_ = destFrom.HandleDevInfo()
-		}()
+			// Create a simple pipe
+			r1, w1 := io.Pipe()
+			r2, w2 := io.Pipe()
+
+			initDev := func(ctx context.Context, p protocol.Protocol, dev uint32) {
+				destStorageFactory := func(di *packets.DevInfo) storage.Provider {
+					destStorage = sources.NewMemoryStorage(int(di.Size))
+					return destStorage
+				}
+
+				// Pipe from the protocol to destWaiting
+				destFrom = protocol.NewFromProtocol(ctx, dev, destStorageFactory, p)
+				go func() {
+					_ = destFrom.HandleReadAt()
+				}()
+				go func() {
+					_ = destFrom.HandleWriteAt()
+				}()
+				go func() {
+					_ = destFrom.HandleDevInfo()
+				}()
+			}
+
+			prSource := protocol.NewRWWithBuffering(context.TODO(), []io.Reader{r1}, []io.Writer{w2}, cc, nil)
+			prDest := protocol.NewRWWithBuffering(context.TODO(), []io.Reader{r2}, []io.Writer{w1}, cc, initDev)
+
+			go func() {
+				_ = prSource.Handle()
+			}()
+			go func() {
+				_ = prDest.Handle()
+			}()
+
+			// Pipe a destination to the protocol
+			destination := protocol.NewToProtocol(sourceDirtyRemote.Size(), 17, prSource)
+
+			err = destination.SendDevInfo("test", uint32(blockSize), "")
+			assert.NoError(t, err)
+
+			conf := NewConfig().WithBlockSize(blockSize)
+			conf.LockerHandler = sourceStorage.Lock
+			conf.UnlockerHandler = sourceStorage.Unlock
+
+			mig, err := NewMigrator(sourceDirtyRemote,
+				destination,
+				orderer,
+				conf)
+
+			assert.NoError(t, err)
+
+			err = mig.Migrate(numBlocks)
+			assert.NoError(t, err)
+
+			err = mig.WaitForCompletion()
+			assert.NoError(t, err)
+
+			// This will end with migration completed, and consumer Locked.
+			eq, err := storage.Equals(sourceStorageMem, destStorage, blockSize)
+			assert.NoError(t, err)
+			assert.True(t, eq)
+
+			assert.Equal(t, int(sourceStorageMem.Size()), destFrom.GetDataPresent())
+		})
 	}
-
-	prSource := protocol.NewRW(context.TODO(), []io.Reader{r1}, []io.Writer{w2}, nil)
-	prDest := protocol.NewRW(context.TODO(), []io.Reader{r2}, []io.Writer{w1}, initDev)
-
-	go func() {
-		_ = prSource.Handle()
-	}()
-	go func() {
-		_ = prDest.Handle()
-	}()
-
-	// Pipe a destination to the protocol
-	destination := protocol.NewToProtocol(sourceDirtyRemote.Size(), 17, prSource)
-
-	err = destination.SendDevInfo("test", uint32(blockSize), "")
-	assert.NoError(t, err)
-
-	conf := NewConfig().WithBlockSize(blockSize)
-	conf.LockerHandler = sourceStorage.Lock
-	conf.UnlockerHandler = sourceStorage.Unlock
-
-	mig, err := NewMigrator(sourceDirtyRemote,
-		destination,
-		orderer,
-		conf)
-
-	assert.NoError(t, err)
-
-	err = mig.Migrate(numBlocks)
-	assert.NoError(t, err)
-
-	err = mig.WaitForCompletion()
-	assert.NoError(t, err)
-
-	// This will end with migration completed, and consumer Locked.
-	eq, err := storage.Equals(sourceStorageMem, destStorage, blockSize)
-	assert.NoError(t, err)
-	assert.True(t, eq)
-
-	assert.Equal(t, int(sourceStorageMem.Size()), destFrom.GetDataPresent())
 }
 
 /**
