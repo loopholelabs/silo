@@ -29,7 +29,7 @@ type sendPacketInfo struct {
 	data []byte
 }
 
-func (p *MockPro) SendPacket(dev uint32, id uint32, data []byte, urgency Urgency) (uint32, error) {
+func (p *MockPro) SendPacket(dev uint32, id uint32, data []byte, _ Urgency) (uint32, error) {
 	mockID := uint32(999)
 	p.sendPackets <- &sendPacketInfo{
 		dev:  dev,

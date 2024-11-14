@@ -23,7 +23,7 @@ func NewMockProtocol(ctx context.Context) *MockProtocol {
 	}
 }
 
-func (mp *MockProtocol) SendPacket(dev uint32, id uint32, data []byte, urgency Urgency) (uint32, error) {
+func (mp *MockProtocol) SendPacket(dev uint32, id uint32, data []byte, _ Urgency) (uint32, error) {
 	cmd := data[0]
 
 	// if id is ANY, pick one
