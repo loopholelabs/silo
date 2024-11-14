@@ -37,6 +37,10 @@ type RW struct {
 }
 
 func NewRW(ctx context.Context, readers []io.Reader, writers []io.Writer, newdevFN func(context.Context, Protocol, uint32)) *RW {
+	return NewRWWithBuffering(ctx, readers, writers, nil, newdevFN)
+}
+
+func NewRWWithBuffering(ctx context.Context, readers []io.Reader, writers []io.Writer, bufferConfig *BufferedWriterConfig, newdevFN func(context.Context, Protocol, uint32)) *RW {
 	prw := &RW{
 		ctx:        ctx,
 		waiters:    make(map[uint32]Waiters),
@@ -46,7 +50,15 @@ func NewRW(ctx context.Context, readers []io.Reader, writers []io.Writer, newdev
 
 	prw.readers = readers
 
-	prw.writers = writers
+	prw.writers = make([]io.Writer, 0)
+	for _, w := range writers {
+		if bufferConfig != nil {
+			prw.writers = append(prw.writers, NewBufferedWriter(w, bufferConfig))
+		} else {
+			prw.writers = append(prw.writers, w)
+		}
+	}
+
 	prw.writerLocks = make([]sync.Mutex, len(writers))
 	prw.writerHeaders = make([][]byte, len(writers))
 	for i := 0; i < len(writers); i++ {
@@ -112,7 +124,15 @@ func (p *RW) SendPacket(dev uint32, id uint32, data []byte, urgency Urgency) (ui
 	if err != nil {
 		return 0, err
 	}
-	_, err = p.writers[i].Write(data)
+
+	// If it's urgent, then use WriteNow if we can
+	wwu, ok := p.writers[i].(WriterWithUrgent)
+	if urgency == UrgencyUrgent && ok {
+		_, err = wwu.WriteNow(data)
+	} else {
+		_, err = p.writers[i].Write(data)
+	}
+
 	return id, err
 }
 
