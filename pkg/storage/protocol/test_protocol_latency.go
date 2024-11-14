@@ -26,8 +26,8 @@ func NewTestProtocolLatency(proto Protocol, recvLatency time.Duration) Protocol 
 	return p
 }
 
-func (p *TestProtocolLatency) SendPacket(dev uint32, id uint32, data []byte) (uint32, error) {
-	return p.proto.SendPacket(dev, id, data)
+func (p *TestProtocolLatency) SendPacket(dev uint32, id uint32, data []byte, urgency Urgency) (uint32, error) {
+	return p.proto.SendPacket(dev, id, data, urgency)
 }
 
 func (p *TestProtocolLatency) WaitForPacket(dev uint32, id uint32) ([]byte, error) {

@@ -64,8 +64,8 @@ func (p *TestProtocolBandwidth) expireBandwidth(since time.Duration) {
 	p.recentPackets = newRecentPackets
 }
 
-func (p *TestProtocolBandwidth) SendPacket(dev uint32, id uint32, data []byte) (uint32, error) {
-	return p.proto.SendPacket(dev, id, data)
+func (p *TestProtocolBandwidth) SendPacket(dev uint32, id uint32, data []byte, urgency Urgency) (uint32, error) {
+	return p.proto.SendPacket(dev, id, data, urgency)
 }
 
 func (p *TestProtocolBandwidth) waitForBandwidth() {

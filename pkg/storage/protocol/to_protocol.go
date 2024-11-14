@@ -33,7 +33,7 @@ func (i *ToProtocol) SendSiloEvent(eventType storage.EventType, eventData storag
 		i.alternateSources = eventData.([]packets.AlternateSource)
 		// Send the list of alternate sources here...
 		h := packets.EncodeAlternateSources(i.alternateSources)
-		_, _ = i.protocol.SendPacket(i.dev, IDPickAny, h)
+		_, _ = i.protocol.SendPacket(i.dev, IDPickAny, h, UrgencyUrgent)
 		// For now, we do not check the error. If there was a protocol / io error, we should see it on the next send
 	}
 	return nil
@@ -41,7 +41,7 @@ func (i *ToProtocol) SendSiloEvent(eventType storage.EventType, eventData storag
 
 func (i *ToProtocol) SendEvent(e *packets.Event) error {
 	b := packets.EncodeEvent(e)
-	id, err := i.protocol.SendPacket(i.dev, IDPickAny, b)
+	id, err := i.protocol.SendPacket(i.dev, IDPickAny, b, UrgencyUrgent)
 	if err != nil {
 		return err
 	}
@@ -57,7 +57,7 @@ func (i *ToProtocol) SendEvent(e *packets.Event) error {
 
 func (i *ToProtocol) SendHashes(hashes map[uint][sha256.Size]byte) error {
 	h := packets.EncodeHashes(hashes)
-	id, err := i.protocol.SendPacket(i.dev, IDPickAny, h)
+	id, err := i.protocol.SendPacket(i.dev, IDPickAny, h, UrgencyUrgent)
 	if err != nil {
 		return err
 	}
@@ -78,19 +78,19 @@ func (i *ToProtocol) SendDevInfo(name string, blockSize uint32, schema string) e
 		Schema:    schema,
 	}
 	b := packets.EncodeDevInfo(di)
-	_, err := i.protocol.SendPacket(i.dev, IDPickAny, b)
+	_, err := i.protocol.SendPacket(i.dev, IDPickAny, b, UrgencyUrgent)
 	return err
 }
 
 func (i *ToProtocol) RemoveDev() error {
 	f := packets.EncodeRemoveDev()
-	_, err := i.protocol.SendPacket(i.dev, IDPickAny, f)
+	_, err := i.protocol.SendPacket(i.dev, IDPickAny, f, UrgencyUrgent)
 	return err
 }
 
 func (i *ToProtocol) DirtyList(blockSize int, blocks []uint) error {
 	b := packets.EncodeDirtyList(blockSize, blocks)
-	id, err := i.protocol.SendPacket(i.dev, IDPickAny, b)
+	id, err := i.protocol.SendPacket(i.dev, IDPickAny, b, UrgencyUrgent)
 	if err != nil {
 		return err
 	}
@@ -108,7 +108,7 @@ func (i *ToProtocol) DirtyList(blockSize int, blocks []uint) error {
 
 func (i *ToProtocol) ReadAt(buffer []byte, offset int64) (int, error) {
 	b := packets.EncodeReadAt(offset, int32(len(buffer)))
-	id, err := i.protocol.SendPacket(i.dev, IDPickAny, b)
+	id, err := i.protocol.SendPacket(i.dev, IDPickAny, b, UrgencyNormal)
 	if err != nil {
 		return 0, err
 	}
@@ -142,7 +142,7 @@ func (i *ToProtocol) WriteAt(buffer []byte, offset int64) (int, error) {
 			hash := sha256.Sum256(buffer)
 			if bytes.Equal(hash[:], as.Hash[:]) {
 				data := packets.EncodeWriteAtHash(as.Offset, as.Length, as.Hash[:])
-				id, err = i.protocol.SendPacket(i.dev, IDPickAny, data)
+				id, err = i.protocol.SendPacket(i.dev, IDPickAny, data, UrgencyNormal)
 				dontSendData = true
 			}
 			break
@@ -152,10 +152,10 @@ func (i *ToProtocol) WriteAt(buffer []byte, offset int64) (int, error) {
 	if !dontSendData {
 		if i.CompressedWrites {
 			data := packets.EncodeWriteAtComp(offset, buffer)
-			id, err = i.protocol.SendPacket(i.dev, IDPickAny, data)
+			id, err = i.protocol.SendPacket(i.dev, IDPickAny, data, UrgencyNormal)
 		} else {
 			data := packets.EncodeWriteAt(offset, buffer)
-			id, err = i.protocol.SendPacket(i.dev, IDPickAny, data)
+			id, err = i.protocol.SendPacket(i.dev, IDPickAny, data, UrgencyNormal)
 		}
 	}
 	if err != nil {
@@ -186,7 +186,7 @@ func (i *ToProtocol) WriteAtWithMap(buffer []byte, offset int64, idMap map[uint6
 	var id uint32
 	var err error
 	f := packets.EncodeWriteAtWithMap(offset, buffer, idMap)
-	id, err = i.protocol.SendPacket(i.dev, IDPickAny, f)
+	id, err = i.protocol.SendPacket(i.dev, IDPickAny, f, UrgencyNormal)
 	if err != nil {
 		return 0, err
 	}
@@ -213,7 +213,7 @@ func (i *ToProtocol) WriteAtWithMap(buffer []byte, offset int64, idMap map[uint6
 
 func (i *ToProtocol) RemoveFromMap(ids []uint64) error {
 	f := packets.EncodeRemoveFromMap(ids)
-	_, err := i.protocol.SendPacket(i.dev, IDPickAny, f)
+	_, err := i.protocol.SendPacket(i.dev, IDPickAny, f, UrgencyUrgent)
 	return err
 }
 

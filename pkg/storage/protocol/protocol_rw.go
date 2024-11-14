@@ -82,7 +82,7 @@ func (p *RW) InitDev(dev uint32) {
 }
 
 // Send a packet
-func (p *RW) SendPacket(dev uint32, id uint32, data []byte) (uint32, error) {
+func (p *RW) SendPacket(dev uint32, id uint32, data []byte, urgency Urgency) (uint32, error) {
 	// If the context was cancelled, we should return that error
 	select {
 	case <-p.ctx.Done():
