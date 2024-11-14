@@ -2,7 +2,6 @@ package packets
 
 import (
 	"encoding/binary"
-	"io"
 )
 
 const WriteAtData = 0
@@ -16,21 +15,6 @@ func EncodeWriteAt(offset int64, data []byte) []byte {
 	binary.LittleEndian.PutUint64(buff[2:], uint64(offset))
 	copy(buff[10:], data)
 	return buff
-}
-
-func EncodeWriterWriteAt(offset int64, data []byte) (uint32, func(w io.Writer) error) {
-	return uint32(10 + len(data)), func(w io.Writer) error {
-		header := make([]byte, 2+8)
-		header[0] = CommandWriteAt
-		header[1] = WriteAtData
-		binary.LittleEndian.PutUint64(header[2:], uint64(offset))
-		_, err := w.Write(header)
-		if err != nil {
-			return err
-		}
-		_, err = w.Write(data)
-		return err
-	}
 }
 
 func DecodeWriteAt(buff []byte) (offset int64, data []byte, err error) {

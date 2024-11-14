@@ -1,7 +1,6 @@
 package protocol
 
 import (
-	"io"
 	"sync/atomic"
 	"time"
 )
@@ -25,10 +24,6 @@ func NewTestProtocolLatency(proto Protocol, recvLatency time.Duration) Protocol 
 
 	p.isFirst.Store(true)
 	return p
-}
-
-func (p *TestProtocolLatency) SendPacketWriter(dev uint32, id uint32, length uint32, data func(w io.Writer) error) (uint32, error) {
-	return p.proto.SendPacketWriter(dev, id, length, data)
 }
 
 func (p *TestProtocolLatency) SendPacket(dev uint32, id uint32, data []byte) (uint32, error) {

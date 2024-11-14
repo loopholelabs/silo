@@ -1,10 +1,8 @@
 package protocol
 
 import (
-	"bytes"
 	"crypto/rand"
 	"errors"
-	"io"
 	"testing"
 
 	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
@@ -29,21 +27,6 @@ type sendPacketInfo struct {
 	dev  uint32
 	id   uint32
 	data []byte
-}
-
-func (p *MockPro) SendPacketWriter(dev uint32, id uint32, _ uint32, data func(w io.Writer) error) (uint32, error) {
-	var buff bytes.Buffer
-	err := data(&buff)
-	if err != nil {
-		return 0, err
-	}
-	mockID := uint32(999)
-	p.sendPackets <- &sendPacketInfo{
-		dev:  dev,
-		id:   mockID,
-		data: buff.Bytes(),
-	}
-	return id, nil
 }
 
 func (p *MockPro) SendPacket(dev uint32, id uint32, data []byte) (uint32, error) {

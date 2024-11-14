@@ -81,39 +81,6 @@ func (p *RW) InitDev(dev uint32) {
 	p.activeDevsLock.Unlock()
 }
 
-func (p *RW) SendPacketWriter(dev uint32, id uint32, length uint32, data func(w io.Writer) error) (uint32, error) {
-	// If the context was cancelled, we should return that error
-	select {
-	case <-p.ctx.Done():
-		return 0, p.ctx.Err()
-	default:
-		break
-	}
-
-	p.InitDev(dev)
-
-	// Encode and send it down the writer...
-	if id == IDPickAny {
-		id = atomic.AddUint32(&p.txID, 1)
-	}
-
-	i := rand.Intn(len(p.writers))
-
-	p.writerLocks[i].Lock()
-	defer p.writerLocks[i].Unlock()
-
-	binary.LittleEndian.PutUint32(p.writerHeaders[i], dev)
-	binary.LittleEndian.PutUint32(p.writerHeaders[i][4:], id)
-	binary.LittleEndian.PutUint32(p.writerHeaders[i][8:], length)
-
-	_, err := p.writers[i].Write(p.writerHeaders[i])
-
-	if err != nil {
-		return 0, err
-	}
-	return id, data(p.writers[i])
-}
-
 // Send a packet
 func (p *RW) SendPacket(dev uint32, id uint32, data []byte) (uint32, error) {
 	// If the context was cancelled, we should return that error
