@@ -2,6 +2,7 @@ package protocol_test
 
 import (
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -10,8 +11,17 @@ import (
 )
 
 type loggedWriter struct {
+	lock   sync.Mutex
 	writes []int
 	err    chan error
+}
+
+func (lw *loggedWriter) GetWrites() []int {
+	lw.lock.Lock()
+	w := make([]int, len(lw.writes))
+	copy(w, lw.writes)
+	lw.lock.Unlock()
+	return w
 }
 
 func (lw *loggedWriter) Write(buffer []byte) (int, error) {
@@ -22,7 +32,9 @@ func (lw *loggedWriter) Write(buffer []byte) (int, error) {
 	default:
 	}
 	// Just log it
+	lw.lock.Lock()
 	lw.writes = append(lw.writes, len(buffer))
+	lw.lock.Unlock()
 	return len(buffer), nil
 }
 
@@ -45,7 +57,7 @@ func TestBufferedWriter(t *testing.T) {
 	err := bw.Flush()
 	assert.NoError(t, err)
 
-	assert.Equal(t, []int{100, 100, 100, 100, 100}, w.writes)
+	assert.Equal(t, []int{100, 100, 100, 100, 100}, w.GetWrites())
 }
 
 func TestBufferedWriterTimed(t *testing.T) {
@@ -70,7 +82,7 @@ func TestBufferedWriterTimed(t *testing.T) {
 	err := bw.Flush()
 	assert.NoError(t, err)
 
-	assert.Equal(t, []int{500, 500}, w.writes)
+	assert.Equal(t, []int{500, 500}, w.GetWrites())
 }
 
 func TestBufferedWriterNow(t *testing.T) {
@@ -86,7 +98,7 @@ func TestBufferedWriterNow(t *testing.T) {
 	_, err := bw.WriteNow(data) // This will do a flush
 	assert.NoError(t, err)
 
-	assert.Equal(t, []int{550}, w.writes)
+	assert.Equal(t, []int{550}, w.GetWrites())
 }
 
 func TestBufferedWriterError(t *testing.T) {
@@ -105,7 +117,7 @@ func TestBufferedWriterError(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 
 	// The write failed, so it won't have been recorded
-	assert.Equal(t, []int{}, w.writes)
+	assert.Equal(t, []int{}, w.GetWrites())
 
 	// Make sure any write results in the error now...
 	_, err := bw.Write(data)
@@ -122,7 +134,7 @@ func TestBufferedWriterDelayTimerFalse(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	// Should have written something by now, since the timer is not reset...
-	assert.Greater(t, len(w.writes), 0)
+	assert.Greater(t, len(w.GetWrites()), 0)
 }
 
 func TestBufferedWriterDelayTimerTrue(t *testing.T) {
@@ -135,5 +147,5 @@ func TestBufferedWriterDelayTimerTrue(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	// Nothing should have been written, since the timer gets delayed each time
-	assert.Equal(t, 0, len(w.writes))
+	assert.Equal(t, 0, len(w.GetWrites()))
 }
