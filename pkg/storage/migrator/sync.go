@@ -94,6 +94,7 @@ func (s *Syncer) GetSafeBlockMap() map[uint][sha256.Size]byte {
  */
 func (s *Syncer) Sync(syncAllFirst bool, continuous bool) (*MigrationProgress, error) {
 	conf := NewConfig().WithBlockSize(s.config.BlockSize)
+	conf.Logger = s.config.Logger
 	conf.LockerHandler = func() {
 		if s.config.LockerHandler != nil {
 			s.config.LockerHandler()
