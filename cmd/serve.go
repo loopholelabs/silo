@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/fatih/color"
+	"github.com/loopholelabs/logging"
+	"github.com/loopholelabs/logging/types"
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/blocks"
 	"github.com/loopholelabs/silo/pkg/storage/config"
@@ -48,6 +50,8 @@ var srcStorage []*storageInfo
 var serveProgressBar *mpb.Progress
 var serveBars []*mpb.Bar
 
+var serveDebug bool
+
 func init() {
 	rootCmd.AddCommand(cmdServe)
 	cmdServe.Flags().StringVarP(&serveAddr, "addr", "a", ":5170", "Address to serve from")
@@ -55,6 +59,7 @@ func init() {
 	cmdServe.Flags().BoolVarP(&serveProgress, "progress", "p", false, "Show progress")
 	cmdServe.Flags().BoolVarP(&serveContinuous, "continuous", "C", false, "Continuous sync")
 	cmdServe.Flags().BoolVarP(&serveAnyOrder, "order", "o", false, "Any order (faster)")
+	cmdServe.Flags().BoolVarP(&serveDebug, "debug", "d", false, "Debug logging (trace)")
 }
 
 type storageInfo struct {
@@ -69,6 +74,12 @@ type storageInfo struct {
 }
 
 func runServe(_ *cobra.Command, _ []string) {
+	var log types.RootLogger
+	if serveDebug {
+		log = logging.New(logging.Zerolog, "silo.serve", os.Stderr)
+		log.SetLevel(types.TraceLevel)
+	}
+
 	if serveProgress {
 		serveProgressBar = mpb.New(
 			mpb.WithOutput(color.Output),
@@ -85,7 +96,7 @@ func runServe(_ *cobra.Command, _ []string) {
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-c
-		shutdownEverything()
+		shutdownEverything(log)
 		os.Exit(1)
 	}()
 
@@ -96,7 +107,7 @@ func runServe(_ *cobra.Command, _ []string) {
 
 	for i, s := range siloConf.Device {
 		fmt.Printf("Setup storage %d [%s] size %s - %d\n", i, s.Name, s.Size, s.ByteSize())
-		sinfo, err := setupStorageDevice(s)
+		sinfo, err := setupStorageDevice(s, log)
 		if err != nil {
 			panic(fmt.Sprintf("Could not setup storage. %v", err))
 		}
@@ -108,7 +119,7 @@ func runServe(_ *cobra.Command, _ []string) {
 
 	l, err := net.Listen("tcp", serveAddr)
 	if err != nil {
-		shutdownEverything()
+		shutdownEverything(log)
 		panic("Listener issue...")
 	}
 
@@ -133,7 +144,7 @@ func runServe(_ *cobra.Command, _ []string) {
 		for i, s := range srcStorage {
 			wg.Add(1)
 			go func(index int, src *storageInfo) {
-				err := migrateDevice(uint32(index), src.name, pro, src)
+				err := migrateDevice(log, uint32(index), src.name, pro, src)
 				if err != nil {
 					fmt.Printf("There was an issue migrating the storage %d %v\n", index, err)
 				}
@@ -149,10 +160,10 @@ func runServe(_ *cobra.Command, _ []string) {
 
 		con.Close()
 	}
-	shutdownEverything()
+	shutdownEverything(log)
 }
 
-func shutdownEverything() {
+func shutdownEverything(_ types.RootLogger) {
 	// first unlock everything
 	fmt.Printf("Unlocking devices...\n")
 	for _, i := range srcStorage {
@@ -169,8 +180,8 @@ func shutdownEverything() {
 	}
 }
 
-func setupStorageDevice(conf *config.DeviceSchema) (*storageInfo, error) {
-	source, ex, err := device.NewDevice(conf)
+func setupStorageDevice(conf *config.DeviceSchema, log types.RootLogger) (*storageInfo, error) {
+	source, ex, err := device.NewDeviceWithLogging(conf, log)
 	if err != nil {
 		return nil, err
 	}
@@ -223,7 +234,7 @@ func setupStorageDevice(conf *config.DeviceSchema) (*storageInfo, error) {
 }
 
 // Migrate a device
-func migrateDevice(devID uint32, name string,
+func migrateDevice(log types.RootLogger, devID uint32, name string,
 	pro protocol.Protocol,
 	sinfo *storageInfo) error {
 	size := sinfo.lockable.Size()
@@ -293,6 +304,7 @@ func migrateDevice(devID uint32, name string,
 	}()
 
 	conf := migrator.NewConfig().WithBlockSize(sinfo.blockSize)
+	conf.Logger = log
 	conf.LockerHandler = func() {
 		_ = dest.SendEvent(&packets.Event{Type: packets.EventPreLock})
 		sinfo.lockable.Lock()
