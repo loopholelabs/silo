@@ -250,7 +250,7 @@ func NewDeviceWithLogging(ds *config.DeviceSchema, log types.RootLogger) (storag
 	var ex storage.ExposedStorage
 	if ds.Expose {
 
-		ex = expose.NewExposedStorageNBDNL(prov, 8, 0, prov.Size(), expose.NBDDefaultBlockSize, true)
+		ex = expose.NewExposedStorageNBDNL(prov, expose.DefaultConfig.WithLogger(log))
 
 		err := ex.Init()
 		if err != nil {

@@ -7,6 +7,7 @@ import (
 	"io"
 	"sync"
 
+	"github.com/loopholelabs/logging/types"
 	"github.com/loopholelabs/silo/pkg/storage"
 )
 
@@ -62,6 +63,8 @@ type Response struct {
 }
 
 type Dispatch struct {
+	logger           types.RootLogger
+	dev              string
 	ctx              context.Context
 	asyncReads       bool
 	asyncWrites      bool
@@ -75,9 +78,11 @@ type Dispatch struct {
 	metricPacketsOut uint64
 }
 
-func NewDispatch(ctx context.Context, fp io.ReadWriteCloser, prov storage.Provider) *Dispatch {
+func NewDispatch(ctx context.Context, name string, logger types.RootLogger, fp io.ReadWriteCloser, prov storage.Provider) *Dispatch {
 
 	d := &Dispatch{
+		logger:         logger,
+		dev:            name,
 		asyncWrites:    true,
 		asyncReads:     true,
 		responseHeader: make([]byte, 16),
@@ -92,8 +97,14 @@ func NewDispatch(ctx context.Context, fp io.ReadWriteCloser, prov storage.Provid
 }
 
 func (d *Dispatch) Wait() {
+	if d.logger != nil {
+		d.logger.Trace().Str("device", d.dev).Msg("nbd waiting for pending responses")
+	}
 	// Wait for any pending responses
 	d.pendingResponses.Wait()
+	if d.logger != nil {
+		d.logger.Trace().Str("device", d.dev).Msg("nbd all responses sent")
+	}
 }
 
 /**
@@ -104,18 +115,43 @@ func (d *Dispatch) writeResponse(respError uint32, respHandle uint64, chunk []by
 	d.writeLock.Lock()
 	defer d.writeLock.Unlock()
 
-	//	fmt.Printf("WriteResponse %v %x -> %d\n", d.fp, respHandle, len(chunk))
+	if d.logger != nil {
+		d.logger.Trace().
+			Str("device", d.dev).
+			Uint32("respError", respError).
+			Uint64("respHandle", respHandle).
+			Int("data", len(chunk)).
+			Msg("nbd writing response")
+	}
 
 	binary.BigEndian.PutUint32(d.responseHeader[4:], respError)
 	binary.BigEndian.PutUint64(d.responseHeader[8:], respHandle)
 
 	_, err := d.fp.Write(d.responseHeader)
 	if err != nil {
+		if d.logger != nil {
+			d.logger.Trace().
+				Str("device", d.dev).
+				Uint32("respError", respError).
+				Uint64("respHandle", respHandle).
+				Int("data", len(chunk)).
+				Err(err).
+				Msg("nbd error writing response header")
+		}
 		return err
 	}
 	if len(chunk) > 0 {
 		_, err = d.fp.Write(chunk)
 		if err != nil {
+			if d.logger != nil {
+				d.logger.Trace().
+					Str("device", d.dev).
+					Uint32("respError", respError).
+					Uint64("respHandle", respHandle).
+					Int("data", len(chunk)).
+					Err(err).
+					Msg("nbd error writing response data")
+			}
 			return err
 		}
 	}
@@ -149,6 +185,11 @@ func (d *Dispatch) Handle() error {
 			// If the context has been cancelled, quit
 			select {
 			case <-d.ctx.Done():
+				if d.logger != nil {
+					d.logger.Trace().
+						Str("device", d.dev).
+						Msg("nbd handler context cancelled")
+				}
 				return d.ctx.Err()
 			default:
 			}
@@ -170,6 +211,11 @@ func (d *Dispatch) Handle() error {
 
 				switch request.Type {
 				case NBDCmdDisconnect:
+					if d.logger != nil {
+						d.logger.Trace().
+							Str("device", d.dev).
+							Msg("nbd disconnect received")
+					}
 					return nil // All done
 				case NBDCmdFlush:
 					return fmt.Errorf("not supported: Flush")
@@ -222,6 +268,14 @@ func (d *Dispatch) Handle() error {
  *
  */
 func (d *Dispatch) cmdRead(cmdHandle uint64, cmdFrom uint64, cmdLength uint32) error {
+	if d.logger != nil {
+		d.logger.Trace().
+			Str("device", d.dev).
+			Uint64("cmdHandle", cmdHandle).
+			Uint64("cmdFrom", cmdFrom).
+			Uint32("cmdLength", cmdLength).
+			Msg("nbd cmdRead")
+	}
 
 	performRead := func(handle uint64, from uint64, length uint32) error {
 		errchan := make(chan error)
@@ -271,6 +325,15 @@ func (d *Dispatch) cmdRead(cmdHandle uint64, cmdFrom uint64, cmdLength uint32) e
  *
  */
 func (d *Dispatch) cmdWrite(cmdHandle uint64, cmdFrom uint64, cmdLength uint32, cmdData []byte) error {
+	if d.logger != nil {
+		d.logger.Trace().
+			Str("device", d.dev).
+			Uint64("cmdHandle", cmdHandle).
+			Uint64("cmdFrom", cmdFrom).
+			Uint32("cmdLength", cmdLength).
+			Msg("nbd cmdWrite")
+	}
+
 	performWrite := func(handle uint64, from uint64, _ uint32, data []byte) error {
 		errchan := make(chan error)
 		go func() {

@@ -356,7 +356,7 @@ func handleIncomingDevice(ctx context.Context, pro protocol.Protocol, dev uint32
 
 // Called to setup an exposed storage device
 func dstDeviceSetup(prov storage.Provider) (storage.ExposedStorage, error) {
-	p := expose.NewExposedStorageNBDNL(prov, 1, 0, prov.Size(), 4096, true)
+	p := expose.NewExposedStorageNBDNL(prov, expose.DefaultConfig)
 	var err error
 
 	err = p.Init()
