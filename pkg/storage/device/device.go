@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/loopholelabs/logging/types"
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/blocks"
 	"github.com/loopholelabs/silo/pkg/storage/config"
@@ -37,9 +38,13 @@ type Device struct {
 }
 
 func NewDevices(ds []*config.DeviceSchema) (map[string]*Device, error) {
+	return NewDevicesWithLogging(ds, nil)
+}
+
+func NewDevicesWithLogging(ds []*config.DeviceSchema, log types.RootLogger) (map[string]*Device, error) {
 	devices := make(map[string]*Device)
 	for _, c := range ds {
-		dev, ex, err := NewDevice(c)
+		dev, ex, err := NewDeviceWithLogging(c, log)
 		if err != nil {
 			// Close/shutdown any we already setup, but we'll ignore any close errors here.
 			for _, cc := range devices {
@@ -59,6 +64,13 @@ func NewDevices(ds []*config.DeviceSchema) (map[string]*Device, error) {
 }
 
 func NewDevice(ds *config.DeviceSchema) (storage.Provider, storage.ExposedStorage, error) {
+	return NewDeviceWithLogging(ds, nil)
+}
+
+func NewDeviceWithLogging(ds *config.DeviceSchema, log types.RootLogger) (storage.Provider, storage.ExposedStorage, error) {
+	if log != nil {
+		log.Debug().Str("name", ds.Name).Msg("creating new device")
+	}
 
 	var prov storage.Provider
 	var err error
@@ -175,6 +187,9 @@ func NewDevice(ds *config.DeviceSchema) (storage.Provider, storage.ExposedStorag
 
 	// Optionally use a copy on write RO source...
 	if ds.ROSource != nil {
+		if log != nil {
+			log.Debug().Str("name", ds.Name).Msg("setting up CopyOnWrite")
+		}
 
 		// Create the ROSource...
 		rodev, _, err := NewDevice(ds.ROSource)
@@ -201,6 +216,10 @@ func NewDevice(ds *config.DeviceSchema) (storage.Provider, storage.ExposedStorag
 
 		// Make sure the cow data gets dumped on close...
 		cow.CloseFn = func() {
+			if log != nil {
+				log.Debug().Str("name", ds.Name).Msg("Writing CopyOnWrite state")
+			}
+
 			blocks := cow.GetBlockExists()
 			// Write it out to file
 			data := make([]byte, 0)
@@ -216,6 +235,10 @@ func NewDevice(ds *config.DeviceSchema) (storage.Provider, storage.ExposedStorag
 
 	// Optionally binlog this dev to a file
 	if ds.Binlog != "" {
+		if log != nil {
+			log.Debug().Str("name", ds.Name).Msg("logging to binlog")
+		}
+
 		prov, err = modules.NewBinLog(prov, ds.Binlog)
 		if err != nil {
 			return nil, nil, err
@@ -280,6 +303,7 @@ func NewDevice(ds *config.DeviceSchema) (storage.Provider, storage.ExposedStorag
 
 		// Start doing the sync...
 		syncer := migrator.NewSyncer(ctx, &migrator.SyncConfig{
+			Logger:           log,
 			Name:             ds.Name,
 			Integrity:        false,
 			CancelWrites:     true,
@@ -306,6 +330,9 @@ func NewDevice(ds *config.DeviceSchema) (storage.Provider, storage.ExposedStorag
 		var wg sync.WaitGroup
 
 		startSync := func(_ storage.EventType, data storage.EventData) storage.EventReturnData {
+			if log != nil {
+				log.Debug().Str("name", ds.Name).Msg("sync.start called")
+			}
 			if data != nil {
 				startConfig := data.(storage.SyncStartConfig)
 
@@ -356,6 +383,9 @@ func NewDevice(ds *config.DeviceSchema) (storage.Provider, storage.ExposedStorag
 		}
 
 		stopSync := func(_ storage.EventType, _ storage.EventData) storage.EventReturnData {
+			if log != nil {
+				log.Debug().Str("name", ds.Name).Msg("sync.stop called")
+			}
 			syncLock.Lock()
 			if !syncRunning {
 				syncLock.Unlock()
