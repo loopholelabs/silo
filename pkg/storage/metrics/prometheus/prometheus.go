@@ -18,7 +18,7 @@ import (
 )
 
 type MetricsConfig struct {
-	StorageHeatmapBuckets []float64
+	HeatmapResolution     uint64
 	Namespace             string
 	SubSyncer             string
 	SubMigrator           string
@@ -46,10 +46,7 @@ type MetricsConfig struct {
 
 func DefaultConfig() *MetricsConfig {
 	return &MetricsConfig{
-		StorageHeatmapBuckets: []float64{
-			0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45,
-			0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1,
-		},
+		HeatmapResolution:     64,
 		Namespace:             "silo",
 		SubSyncer:             "syncer",
 		SubMigrator:           "migrator",
@@ -134,20 +131,25 @@ type Metrics struct {
 	toProtocolRecvDontNeedAt           *prometheus.GaugeVec
 
 	// fromProtocol
-	fromProtocolRecvEvents         *prometheus.GaugeVec
-	fromProtocolRecvHashes         *prometheus.GaugeVec
-	fromProtocolRecvDevInfo        *prometheus.GaugeVec
-	fromProtocolRecvAltSources     *prometheus.GaugeVec
-	fromProtocolRecvReadAt         *prometheus.GaugeVec
-	fromProtocolRecvWriteAtHash    *prometheus.GaugeVec
-	fromProtocolRecvWriteAtComp    *prometheus.GaugeVec
-	fromProtocolRecvWriteAt        *prometheus.GaugeVec
-	fromProtocolRecvWriteAtWithMap *prometheus.GaugeVec
-	fromProtocolRecvRemoveFromMap  *prometheus.GaugeVec
-	fromProtocolRecvRemoveDev      *prometheus.GaugeVec
-	fromProtocolRecvDirtyList      *prometheus.GaugeVec
-	fromProtocolSentNeedAt         *prometheus.GaugeVec
-	fromProtocolSentDontNeedAt     *prometheus.GaugeVec
+	fromProtocolRecvEvents              *prometheus.GaugeVec
+	fromProtocolRecvHashes              *prometheus.GaugeVec
+	fromProtocolRecvDevInfo             *prometheus.GaugeVec
+	fromProtocolRecvAltSources          *prometheus.GaugeVec
+	fromProtocolRecvReadAt              *prometheus.GaugeVec
+	fromProtocolRecvWriteAtHash         *prometheus.GaugeVec
+	fromProtocolRecvWriteAtComp         *prometheus.GaugeVec
+	fromProtocolRecvWriteAt             *prometheus.GaugeVec
+	fromProtocolRecvWriteAtWithMap      *prometheus.GaugeVec
+	fromProtocolRecvRemoveFromMap       *prometheus.GaugeVec
+	fromProtocolRecvRemoveDev           *prometheus.GaugeVec
+	fromProtocolRecvDirtyList           *prometheus.GaugeVec
+	fromProtocolSentNeedAt              *prometheus.GaugeVec
+	fromProtocolSentDontNeedAt          *prometheus.GaugeVec
+	fromProtocolWritesAllowedP2P        *prometheus.GaugeVec
+	fromProtocolWritesBlockedP2P        *prometheus.GaugeVec
+	fromProtocolWritesAllowedAltSources *prometheus.GaugeVec
+	fromProtocolWritesBlockedAltSources *prometheus.GaugeVec
+	fromProtocolHeatmap                 *prometheus.GaugeVec
 
 	// dirtyTracker
 	dirtyTrackerBlockSize      *prometheus.GaugeVec
@@ -159,7 +161,7 @@ type Metrics struct {
 	volatilityMonitorBlockSize  *prometheus.GaugeVec
 	volatilityMonitorAvailable  *prometheus.GaugeVec
 	volatilityMonitorVolatility *prometheus.GaugeVec
-	volatilityMonitorHeatmap    *prometheus.HistogramVec
+	volatilityMonitorHeatmap    *prometheus.GaugeVec
 
 	// metrics
 	metricsReadOps     *prometheus.GaugeVec
@@ -310,6 +312,16 @@ func New(reg prometheus.Registerer, config *MetricsConfig) *Metrics {
 			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "sent_need_at", Help: "sentNeedAt"}, []string{"device"}),
 		fromProtocolSentDontNeedAt: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "sent_dont_need_at", Help: "sentDontNeedAt"}, []string{"device"}),
+		fromProtocolWritesAllowedP2P: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "writes_allowed_p2p", Help: "writesAllowedP2P"}, []string{"device"}),
+		fromProtocolWritesBlockedP2P: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "writes_blocked_p2p", Help: "writesBlockedP2P"}, []string{"device"}),
+		fromProtocolWritesAllowedAltSources: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "writes_allowed_alt_sources", Help: "writesAllowedAltSources"}, []string{"device"}),
+		fromProtocolWritesBlockedAltSources: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "writes_blocked_alt_sources", Help: "writesBlockedAltSources"}, []string{"device"}),
+		fromProtocolHeatmap: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "heatmap", Help: "Heatmap"}, []string{"device", "le"}),
 
 		// S3Storage
 		s3BlocksW: prometheus.NewGaugeVec(prometheus.GaugeOpts{
@@ -342,8 +354,8 @@ func New(reg prometheus.Registerer, config *MetricsConfig) *Metrics {
 			Namespace: config.Namespace, Subsystem: config.SubVolatilityMonitor, Name: "available", Help: "Blocks available"}, []string{"device"}),
 		volatilityMonitorVolatility: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: config.Namespace, Subsystem: config.SubVolatilityMonitor, Name: "volatility", Help: "Volatility"}, []string{"device"}),
-		volatilityMonitorHeatmap: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Namespace: config.Namespace, Subsystem: config.SubVolatilityMonitor, Name: "heatmap", Help: "Heatmap", Buckets: config.StorageHeatmapBuckets}, []string{"device"}),
+		volatilityMonitorHeatmap: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: config.Namespace, Subsystem: config.SubVolatilityMonitor, Name: "heatmap", Help: "Heatmap"}, []string{"device", "le"}),
 
 		// Metrics
 		metricsReadOps: prometheus.NewGaugeVec(prometheus.GaugeOpts{
@@ -426,7 +438,10 @@ func New(reg prometheus.Registerer, config *MetricsConfig) *Metrics {
 		met.fromProtocolRecvAltSources, met.fromProtocolRecvReadAt, met.fromProtocolRecvWriteAtHash,
 		met.fromProtocolRecvWriteAtComp, met.fromProtocolRecvWriteAt, met.fromProtocolRecvWriteAtWithMap,
 		met.fromProtocolRecvRemoveFromMap, met.fromProtocolRecvRemoveDev, met.fromProtocolRecvDirtyList,
-		met.fromProtocolSentNeedAt, met.fromProtocolSentDontNeedAt)
+		met.fromProtocolSentNeedAt, met.fromProtocolSentDontNeedAt,
+		met.fromProtocolWritesAllowedP2P, met.fromProtocolWritesBlockedP2P,
+		met.fromProtocolWritesAllowedAltSources, met.fromProtocolWritesBlockedAltSources,
+		met.fromProtocolHeatmap)
 
 	reg.MustRegister(met.dirtyTrackerBlockSize, met.dirtyTrackerDirtyBlocks, met.dirtyTrackerTrackingBlocks, met.dirtyTrackerMaxAgeDirtyMS)
 
@@ -459,6 +474,26 @@ func New(reg prometheus.Registerer, config *MetricsConfig) *Metrics {
 		met.waitingCacheAvailableLocal,
 		met.waitingCacheAvailableRemote,
 	)
+
+	// Do a test histogram...
+	// This *seems* to work with heatmap set to time series...
+	// query is: sum(silo_test_test1_bucket) by (le)
+	test1 := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: config.Namespace, Subsystem: "test", Name: "test1_bucket", Help: "test1_sum"}, []string{"le"})
+	//	test1sum := prometheus.NewGauge(prometheus.GaugeOpts{
+	//		Namespace: config.Namespace, Subsystem: "test", Name: "test1_sum", Help: "test1_sum"})
+	//	test1count := prometheus.NewGauge(prometheus.GaugeOpts{
+	//		Namespace: config.Namespace, Subsystem: "test", Name: "test1_count", Help: "test1_sum"})
+	reg.MustRegister(test1) //, test1sum, test1count)
+
+	test1.WithLabelValues("1").Set(10)
+	test1.WithLabelValues("2").Set(20)
+	test1.WithLabelValues("3").Set(10)
+	test1.WithLabelValues("4").Set(30)
+	test1.WithLabelValues("6").Set(10)
+
+	//	test1sum.Set(10 + 20 + 10 + 30 + 10)
+	//	test1count.Set(5)
 
 	return met
 }
@@ -585,6 +620,10 @@ func (m *Metrics) AddFromProtocol(name string, proto *protocol.FromProtocol) {
 	m.add(m.config.SubFromProtocol, name, m.config.TickFromProtocol, func() {
 		met := proto.GetMetrics()
 
+		if met.DeviceName != "" {
+			name = met.DeviceName
+		}
+
 		m.fromProtocolRecvEvents.WithLabelValues(name).Set(float64(met.RecvEvents))
 		m.fromProtocolRecvHashes.WithLabelValues(name).Set(float64(met.RecvHashes))
 		m.fromProtocolRecvDevInfo.WithLabelValues(name).Set(float64(met.RecvDevInfo))
@@ -599,6 +638,53 @@ func (m *Metrics) AddFromProtocol(name string, proto *protocol.FromProtocol) {
 		m.fromProtocolRecvDirtyList.WithLabelValues(name).Set(float64(met.RecvDirtyList))
 		m.fromProtocolSentNeedAt.WithLabelValues(name).Set(float64(met.SentNeedAt))
 		m.fromProtocolSentDontNeedAt.WithLabelValues(name).Set(float64(met.SentDontNeedAt))
+
+		m.fromProtocolWritesAllowedP2P.WithLabelValues(name).Set(float64(met.WritesAllowedP2P))
+		m.fromProtocolWritesBlockedP2P.WithLabelValues(name).Set(float64(met.WritesBlockedP2P))
+		m.fromProtocolWritesAllowedAltSources.WithLabelValues(name).Set(float64(met.WritesAllowedAltSources))
+		m.fromProtocolWritesBlockedAltSources.WithLabelValues(name).Set(float64(met.WritesBlockedAltSources))
+
+		// 0-10 range for P2P
+		// 10-20 range for AltSources
+		// 20-30 range for Dirty blocks
+
+		totalHeatmapP2P := make([]uint64, m.config.HeatmapResolution)
+		for _, block := range met.AvailableP2P {
+			part := uint64(block) * m.config.HeatmapResolution / met.NumBlocks
+			totalHeatmapP2P[part]++
+		}
+
+		totalHeatmapAltSources := make([]uint64, m.config.HeatmapResolution)
+		for _, block := range met.AvailableAltSources {
+			part := uint64(block) * m.config.HeatmapResolution / met.NumBlocks
+			totalHeatmapAltSources[part]++
+		}
+
+		totalHeatmapP2PDupe := make([]uint64, m.config.HeatmapResolution)
+		for _, block := range met.DuplicateP2P {
+			part := uint64(block) * m.config.HeatmapResolution / met.NumBlocks
+			totalHeatmapP2PDupe[part]++
+		}
+
+		blocksPerPart := 2 * (met.NumBlocks / m.config.HeatmapResolution)
+
+		//
+		for part, blocks := range totalHeatmapP2P {
+			m.fromProtocolHeatmap.WithLabelValues(name, fmt.Sprintf("%d", part)).Set(float64(blocks))
+		}
+
+		for part, blocks := range totalHeatmapAltSources {
+			if blocks > 0 {
+				m.fromProtocolHeatmap.WithLabelValues(name, fmt.Sprintf("%d", part)).Set(float64(blocksPerPart*2 + blocks))
+			}
+		}
+
+		for part, blocks := range totalHeatmapP2PDupe {
+			if blocks > 0 {
+				m.fromProtocolHeatmap.WithLabelValues(name, fmt.Sprintf("%d", part)).Set(float64(blocksPerPart + blocks))
+			}
+		}
+
 	})
 }
 
@@ -644,11 +730,14 @@ func (m *Metrics) AddVolatilityMonitor(name string, vm *volatilitymonitor.Volati
 		m.volatilityMonitorAvailable.WithLabelValues(name).Set(float64(met.Available))
 		m.volatilityMonitorVolatility.WithLabelValues(name).Set(float64(met.Volatility))
 
-		// TODO: Better way?
+		totalVolatility := make([]uint64, m.config.HeatmapResolution)
 		for block, volatility := range met.VolatilityMap {
-			for v := 0; v < int(volatility); v++ {
-				m.volatilityMonitorHeatmap.WithLabelValues(name).Observe(float64(block) / float64(met.NumBlocks))
-			}
+			part := uint64(block) * m.config.HeatmapResolution / met.NumBlocks
+			totalVolatility[part] += volatility
+		}
+
+		for part, volatility := range totalVolatility {
+			m.volatilityMonitorHeatmap.WithLabelValues(name, fmt.Sprintf("%d", part)).Set(float64(volatility))
 		}
 	})
 }
