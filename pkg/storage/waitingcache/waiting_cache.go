@@ -113,9 +113,6 @@ func (i *WaitingCache) waitForBlock(b uint, lockCB func(b uint)) {
 			Uint("block", b).
 			Msg("waitForBlock complete")
 	}
-	atomic.AddUint64(&i.metricWaitForBlock, 1)
-
-	i.lockersLock.Lock()
 
 	atomic.AddUint64(&i.metricWaitForBlock, 1)
 
@@ -166,6 +163,7 @@ func (i *WaitingCache) markAvailableRemoteBlock(b uint) {
 			Uint("block", b).
 			Msg("markAvailableRemoteBlock")
 	}
+
 	atomic.AddUint64(&i.metricMarkAvailableRemoteBlock, 1)
 
 	atomic.AddUint64(&i.metricMarkAvailableRemoteBlock, 1)
