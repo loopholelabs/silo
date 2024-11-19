@@ -14,34 +14,47 @@ type Remote struct {
 }
 
 // Relay events to embedded StorageProvider
-func (wcl *Remote) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
-	data := wcl.ProviderWithEvents.SendSiloEvent(eventType, eventData)
-	return append(data, storage.SendSiloEvent(wcl.wc.prov, eventType, eventData)...)
+func (wcr *Remote) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
+	data := wcr.ProviderWithEvents.SendSiloEvent(eventType, eventData)
+	return append(data, storage.SendSiloEvent(wcr.wc.prov, eventType, eventData)...)
 }
 
-func (wcl *Remote) ReadAt(_ []byte, _ int64) (int, error) {
+func (wcr *Remote) ReadAt(_ []byte, _ int64) (int, error) {
 	// Remote reads are unsupported at the moment.
 	return 0, io.EOF
 }
 
-func (wcl *Remote) WriteAt(buffer []byte, offset int64) (int, error) {
-	end := uint64(offset + int64(len(buffer)))
-	if end > wcl.wc.size {
-		end = wcl.wc.size
+func (wcr *Remote) WriteAt(buffer []byte, offset int64) (int, error) {
+	if wcr.wc.logger != nil {
+		wcr.wc.logger.Trace().
+			Str("uuid", wcr.wc.uuid.String()).
+			Int64("offset", offset).
+			Int("length", len(buffer)).
+			Msg("remote WriteAt")
+		defer wcr.wc.logger.Trace().
+			Str("uuid", wcr.wc.uuid.String()).
+			Int64("offset", offset).
+			Int("length", len(buffer)).
+			Msg("remote WriteAt complete")
 	}
 
-	bStart := uint(offset / int64(wcl.wc.blockSize))
-	bEnd := uint((end-1)/uint64(wcl.wc.blockSize)) + 1
+	end := uint64(offset + int64(len(buffer)))
+	if end > wcr.wc.size {
+		end = wcr.wc.size
+	}
+
+	bStart := uint(offset / int64(wcr.wc.blockSize))
+	bEnd := uint((end-1)/uint64(wcr.wc.blockSize)) + 1
 
 	align := 0
 	// If the first block is incomplete, we won't mark it.
-	if offset > (int64(bStart) * int64(wcl.wc.blockSize)) {
+	if offset > (int64(bStart) * int64(wcr.wc.blockSize)) {
 		bStart++
-		align = int(offset - (int64(bStart) * int64(wcl.wc.blockSize)))
+		align = int(offset - (int64(bStart) * int64(wcr.wc.blockSize)))
 	}
 	// If the last block is incomplete, we won't mark it. *UNLESS* It's the last block in the storage
-	if (end % uint64(wcl.wc.blockSize)) > 0 {
-		if uint64(offset)+uint64(len(buffer)) < wcl.wc.size {
+	if (end % uint64(wcr.wc.blockSize)) > 0 {
+		if uint64(offset)+uint64(len(buffer)) < wcr.wc.size {
 			bEnd--
 		}
 	}
@@ -49,19 +62,19 @@ func (wcl *Remote) WriteAt(buffer []byte, offset int64) (int, error) {
 	var err error
 	var n int
 
-	if wcl.wc.allowLocalWrites {
+	if wcr.wc.allowLocalWrites {
 		// Check if we have local data that needs merging (From local writes)
-		avail := wcl.wc.local.available.Collect(bStart, bEnd)
+		avail := wcr.wc.local.available.Collect(bStart, bEnd)
 
 		if len(avail) != 0 {
 			pbuffer := make([]byte, len(buffer))
-			_, err = wcl.wc.prov.ReadAt(pbuffer, offset)
+			_, err = wcr.wc.prov.ReadAt(pbuffer, offset)
 			if err == nil {
 				for _, b := range avail {
-					s := align + (int(b-bStart) * wcl.wc.blockSize)
+					s := align + (int(b-bStart) * wcr.wc.blockSize)
 					// Merge the data in. We know these are complete blocks.
 					// NB This does modify the callers buffer.
-					copy(buffer[s:s+wcl.wc.blockSize], pbuffer[s:s+wcl.wc.blockSize])
+					copy(buffer[s:s+wcr.wc.blockSize], pbuffer[s:s+wcr.wc.blockSize])
 				}
 			}
 		}
@@ -69,31 +82,31 @@ func (wcl *Remote) WriteAt(buffer []byte, offset int64) (int, error) {
 
 	// Perform the WriteAt
 	if err == nil {
-		n, err = wcl.wc.prov.WriteAt(buffer, offset)
+		n, err = wcr.wc.prov.WriteAt(buffer, offset)
 	}
 
 	// Signal that we have blocks available from remote
 	if err == nil {
 		if bEnd > bStart {
-			wcl.wc.markAvailableRemoteBlocks(bStart, bEnd)
+			wcr.wc.markAvailableRemoteBlocks(bStart, bEnd)
 		}
 	}
 
 	return n, err
 }
 
-func (wcl *Remote) Flush() error {
-	return wcl.wc.prov.Flush()
+func (wcr *Remote) Flush() error {
+	return wcr.wc.prov.Flush()
 }
 
-func (wcl *Remote) Size() uint64 {
-	return wcl.wc.prov.Size()
+func (wcr *Remote) Size() uint64 {
+	return wcr.wc.prov.Size()
 }
 
-func (wcl *Remote) Close() error {
-	return wcl.wc.prov.Close()
+func (wcr *Remote) Close() error {
+	return wcr.wc.prov.Close()
 }
 
-func (wcl *Remote) CancelWrites(offset int64, length int64) {
-	wcl.wc.prov.CancelWrites(offset, length)
+func (wcr *Remote) CancelWrites(offset int64, length int64) {
+	wcr.wc.prov.CancelWrites(offset, length)
 }

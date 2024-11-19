@@ -3,6 +3,8 @@ package waitingcache
 import (
 	"sync"
 
+	"github.com/google/uuid"
+	"github.com/loopholelabs/logging/types"
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/util"
 )
@@ -14,6 +16,8 @@ import (
  *
  */
 type WaitingCache struct {
+	logger           types.RootLogger
+	uuid             uuid.UUID
 	prov             storage.Provider
 	local            *Local
 	remote           *Remote
@@ -26,8 +30,14 @@ type WaitingCache struct {
 }
 
 func NewWaitingCache(prov storage.Provider, blockSize int) (*Local, *Remote) {
+	return NewWaitingCacheWithLogger(prov, blockSize, nil)
+}
+
+func NewWaitingCacheWithLogger(prov storage.Provider, blockSize int, log types.RootLogger) (*Local, *Remote) {
 	numBlocks := (int(prov.Size()) + blockSize - 1) / blockSize
 	wc := &WaitingCache{
+		logger:           log,
+		uuid:             uuid.New(),
 		prov:             prov,
 		blockSize:        blockSize,
 		size:             prov.Size(),
@@ -55,6 +65,17 @@ func (i *WaitingCache) waitForBlocks(bStart uint, bEnd uint, lockCB func(b uint)
 }
 
 func (i *WaitingCache) waitForBlock(b uint, lockCB func(b uint)) {
+	if i.logger != nil {
+		i.logger.Trace().
+			Str("uuid", i.uuid.String()).
+			Uint("block", b).
+			Msg("waitForBlock")
+		defer i.logger.Trace().
+			Str("uuid", i.uuid.String()).
+			Uint("block", b).
+			Msg("waitForBlock complete")
+	}
+
 	// If we have it locally, return.
 	if i.local.available.BitSet(int(b)) {
 		return
@@ -80,8 +101,14 @@ func (i *WaitingCache) waitForBlock(b uint, lockCB func(b uint)) {
 	rwl.RLock()
 }
 
-// TODO: Fix the logic here a bit
 func (i *WaitingCache) markAvailableBlockLocal(b uint) {
+	if i.logger != nil {
+		i.logger.Trace().
+			Str("uuid", i.uuid.String()).
+			Uint("block", b).
+			Msg("markAvailableLocalBlock")
+	}
+
 	i.lockersLock.Lock()
 	avail := i.local.available.BitSet(int(b))
 	rwl, ok := i.lockers[b]
@@ -108,6 +135,13 @@ func (i *WaitingCache) markAvailableRemoteBlocks(bStart uint, bEnd uint) {
 }
 
 func (i *WaitingCache) markAvailableRemoteBlock(b uint) {
+	if i.logger != nil {
+		i.logger.Trace().
+			Str("uuid", i.uuid.String()).
+			Uint("block", b).
+			Msg("markAvailableRemoteBlock")
+	}
+
 	i.lockersLock.Lock()
 	avail := i.remote.available.BitSet(int(b))
 	rwl, ok := i.lockers[b]
@@ -126,6 +160,13 @@ func (i *WaitingCache) markAvailableRemoteBlock(b uint) {
 }
 
 func (i *WaitingCache) markUnavailableRemoteBlock(b uint) {
+	if i.logger != nil {
+		i.logger.Trace().
+			Str("uuid", i.uuid.String()).
+			Uint("block", b).
+			Msg("markUnavailableRemoteBlock")
+	}
+
 	i.lockersLock.Lock()
 	avail := i.remote.available.BitSet(int(b))
 	if avail {
