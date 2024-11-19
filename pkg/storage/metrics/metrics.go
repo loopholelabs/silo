@@ -454,7 +454,7 @@ func (m *Metrics) AddProtocol(name string, proto *protocol.RW) {
 		m.protocolDataRecv.WithLabelValues(name).Set(float64(met.DataRecv))
 		m.protocolWrites.WithLabelValues(name).Set(float64(met.Writes))
 		m.protocolWriteErrors.WithLabelValues(name).Set(float64(met.WriteErrors))
-		m.protocolWaitingForId.WithLabelValues(name).Set(float64(met.WaitingForId))
+		m.protocolWaitingForId.WithLabelValues(name).Set(float64(met.WaitingForID))
 	})
 }
 
