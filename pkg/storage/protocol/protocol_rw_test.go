@@ -170,10 +170,7 @@ func TestProtocolRWSendAfterCancel(t *testing.T) {
 
 	// Now check that we can't send anything...
 
-	_, err = prDest.SendPacket(1, 0, []byte{1, 2, 3})
-	assert.ErrorIs(t, err, context.Canceled)
-
-	_, err = prDest.SendPacketWriter(1, 0, 0, func(_ io.Writer) error { return nil })
+	_, err = prDest.SendPacket(1, 0, []byte{1, 2, 3}, UrgencyUrgent)
 	assert.ErrorIs(t, err, context.Canceled)
 
 }

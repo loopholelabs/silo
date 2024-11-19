@@ -172,7 +172,7 @@ func (fp *FromProtocol) HandleEvent(cb func(*packets.Event)) error {
 		// Relay the event, wait, and then respond.
 		cb(ev)
 
-		_, err = fp.protocol.SendPacket(fp.dev, id, packets.EncodeEventResponse())
+		_, err = fp.protocol.SendPacket(fp.dev, id, packets.EncodeEventResponse(), UrgencyUrgent)
 		if err != nil {
 			return err
 		}
@@ -199,7 +199,7 @@ func (fp *FromProtocol) HandleHashes(cb func(map[uint][sha256.Size]byte)) error 
 		// Relay the hashes, wait and then respond
 		cb(hashes)
 
-		_, err = fp.protocol.SendPacket(fp.dev, id, packets.EncodeHashesResponse())
+		_, err = fp.protocol.SendPacket(fp.dev, id, packets.EncodeHashesResponse(), UrgencyUrgent)
 		if err != nil {
 			return err
 		}
@@ -283,7 +283,7 @@ func (fp *FromProtocol) HandleReadAt() error {
 				Error: err,
 				Data:  buff,
 			}
-			_, err = fp.protocol.SendPacket(fp.dev, gid, packets.EncodeReadAtResponse(rar))
+			_, err = fp.protocol.SendPacket(fp.dev, gid, packets.EncodeReadAtResponse(rar), UrgencyNormal)
 			if err != nil {
 				errLock.Lock()
 				errValue = err
@@ -331,7 +331,7 @@ func (fp *FromProtocol) HandleWriteAt() error {
 				Error: nil,
 				Bytes: int(length),
 			}
-			_, err = fp.protocol.SendPacket(fp.dev, id, packets.EncodeWriteAtResponse(war))
+			_, err = fp.protocol.SendPacket(fp.dev, id, packets.EncodeWriteAtResponse(war), UrgencyNormal)
 			if err != nil {
 				return err
 			}
@@ -359,7 +359,7 @@ func (fp *FromProtocol) HandleWriteAt() error {
 				if err == nil {
 					fp.markRangePresent(int(goffset), len(gdata))
 				}
-				_, err = fp.protocol.SendPacket(fp.dev, gid, packets.EncodeWriteAtResponse(war))
+				_, err = fp.protocol.SendPacket(fp.dev, gid, packets.EncodeWriteAtResponse(war), UrgencyNormal)
 				if err != nil {
 					errLock.Lock()
 					errValue = err
@@ -396,7 +396,7 @@ func (fp *FromProtocol) HandleWriteAtWithMap(cb func(offset int64, data []byte, 
 			Bytes: len(writeData),
 			Error: err,
 		}
-		_, err = fp.protocol.SendPacket(fp.dev, id, packets.EncodeWriteAtResponse(war))
+		_, err = fp.protocol.SendPacket(fp.dev, id, packets.EncodeWriteAtResponse(war), UrgencyNormal)
 		if err != nil {
 			return err
 		}
@@ -478,7 +478,7 @@ func (fp *FromProtocol) HandleDirtyList(cb func(blocks []uint)) error {
 		cb(blocks)
 
 		// Send a response / ack, to signify that the DirtyList has been actioned.
-		_, err = fp.protocol.SendPacket(fp.dev, gid, packets.EncodeDirtyListResponse())
+		_, err = fp.protocol.SendPacket(fp.dev, gid, packets.EncodeDirtyListResponse(), UrgencyUrgent)
 		if err != nil {
 			return err
 		}
@@ -487,12 +487,12 @@ func (fp *FromProtocol) HandleDirtyList(cb func(blocks []uint)) error {
 
 func (fp *FromProtocol) NeedAt(offset int64, length int32) error {
 	b := packets.EncodeNeedAt(offset, length)
-	_, err := fp.protocol.SendPacket(fp.dev, IDPickAny, b)
+	_, err := fp.protocol.SendPacket(fp.dev, IDPickAny, b, UrgencyUrgent)
 	return err
 }
 
 func (fp *FromProtocol) DontNeedAt(offset int64, length int32) error {
 	b := packets.EncodeDontNeedAt(offset, length)
-	_, err := fp.protocol.SendPacket(fp.dev, IDPickAny, b)
+	_, err := fp.protocol.SendPacket(fp.dev, IDPickAny, b, UrgencyUrgent)
 	return err
 }

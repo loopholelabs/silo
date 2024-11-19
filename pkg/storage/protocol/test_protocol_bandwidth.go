@@ -1,7 +1,6 @@
 package protocol
 
 import (
-	"io"
 	"sync"
 	"time"
 )
@@ -65,12 +64,8 @@ func (p *TestProtocolBandwidth) expireBandwidth(since time.Duration) {
 	p.recentPackets = newRecentPackets
 }
 
-func (p *TestProtocolBandwidth) SendPacketWriter(dev uint32, id uint32, length uint32, data func(w io.Writer) error) (uint32, error) {
-	return p.proto.SendPacketWriter(dev, id, length, data)
-}
-
-func (p *TestProtocolBandwidth) SendPacket(dev uint32, id uint32, data []byte) (uint32, error) {
-	return p.proto.SendPacket(dev, id, data)
+func (p *TestProtocolBandwidth) SendPacket(dev uint32, id uint32, data []byte, urgency Urgency) (uint32, error) {
+	return p.proto.SendPacket(dev, id, data, urgency)
 }
 
 func (p *TestProtocolBandwidth) waitForBandwidth() {

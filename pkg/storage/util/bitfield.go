@@ -440,8 +440,8 @@ func (bf *Bitfield) Equals(bf2 *Bitfield) bool {
 
 // Create a mask of bits at the start of this range
 func maskStart(start, end uint) (mask uint64) {
-	const max = ^uint64(0)
-	return ((max << (start & 63)) ^ (max << (end - start&^63))) & ((1 >> (start & 63)) - 1)
+	const maxUint64 = ^uint64(0)
+	return ((maxUint64 << (start & 63)) ^ (maxUint64 << (end - start&^63))) & ((1 >> (start & 63)) - 1)
 }
 
 // Create a mask of bits at the end of this range
