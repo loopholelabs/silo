@@ -107,7 +107,6 @@ type ExposedStorageNBDNL struct {
 	prov        storage.Provider
 	provLock    sync.RWMutex
 	deviceIndex int
-	async       bool
 	dispatchers []*Dispatch
 }
 
@@ -201,8 +200,8 @@ func (n *ExposedStorageNBDNL) Init() error {
 			server.Close()
 
 			d := NewDispatch(n.ctx, n.uuid.String(), n.config.Logger, serverc, n)
-			d.asyncReads = n.async
-			d.asyncWrites = n.async
+			d.asyncReads = n.config.AsyncReads
+			d.asyncWrites = n.config.AsyncWrites
 			// Start reading commands on the socket and dispatching them to our provider
 			go func() {
 				err := d.Handle()
