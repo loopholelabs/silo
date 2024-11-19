@@ -12,11 +12,29 @@ import (
 
 type ToProtocol struct {
 	storage.ProviderWithEvents
-	size             uint64
-	dev              uint32
-	protocol         Protocol
-	compressedWrites atomic.Bool
-	alternateSources []packets.AlternateSource
+	size                           uint64
+	dev                            uint32
+	protocol                       Protocol
+	compressedWrites               atomic.Bool
+	alternateSources               []packets.AlternateSource
+	metricSentEvents               uint64
+	metricSentAltSources           uint64
+	metricSentHashes               uint64
+	metricSentDevInfo              uint64
+	metricSentRemoveDev            uint64
+	metricSentDirtyList            uint64
+	metricSentReadAt               uint64
+	metricSentWriteAtHash          uint64
+	metricSentWriteAtHashBytes     uint64
+	metricSentWriteAtComp          uint64
+	metricSentWriteAtCompBytes     uint64
+	metricSentWriteAtCompDataBytes uint64
+	metricSentWriteAt              uint64
+	metricSentWriteAtBytes         uint64
+	metricSentWriteAtWithMap       uint64
+	metricSentRemoveFromMap        uint64
+	metricRecvNeedAt               uint64
+	metricRecvDontNeedAt           uint64
 }
 
 func NewToProtocol(size uint64, deviceID uint32, p Protocol) *ToProtocol {
@@ -27,13 +45,56 @@ func NewToProtocol(size uint64, deviceID uint32, p Protocol) *ToProtocol {
 	}
 }
 
+type ToProtocolMetrics struct {
+	SentEvents               uint64
+	SentAltSources           uint64
+	SentHashes               uint64
+	SentDevInfo              uint64
+	SentRemoveDev            uint64
+	SentDirtyList            uint64
+	SentReadAt               uint64
+	SentWriteAtHash          uint64
+	SentWriteAtHashBytes     uint64
+	SentWriteAtComp          uint64
+	SentWriteAtCompBytes     uint64
+	SentWriteAtCompDataBytes uint64
+	SentWriteAt              uint64
+	SentWriteAtBytes         uint64
+	SentWriteAtWithMap       uint64
+	SentRemoveFromMap        uint64
+	RecvNeedAt               uint64
+	RecvDontNeedAt           uint64
+}
+
+func (i *ToProtocol) GetMetrics() *ToProtocolMetrics {
+	return &ToProtocolMetrics{
+		SentEvents:               atomic.LoadUint64(&i.metricSentEvents),
+		SentAltSources:           atomic.LoadUint64(&i.metricSentAltSources),
+		SentHashes:               atomic.LoadUint64(&i.metricSentHashes),
+		SentDevInfo:              atomic.LoadUint64(&i.metricSentDevInfo),
+		SentRemoveDev:            atomic.LoadUint64(&i.metricSentRemoveDev),
+		SentDirtyList:            atomic.LoadUint64(&i.metricSentDirtyList),
+		SentReadAt:               atomic.LoadUint64(&i.metricSentReadAt),
+		SentWriteAtHash:          atomic.LoadUint64(&i.metricSentWriteAtHash),
+		SentWriteAtHashBytes:     atomic.LoadUint64(&i.metricSentWriteAtHashBytes),
+		SentWriteAtComp:          atomic.LoadUint64(&i.metricSentWriteAtComp),
+		SentWriteAtCompBytes:     atomic.LoadUint64(&i.metricSentWriteAtCompBytes),
+		SentWriteAtCompDataBytes: atomic.LoadUint64(&i.metricSentWriteAtCompDataBytes),
+		SentWriteAt:              atomic.LoadUint64(&i.metricSentWriteAt),
+		SentWriteAtBytes:         atomic.LoadUint64(&i.metricSentWriteAtBytes),
+		SentWriteAtWithMap:       atomic.LoadUint64(&i.metricSentWriteAtWithMap),
+		SentRemoveFromMap:        atomic.LoadUint64(&i.metricSentRemoveFromMap),
+		RecvNeedAt:               atomic.LoadUint64(&i.metricRecvNeedAt),
+		RecvDontNeedAt:           atomic.LoadUint64(&i.metricRecvDontNeedAt),
+	}
+}
+
 // Support Silo Events
 func (i *ToProtocol) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
 	if eventType == storage.EventType("sources") {
 		i.alternateSources = eventData.([]packets.AlternateSource)
 		// Send the list of alternate sources here...
-		h := packets.EncodeAlternateSources(i.alternateSources)
-		_, _ = i.protocol.SendPacket(i.dev, IDPickAny, h, UrgencyUrgent)
+		i.SendAltSources(i.alternateSources)
 		// For now, we do not check the error. If there was a protocol / io error, we should see it on the next send
 	}
 	return nil
@@ -43,12 +104,23 @@ func (i *ToProtocol) SetCompression(compressed bool) {
 	i.compressedWrites.Store(compressed)
 }
 
+func (i *ToProtocol) SendAltSources(s []packets.AlternateSource) error {
+	h := packets.EncodeAlternateSources(s)
+	_, err := i.protocol.SendPacket(i.dev, IDPickAny, h, UrgencyUrgent)
+	if err == nil {
+		atomic.AddUint64(&i.metricSentAltSources, 1)
+	}
+	return err
+}
+
 func (i *ToProtocol) SendEvent(e *packets.Event) error {
 	b := packets.EncodeEvent(e)
 	id, err := i.protocol.SendPacket(i.dev, IDPickAny, b, UrgencyUrgent)
 	if err != nil {
 		return err
 	}
+
+	atomic.AddUint64(&i.metricSentEvents, 1)
 
 	// Wait for acknowledgement
 	r, err := i.protocol.WaitForPacket(i.dev, id)
@@ -65,6 +137,9 @@ func (i *ToProtocol) SendHashes(hashes map[uint][sha256.Size]byte) error {
 	if err != nil {
 		return err
 	}
+
+	atomic.AddUint64(&i.metricSentHashes, 1)
+
 	// Wait for an ack
 	r, err := i.protocol.WaitForPacket(i.dev, id)
 	if err != nil {
@@ -83,13 +158,24 @@ func (i *ToProtocol) SendDevInfo(name string, blockSize uint32, schema string) e
 	}
 	b := packets.EncodeDevInfo(di)
 	_, err := i.protocol.SendPacket(i.dev, IDPickAny, b, UrgencyUrgent)
+	if err != nil {
+		return err
+	}
+
+	atomic.AddUint64(&i.metricSentDevInfo, 1)
 	return err
 }
 
 func (i *ToProtocol) RemoveDev() error {
 	f := packets.EncodeRemoveDev()
 	_, err := i.protocol.SendPacket(i.dev, IDPickAny, f, UrgencyUrgent)
-	return err
+	if err != nil {
+		return err
+	}
+
+	atomic.AddUint64(&i.metricSentRemoveDev, 1)
+
+	return nil
 }
 
 func (i *ToProtocol) DirtyList(blockSize int, blocks []uint) error {
@@ -98,6 +184,8 @@ func (i *ToProtocol) DirtyList(blockSize int, blocks []uint) error {
 	if err != nil {
 		return err
 	}
+
+	atomic.AddUint64(&i.metricSentDirtyList, 1)
 
 	// Wait for the response...
 	r, err := i.protocol.WaitForPacket(i.dev, id)
@@ -116,6 +204,9 @@ func (i *ToProtocol) ReadAt(buffer []byte, offset int64) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+
+	atomic.AddUint64(&i.metricSentReadAt, 1)
+
 	// Wait for the response...
 	r, err := i.protocol.WaitForPacket(i.dev, id)
 	if err != nil {
@@ -147,6 +238,10 @@ func (i *ToProtocol) WriteAt(buffer []byte, offset int64) (int, error) {
 			if bytes.Equal(hash[:], as.Hash[:]) {
 				data := packets.EncodeWriteAtHash(as.Offset, as.Length, as.Hash[:])
 				id, err = i.protocol.SendPacket(i.dev, IDPickAny, data, UrgencyNormal)
+				if err == nil {
+					atomic.AddUint64(&i.metricSentWriteAtHash, 1)
+					atomic.AddUint64(&i.metricSentWriteAtHashBytes, uint64(as.Length))
+				}
 				dontSendData = true
 			}
 			break
@@ -157,9 +252,18 @@ func (i *ToProtocol) WriteAt(buffer []byte, offset int64) (int, error) {
 		if i.compressedWrites.Load() {
 			data := packets.EncodeWriteAtComp(offset, buffer)
 			id, err = i.protocol.SendPacket(i.dev, IDPickAny, data, UrgencyNormal)
+			if err == nil {
+				atomic.AddUint64(&i.metricSentWriteAtComp, 1)
+				atomic.AddUint64(&i.metricSentWriteAtCompBytes, uint64(len(buffer)))
+				atomic.AddUint64(&i.metricSentWriteAtCompDataBytes, uint64(len(data)))
+			}
 		} else {
 			data := packets.EncodeWriteAt(offset, buffer)
 			id, err = i.protocol.SendPacket(i.dev, IDPickAny, data, UrgencyNormal)
+			if err == nil {
+				atomic.AddUint64(&i.metricSentWriteAt, 1)
+				atomic.AddUint64(&i.metricSentWriteAtBytes, uint64(len(buffer)))
+			}
 		}
 	}
 	if err != nil {
@@ -194,6 +298,9 @@ func (i *ToProtocol) WriteAtWithMap(buffer []byte, offset int64, idMap map[uint6
 	if err != nil {
 		return 0, err
 	}
+
+	atomic.AddUint64(&i.metricSentWriteAtWithMap, 1)
+
 	// Wait for the response...
 	r, err := i.protocol.WaitForPacket(i.dev, id)
 	if err != nil {
@@ -218,6 +325,9 @@ func (i *ToProtocol) WriteAtWithMap(buffer []byte, offset int64, idMap map[uint6
 func (i *ToProtocol) RemoveFromMap(ids []uint64) error {
 	f := packets.EncodeRemoveFromMap(ids)
 	_, err := i.protocol.SendPacket(i.dev, IDPickAny, f, UrgencyUrgent)
+	if err == nil {
+		atomic.AddUint64(&i.metricSentRemoveFromMap, 1)
+	}
 	return err
 }
 
@@ -250,6 +360,8 @@ func (i *ToProtocol) HandleNeedAt(cb func(offset int64, length int32)) error {
 			return err
 		}
 
+		atomic.AddUint64(&i.metricRecvNeedAt, 1)
+
 		// We could spin up a goroutine here, but the assumption is that cb won't take long.
 		cb(offset, length)
 	}
@@ -266,6 +378,8 @@ func (i *ToProtocol) HandleDontNeedAt(cb func(offset int64, length int32)) error
 		if err != nil {
 			return err
 		}
+
+		atomic.AddUint64(&i.metricRecvDontNeedAt, 1)
 
 		// We could spin up a goroutine here, but the assumption is that cb won't take long.
 		cb(offset, length)

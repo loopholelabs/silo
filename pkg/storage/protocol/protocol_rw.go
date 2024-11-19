@@ -11,6 +11,8 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
 )
 
+const packetBufferSize = 32
+
 type packetinfo struct {
 	id   uint32
 	data []byte
@@ -22,18 +24,40 @@ type Waiters struct {
 }
 
 type RW struct {
-	ctx            context.Context
-	readers        []io.Reader
-	writers        []io.Writer
-	writerHeaders  [][]byte
-	writerLocks    []sync.Mutex
-	txID           uint32
-	activeDevs     map[uint32]bool
-	activeDevsLock sync.Mutex
-	waiters        map[uint32]Waiters
-	waitersLock    sync.Mutex
-	newdevFn       func(context.Context, Protocol, uint32)
-	newdevProtocol Protocol
+	ctx                context.Context
+	readers            []io.Reader
+	writers            []io.Writer
+	writerHeaders      [][]byte
+	writerLocks        []sync.Mutex
+	txID               uint32
+	activeDevs         map[uint32]bool
+	activeDevsLock     sync.Mutex
+	waiters            map[uint32]Waiters
+	waitersLock        sync.Mutex
+	newdevFn           func(context.Context, Protocol, uint32)
+	newdevProtocol     Protocol
+	metricPacketsSent  uint64
+	metricDataSent     uint64
+	metricPacketsRecv  uint64
+	metricDataRecv     uint64
+	metricWaitingForID int64
+	metricWrites       uint64
+	metricWriteErrors  uint64
+}
+
+// Wrap the writers and gather metrics on them.
+type writeWrapper struct {
+	w  io.Writer
+	rw *RW
+}
+
+func (ww *writeWrapper) Write(buffer []byte) (int, error) {
+	n, err := ww.w.Write(buffer)
+	atomic.AddUint64(&ww.rw.metricWrites, 1)
+	if err != nil {
+		atomic.AddUint64(&ww.rw.metricWriteErrors, 1)
+	}
+	return n, err
 }
 
 func NewRW(ctx context.Context, readers []io.Reader, writers []io.Writer, newdevFN func(context.Context, Protocol, uint32)) *RW {
@@ -52,10 +76,11 @@ func NewRWWithBuffering(ctx context.Context, readers []io.Reader, writers []io.W
 
 	prw.writers = make([]io.Writer, 0)
 	for _, w := range writers {
+		ww := &writeWrapper{w: w, rw: prw}
 		if bufferConfig != nil {
-			prw.writers = append(prw.writers, NewBufferedWriter(w, bufferConfig))
+			prw.writers = append(prw.writers, NewBufferedWriter(ww, bufferConfig))
 		} else {
-			prw.writers = append(prw.writers, w)
+			prw.writers = append(prw.writers, ww)
 		}
 	}
 
@@ -66,6 +91,30 @@ func NewRWWithBuffering(ctx context.Context, readers []io.Reader, writers []io.W
 	}
 	prw.newdevProtocol = prw // Return ourselves by default.
 	return prw
+}
+
+type Metrics struct {
+	PacketsSent       uint64
+	DataSent          uint64
+	UrgentPacketsSent uint64
+	UrgentDataSent    uint64
+	PacketsRecv       uint64
+	DataRecv          uint64
+	Writes            uint64
+	WriteErrors       uint64
+	WaitingForID      int64
+}
+
+func (p *RW) GetMetrics() *Metrics {
+	return &Metrics{
+		PacketsSent:  atomic.LoadUint64(&p.metricPacketsSent),
+		DataSent:     atomic.LoadUint64(&p.metricDataSent),
+		PacketsRecv:  atomic.LoadUint64(&p.metricPacketsRecv),
+		DataRecv:     atomic.LoadUint64(&p.metricDataRecv),
+		Writes:       atomic.LoadUint64(&p.metricWrites),
+		WriteErrors:  atomic.LoadUint64(&p.metricWriteErrors),
+		WaitingForID: atomic.LoadInt64(&p.metricWaitingForID),
+	}
 }
 
 func (p *RW) SetNewDevProtocol(proto Protocol) {
@@ -120,7 +169,6 @@ func (p *RW) SendPacket(dev uint32, id uint32, data []byte, urgency Urgency) (ui
 	binary.LittleEndian.PutUint32(p.writerHeaders[i][8:], uint32(len(data)))
 
 	_, err := p.writers[i].Write(p.writerHeaders[i])
-
 	if err != nil {
 		return 0, err
 	}
@@ -131,6 +179,11 @@ func (p *RW) SendPacket(dev uint32, id uint32, data []byte, urgency Urgency) (ui
 		_, err = wwu.WriteNow(data)
 	} else {
 		_, err = p.writers[i].Write(data)
+	}
+
+	if err == nil {
+		atomic.AddUint64(&p.metricPacketsSent, 1)
+		atomic.AddUint64(&p.metricDataSent, 4+4+4+uint64(len(data)))
 	}
 
 	return id, err
@@ -167,6 +220,9 @@ func (p *RW) Handle() error {
 					errs <- err
 					return
 				}
+
+				atomic.AddUint64(&p.metricPacketsRecv, 1)
+				atomic.AddUint64(&p.metricDataRecv, 4+4+4+uint64(length))
 
 				err = p.handlePacket(dev, id, data)
 				if err != nil {
@@ -205,48 +261,56 @@ func (p *RW) handlePacket(dev uint32, id uint32, data []byte) error {
 		p.waiters[dev] = w
 	}
 
-	wqID, okk := w.byID[id]
-	if !okk {
-		wqID = make(chan packetinfo, 8) // Some buffer here...
-		w.byID[id] = wqID
+	pi := packetinfo{
+		id:   id,
+		data: data,
 	}
-
-	wqCmd, okk := w.byCmd[cmd]
-	if !okk {
-		wqCmd = make(chan packetinfo, 8) // Some buffer here...
-		w.byCmd[cmd] = wqCmd
-	}
-
-	p.waitersLock.Unlock()
 
 	if packets.IsResponse(cmd) {
-		wqID <- packetinfo{
-			id:   id,
-			data: data,
+		wqID, okk := w.byID[id]
+		if !okk {
+			wqID = make(chan packetinfo, packetBufferSize)
+			w.byID[id] = wqID
 		}
+		p.waitersLock.Unlock()
+
+		wqID <- pi
 	} else {
-		wqCmd <- packetinfo{
-			id:   id,
-			data: data,
+		wqCmd, okk := w.byCmd[cmd]
+		if !okk {
+			wqCmd = make(chan packetinfo, packetBufferSize)
+			w.byCmd[cmd] = wqCmd
 		}
+
+		p.waitersLock.Unlock()
+
+		wqCmd <- pi
 	}
 	return nil
 }
 
 func (p *RW) WaitForPacket(dev uint32, id uint32) ([]byte, error) {
+	atomic.AddInt64(&p.metricWaitingForID, 1)
+	defer atomic.AddInt64(&p.metricWaitingForID, -1)
+
 	p.waitersLock.Lock()
 	w := p.waiters[dev]
 	wq, okk := w.byID[id]
 	if !okk {
-		wq = make(chan packetinfo, 8) // Some buffer here...
+		wq = make(chan packetinfo, packetBufferSize)
 		w.byID[id] = wq
 	}
 	p.waitersLock.Unlock()
 
 	select {
-	case p := <-wq:
-		// TODO: Remove the channel, as we only expect a SINGLE response with this ID.
-		return p.data, nil
+	case pack := <-wq:
+		// Remove the channel, as we only expect a SINGLE response with this ID.
+		p.waitersLock.Lock()
+		w := p.waiters[dev]
+		delete(w.byID, id)
+		p.waitersLock.Unlock()
+
+		return pack.data, nil
 	case <-p.ctx.Done():
 		return nil, p.ctx.Err()
 	}
@@ -257,7 +321,7 @@ func (p *RW) WaitForCommand(dev uint32, cmd byte) (uint32, []byte, error) {
 	w := p.waiters[dev]
 	wq, okk := w.byCmd[cmd]
 	if !okk {
-		wq = make(chan packetinfo, 8) // Some buffer here...
+		wq = make(chan packetinfo, packetBufferSize)
 		w.byCmd[cmd] = wq
 	}
 	p.waitersLock.Unlock()
