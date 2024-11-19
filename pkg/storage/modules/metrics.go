@@ -111,7 +111,7 @@ func (i *Metrics) ShowStats(prefix string) {
 	)
 }
 
-func (i *Metrics) Snapshot() *MetricsSnapshot {
+func (i *Metrics) GetMetrics() *MetricsSnapshot {
 	return &MetricsSnapshot{
 		ReadOps:     atomic.LoadUint64(&i.metricReadOps),
 		ReadBytes:   atomic.LoadUint64(&i.metricReadBytes),
