@@ -113,6 +113,9 @@ func (i *WaitingCache) waitForBlock(b uint, lockCB func(b uint)) {
 			Uint("block", b).
 			Msg("waitForBlock complete")
 	}
+	atomic.AddUint64(&i.metricWaitForBlock, 1)
+
+	i.lockersLock.Lock()
 
 	atomic.AddUint64(&i.metricWaitForBlock, 1)
 
@@ -147,6 +150,36 @@ func (i *WaitingCache) waitForBlock(b uint, lockCB func(b uint)) {
 	rwl.RLock()
 	atomic.AddUint64(&i.metricWaitForBlockTime, uint64(time.Since(ctime)))
 	atomic.AddUint64(&i.metricWaitForBlockLockDone, 1)
+<<<<<<< HEAD
+=======
+}
+
+func (i *WaitingCache) markAvailableBlockLocal(b uint) {
+	if i.logger != nil {
+		i.logger.Trace().
+			Str("uuid", i.uuid.String()).
+			Uint("block", b).
+			Msg("markAvailableLocalBlock")
+	}
+	atomic.AddUint64(&i.metricMarkAvailableLocalBlock, 1)
+
+	i.lockersLock.Lock()
+	avail := i.local.available.BitSet(int(b))
+	rwl, ok := i.lockers[b]
+	if !avail {
+		i.local.available.SetBit(int(b))
+	}
+	i.lockersLock.Unlock()
+
+	if !avail && ok {
+		rwl.Unlock()
+	}
+
+	// Now we can get rid of the lock...
+	i.lockersLock.Lock()
+	delete(i.lockers, b)
+	i.lockersLock.Unlock()
+>>>>>>> eb11e86 (Added metrics for waitingCache)
 }
 
 func (i *WaitingCache) markAvailableRemoteBlocks(bStart uint, bEnd uint) {
@@ -163,6 +196,7 @@ func (i *WaitingCache) markAvailableRemoteBlock(b uint) {
 			Uint("block", b).
 			Msg("markAvailableRemoteBlock")
 	}
+	atomic.AddUint64(&i.metricMarkAvailableRemoteBlock, 1)
 
 	atomic.AddUint64(&i.metricMarkAvailableRemoteBlock, 1)
 
