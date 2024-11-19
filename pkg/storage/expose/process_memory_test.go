@@ -18,7 +18,7 @@ import (
 func setupDevTest(t *testing.T, size int) (*ExposedStorageNBDNL, storage.Provider, []byte) {
 	prov := sources.NewMemoryStorage(size)
 
-	n := NewExposedStorageNBDNL(prov, 8, 0, uint64(size), NBDDefaultBlockSize, true)
+	n := NewExposedStorageNBDNL(prov, DefaultConfig)
 
 	err := n.Init()
 	assert.NoError(t, err)

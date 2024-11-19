@@ -35,7 +35,7 @@ func BenchmarkDevReadNL(mb *testing.B) {
 				store := sources.NewMemoryStorage(diskSize)
 				driver := modules.NewMetrics(store)
 
-				n := NewExposedStorageNBDNL(driver, c, 0, driver.Size(), 4096, true)
+				n := NewExposedStorageNBDNL(driver, DefaultConfig.WithNumConnections(c))
 
 				err := n.Init()
 				if err != nil {
@@ -161,7 +161,7 @@ func BenchmarkDevReadNLLatency(mb *testing.B) {
 						}
 					}
 
-					n := NewExposedStorageNBDNL(driver, cns, 0, driver.Size(), 4096, asy)
+					n := NewExposedStorageNBDNL(driver, DefaultConfig.WithNumConnections(cns).WithAsyncReads(asy).WithAsyncWrites(asy))
 
 					err := n.Init()
 					if err != nil {
@@ -265,7 +265,7 @@ func BenchmarkDevWriteNL(b *testing.B) {
 	//	store_latency := modules.NewArtificialLatency(store, 100*time.Millisecond, 0, 100*time.Millisecond, 0)
 	driver := modules.NewMetrics(store)
 
-	n := NewExposedStorageNBDNL(driver, 1, 0, driver.Size(), 4096, true)
+	n := NewExposedStorageNBDNL(driver, DefaultConfig.WithNumConnections(1))
 
 	err = n.Init()
 	if err != nil {

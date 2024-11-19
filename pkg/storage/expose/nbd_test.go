@@ -12,6 +12,7 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/modules"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNBDNLDevice(t *testing.T) {
@@ -33,10 +34,10 @@ func TestNBDNLDevice(t *testing.T) {
 	size := 4096 * 1024 * 1024
 	prov := sources.NewMemoryStorage(size)
 
-	n = NewExposedStorageNBDNL(prov, 8, 0, uint64(size), 4096, true)
+	n = NewExposedStorageNBDNL(prov, DefaultConfig)
 
 	err = n.Init()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	var wg sync.WaitGroup
 
@@ -83,7 +84,7 @@ func TestNBDNLDeviceBlocksizes(t *testing.T) {
 				assert.NoError(t, err)
 			}()
 
-			n = NewExposedStorageNBDNL(prov, 8, 0, uint64(size), uint64(bs), true)
+			n = NewExposedStorageNBDNL(prov, DefaultConfig.WithBlockSize(uint64(bs)))
 
 			err = n.Init()
 			assert.NoError(tt, err)
@@ -117,7 +118,7 @@ func TestNBDNLDeviceSmall(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 900, n)
 
-	ndev = NewExposedStorageNBDNL(prov, 1, 0, uint64(size), 4096, true)
+	ndev = NewExposedStorageNBDNL(prov, DefaultConfig.WithNumConnections(1))
 
 	err = ndev.Init()
 	assert.NoError(t, err)
@@ -162,7 +163,7 @@ func TestNBDNLDeviceUnalignedPartialRead(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, size, n)
 
-	ndev = NewExposedStorageNBDNL(prov, 1, 0, uint64(size), 4096, true)
+	ndev = NewExposedStorageNBDNL(prov, DefaultConfig.WithNumConnections(1))
 
 	err = ndev.Init()
 	assert.NoError(t, err)
@@ -199,7 +200,7 @@ func TestNBDNLDeviceUnalignedPartialWrite(t *testing.T) {
 
 	size := 900
 	prov := sources.NewMemoryStorage(size)
-	ndev = NewExposedStorageNBDNL(prov, 1, 0, uint64(size), 4096, true)
+	ndev = NewExposedStorageNBDNL(prov, DefaultConfig.WithNumConnections(1))
 
 	err = ndev.Init()
 	assert.NoError(t, err)
@@ -258,7 +259,7 @@ func TestNBDNLDeviceShutdownRead(t *testing.T) {
 		return false, 0, nil
 	}
 
-	n = NewExposedStorageNBDNL(hooks, 8, 0, uint64(size), 4096, true)
+	n = NewExposedStorageNBDNL(hooks, DefaultConfig)
 	err = n.Init()
 	assert.NoError(t, err)
 
@@ -323,7 +324,7 @@ func TestNBDNLDeviceShutdownWrite(t *testing.T) {
 		return false, 0, nil
 	}
 
-	n = NewExposedStorageNBDNL(hooks, 8, 0, uint64(size), 4096, true)
+	n = NewExposedStorageNBDNL(hooks, DefaultConfig)
 	err = n.Init()
 	assert.NoError(t, err)
 

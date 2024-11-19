@@ -1,10 +1,9 @@
 package modules
 
 import (
-	"fmt"
 	"sync/atomic"
-	"time"
 
+	"github.com/loopholelabs/logging/types"
 	"github.com/loopholelabs/silo/pkg/storage"
 )
 
@@ -12,6 +11,7 @@ type Logger struct {
 	storage.ProviderWithEvents
 	prov    storage.Provider
 	prefix  string
+	log     types.RootLogger
 	enabled atomic.Bool
 }
 
@@ -21,9 +21,10 @@ func (i *Logger) SendSiloEvent(eventType storage.EventType, eventData storage.Ev
 	return append(data, storage.SendSiloEvent(i.prov, eventType, eventData)...)
 }
 
-func NewLogger(prov storage.Provider, prefix string) *Logger {
+func NewLogger(prov storage.Provider, prefix string, log types.RootLogger) *Logger {
 	l := &Logger{
 		prov:   prov,
+		log:    log,
 		prefix: prefix,
 	}
 	l.enabled.Store(true)
@@ -31,31 +32,56 @@ func NewLogger(prov storage.Provider, prefix string) *Logger {
 }
 
 func (i *Logger) Disable() {
+	if i.enabled.Load() && i.log != nil {
+		i.log.Debug().Str("device", i.prefix).Msg("logging disabled")
+	}
 	i.enabled.Store(false)
 }
 
 func (i *Logger) Enable() {
 	i.enabled.Store(true)
+	if i.enabled.Load() && i.log != nil {
+		i.log.Debug().Str("device", i.prefix).Msg("logging enabled")
+	}
 }
 
 func (i *Logger) ReadAt(buffer []byte, offset int64) (int, error) {
 	n, err := i.prov.ReadAt(buffer, offset)
-	if i.enabled.Load() {
-		fmt.Printf("%v: %s ReadAt(%d, offset=%d) -> %d, %v\n", time.Now(), i.prefix, len(buffer), offset, n, err)
+	if i.enabled.Load() && i.log != nil {
+		i.log.Debug().
+			Str("device", i.prefix).
+			Int("length", len(buffer)).
+			Int64("offset", offset).
+			Int("n", n).
+			Err(err).
+			Msg("ReadAt")
 	}
 	return n, err
 }
 
 func (i *Logger) WriteAt(buffer []byte, offset int64) (int, error) {
 	n, err := i.prov.WriteAt(buffer, offset)
-	if i.enabled.Load() {
-		fmt.Printf("%v: %s WriteAt(%d, offset=%d) -> %d, %v\n", time.Now(), i.prefix, len(buffer), offset, n, err)
+	if i.enabled.Load() && i.log != nil {
+		i.log.Debug().
+			Str("device", i.prefix).
+			Int("length", len(buffer)).
+			Int64("offset", offset).
+			Int("n", n).
+			Err(err).
+			Msg("WriteAt")
 	}
 	return n, err
 }
 
 func (i *Logger) Flush() error {
-	return i.prov.Flush()
+	err := i.prov.Flush()
+	if i.enabled.Load() && i.log != nil {
+		i.log.Debug().
+			Str("device", i.prefix).
+			Err(err).
+			Msg("Flush")
+	}
+	return err
 }
 
 func (i *Logger) Size() uint64 {
@@ -63,10 +89,23 @@ func (i *Logger) Size() uint64 {
 }
 
 func (i *Logger) Close() error {
-	return i.prov.Close()
+	err := i.prov.Close()
+	if i.enabled.Load() && i.log != nil {
+		i.log.Debug().
+			Str("device", i.prefix).
+			Err(err).
+			Msg("Close")
+	}
+	return err
 }
 
 func (i *Logger) CancelWrites(offset int64, length int64) {
 	i.prov.CancelWrites(offset, length)
-	// TODO: Implement
+	if i.enabled.Load() && i.log != nil {
+		i.log.Debug().
+			Str("device", i.prefix).
+			Int64("offset", offset).
+			Int64("length", length).
+			Msg("CancelWrites")
+	}
 }

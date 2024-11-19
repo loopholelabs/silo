@@ -8,13 +8,18 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/loopholelabs/logging/types"
+
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/integrity"
 	"github.com/loopholelabs/silo/pkg/storage/modules"
+	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
 	"github.com/loopholelabs/silo/pkg/storage/util"
 )
 
 type Config struct {
+	Logger          types.RootLogger
 	BlockSize       int
 	LockerHandler   func()
 	UnlockerHandler func()
@@ -30,6 +35,7 @@ type Config struct {
 
 func NewConfig() *Config {
 	return &Config{
+		Logger:          nil,
 		BlockSize:       0,
 		LockerHandler:   func() {},
 		UnlockerHandler: func() {},
@@ -67,6 +73,8 @@ type MigrationProgress struct {
 }
 
 type Migrator struct {
+	uuid                   uuid.UUID
+	logger                 types.RootLogger
 	sourceTracker          storage.TrackingProvider // Tracks writes so we know which are dirty
 	sourceMapped           *modules.MappedStorage
 	destWriteWithMap       func([]byte, int64, map[uint64]uint64) (int, error)
@@ -108,6 +116,8 @@ func NewMigrator(source storage.TrackingProvider,
 
 	numBlocks := (int(source.Size()) + config.BlockSize - 1) / config.BlockSize
 	m := &Migrator{
+		uuid:                   uuid.New(),
+		logger:                 config.Logger,
 		migrationStarted:       false,
 		dest:                   dest,
 		sourceTracker:          source,
@@ -147,6 +157,14 @@ func NewMigrator(source storage.TrackingProvider,
 	if config.Integrity {
 		m.integrity = integrity.NewChecker(int64(m.dest.Size()), m.blockSize)
 	}
+
+	if m.logger != nil {
+		m.logger.Debug().
+			Str("uuid", m.uuid.String()).
+			Uint64("size", source.Size()).
+			Msg("Created migrator")
+	}
+
 	return m, nil
 }
 
@@ -180,10 +198,24 @@ func (m *Migrator) startMigration() {
 	}
 	m.migrationStarted = true
 
+	if m.logger != nil {
+		m.logger.Debug().
+			Str("uuid", m.uuid.String()).
+			Uint64("size", m.sourceTracker.Size()).
+			Msg("Migration started")
+	}
+
 	// Tell the source to stop sync, and send alternateSources to the destination.
 	as := storage.SendSiloEvent(m.sourceTracker, "sync.stop", nil)
 	if len(as) == 1 {
 		storage.SendSiloEvent(m.dest, "sources", as[0])
+		if m.logger != nil {
+			m.logger.Debug().
+				Str("uuid", m.uuid.String()).
+				Uint64("size", m.sourceTracker.Size()).
+				Int("sources", len(as[0].([]packets.AlternateSource))).
+				Msg("Migrator alternate sources sent to destination")
+		}
 	}
 }
 
@@ -191,6 +223,14 @@ func (m *Migrator) startMigration() {
  * Migrate storage to dest.
  */
 func (m *Migrator) Migrate(numBlocks int) error {
+	if m.logger != nil {
+		m.logger.Debug().
+			Str("uuid", m.uuid.String()).
+			Uint64("size", m.sourceTracker.Size()).
+			Int("blocks", numBlocks).
+			Msg("Migrate")
+	}
+
 	m.startMigration()
 	m.ctime = time.Now()
 
@@ -271,6 +311,14 @@ func (m *Migrator) MigrateDirty(blocks []uint) error {
  * You can give a tracking ID which will turn up at block_fn on success
  */
 func (m *Migrator) MigrateDirtyWithID(blocks []uint, tid uint64) error {
+	if m.logger != nil {
+		m.logger.Debug().
+			Str("uuid", m.uuid.String()).
+			Uint64("size", m.sourceTracker.Size()).
+			Int("blocks", len(blocks)).
+			Msg("Migrate dirty")
+	}
+
 	m.startMigration()
 
 	for _, pos := range blocks {
@@ -324,8 +372,20 @@ func (m *Migrator) MigrateDirtyWithID(blocks []uint, tid uint64) error {
 }
 
 func (m *Migrator) WaitForCompletion() error {
+	if m.logger != nil {
+		m.logger.Debug().
+			Str("uuid", m.uuid.String()).
+			Uint64("size", m.sourceTracker.Size()).
+			Msg("Migration waiting for completion")
+	}
 	m.wg.Wait()
 	m.reportProgress(true)
+	if m.logger != nil {
+		m.logger.Debug().
+			Str("uuid", m.uuid.String()).
+			Uint64("size", m.sourceTracker.Size()).
+			Msg("Migration complete")
+	}
 	return nil
 }
 
@@ -367,6 +427,23 @@ func (m *Migrator) reportProgress(forced bool) {
 		TotalMigratedBlocks:   int(atomic.LoadInt64(&m.metricBlocksMigrated)),
 		TotalDuplicatedBlocks: int(atomic.LoadInt64(&m.metricBlocksDuplicates)),
 	}
+
+	if m.logger != nil {
+		m.logger.Debug().
+			Str("uuid", m.uuid.String()).
+			Uint64("size", m.sourceTracker.Size()).
+			Int("TotalBlocks", m.progressLastStatus.TotalBlocks).
+			Int("MigratedBlocks", m.progressLastStatus.MigratedBlocks).
+			Float64("MigratedBlocksPerc", m.progressLastStatus.MigratedBlocksPerc).
+			Int("ReadyBlocks", m.progressLastStatus.ReadyBlocks).
+			Float64("ReadyBlocksPerc", m.progressLastStatus.ReadyBlocksPerc).
+			Int("ActiveBlocks", m.progressLastStatus.ActiveBlocks).
+			Int("TotalCanceledBlocks", m.progressLastStatus.TotalCanceledBlocks).
+			Int("TotalMigratedBlocks", m.progressLastStatus.TotalMigratedBlocks).
+			Int("TotalDuplicatedBlocks", m.progressLastStatus.TotalDuplicatedBlocks).
+			Msg("Migration progress")
+	}
+
 	// Callback
 	m.progressFn(m.progressLastStatus)
 }
@@ -415,6 +492,13 @@ func (m *Migrator) migrateBlock(block int) ([]byte, error) {
 	// Read from source
 	n, err := m.sourceTracker.ReadAt(buff, int64(offset))
 	if err != nil {
+		if m.logger != nil {
+			m.logger.Error().
+				Str("uuid", m.uuid.String()).
+				Uint64("size", m.sourceTracker.Size()).
+				Err(err).
+				Msg("Migration error reading from source")
+		}
 		return nil, err
 	}
 
@@ -436,6 +520,12 @@ func (m *Migrator) migrateBlock(block int) ([]byte, error) {
 	if n != len(buff) || err != nil {
 		if errors.Is(err, context.Canceled) {
 			atomic.AddInt64(&m.metricBlocksCanceled, 1)
+		} else if m.logger != nil {
+			m.logger.Error().
+				Str("uuid", m.uuid.String()).
+				Uint64("size", m.sourceTracker.Size()).
+				Err(err).
+				Msg("Migration error writing to destination")
 		}
 		return nil, err
 	}

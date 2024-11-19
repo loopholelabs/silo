@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/loopholelabs/logging"
+
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/dirtytracker"
 	"github.com/loopholelabs/silo/pkg/storage/modules"
@@ -226,7 +228,7 @@ func TestStorageEventsForModules(tt *testing.T) {
 			addModule(mod7)
 			mod8 := modules.NewLockable(mod7)
 			addModule(mod8)
-			mod9 := modules.NewLogger(mod8, "prefix")
+			mod9 := modules.NewLogger(mod8, "prefix", logging.New(logging.Zerolog, "silo", os.Stdout))
 			addModule(mod9)
 			mod10 := modules.NewMetrics(mod9)
 			addModule(mod10)

@@ -20,6 +20,19 @@ func (wcl *Local) SendSiloEvent(eventType storage.EventType, eventData storage.E
 }
 
 func (wcl *Local) ReadAt(buffer []byte, offset int64) (int, error) {
+	if wcl.wc.logger != nil {
+		wcl.wc.logger.Trace().
+			Str("uuid", wcl.wc.uuid.String()).
+			Int64("offset", offset).
+			Int("length", len(buffer)).
+			Msg("local ReadAt")
+		defer wcl.wc.logger.Trace().
+			Str("uuid", wcl.wc.uuid.String()).
+			Int64("offset", offset).
+			Int("length", len(buffer)).
+			Msg("local ReadAt complete")
+	}
+
 	end := uint64(offset + int64(len(buffer)))
 	if end > wcl.wc.size {
 		end = wcl.wc.size
@@ -38,6 +51,19 @@ func (wcl *Local) ReadAt(buffer []byte, offset int64) (int, error) {
 }
 
 func (wcl *Local) WriteAt(buffer []byte, offset int64) (int, error) {
+	if wcl.wc.logger != nil {
+		wcl.wc.logger.Trace().
+			Str("uuid", wcl.wc.uuid.String()).
+			Int64("offset", offset).
+			Int("length", len(buffer)).
+			Msg("local WriteAt")
+		defer wcl.wc.logger.Trace().
+			Str("uuid", wcl.wc.uuid.String()).
+			Int64("offset", offset).
+			Int("length", len(buffer)).
+			Msg("local WriteAt complete")
+	}
+
 	end := uint64(offset + int64(len(buffer)))
 	if end > wcl.wc.size {
 		end = wcl.wc.size

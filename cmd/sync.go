@@ -260,10 +260,7 @@ func syncMigrateS3(_ uint32, name string,
 		fmt.Printf("[%s] Error for block %d error %v\n", name, b.Block, err)
 	}
 
-	// Show logging for S3 writes
-	logDest := modules.NewLogger(destMetrics, "S3")
-
-	mig, err := migrator.NewMigrator(sinfo.tracker, logDest, sinfo.orderer, conf)
+	mig, err := migrator.NewMigrator(sinfo.tracker, destMetrics, sinfo.orderer, conf)
 
 	if err != nil {
 		return err
