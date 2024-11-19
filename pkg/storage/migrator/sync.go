@@ -43,6 +43,7 @@ type Syncer struct {
 	blockStatusLock sync.Mutex
 	blockStatus     []BlockStatus
 	currentDirtyID  uint64
+	migrator        *Migrator
 }
 
 type BlockStatus struct {
@@ -88,6 +89,13 @@ func (s *Syncer) GetSafeBlockMap() map[uint][sha256.Size]byte {
 	return blocks
 }
 
+func (s *Syncer) GetMetrics() *MigrationProgress {
+	if s.migrator == nil {
+		return nil
+	}
+	return s.migrator.GetMetrics()
+}
+
 /**
  *
  *
@@ -122,7 +130,7 @@ func (s *Syncer) Sync(syncAllFirst bool, continuous bool) (*MigrationProgress, e
 
 	conf.ProgressHandler = func(p *MigrationProgress) {
 		if s.config.Logger != nil {
-			s.config.Logger.Info().
+			s.config.Logger.Debug().
 				Str("name", s.config.Name).
 				Float64("migrated_blocks_perc", p.MigratedBlocksPerc).
 				Int("ready_blocks", p.ReadyBlocks).
@@ -173,13 +181,28 @@ func (s *Syncer) Sync(syncAllFirst bool, continuous bool) (*MigrationProgress, e
 		return nil, err
 	}
 
+	s.migrator = mig
+
 	numBlocks := (s.config.Tracker.Size() + uint64(s.config.BlockSize) - 1) / uint64(s.config.BlockSize)
 
 	if syncAllFirst {
-		// Now do the initial migration...
-		err = mig.Migrate(int(numBlocks))
-		if err != nil {
-			return nil, err
+		// Do initial migration
+		for b := 0; b < int(numBlocks); b++ {
+			select {
+			case <-s.ctx.Done():
+				// Context has been cancelled. We should wait for any pending migrations to complete
+				err = mig.WaitForCompletion()
+				if err != nil {
+					return mig.GetMetrics(), err
+				}
+				return mig.GetMetrics(), s.ctx.Err()
+			default:
+			}
+
+			err = mig.Migrate(1)
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		// Wait for completion.
@@ -209,9 +232,9 @@ func (s *Syncer) Sync(syncAllFirst bool, continuous bool) (*MigrationProgress, e
 			// Context has been cancelled. We should wait for any pending migrations to complete
 			err = mig.WaitForCompletion()
 			if err != nil {
-				return mig.Status(), err
+				return mig.GetMetrics(), err
 			}
-			return mig.Status(), s.ctx.Err()
+			return mig.GetMetrics(), s.ctx.Err()
 		default:
 		}
 		blocks := mig.GetLatestDirtyFunc(s.config.DirtyBlockGetter)
@@ -226,13 +249,13 @@ func (s *Syncer) Sync(syncAllFirst bool, continuous bool) (*MigrationProgress, e
 			s.blockStatusLock.Unlock()
 			err = mig.MigrateDirtyWithID(blocks, id)
 			if err != nil {
-				return mig.Status(), err
+				return mig.GetMetrics(), err
 			}
 		} else {
 			if !continuous {
 				// We are done! Everything is synced, and the source is locked.
 				err = mig.WaitForCompletion()
-				return mig.Status(), err
+				return mig.GetMetrics(), err
 			}
 			mig.Unlock()
 		}

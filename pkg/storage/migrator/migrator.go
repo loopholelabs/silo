@@ -10,7 +10,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/loopholelabs/logging/types"
-
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/integrity"
 	"github.com/loopholelabs/silo/pkg/storage/modules"
@@ -61,6 +60,7 @@ func (mc *Config) WithBlockSize(bs int) *Config {
 }
 
 type MigrationProgress struct {
+	BlockSize             int
 	TotalBlocks           int // Total blocks
 	MigratedBlocks        int // Number of blocks that have been migrated
 	MigratedBlocksPerc    float64
@@ -107,6 +107,7 @@ type Migrator struct {
 	dedupeWrites           bool
 	recentWriteAge         time.Duration
 	migrationStarted       bool
+	migrationStartTime     time.Time
 }
 
 func NewMigrator(source storage.TrackingProvider,
@@ -119,6 +120,7 @@ func NewMigrator(source storage.TrackingProvider,
 		uuid:                   uuid.New(),
 		logger:                 config.Logger,
 		migrationStarted:       false,
+		migrationStartTime:     time.Now(),
 		dest:                   dest,
 		sourceTracker:          source,
 		sourceLockFn:           config.LockerHandler,
@@ -197,6 +199,7 @@ func (m *Migrator) startMigration() {
 		return
 	}
 	m.migrationStarted = true
+	m.migrationStartTime = time.Now()
 
 	if m.logger != nil {
 		m.logger.Debug().
@@ -384,6 +387,7 @@ func (m *Migrator) WaitForCompletion() error {
 		m.logger.Debug().
 			Str("uuid", m.uuid.String()).
 			Uint64("size", m.sourceTracker.Size()).
+			Int64("TimeMigratingMS", time.Since(m.migrationStartTime).Milliseconds()).
 			Msg("Migration complete")
 	}
 	return nil
@@ -417,6 +421,7 @@ func (m *Migrator) reportProgress(forced bool) {
 
 	m.progressLast = time.Now()
 	m.progressLastStatus = &MigrationProgress{
+		BlockSize:             m.blockSize,
 		TotalBlocks:           m.numBlocks,
 		MigratedBlocks:        migrated,
 		MigratedBlocksPerc:    percMig,
@@ -441,6 +446,7 @@ func (m *Migrator) reportProgress(forced bool) {
 			Int("TotalCanceledBlocks", m.progressLastStatus.TotalCanceledBlocks).
 			Int("TotalMigratedBlocks", m.progressLastStatus.TotalMigratedBlocks).
 			Int("TotalDuplicatedBlocks", m.progressLastStatus.TotalDuplicatedBlocks).
+			Int64("TimeMigratingMS", time.Since(m.migrationStartTime).Milliseconds()).
 			Msg("Migration progress")
 	}
 
@@ -452,7 +458,7 @@ func (m *Migrator) reportProgress(forced bool) {
  * Get overall status of the migration
  *
  */
-func (m *Migrator) Status() *MigrationProgress {
+func (m *Migrator) GetMetrics() *MigrationProgress {
 	m.progressLock.Lock()
 	defer m.progressLock.Unlock()
 
@@ -463,6 +469,7 @@ func (m *Migrator) Status() *MigrationProgress {
 	percComplete := float64(completed*100) / float64(m.numBlocks)
 
 	return &MigrationProgress{
+		BlockSize:             m.blockSize,
 		TotalBlocks:           m.numBlocks,
 		MigratedBlocks:        migrated,
 		MigratedBlocksPerc:    percMig,

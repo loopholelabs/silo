@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"testing"
-	"time"
 
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/blocks"
@@ -186,11 +185,8 @@ func BenchmarkMigrationPipe(mb *testing.B) {
 				_ = prDestRW.Handle()
 			}()
 
-			prSource := protocol.NewTestProtocolLatency(prSourceRW, 80*time.Millisecond)
-			prDest := protocol.NewTestProtocolLatency(prDestRW, 80*time.Millisecond)
-
-			prSource = protocol.NewTestProtocolBandwidth(prSource, 1024*1024*1024) // 1GB/sec
-			prDest = protocol.NewTestProtocolBandwidth(prDest, 1024*1024*1024)     // 1GB/sec
+			prSource := protocol.NewTestProtocolBandwidth(prSourceRW, 1024*1024*1024) // 1GB/sec
+			prDest := protocol.NewTestProtocolBandwidth(prDestRW, 1024*1024*1024)     // 1GB/sec
 
 			// Make sure new devs get given the latency/bandwidth protocol...
 
