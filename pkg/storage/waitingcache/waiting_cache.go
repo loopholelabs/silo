@@ -113,10 +113,10 @@ func (i *WaitingCache) waitForBlock(b uint, lockCB func(b uint)) {
 			Uint("block", b).
 			Msg("waitForBlock complete")
 	}
+
 	atomic.AddUint64(&i.metricWaitForBlock, 1)
 
 	i.lockersLock.Lock()
-
 	// If we have it locally, return.
 	if i.local.available.BitSet(int(b)) {
 		i.lockersLock.Unlock()
@@ -130,6 +130,7 @@ func (i *WaitingCache) waitForBlock(b uint, lockCB func(b uint)) {
 		atomic.AddUint64(&i.metricWaitForBlockHadRemote, 1)
 		return
 	}
+
 	rwl, ok := i.lockers[b]
 	if !ok {
 		// The first waiter will call .Lock()
@@ -148,33 +149,6 @@ func (i *WaitingCache) waitForBlock(b uint, lockCB func(b uint)) {
 	atomic.AddUint64(&i.metricWaitForBlockLockDone, 1)
 }
 
-func (i *WaitingCache) markAvailableBlockLocal(b uint) {
-	if i.logger != nil {
-		i.logger.Trace().
-			Str("uuid", i.uuid.String()).
-			Uint("block", b).
-			Msg("markAvailableLocalBlock")
-	}
-	atomic.AddUint64(&i.metricMarkAvailableLocalBlock, 1)
-
-	i.lockersLock.Lock()
-	avail := i.local.available.BitSet(int(b))
-	rwl, ok := i.lockers[b]
-	if !avail {
-		i.local.available.SetBit(int(b))
-	}
-	i.lockersLock.Unlock()
-
-	if !avail && ok {
-		rwl.Unlock()
-	}
-
-	// Now we can get rid of the lock...
-	i.lockersLock.Lock()
-	delete(i.lockers, b)
-	i.lockersLock.Unlock()
-}
-
 func (i *WaitingCache) markAvailableRemoteBlocks(bStart uint, bEnd uint) {
 	// TODO: Optimize this
 	for b := bStart; b < bEnd; b++ {
@@ -189,6 +163,7 @@ func (i *WaitingCache) markAvailableRemoteBlock(b uint) {
 			Uint("block", b).
 			Msg("markAvailableRemoteBlock")
 	}
+
 	atomic.AddUint64(&i.metricMarkAvailableRemoteBlock, 1)
 
 	i.lockersLock.Lock()
@@ -204,6 +179,33 @@ func (i *WaitingCache) markAvailableRemoteBlock(b uint) {
 	}
 
 	// Now we can get rid of the lock on this block...
+	delete(i.lockers, b)
+	i.lockersLock.Unlock()
+}
+
+func (i *WaitingCache) markAvailableLocalBlock(b uint) {
+	if i.logger != nil {
+		i.logger.Trace().
+			Str("uuid", i.uuid.String()).
+			Uint("block", b).
+			Msg("markAvailableLocalBlock")
+	}
+
+	atomic.AddUint64(&i.metricMarkAvailableLocalBlock, 1)
+
+	i.lockersLock.Lock()
+	avail := i.local.available.BitSet(int(b))
+	rwl, ok := i.lockers[b]
+	if !avail {
+		i.local.available.SetBit(int(b))
+	}
+
+	// If we have waiters for it, we can go ahead and unlock to allow them to read it.
+	if !avail && ok {
+		rwl.Unlock()
+	}
+
+	// Now we can get rid of the lock...
 	delete(i.lockers, b)
 	i.lockersLock.Unlock()
 }

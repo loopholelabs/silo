@@ -19,6 +19,10 @@ func (wcr *Remote) SendSiloEvent(eventType storage.EventType, eventData storage.
 	return append(data, storage.SendSiloEvent(wcr.wc.prov, eventType, eventData)...)
 }
 
+func (wcr *Remote) GetMetrics() *Metrics {
+	return wcr.wc.GetMetrics()
+}
+
 func (wcr *Remote) ReadAt(_ []byte, _ int64) (int, error) {
 	// Remote reads are unsupported at the moment.
 	return 0, io.EOF
