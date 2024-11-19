@@ -21,6 +21,12 @@ type VolatilityMonitor struct {
 	totalData     *volatilityData
 }
 
+type Metrics struct {
+	BlockSize  uint64
+	Available  uint64
+	Volatility uint64
+}
+
 // Relay events to embedded StorageProvider
 func (i *VolatilityMonitor) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
 	data := i.ProviderWithEvents.SendSiloEvent(eventType, eventData)
@@ -38,6 +44,14 @@ func NewVolatilityMonitor(prov storage.Provider, blockSize int, expiry time.Dura
 		available: *util.NewBitfield(numBlocks),
 		expiry:    expiry,
 		totalData: &volatilityData{log: make([]int64, 0)},
+	}
+}
+
+func (i *VolatilityMonitor) GetMetrics() *Metrics {
+	return &Metrics{
+		BlockSize:  uint64(i.blockSize),
+		Available:  uint64(i.available.Count(0, i.available.Length())),
+		Volatility: uint64(i.GetTotalVolatility()),
 	}
 }
 
