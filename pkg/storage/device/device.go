@@ -32,6 +32,8 @@ const (
 	DefaultBlockSize = 4096
 )
 
+var syncConcurrency = map[int]int{storage.BlockTypeAny: 1000}
+
 type Device struct {
 	Provider storage.Provider
 	Exposed  storage.ExposedStorage
@@ -257,6 +259,9 @@ func NewDeviceWithLogging(ds *config.DeviceSchema, log types.Logger) (storage.Pr
 			prov.Close()
 			return nil, nil, err
 		}
+		if log != nil {
+			log.Debug().Str("name", ds.Name).Str("device", ex.Device()).Msg("device exposed as nbd device")
+		}
 	}
 
 	// Optionally sync the device to S3
@@ -306,6 +311,7 @@ func NewDeviceWithLogging(ds *config.DeviceSchema, log types.Logger) (storage.Pr
 
 		// Start doing the sync...
 		syncer := migrator.NewSyncer(ctx, &migrator.SyncConfig{
+			Concurrency:      syncConcurrency,
 			Logger:           log,
 			Name:             ds.Name,
 			Integrity:        false,
