@@ -9,8 +9,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/loopholelabs/logging"
+	"github.com/loopholelabs/logging/types"
 	"github.com/loopholelabs/silo/pkg/storage/modules"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
+	"github.com/loopholelabs/silo/pkg/testutils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -34,7 +37,12 @@ func TestNBDNLDevice(t *testing.T) {
 	size := 4096 * 1024 * 1024
 	prov := sources.NewMemoryStorage(size)
 
-	n = NewExposedStorageNBDNL(prov, DefaultConfig)
+	logBuffer := &testutils.SafeWriteBuffer{}
+	// Enable logging here to make sure it doesn't break anything...
+	l := logging.New(logging.Zerolog, "silo", logBuffer)
+	l.SetLevel(types.TraceLevel)
+
+	n = NewExposedStorageNBDNL(prov, DefaultConfig.WithLogger(l))
 
 	err = n.Init()
 	require.NoError(t, err)
@@ -59,6 +67,9 @@ func TestNBDNLDevice(t *testing.T) {
 	}
 
 	wg.Wait()
+
+	// There should be some log entries here
+	assert.Greater(t, logBuffer.Len(), 0)
 }
 
 func TestNBDNLDeviceBlocksizes(t *testing.T) {

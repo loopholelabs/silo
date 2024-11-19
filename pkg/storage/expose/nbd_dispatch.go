@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/loopholelabs/logging/types"
 	"github.com/loopholelabs/silo/pkg/storage"
@@ -63,19 +65,47 @@ type Response struct {
 }
 
 type Dispatch struct {
-	logger           types.RootLogger
-	dev              string
-	ctx              context.Context
-	asyncReads       bool
-	asyncWrites      bool
-	fp               io.ReadWriteCloser
-	responseHeader   []byte
-	writeLock        sync.Mutex
-	prov             storage.Provider
-	fatal            chan error
-	pendingResponses sync.WaitGroup
-	metricPacketsIn  uint64
-	metricPacketsOut uint64
+	logger             types.RootLogger
+	dev                string
+	ctx                context.Context
+	asyncReads         bool
+	asyncWrites        bool
+	fp                 io.ReadWriteCloser
+	responseHeader     []byte
+	writeLock          sync.Mutex
+	prov               storage.Provider
+	fatal              chan error
+	pendingResponses   sync.WaitGroup
+	metricPacketsIn    uint64
+	metricPacketsOut   uint64
+	metricReadAt       uint64
+	metricReadAtBytes  uint64
+	metricReadAtTime   uint64
+	metricWriteAt      uint64
+	metricWriteAtBytes uint64
+	metricWriteAtTime  uint64
+}
+
+type DispatchMetrics struct {
+	PacketsIn    uint64
+	PacketsOut   uint64
+	ReadAt       uint64
+	ReadAtBytes  uint64
+	ReadAtTime   time.Duration
+	WriteAt      uint64
+	WriteAtBytes uint64
+	WriteAtTime  time.Duration
+}
+
+func (dm *DispatchMetrics) Add(delta *DispatchMetrics) {
+	dm.PacketsIn += delta.PacketsIn
+	dm.PacketsOut += delta.PacketsOut
+	dm.ReadAt += delta.ReadAt
+	dm.ReadAtBytes += delta.ReadAtBytes
+	dm.ReadAtTime += delta.ReadAtTime
+	dm.WriteAt += delta.WriteAt
+	dm.WriteAtBytes += delta.WriteAtBytes
+	dm.WriteAtTime += delta.WriteAtTime
 }
 
 func NewDispatch(ctx context.Context, name string, logger types.RootLogger, fp io.ReadWriteCloser, prov storage.Provider) *Dispatch {
@@ -86,7 +116,7 @@ func NewDispatch(ctx context.Context, name string, logger types.RootLogger, fp i
 		asyncWrites:    true,
 		asyncReads:     true,
 		responseHeader: make([]byte, 16),
-		fatal:          make(chan error, 8),
+		fatal:          make(chan error, 1),
 		fp:             fp,
 		prov:           prov,
 		ctx:            ctx,
@@ -94,6 +124,19 @@ func NewDispatch(ctx context.Context, name string, logger types.RootLogger, fp i
 
 	binary.BigEndian.PutUint32(d.responseHeader, NBDResponseMagic)
 	return d
+}
+
+func (d *Dispatch) GetMetrics() *DispatchMetrics {
+	return &DispatchMetrics{
+		PacketsIn:    atomic.LoadUint64(&d.metricPacketsIn),
+		PacketsOut:   atomic.LoadUint64(&d.metricPacketsOut),
+		ReadAt:       atomic.LoadUint64(&d.metricReadAt),
+		ReadAtBytes:  atomic.LoadUint64(&d.metricReadAtBytes),
+		ReadAtTime:   time.Duration(atomic.LoadUint64(&d.metricReadAtTime)),
+		WriteAt:      atomic.LoadUint64(&d.metricWriteAt),
+		WriteAtBytes: atomic.LoadUint64(&d.metricWriteAtBytes),
+		WriteAtTime:  time.Duration(atomic.LoadUint64(&d.metricWriteAtTime)),
+	}
 }
 
 func (d *Dispatch) Wait() {
@@ -184,6 +227,11 @@ func (d *Dispatch) Handle() error {
 
 			// If the context has been cancelled, quit
 			select {
+
+			// Check if there is a fatal error from an async read/write to return
+			case err := <-d.fatal:
+				return err
+
 			case <-d.ctx.Done():
 				if d.logger != nil {
 					d.logger.Trace().
@@ -305,15 +353,29 @@ func (d *Dispatch) cmdRead(cmdHandle uint64, cmdFrom uint64, cmdLength uint32) e
 	if d.asyncReads {
 		d.pendingResponses.Add(1)
 		go func() {
+			ctime := time.Now()
 			err := performRead(cmdHandle, cmdFrom, cmdLength)
-			if err != nil {
-				d.fatal <- err
+			if err == nil {
+				atomic.AddUint64(&d.metricReadAt, 1)
+				atomic.AddUint64(&d.metricReadAtBytes, uint64(cmdLength))
+				atomic.AddUint64(&d.metricReadAtTime, uint64(time.Since(ctime)))
+			} else {
+				select {
+				case d.fatal <- err:
+				default:
+				}
 			}
 			d.pendingResponses.Done()
 		}()
 	} else {
 		d.pendingResponses.Add(1)
+		ctime := time.Now()
 		err := performRead(cmdHandle, cmdFrom, cmdLength)
+		if err == nil {
+			atomic.AddUint64(&d.metricReadAt, 1)
+			atomic.AddUint64(&d.metricReadAtBytes, uint64(cmdLength))
+			atomic.AddUint64(&d.metricReadAtTime, uint64(time.Since(ctime)))
+		}
 		d.pendingResponses.Done()
 		return err
 	}
@@ -359,15 +421,29 @@ func (d *Dispatch) cmdWrite(cmdHandle uint64, cmdFrom uint64, cmdLength uint32, 
 	if d.asyncWrites {
 		d.pendingResponses.Add(1)
 		go func() {
+			ctime := time.Now()
 			err := performWrite(cmdHandle, cmdFrom, cmdLength, cmdData)
-			if err != nil {
-				d.fatal <- err
+			if err == nil {
+				atomic.AddUint64(&d.metricWriteAt, 1)
+				atomic.AddUint64(&d.metricWriteAtBytes, uint64(cmdLength))
+				atomic.AddUint64(&d.metricWriteAtTime, uint64(time.Since(ctime)))
+			} else {
+				select {
+				case d.fatal <- err:
+				default:
+				}
 			}
 			d.pendingResponses.Done()
 		}()
 	} else {
 		d.pendingResponses.Add(1)
+		ctime := time.Now()
 		err := performWrite(cmdHandle, cmdFrom, cmdLength, cmdData)
+		if err == nil {
+			atomic.AddUint64(&d.metricWriteAt, 1)
+			atomic.AddUint64(&d.metricWriteAtBytes, uint64(cmdLength))
+			atomic.AddUint64(&d.metricWriteAtTime, uint64(time.Since(ctime)))
+		}
 		d.pendingResponses.Done()
 		return err
 	}
