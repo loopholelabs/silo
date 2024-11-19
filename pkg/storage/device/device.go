@@ -261,6 +261,9 @@ func NewDeviceWithLogging(ds *config.DeviceSchema, log types.RootLogger) (storag
 
 	// Optionally sync the device to S3
 	if ds.Sync != nil {
+		if log != nil {
+			log.Debug().Str("name", ds.Name).Msg("setting up S3 sync")
+		}
 
 		s3dest, err := sources.NewS3StorageCreate(ds.Sync.Secure,
 			ds.Sync.Endpoint,
@@ -409,6 +412,10 @@ func NewDeviceWithLogging(ds *config.DeviceSchema, log types.RootLogger) (storag
 					Location: fmt.Sprintf("%s %s %s", ds.Sync.Endpoint, ds.Sync.Bucket, ds.Name),
 				}
 				altSources = append(altSources, as)
+			}
+
+			if log != nil {
+				log.Debug().Str("name", ds.Name).Int("sources", len(altSources)).Msg("sync.stop returning altSources")
 			}
 
 			return altSources
