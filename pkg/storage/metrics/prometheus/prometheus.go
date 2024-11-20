@@ -71,7 +71,7 @@ type Metrics struct {
 	protocolDataRecv     *prometheus.GaugeVec
 	protocolWrites       *prometheus.GaugeVec
 	protocolWriteErrors  *prometheus.GaugeVec
-	protocolWaitingForId *prometheus.GaugeVec
+	protocolWaitingForID *prometheus.GaugeVec
 
 	// s3
 	s3BlocksR      *prometheus.GaugeVec
@@ -209,7 +209,7 @@ func New(reg prometheus.Registerer) *Metrics {
 			Namespace: promNamespace, Subsystem: promSubProtocol, Name: "writes", Help: "Writes"}, []string{"device"}),
 		protocolWriteErrors: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: promNamespace, Subsystem: promSubProtocol, Name: "write_errors", Help: "Write errors"}, []string{"device"}),
-		protocolWaitingForId: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		protocolWaitingForID: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: promNamespace, Subsystem: promSubProtocol, Name: "waiting_for_id", Help: "Waiting for ID"}, []string{"device"}),
 
 		// ToProtocol
@@ -379,7 +379,7 @@ func New(reg prometheus.Registerer) *Metrics {
 
 	reg.MustRegister(met.migratorBlockSize, met.migratorActiveBlocks, met.migratorTotalBlocks, met.migratorMigratedBlocks, met.migratorTotalMigratedBlocks, met.migratorReadyBlocks)
 
-	reg.MustRegister(met.protocolPacketsSent, met.protocolDataSent, met.protocolPacketsRecv, met.protocolDataRecv, met.protocolWrites, met.protocolWriteErrors, met.protocolWaitingForId)
+	reg.MustRegister(met.protocolPacketsSent, met.protocolDataSent, met.protocolPacketsRecv, met.protocolDataRecv, met.protocolWrites, met.protocolWriteErrors, met.protocolWaitingForID)
 
 	reg.MustRegister(met.s3BlocksR, met.s3BlocksRBytes, met.s3BlocksW, met.s3BlocksWBytes, met.s3ActiveReads, met.s3ActiveWrites)
 
@@ -502,7 +502,7 @@ func (m *Metrics) AddProtocol(name string, proto *protocol.RW) {
 		m.protocolDataRecv.WithLabelValues(name).Set(float64(met.DataRecv))
 		m.protocolWrites.WithLabelValues(name).Set(float64(met.Writes))
 		m.protocolWriteErrors.WithLabelValues(name).Set(float64(met.WriteErrors))
-		m.protocolWaitingForId.WithLabelValues(name).Set(float64(met.WaitingForID))
+		m.protocolWaitingForID.WithLabelValues(name).Set(float64(met.WaitingForID))
 	})
 }
 
