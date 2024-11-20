@@ -3,6 +3,7 @@ package testutils
 import (
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/ory/dockertest/v3"
 	"github.com/ory/dockertest/v3/docker"
@@ -68,5 +69,8 @@ func SetupMinio(cleanup func(func())) string {
 	if err != nil {
 		panic(err)
 	}
+
+	time.Sleep(2 * time.Second)
+
 	return MinioPort
 }
