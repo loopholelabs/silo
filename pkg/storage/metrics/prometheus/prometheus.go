@@ -159,9 +159,6 @@ type Metrics struct {
 	waitingCacheAvailableLocal           *prometheus.GaugeVec
 	waitingCacheAvailableRemote          *prometheus.GaugeVec
 
-	// vm
-	vmRunning prometheus.Gauge
-
 	cancelfns map[string]context.CancelFunc
 }
 
@@ -368,9 +365,6 @@ func New(reg prometheus.Registerer) *Metrics {
 		waitingCacheAvailableRemote: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: promNamespace, Subsystem: promSubWaitingCache, Name: "available_remote", Help: "AvailableRemote"}, []string{"device"}),
 
-		// vm
-		vmRunning: prometheus.NewGauge(prometheus.GaugeOpts{Namespace: promNamespace, Subsystem: "vm", Name: "running", Help: "running"}),
-
 		cancelfns: make(map[string]context.CancelFunc),
 	}
 
@@ -428,7 +422,6 @@ func New(reg prometheus.Registerer) *Metrics {
 		met.waitingCacheAvailableRemote,
 	)
 
-	reg.MustRegister(met.vmRunning)
 	return met
 }
 
