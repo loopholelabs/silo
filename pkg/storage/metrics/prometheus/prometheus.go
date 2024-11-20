@@ -225,19 +225,19 @@ func New(reg prometheus.Registerer) *Metrics {
 		toProtocolSentWriteAtHash: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: promNamespace, Subsystem: promSubToProtocol, Name: "sent_write_at_hash", Help: "sentWriteAtHash"}, []string{"device"}),
 		toProtocolSentWriteAtHashBytes: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubToProtocol, Name: "write_at_hash_bytes", Help: "sentWriteAtHashBytes"}, []string{"device"}),
+			Namespace: promNamespace, Subsystem: promSubToProtocol, Name: "sent_write_at_hash_bytes", Help: "sentWriteAtHashBytes"}, []string{"device"}),
 		toProtocolSentWriteAtComp: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubToProtocol, Name: "write_at_comp", Help: "sentWriteAtComp"}, []string{"device"}),
+			Namespace: promNamespace, Subsystem: promSubToProtocol, Name: "sent_write_at_comp", Help: "sentWriteAtComp"}, []string{"device"}),
 		toProtocolSentWriteAtCompBytes: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubToProtocol, Name: "write_at_comp_bytes", Help: "sentWriteAtCompBytes"}, []string{"device"}),
+			Namespace: promNamespace, Subsystem: promSubToProtocol, Name: "sent_write_at_comp_bytes", Help: "sentWriteAtCompBytes"}, []string{"device"}),
 		toProtocolSentWriteAtCompDataBytes: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubToProtocol, Name: "write_at_comp_data_bytes", Help: "sentWriteAtCompDataBytes"}, []string{"device"}),
+			Namespace: promNamespace, Subsystem: promSubToProtocol, Name: "sent_write_at_comp_data_bytes", Help: "sentWriteAtCompDataBytes"}, []string{"device"}),
 		toProtocolSentWriteAt: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubToProtocol, Name: "write_at", Help: "sentWriteAt"}, []string{"device"}),
+			Namespace: promNamespace, Subsystem: promSubToProtocol, Name: "sent_write_at", Help: "sentWriteAt"}, []string{"device"}),
 		toProtocolSentWriteAtBytes: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubToProtocol, Name: "write_at_bytes", Help: "sentWriteAtBytes"}, []string{"device"}),
+			Namespace: promNamespace, Subsystem: promSubToProtocol, Name: "sent_write_at_bytes", Help: "sentWriteAtBytes"}, []string{"device"}),
 		toProtocolSentWriteAtWithMap: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubToProtocol, Name: "write_at_with_map", Help: "sentWriteAtWithMap"}, []string{"device"}),
+			Namespace: promNamespace, Subsystem: promSubToProtocol, Name: "sent_write_at_with_map", Help: "sentWriteAtWithMap"}, []string{"device"}),
 		toProtocolSentRemoveFromMap: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: promNamespace, Subsystem: promSubToProtocol, Name: "sent_remove_from_map", Help: "sentRemoveFromMap"}, []string{"device"}),
 		toProtocolRecvNeedAt: prometheus.NewGaugeVec(prometheus.GaugeOpts{
