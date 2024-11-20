@@ -33,7 +33,7 @@ const (
 	DefaultBlockSize = 4096
 )
 
-var syncConcurrency = map[int]int{storage.BlockTypeAny: 1000}
+var syncConcurrency = map[int]int{storage.BlockTypeAny: 10}
 
 type Device struct {
 	Provider storage.Provider
