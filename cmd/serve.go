@@ -98,7 +98,11 @@ func runServe(_ *cobra.Command, _ []string) {
 	if serveMetrics != "" {
 		reg = prometheus.NewRegistry()
 
+<<<<<<< HEAD
 		siloMetrics = siloprom.New(reg, siloprom.DefaultConfig())
+=======
+		siloMetrics = siloprom.New(reg)
+>>>>>>> b1195fa (Added metrics option to cmd/serve and cmd/connect)
 
 		// Add the default go metrics
 		reg.MustRegister(
