@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"sync"
@@ -19,11 +20,17 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/config"
 	"github.com/loopholelabs/silo/pkg/storage/device"
 	"github.com/loopholelabs/silo/pkg/storage/dirtytracker"
+	"github.com/loopholelabs/silo/pkg/storage/expose"
+	"github.com/loopholelabs/silo/pkg/storage/metrics"
+	siloprom "github.com/loopholelabs/silo/pkg/storage/metrics/prometheus"
 	"github.com/loopholelabs/silo/pkg/storage/migrator"
 	"github.com/loopholelabs/silo/pkg/storage/modules"
 	"github.com/loopholelabs/silo/pkg/storage/protocol"
 	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
 	"github.com/loopholelabs/silo/pkg/storage/volatilitymonitor"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/spf13/cobra"
 	"github.com/vbauerster/mpb/v8"
 	"github.com/vbauerster/mpb/v8/decor"
@@ -43,6 +50,9 @@ var serveConf string
 var serveProgress bool
 var serveContinuous bool
 var serveAnyOrder bool
+var serveCompress bool
+
+var serveMetrics string
 
 var srcExposed []storage.ExposedStorage
 var srcStorage []*storageInfo
@@ -60,6 +70,8 @@ func init() {
 	cmdServe.Flags().BoolVarP(&serveContinuous, "continuous", "C", false, "Continuous sync")
 	cmdServe.Flags().BoolVarP(&serveAnyOrder, "order", "o", false, "Any order (faster)")
 	cmdServe.Flags().BoolVarP(&serveDebug, "debug", "d", false, "Debug logging (trace)")
+	cmdServe.Flags().StringVarP(&serveMetrics, "metrics", "m", "", "Prom metrics address")
+	cmdServe.Flags().BoolVarP(&serveCompress, "compress", "x", false, "Compress")
 }
 
 type storageInfo struct {
@@ -75,9 +87,36 @@ type storageInfo struct {
 
 func runServe(_ *cobra.Command, _ []string) {
 	var log types.RootLogger
+	var reg *prometheus.Registry
+	var siloMetrics metrics.SiloMetrics
+
 	if serveDebug {
 		log = logging.New(logging.Zerolog, "silo.serve", os.Stderr)
 		log.SetLevel(types.TraceLevel)
+	}
+
+	if serveMetrics != "" {
+		reg = prometheus.NewRegistry()
+
+		siloMetrics = siloprom.New(reg)
+
+		// Add the default go metrics
+		reg.MustRegister(
+			collectors.NewGoCollector(),
+			collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+		)
+
+		http.Handle("/metrics", promhttp.HandlerFor(
+			reg,
+			promhttp.HandlerOpts{
+				// Opt into OpenMetrics to support exemplars.
+				EnableOpenMetrics: true,
+				// Pass custom registry
+				Registry: reg,
+			},
+		))
+
+		go http.ListenAndServe(serveMetrics, nil)
 	}
 
 	if serveProgress {
@@ -107,7 +146,7 @@ func runServe(_ *cobra.Command, _ []string) {
 
 	for i, s := range siloConf.Device {
 		fmt.Printf("Setup storage %d [%s] size %s - %d\n", i, s.Name, s.Size, s.ByteSize())
-		sinfo, err := setupStorageDevice(s, log)
+		sinfo, err := setupStorageDevice(s, log, siloMetrics)
 		if err != nil {
 			panic(fmt.Sprintf("Could not setup storage. %v", err))
 		}
@@ -136,6 +175,10 @@ func runServe(_ *cobra.Command, _ []string) {
 			_ = pro.Handle()
 		}()
 
+		if siloMetrics != nil {
+			siloMetrics.AddProtocol("serve", pro)
+		}
+
 		// Lets go through each of the things we want to migrate...
 		ctime := time.Now()
 
@@ -144,7 +187,7 @@ func runServe(_ *cobra.Command, _ []string) {
 		for i, s := range srcStorage {
 			wg.Add(1)
 			go func(index int, src *storageInfo) {
-				err := migrateDevice(log, uint32(index), src.name, pro, src)
+				err := migrateDevice(log, siloMetrics, uint32(index), src.name, pro, src)
 				if err != nil {
 					fmt.Printf("There was an issue migrating the storage %d %v\n", index, err)
 				}
@@ -158,12 +201,22 @@ func runServe(_ *cobra.Command, _ []string) {
 		}
 		fmt.Printf("\n\nMigration completed in %dms\n", time.Since(ctime).Milliseconds())
 
+		if log != nil {
+			metrics := pro.GetMetrics()
+			log.Debug().
+				Uint64("PacketsSent", metrics.PacketsSent).
+				Uint64("DataSent", metrics.DataSent).
+				Uint64("PacketsRecv", metrics.PacketsRecv).
+				Uint64("DataRecv", metrics.DataRecv).
+				Msg("protocol metrics")
+		}
+
 		con.Close()
 	}
 	shutdownEverything(log)
 }
 
-func shutdownEverything(_ types.Logger) {
+func shutdownEverything(log types.Logger) {
 	// first unlock everything
 	fmt.Printf("Unlocking devices...\n")
 	for _, i := range srcStorage {
@@ -177,11 +230,30 @@ func shutdownEverything(_ types.Logger) {
 
 		fmt.Printf("Shutdown nbd device %s\n", device)
 		_ = p.Shutdown()
+
+		// Show some metrics...
+		if log != nil {
+			nbdDevice, ok := p.(*expose.ExposedStorageNBDNL)
+			if ok {
+				m := nbdDevice.GetMetrics()
+				log.Debug().
+					Uint64("PacketsIn", m.PacketsIn).
+					Uint64("PacketsOut", m.PacketsOut).
+					Uint64("ReadAt", m.ReadAt).
+					Uint64("ReadAtBytes", m.ReadAtBytes).
+					Uint64("ReadAtTimeMS", uint64(m.ReadAtTime.Milliseconds())).
+					Uint64("WriteAt", m.WriteAt).
+					Uint64("WriteAtBytes", m.WriteAtBytes).
+					Uint64("WriteAtTimeMS", uint64(m.WriteAtTime.Milliseconds())).
+					Str("device", p.Device()).
+					Msg("NBD metrics")
+			}
+		}
 	}
 }
 
-func setupStorageDevice(conf *config.DeviceSchema, log types.Logger) (*storageInfo, error) {
-	source, ex, err := device.NewDeviceWithLogging(conf, log)
+func setupStorageDevice(conf *config.DeviceSchema, log types.Logger, met metrics.SiloMetrics) (*storageInfo, error) {
+	source, ex, err := device.NewDeviceWithLoggingMetrics(conf, log, met)
 	if err != nil {
 		return nil, err
 	}
@@ -202,6 +274,12 @@ func setupStorageDevice(conf *config.DeviceSchema, log types.Logger) (*storageIn
 	sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(sourceMetrics, blockSize)
 	sourceMonitor := volatilitymonitor.NewVolatilityMonitor(sourceDirtyLocal, blockSize, 10*time.Second)
 	sourceStorage := modules.NewLockable(sourceMonitor)
+
+	if met != nil {
+		met.AddDirtyTracker(conf.Name, sourceDirtyRemote)
+		met.AddVolatilityMonitor(conf.Name, sourceMonitor)
+		met.AddMetrics(conf.Name, sourceMetrics)
+	}
 
 	if ex != nil {
 		ex.SetProvider(sourceStorage)
@@ -234,11 +312,14 @@ func setupStorageDevice(conf *config.DeviceSchema, log types.Logger) (*storageIn
 }
 
 // Migrate a device
-func migrateDevice(log types.Logger, devID uint32, name string,
+func migrateDevice(log types.Logger, met metrics.SiloMetrics, devID uint32, name string,
 	pro protocol.Protocol,
 	sinfo *storageInfo) error {
 	size := sinfo.lockable.Size()
 	dest := protocol.NewToProtocol(size, devID, pro)
+
+	// Maybe compress writes
+	dest.CompressedWrites = serveCompress
 
 	err := dest.SendDevInfo(name, uint32(sinfo.blockSize), sinfo.schema)
 	if err != nil {
@@ -316,7 +397,7 @@ func migrateDevice(log types.Logger, devID uint32, name string,
 		_ = dest.SendEvent(&packets.Event{Type: packets.EventPostUnlock})
 	}
 	conf.Concurrency = map[int]int{
-		storage.BlockTypeAny: 1000000,
+		storage.BlockTypeAny: 1000,
 	}
 	conf.ErrorHandler = func(_ *storage.BlockInfo, err error) {
 		// For now...
@@ -355,6 +436,11 @@ func migrateDevice(log types.Logger, devID uint32, name string,
 
 	if err != nil {
 		return err
+	}
+
+	if met != nil {
+		met.AddToProtocol(name, dest)
+		met.AddMigrator(name, mig)
 	}
 
 	migrateBlocks := sinfo.numBlocks
@@ -420,5 +506,26 @@ func migrateDevice(log types.Logger, devID uint32, name string,
 			//		bar.EwmaIncrInt64(int64(size-last_value), time.Since(last_time))
 		}
 	*/
+
+	if log != nil {
+		toMetrics := dest.GetMetrics()
+		log.Debug().
+			Str("name", name).
+			Uint64("SentEvents", toMetrics.SentEvents).
+			Uint64("SentHashes", toMetrics.SentHashes).
+			Uint64("SentDevInfo", toMetrics.SentDevInfo).
+			Uint64("SentRemoveDev", toMetrics.SentRemoveDev).
+			Uint64("SentDirtyList", toMetrics.SentDirtyList).
+			Uint64("SentReadAt", toMetrics.SentReadAt).
+			Uint64("SentWriteAtHash", toMetrics.SentWriteAtHash).
+			Uint64("SentWriteAtComp", toMetrics.SentWriteAtComp).
+			Uint64("SentWriteAt", toMetrics.SentWriteAt).
+			Uint64("SentWriteAtWithMap", toMetrics.SentWriteAtWithMap).
+			Uint64("SentRemoveFromMap", toMetrics.SentRemoveFromMap).
+			Uint64("SentNeedAt", toMetrics.RecvNeedAt).
+			Uint64("SentDontNeedAt", toMetrics.RecvDontNeedAt).
+			Msg("ToProtocol metrics")
+	}
+
 	return nil
 }
