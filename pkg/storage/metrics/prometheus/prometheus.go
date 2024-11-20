@@ -78,6 +78,8 @@ type Metrics struct {
 	s3BlocksRBytes *prometheus.GaugeVec
 	s3BlocksW      *prometheus.GaugeVec
 	s3BlocksWBytes *prometheus.GaugeVec
+	s3ActiveReads  *prometheus.GaugeVec
+	s3ActiveWrites *prometheus.GaugeVec
 
 	// toProtocol
 	toProtocolSentEvents               *prometheus.GaugeVec
@@ -285,6 +287,10 @@ func New(reg prometheus.Registerer) *Metrics {
 			Namespace: promNamespace, Subsystem: promSubS3, Name: "blocks_r", Help: "Blocks r"}, []string{"device"}),
 		s3BlocksRBytes: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: promNamespace, Subsystem: promSubS3, Name: "blocks_r_bytes", Help: "Blocks r bytes"}, []string{"device"}),
+		s3ActiveReads: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: promNamespace, Subsystem: promSubS3, Name: "active_reads", Help: "Active reads"}, []string{"device"}),
+		s3ActiveWrites: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: promNamespace, Subsystem: promSubS3, Name: "active_writes", Help: "Active writes"}, []string{"device"}),
 
 		// DirtyTracker
 		dirtyTrackerBlockSize: prometheus.NewGaugeVec(prometheus.GaugeOpts{
@@ -375,7 +381,7 @@ func New(reg prometheus.Registerer) *Metrics {
 
 	reg.MustRegister(met.protocolPacketsSent, met.protocolDataSent, met.protocolPacketsRecv, met.protocolDataRecv, met.protocolWrites, met.protocolWriteErrors, met.protocolWaitingForId)
 
-	reg.MustRegister(met.s3BlocksR, met.s3BlocksRBytes, met.s3BlocksW, met.s3BlocksWBytes)
+	reg.MustRegister(met.s3BlocksR, met.s3BlocksRBytes, met.s3BlocksW, met.s3BlocksWBytes, met.s3ActiveReads, met.s3ActiveWrites)
 
 	reg.MustRegister(met.toProtocolSentEvents, met.toProtocolSentAltSources, met.toProtocolSentHashes, met.toProtocolSentDevInfo,
 		met.toProtocolSentDirtyList, met.toProtocolSentReadAt, met.toProtocolSentWriteAtHash, met.toProtocolSentWriteAtHashBytes,
@@ -564,6 +570,8 @@ func (m *Metrics) AddS3Storage(name string, s3 *sources.S3Storage) {
 		m.s3BlocksWBytes.WithLabelValues(name).Set(float64(met.BlocksWBytes))
 		m.s3BlocksR.WithLabelValues(name).Set(float64(met.BlocksRCount))
 		m.s3BlocksRBytes.WithLabelValues(name).Set(float64(met.BlocksRBytes))
+		m.s3ActiveReads.WithLabelValues(name).Set(float64(met.ActiveReads))
+		m.s3ActiveWrites.WithLabelValues(name).Set(float64(met.ActiveWrites))
 	})
 
 }

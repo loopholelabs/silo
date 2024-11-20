@@ -420,7 +420,7 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 			return true
 		}
 
-		stopSync := func(_ storage.EventType, _ storage.EventData) storage.EventReturnData {
+		stopSyncing := func(cancelWrites bool) storage.EventReturnData {
 			if log != nil {
 				log.Debug().Str("name", ds.Name).Msg("sync.stop called")
 			}
@@ -430,6 +430,11 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 				return nil
 			}
 			cancelfn()
+
+			if cancelWrites {
+				s3dest.CancelWrites(0, int64(s3dest.Size()))
+			}
+
 			// WAIT HERE for the sync to finish
 			wg.Wait()
 			syncRunning = false
@@ -454,6 +459,10 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 			}
 
 			return altSources
+		}
+
+		stopSync := func(_ storage.EventType, _ storage.EventData) storage.EventReturnData {
+			return stopSyncing(false)
 		}
 
 		// If the storage gets a "sync.stop", we should cancel the sync, and return the safe blocks
@@ -481,8 +490,8 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 
 		hooks := modules.NewHooks(prov)
 		hooks.PostClose = func(err error) error {
-			// We should stop any sync here...
-			stopSync("sync.stop", nil)
+			// We should stop any sync here, but ask it to cancel any existing writes if possible.
+			stopSyncing(true)
 			return err
 		}
 		prov = hooks
