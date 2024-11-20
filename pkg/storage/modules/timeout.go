@@ -35,9 +35,9 @@ func NewTimeout(prov storage.Provider, timeoutRead time.Duration, timeoutWrite t
 }
 
 // Relay events to embedded StorageProvider
-func (i *Timeout) SendSiloEvent(event_type storage.EventType, event_data storage.EventData) []storage.EventReturnData {
-	data := i.ProviderWithEvents.SendSiloEvent(event_type, event_data)
-	return append(data, storage.SendSiloEvent(i.prov, event_type, event_data)...)
+func (i *Timeout) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
+	data := i.ProviderWithEvents.SendSiloEvent(eventType, eventData)
+	return append(data, storage.SendSiloEvent(i.prov, eventType, eventData)...)
 }
 
 type readWriteResult struct {
