@@ -2,6 +2,7 @@ package modules
 
 import (
 	"sync"
+	"sync/atomic"
 
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/util"
@@ -31,6 +32,25 @@ func NewWriteCombinator(prov storage.Provider, blockSize int) *WriteCombinator {
 		numBlocks: int(numBlocks),
 		sources:   make(map[int]*writeSource, 0),
 	}
+}
+
+type WriteCombinatorMetrics struct {
+	WritesAllowed map[int]uint64
+	WritesBlocked map[int]uint64
+}
+
+func (i *WriteCombinator) GetMetrics() *WriteCombinatorMetrics {
+	wcm := &WriteCombinatorMetrics{
+		WritesAllowed: make(map[int]uint64, 0),
+		WritesBlocked: make(map[int]uint64, 0),
+	}
+	i.writeLock.Lock()
+	defer i.writeLock.Unlock()
+	for priority, s := range i.sources {
+		wcm.WritesAllowed[priority] = atomic.LoadUint64(&s.metricWritesAllowed)
+		wcm.WritesBlocked[priority] = atomic.LoadUint64(&s.metricWritesBlocked)
+	}
+	return wcm
 }
 
 // Add a new source to write into the combinator, with specified priority. Priority must be unique.
@@ -66,9 +86,11 @@ func (i *WriteCombinator) getHighestPriorityForBlock(b uint) int {
 
 type writeSource struct {
 	storage.ProviderWithEvents
-	priority   int
-	combinator *WriteCombinator
-	available  *util.Bitfield
+	priority            int
+	combinator          *WriteCombinator
+	available           *util.Bitfield
+	metricWritesAllowed uint64
+	metricWritesBlocked uint64
 }
 
 // Relay events to embedded StorageProvider
@@ -107,6 +129,9 @@ func (ws *writeSource) WriteAt(buffer []byte, offset int64) (int, error) {
 				return 0, err
 			}
 			ws.available.SetBit(int(b))
+			atomic.AddUint64(&ws.metricWritesAllowed, 1)
+		} else {
+			atomic.AddUint64(&ws.metricWritesBlocked, 1)
 		}
 		blockOffset += int64(ws.combinator.blockSize)
 	}
