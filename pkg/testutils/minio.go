@@ -70,6 +70,8 @@ func SetupMinio(cleanup func(func())) string {
 		panic(err)
 	}
 
+	// FIXME: Sometimes minio will return "Server not initialized yet, please try again." even though the above
+	// has gone through.
 	time.Sleep(2 * time.Second)
 
 	return MinioPort
