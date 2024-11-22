@@ -17,6 +17,12 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
+// These are the heatmap buckets for volatilityMonitor
+var heatmapBuckets = []float64{
+	0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45,
+	0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1,
+}
+
 // How often to poll metrics. We may want to do some less often etc
 const migratorTick = 100 * time.Millisecond
 const syncerTick = 100 * time.Millisecond
@@ -126,6 +132,7 @@ type Metrics struct {
 	volatilityMonitorBlockSize  *prometheus.GaugeVec
 	volatilityMonitorAvailable  *prometheus.GaugeVec
 	volatilityMonitorVolatility *prometheus.GaugeVec
+	volatilityMonitorHeatmap    *prometheus.HistogramVec
 
 	// metrics
 	metricsReadOps     *prometheus.GaugeVec
@@ -163,6 +170,7 @@ type Metrics struct {
 }
 
 func New(reg prometheus.Registerer) *Metrics {
+
 	met := &Metrics{
 		reg: reg,
 		// Syncer
@@ -306,6 +314,8 @@ func New(reg prometheus.Registerer) *Metrics {
 			Namespace: promNamespace, Subsystem: promSubVolatilityMonitor, Name: "available", Help: "Blocks available"}, []string{"device"}),
 		volatilityMonitorVolatility: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: promNamespace, Subsystem: promSubVolatilityMonitor, Name: "volatility", Help: "Volatility"}, []string{"device"}),
+		volatilityMonitorHeatmap: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Namespace: promNamespace, Subsystem: promSubVolatilityMonitor, Name: "heatmap", Help: "Heatmap", Buckets: heatmapBuckets}, []string{"device"}),
 
 		// Metrics
 		metricsReadOps: prometheus.NewGaugeVec(prometheus.GaugeOpts{
@@ -392,7 +402,7 @@ func New(reg prometheus.Registerer) *Metrics {
 
 	reg.MustRegister(met.dirtyTrackerBlockSize, met.dirtyTrackerDirtyBlocks, met.dirtyTrackerTrackingBlocks, met.dirtyTrackerMaxAgeDirtyMS)
 
-	reg.MustRegister(met.volatilityMonitorBlockSize, met.volatilityMonitorAvailable, met.volatilityMonitorVolatility)
+	reg.MustRegister(met.volatilityMonitorBlockSize, met.volatilityMonitorAvailable, met.volatilityMonitorVolatility, met.volatilityMonitorHeatmap)
 
 	reg.MustRegister(
 		met.metricsReadOps,
@@ -457,12 +467,14 @@ func (m *Metrics) add(subsystem string, name string, interval time.Duration, tic
 func (m *Metrics) AddSyncer(name string, syncer *migrator.Syncer) {
 	m.add(promSubSyncer, name, syncerTick, func() {
 		met := syncer.GetMetrics()
-		m.migratorBlockSize.WithLabelValues(name).Set(float64(met.BlockSize))
-		m.migratorTotalBlocks.WithLabelValues(name).Set(float64(met.TotalBlocks))
-		m.migratorMigratedBlocks.WithLabelValues(name).Set(float64(met.MigratedBlocks))
-		m.migratorReadyBlocks.WithLabelValues(name).Set(float64(met.ReadyBlocks))
-		m.migratorActiveBlocks.WithLabelValues(name).Set(float64(met.ActiveBlocks))
-		m.migratorTotalMigratedBlocks.WithLabelValues(name).Set(float64(met.TotalMigratedBlocks))
+		if met != nil {
+			m.migratorBlockSize.WithLabelValues(name).Set(float64(met.BlockSize))
+			m.migratorTotalBlocks.WithLabelValues(name).Set(float64(met.TotalBlocks))
+			m.migratorMigratedBlocks.WithLabelValues(name).Set(float64(met.MigratedBlocks))
+			m.migratorReadyBlocks.WithLabelValues(name).Set(float64(met.ReadyBlocks))
+			m.migratorActiveBlocks.WithLabelValues(name).Set(float64(met.ActiveBlocks))
+			m.migratorTotalMigratedBlocks.WithLabelValues(name).Set(float64(met.TotalMigratedBlocks))
+		}
 	})
 }
 
@@ -593,6 +605,13 @@ func (m *Metrics) AddVolatilityMonitor(name string, vm *volatilitymonitor.Volati
 		m.volatilityMonitorBlockSize.WithLabelValues(name).Set(float64(met.BlockSize))
 		m.volatilityMonitorAvailable.WithLabelValues(name).Set(float64(met.Available))
 		m.volatilityMonitorVolatility.WithLabelValues(name).Set(float64(met.Volatility))
+
+		// TODO: Better way?
+		for block, volatility := range met.VolatilityMap {
+			for v := 0; v < int(volatility); v++ {
+				m.volatilityMonitorHeatmap.WithLabelValues(name).Observe(float64(block) / float64(met.NumBlocks))
+			}
+		}
 	})
 }
 

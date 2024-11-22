@@ -22,9 +22,11 @@ type VolatilityMonitor struct {
 }
 
 type Metrics struct {
-	BlockSize  uint64
-	Available  uint64
-	Volatility uint64
+	BlockSize     uint64
+	NumBlocks     uint64
+	Available     uint64
+	Volatility    uint64
+	VolatilityMap map[int]uint64
 }
 
 // Relay events to embedded StorageProvider
@@ -48,10 +50,16 @@ func NewVolatilityMonitor(prov storage.Provider, blockSize int, expiry time.Dura
 }
 
 func (i *VolatilityMonitor) GetMetrics() *Metrics {
+	vm := make(map[int]uint64, i.numBlocks)
+	for b := 0; b < i.numBlocks; b++ {
+		vm[b] = uint64(i.GetVolatility(b))
+	}
 	return &Metrics{
-		BlockSize:  uint64(i.blockSize),
-		Available:  uint64(i.available.Count(0, i.available.Length())),
-		Volatility: uint64(i.GetTotalVolatility()),
+		BlockSize:     uint64(i.blockSize),
+		Available:     uint64(i.available.Count(0, i.available.Length())),
+		Volatility:    uint64(i.GetTotalVolatility()),
+		VolatilityMap: vm,
+		NumBlocks:     uint64(i.numBlocks),
 	}
 }
 
