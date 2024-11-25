@@ -216,9 +216,6 @@ func TestMigratorS3Assisted(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, eq)
 
-	// All the data should be there.
-	assert.Equal(t, int(provSrc.Size()), destFrom.GetDataPresent())
-
 	// Get some statistics from the source
 	srcStats := storage.SendSiloEvent(provSrc, "sync.status", nil)
 	require.Equal(t, 1, len(srcStats))
@@ -370,9 +367,6 @@ func TestMigratorS3AssistedChangeSource(t *testing.T) {
 	eq, err := storage.Equals(provSrc, provDest, blockSize)
 	assert.NoError(t, err)
 	assert.True(t, eq)
-
-	// All the data should be there.
-	assert.Equal(t, int(provSrc.Size()), destFrom.GetDataPresent())
 
 	// Get some statistics from the source
 	srcStats := storage.SendSiloEvent(provSrc, "sync.status", nil)

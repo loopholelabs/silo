@@ -7,25 +7,31 @@ import (
 	"sync/atomic"
 
 	"github.com/loopholelabs/silo/pkg/storage"
+	"github.com/loopholelabs/silo/pkg/storage/modules"
 	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
-	"github.com/loopholelabs/silo/pkg/storage/util"
 )
+
+const priorityP2P = 2
+const priorityAltSources = 1
 
 type FromProtocol struct {
 	dev             uint32
 	prov            storage.Provider
+	writeCombinator *modules.WriteCombinator
+	provP2P         storage.Provider
+	provAltSources  storage.Provider
+
 	providerFactory func(*packets.DevInfo) storage.Provider
 	protocol        Protocol
 	init            chan bool
 	ctx             context.Context
 
-	presentLock      sync.Mutex
-	present          *util.Bitfield
-	presentBlockSize int
-
+	// Collect alternate sources
 	alternateSourcesLock sync.Mutex
+	alternateSourcesDone bool
 	alternateSources     []packets.AlternateSource
 
+	// metrics
 	metricRecvEvents         uint64
 	metricRecvHashes         uint64
 	metricRecvDevInfo        uint64
@@ -43,146 +49,68 @@ type FromProtocol struct {
 }
 
 type FromProtocolMetrics struct {
-	RecvEvents         uint64
-	RecvHashes         uint64
-	RecvDevInfo        uint64
-	RecvAltSources     uint64
-	RecvReadAt         uint64
-	RecvWriteAtHash    uint64
-	RecvWriteAtComp    uint64
-	RecvWriteAt        uint64
-	RecvWriteAtWithMap uint64
-	RecvRemoveFromMap  uint64
-	RecvRemoveDev      uint64
-	RecvDirtyList      uint64
-	SentNeedAt         uint64
-	SentDontNeedAt     uint64
+	RecvEvents              uint64
+	RecvHashes              uint64
+	RecvDevInfo             uint64
+	RecvAltSources          uint64
+	RecvReadAt              uint64
+	RecvWriteAtHash         uint64
+	RecvWriteAtComp         uint64
+	RecvWriteAt             uint64
+	RecvWriteAtWithMap      uint64
+	RecvRemoveFromMap       uint64
+	RecvRemoveDev           uint64
+	RecvDirtyList           uint64
+	SentNeedAt              uint64
+	SentDontNeedAt          uint64
+	WritesAllowedP2P        uint64
+	WritesBlockedP2P        uint64
+	WritesAllowedAltSources uint64
+	WritesBlockedAltSources uint64
 }
 
 func NewFromProtocol(ctx context.Context, dev uint32, provFactory func(*packets.DevInfo) storage.Provider, protocol Protocol) *FromProtocol {
 	fp := &FromProtocol{
-		dev:              dev,
-		providerFactory:  provFactory,
-		protocol:         protocol,
-		presentBlockSize: 1024,
-		init:             make(chan bool, 1),
-		ctx:              ctx,
+		dev:                  dev,
+		providerFactory:      provFactory,
+		protocol:             protocol,
+		init:                 make(chan bool, 1),
+		ctx:                  ctx,
+		alternateSourcesDone: false,
 	}
 	return fp
 }
 
 func (fp *FromProtocol) GetMetrics() *FromProtocolMetrics {
-	return &FromProtocolMetrics{
-		RecvEvents:         atomic.LoadUint64(&fp.metricRecvEvents),
-		RecvHashes:         atomic.LoadUint64(&fp.metricRecvHashes),
-		RecvDevInfo:        atomic.LoadUint64(&fp.metricRecvDevInfo),
-		RecvAltSources:     atomic.LoadUint64(&fp.metricRecvAltSources),
-		RecvReadAt:         atomic.LoadUint64(&fp.metricRecvReadAt),
-		RecvWriteAtHash:    atomic.LoadUint64(&fp.metricRecvWriteAtHash),
-		RecvWriteAtComp:    atomic.LoadUint64(&fp.metricRecvWriteAtComp),
-		RecvWriteAt:        atomic.LoadUint64(&fp.metricRecvWriteAt),
-		RecvWriteAtWithMap: atomic.LoadUint64(&fp.metricRecvWriteAtWithMap),
-		RecvRemoveFromMap:  atomic.LoadUint64(&fp.metricRecvRemoveFromMap),
-		RecvRemoveDev:      atomic.LoadUint64(&fp.metricRecvRemoveDev),
-		RecvDirtyList:      atomic.LoadUint64(&fp.metricRecvDirtyList),
-		SentNeedAt:         atomic.LoadUint64(&fp.metricSentNeedAt),
-		SentDontNeedAt:     atomic.LoadUint64(&fp.metricSentDontNeedAt),
-	}
-}
-
-func (fp *FromProtocol) GetAlternateSources() []packets.AlternateSource {
-	fp.alternateSourcesLock.Lock()
-	defer fp.alternateSourcesLock.Unlock()
-
-	// If we didn't get a WriteAt, then return the alternateSource for a block, and mark it as present.
-	ret := make([]packets.AlternateSource, 0)
-	for _, as := range fp.alternateSources {
-		if !fp.isDataPresent(int(as.Offset), int(as.Length)) {
-			ret = append(ret, as)
-			// Mark the range as present if we return it here.
-			fp.markRangePresent(int(as.Offset), int(as.Length))
-		}
-	}
-	return ret
-}
-
-func (fp *FromProtocol) GetDataPresent() int {
-	fp.presentLock.Lock()
-	defer fp.presentLock.Unlock()
-	blocks := fp.present.Count(0, fp.present.Length())
-	size := blocks * fp.presentBlockSize
-	if size > int(fp.prov.Size()) {
-		size = int(fp.prov.Size())
-	}
-	return size
-}
-
-func (fp *FromProtocol) isDataPresent(offset int, length int) bool {
-	// Translate to full blocks...
-	end := uint64(offset + length)
-	if end > fp.prov.Size() {
-		end = fp.prov.Size()
+	fpm := &FromProtocolMetrics{
+		RecvEvents:              atomic.LoadUint64(&fp.metricRecvEvents),
+		RecvHashes:              atomic.LoadUint64(&fp.metricRecvHashes),
+		RecvDevInfo:             atomic.LoadUint64(&fp.metricRecvDevInfo),
+		RecvAltSources:          atomic.LoadUint64(&fp.metricRecvAltSources),
+		RecvReadAt:              atomic.LoadUint64(&fp.metricRecvReadAt),
+		RecvWriteAtHash:         atomic.LoadUint64(&fp.metricRecvWriteAtHash),
+		RecvWriteAtComp:         atomic.LoadUint64(&fp.metricRecvWriteAtComp),
+		RecvWriteAt:             atomic.LoadUint64(&fp.metricRecvWriteAt),
+		RecvWriteAtWithMap:      atomic.LoadUint64(&fp.metricRecvWriteAtWithMap),
+		RecvRemoveFromMap:       atomic.LoadUint64(&fp.metricRecvRemoveFromMap),
+		RecvRemoveDev:           atomic.LoadUint64(&fp.metricRecvRemoveDev),
+		RecvDirtyList:           atomic.LoadUint64(&fp.metricRecvDirtyList),
+		SentNeedAt:              atomic.LoadUint64(&fp.metricSentNeedAt),
+		SentDontNeedAt:          atomic.LoadUint64(&fp.metricSentDontNeedAt),
+		WritesAllowedP2P:        0,
+		WritesBlockedP2P:        0,
+		WritesAllowedAltSources: 0,
+		WritesBlockedAltSources: 0,
 	}
 
-	bStart := uint(offset / fp.presentBlockSize)
-	bEnd := uint((end-1)/uint64(fp.presentBlockSize)) + 1
-
-	// Check they're all there
-	fp.presentLock.Lock()
-	defer fp.presentLock.Unlock()
-	return fp.present.BitsSet(bStart, bEnd)
-}
-
-func (fp *FromProtocol) markRangePresent(offset int, length int) {
-	// Translate to full blocks...
-	end := uint64(offset + length)
-	if end > fp.prov.Size() {
-		end = fp.prov.Size()
+	if fp.writeCombinator != nil {
+		met := fp.writeCombinator.GetMetrics()
+		fpm.WritesAllowedP2P = met.WritesAllowed[priorityP2P]
+		fpm.WritesBlockedP2P = met.WritesBlocked[priorityP2P]
+		fpm.WritesAllowedAltSources = met.WritesAllowed[priorityAltSources]
+		fpm.WritesBlockedAltSources = met.WritesBlocked[priorityAltSources]
 	}
-
-	bStart := uint(offset / fp.presentBlockSize)
-	bEnd := uint((end-1)/uint64(fp.presentBlockSize)) + 1
-
-	// First block is incomplete. Ignore it.
-	if offset > (int(bStart) * fp.presentBlockSize) {
-		bStart++
-	}
-
-	// Last block is incomplete AND is not the last block. Ignore it.
-	if offset+length < int(bEnd*uint(fp.presentBlockSize)) && offset+length < int(fp.prov.Size()) {
-		bEnd--
-	}
-
-	// Mark the blocks
-	fp.presentLock.Lock()
-	fp.present.SetBits(bStart, bEnd)
-	fp.presentLock.Unlock()
-}
-
-func (fp *FromProtocol) markRangeMissing(offset int, length int) {
-	// Translate to full blocks...
-	end := uint64(offset + length)
-	if end > fp.prov.Size() {
-		end = fp.prov.Size()
-	}
-
-	bStart := uint(offset / fp.presentBlockSize)
-	bEnd := uint((end-1)/uint64(fp.presentBlockSize)) + 1
-
-	// First block is incomplete. Ignore it.
-	if offset > (int(bStart) * fp.presentBlockSize) {
-		bStart++
-	}
-
-	// Last block is incomplete AND is not the last block. Ignore it.
-	if offset+length < int(bEnd*uint(fp.presentBlockSize)) && offset+length < int(fp.prov.Size()) {
-		bEnd--
-	}
-
-	// Mark the blocks
-	fp.presentLock.Lock()
-	fp.present.ClearBits(bStart, bEnd)
-	fp.presentLock.Unlock()
+	return fpm
 }
 
 func (fp *FromProtocol) waitInitOrCancel() error {
@@ -194,6 +122,29 @@ func (fp *FromProtocol) waitInitOrCancel() error {
 	case <-fp.ctx.Done():
 		return fp.ctx.Err()
 	}
+}
+
+// Get any altSources needed and do the sync.start. Only process ONCE.
+func (fp *FromProtocol) getAltSourcesStartSync() {
+	fp.alternateSourcesLock.Lock()
+	if fp.alternateSourcesDone {
+		fp.alternateSourcesLock.Unlock()
+		return
+	}
+	fp.alternateSourcesDone = true
+
+	as := make([]packets.AlternateSource, 0)
+	as = append(as, fp.alternateSources...)
+	fp.alternateSourcesLock.Unlock()
+
+	// If we got a dirty WriteAt, then there's wasted work here, but it won't overwrite since we're using
+	// WriteCombinator now.
+
+	// Deal with the sync here, and WAIT if needed.
+	storage.SendSiloEvent(fp.prov, "sync.start", storage.SyncStartConfig{
+		AlternateSources: as,
+		Destination:      fp.provAltSources,
+	})
 }
 
 // Handle any Events
@@ -216,11 +167,8 @@ func (fp *FromProtocol) HandleEvent(cb func(*packets.Event)) error {
 		atomic.AddUint64(&fp.metricRecvEvents, 1)
 
 		if ev.Type == packets.EventCompleted {
-			// Deal with the sync here, and WAIT if needed.
-			storage.SendSiloEvent(fp.prov, "sync.start", storage.SyncStartConfig{
-				AlternateSources: fp.GetAlternateSources(),
-				Destination:      fp.prov,
-			})
+			// Start the Sync, if it hasn't been started
+			go fp.getAltSourcesStartSync()
 		}
 
 		// Relay the event, wait, and then respond.
@@ -275,10 +223,11 @@ func (fp *FromProtocol) HandleDevInfo() error {
 
 	atomic.AddUint64(&fp.metricRecvDevInfo, 1)
 
-	// Create storage
+	// Create storage, and setup a writeCombinator with two inputs
 	fp.prov = fp.providerFactory(di)
-	numBlocks := (int(fp.prov.Size()) + fp.presentBlockSize - 1) / fp.presentBlockSize
-	fp.present = util.NewBitfield(numBlocks)
+	fp.writeCombinator = modules.NewWriteCombinator(fp.prov, int(di.BlockSize))
+	fp.provAltSources = fp.writeCombinator.AddSource(priorityAltSources)
+	fp.provP2P = fp.writeCombinator.AddSource(priorityP2P)
 
 	fp.init <- true // Confirm things have been initialized for this device.
 
@@ -339,7 +288,7 @@ func (fp *FromProtocol) HandleReadAt() error {
 		// Handle them in goroutines
 		go func(goffset int64, glength int32, gid uint32) {
 			buff := make([]byte, glength)
-			n, err := fp.prov.ReadAt(buff, goffset)
+			n, err := fp.provP2P.ReadAt(buff, goffset)
 			rar := &packets.ReadAtResponse{
 				Bytes: n,
 				Error: err,
@@ -388,9 +337,6 @@ func (fp *FromProtocol) HandleWriteAt() error {
 
 			atomic.AddUint64(&fp.metricRecvWriteAtHash, 1)
 
-			// For now, we will simply ack. We do NOT mark it as present. That part will be done when the alternateSources is retrieved.
-			// fp.mark_range_present(int(offset), int(length))
-
 			war := &packets.WriteAtResponse{
 				Error: nil,
 				Bytes: int(length),
@@ -421,13 +367,10 @@ func (fp *FromProtocol) HandleWriteAt() error {
 
 			// Handle in a goroutine
 			go func(goffset int64, gdata []byte, gid uint32) {
-				n, err := fp.prov.WriteAt(gdata, goffset)
+				n, err := fp.provP2P.WriteAt(gdata, goffset)
 				war := &packets.WriteAtResponse{
 					Bytes: n,
 					Error: err,
-				}
-				if err == nil {
-					fp.markRangePresent(int(goffset), len(gdata))
 				}
 				_, err = fp.protocol.SendPacket(fp.dev, gid, packets.EncodeWriteAtResponse(war), UrgencyNormal)
 				if err != nil {
@@ -461,9 +404,6 @@ func (fp *FromProtocol) HandleWriteAtWithMap(cb func(offset int64, data []byte, 
 		atomic.AddUint64(&fp.metricRecvWriteAtWithMap, 1)
 
 		err = cb(offset, writeData, idMap)
-		if err == nil {
-			fp.markRangePresent(int(offset), len(writeData))
-		}
 		war := &packets.WriteAtResponse{
 			Bytes: len(writeData),
 			Error: err,
@@ -540,18 +480,16 @@ func (fp *FromProtocol) HandleDirtyList(cb func(blocks []uint)) error {
 		if err != nil {
 			return err
 		}
-		blockSize, blocks, err := packets.DecodeDirtyList(data)
+		_, blocks, err := packets.DecodeDirtyList(data)
 		if err != nil {
 			return err
 		}
 
-		atomic.AddUint64(&fp.metricRecvDirtyList, 1)
+		// Once we get a DirtyList, we know we're in the dirty loop sync phase, so we can start sync if it's not already
+		// started.
+		go fp.getAltSourcesStartSync()
 
-		// Mark these as non-present (useful for debugging issues)
-		for _, b := range blocks {
-			offset := int(b) * blockSize
-			fp.markRangeMissing(offset, blockSize)
-		}
+		atomic.AddUint64(&fp.metricRecvDirtyList, 1)
 
 		cb(blocks)
 
