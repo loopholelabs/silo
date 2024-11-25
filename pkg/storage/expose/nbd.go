@@ -30,7 +30,7 @@ var DefaultConfig = &Config{
 }
 
 type Config struct {
-	Logger         types.RootLogger
+	Logger         types.Logger
 	NumConnections int
 	Timeout        time.Duration
 	BlockSize      uint64
@@ -38,7 +38,7 @@ type Config struct {
 	AsyncWrites    bool
 }
 
-func (c *Config) WithLogger(l types.RootLogger) *Config {
+func (c *Config) WithLogger(l types.Logger) *Config {
 	return &Config{Logger: l,
 		NumConnections: c.NumConnections,
 		Timeout:        c.Timeout,

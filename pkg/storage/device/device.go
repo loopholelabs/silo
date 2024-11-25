@@ -41,7 +41,7 @@ func NewDevices(ds []*config.DeviceSchema) (map[string]*Device, error) {
 	return NewDevicesWithLogging(ds, nil)
 }
 
-func NewDevicesWithLogging(ds []*config.DeviceSchema, log types.RootLogger) (map[string]*Device, error) {
+func NewDevicesWithLogging(ds []*config.DeviceSchema, log types.Logger) (map[string]*Device, error) {
 	devices := make(map[string]*Device)
 	for _, c := range ds {
 		dev, ex, err := NewDeviceWithLogging(c, log)
@@ -67,7 +67,7 @@ func NewDevice(ds *config.DeviceSchema) (storage.Provider, storage.ExposedStorag
 	return NewDeviceWithLogging(ds, nil)
 }
 
-func NewDeviceWithLogging(ds *config.DeviceSchema, log types.RootLogger) (storage.Provider, storage.ExposedStorage, error) {
+func NewDeviceWithLogging(ds *config.DeviceSchema, log types.Logger) (storage.Provider, storage.ExposedStorage, error) {
 	if log != nil {
 		log.Debug().Str("name", ds.Name).Msg("creating new device")
 	}

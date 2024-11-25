@@ -19,7 +19,7 @@ import (
 )
 
 type Config struct {
-	Logger          types.RootLogger
+	Logger          types.Logger
 	BlockSize       int
 	LockerHandler   func()
 	UnlockerHandler func()
@@ -74,7 +74,7 @@ type MigrationProgress struct {
 
 type Migrator struct {
 	uuid                   uuid.UUID
-	logger                 types.RootLogger
+	logger                 types.Logger
 	sourceTracker          storage.TrackingProvider // Tracks writes so we know which are dirty
 	sourceMapped           *modules.MappedStorage
 	destWriteWithMap       func([]byte, int64, map[uint64]uint64) (int, error)

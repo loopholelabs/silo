@@ -163,7 +163,7 @@ func runServe(_ *cobra.Command, _ []string) {
 	shutdownEverything(log)
 }
 
-func shutdownEverything(_ types.RootLogger) {
+func shutdownEverything(_ types.Logger) {
 	// first unlock everything
 	fmt.Printf("Unlocking devices...\n")
 	for _, i := range srcStorage {
@@ -180,7 +180,7 @@ func shutdownEverything(_ types.RootLogger) {
 	}
 }
 
-func setupStorageDevice(conf *config.DeviceSchema, log types.RootLogger) (*storageInfo, error) {
+func setupStorageDevice(conf *config.DeviceSchema, log types.Logger) (*storageInfo, error) {
 	source, ex, err := device.NewDeviceWithLogging(conf, log)
 	if err != nil {
 		return nil, err
@@ -234,7 +234,7 @@ func setupStorageDevice(conf *config.DeviceSchema, log types.RootLogger) (*stora
 }
 
 // Migrate a device
-func migrateDevice(log types.RootLogger, devID uint32, name string,
+func migrateDevice(log types.Logger, devID uint32, name string,
 	pro protocol.Protocol,
 	sinfo *storageInfo) error {
 	size := sinfo.lockable.Size()
