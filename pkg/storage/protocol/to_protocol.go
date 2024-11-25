@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
+	"sync/atomic"
 
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
@@ -14,16 +15,15 @@ type ToProtocol struct {
 	size             uint64
 	dev              uint32
 	protocol         Protocol
-	CompressedWrites bool
+	compressedWrites atomic.Bool
 	alternateSources []packets.AlternateSource
 }
 
 func NewToProtocol(size uint64, deviceID uint32, p Protocol) *ToProtocol {
 	return &ToProtocol{
-		size:             size,
-		dev:              deviceID,
-		protocol:         p,
-		CompressedWrites: false,
+		size:     size,
+		dev:      deviceID,
+		protocol: p,
 	}
 }
 
@@ -37,6 +37,10 @@ func (i *ToProtocol) SendSiloEvent(eventType storage.EventType, eventData storag
 		// For now, we do not check the error. If there was a protocol / io error, we should see it on the next send
 	}
 	return nil
+}
+
+func (i *ToProtocol) SetCompression(compressed bool) {
+	i.compressedWrites.Store(compressed)
 }
 
 func (i *ToProtocol) SendEvent(e *packets.Event) error {
@@ -150,7 +154,7 @@ func (i *ToProtocol) WriteAt(buffer []byte, offset int64) (int, error) {
 	}
 
 	if !dontSendData {
-		if i.CompressedWrites {
+		if i.compressedWrites.Load() {
 			data := packets.EncodeWriteAtComp(offset, buffer)
 			id, err = i.protocol.SendPacket(i.dev, IDPickAny, data, UrgencyNormal)
 		} else {

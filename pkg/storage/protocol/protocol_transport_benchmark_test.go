@@ -106,7 +106,7 @@ func BenchmarkWriteAt(mb *testing.B) {
 func BenchmarkWriteAtComp(mb *testing.B) {
 	sourceToProtocol := setup(1)
 
-	sourceToProtocol.CompressedWrites = true
+	sourceToProtocol.SetCompression(true)
 
 	// Do some writes
 	buff := make([]byte, 256*1024)
