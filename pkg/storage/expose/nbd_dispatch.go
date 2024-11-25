@@ -63,7 +63,7 @@ type Response struct {
 }
 
 type Dispatch struct {
-	logger           types.RootLogger
+	logger           types.Logger
 	dev              string
 	ctx              context.Context
 	asyncReads       bool
@@ -78,7 +78,7 @@ type Dispatch struct {
 	metricPacketsOut uint64
 }
 
-func NewDispatch(ctx context.Context, name string, logger types.RootLogger, fp io.ReadWriteCloser, prov storage.Provider) *Dispatch {
+func NewDispatch(ctx context.Context, name string, logger types.Logger, fp io.ReadWriteCloser, prov storage.Provider) *Dispatch {
 
 	d := &Dispatch{
 		logger:         logger,

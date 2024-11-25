@@ -11,7 +11,7 @@ type Logger struct {
 	storage.ProviderWithEvents
 	prov    storage.Provider
 	prefix  string
-	log     types.RootLogger
+	log     types.Logger
 	enabled atomic.Bool
 }
 
@@ -21,7 +21,7 @@ func (i *Logger) SendSiloEvent(eventType storage.EventType, eventData storage.Ev
 	return append(data, storage.SendSiloEvent(i.prov, eventType, eventData)...)
 }
 
-func NewLogger(prov storage.Provider, prefix string, log types.RootLogger) *Logger {
+func NewLogger(prov storage.Provider, prefix string, log types.Logger) *Logger {
 	l := &Logger{
 		prov:   prov,
 		log:    log,

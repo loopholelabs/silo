@@ -16,7 +16,7 @@ import (
  *
  */
 type WaitingCache struct {
-	logger           types.RootLogger
+	logger           types.Logger
 	uuid             uuid.UUID
 	prov             storage.Provider
 	local            *Local
@@ -33,7 +33,7 @@ func NewWaitingCache(prov storage.Provider, blockSize int) (*Local, *Remote) {
 	return NewWaitingCacheWithLogger(prov, blockSize, nil)
 }
 
-func NewWaitingCacheWithLogger(prov storage.Provider, blockSize int, log types.RootLogger) (*Local, *Remote) {
+func NewWaitingCacheWithLogger(prov storage.Provider, blockSize int, log types.Logger) (*Local, *Remote) {
 	numBlocks := (int(prov.Size()) + blockSize - 1) / blockSize
 	wc := &WaitingCache{
 		logger:           log,

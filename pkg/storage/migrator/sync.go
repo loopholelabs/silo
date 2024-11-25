@@ -14,7 +14,7 @@ import (
 )
 
 type SyncConfig struct {
-	Logger           types.RootLogger
+	Logger           types.Logger
 	Name             string
 	Tracker          *dirtytracker.Remote     // A dirty block tracker
 	Lockable         storage.LockableProvider // Lockable
