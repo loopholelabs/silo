@@ -3,7 +3,6 @@ package protocol
 import (
 	"context"
 	"crypto/sha256"
-	"fmt"
 	"sync"
 	"sync/atomic"
 
@@ -14,6 +13,12 @@ import (
 
 const priorityP2P = 2
 const priorityAltSources = 1
+
+type StartSyncBehaviour int
+
+const StartSyncASAP = StartSyncBehaviour(1)
+const StartSyncDirty = StartSyncBehaviour(2)
+const StartSyncCompleted = StartSyncBehaviour(3)
 
 type FromProtocol struct {
 	dev             uint32
@@ -31,6 +36,7 @@ type FromProtocol struct {
 	alternateSourcesLock sync.Mutex
 	alternateSourcesDone bool
 	alternateSources     []packets.AlternateSource
+	startSyncAt          StartSyncBehaviour
 
 	// metrics
 	metricRecvEvents         uint64
@@ -71,6 +77,10 @@ type FromProtocolMetrics struct {
 }
 
 func NewFromProtocol(ctx context.Context, dev uint32, provFactory func(*packets.DevInfo) storage.Provider, protocol Protocol) *FromProtocol {
+	return NewFromProtocolWithSyncBehaviour(ctx, dev, provFactory, protocol, StartSyncDirty)
+}
+
+func NewFromProtocolWithSyncBehaviour(ctx context.Context, dev uint32, provFactory func(*packets.DevInfo) storage.Provider, protocol Protocol, syncBehaviour StartSyncBehaviour) *FromProtocol {
 	fp := &FromProtocol{
 		dev:                  dev,
 		providerFactory:      provFactory,
@@ -78,6 +88,7 @@ func NewFromProtocol(ctx context.Context, dev uint32, provFactory func(*packets.
 		init:                 make(chan bool, 1),
 		ctx:                  ctx,
 		alternateSourcesDone: false,
+		startSyncAt:          syncBehaviour,
 	}
 	return fp
 }
@@ -127,7 +138,6 @@ func (fp *FromProtocol) waitInitOrCancel() error {
 
 // Get any altSources needed and do the sync.start. Only process ONCE.
 func (fp *FromProtocol) getAltSourcesStartSync() {
-	fmt.Printf("Maybe getAllSourcesStartSync?\n")
 	fp.alternateSourcesLock.Lock()
 	if fp.alternateSourcesDone {
 		fp.alternateSourcesLock.Unlock()
@@ -141,10 +151,6 @@ func (fp *FromProtocol) getAltSourcesStartSync() {
 
 	// If we got a dirty WriteAt, then there's wasted work here, but it won't overwrite since we're using
 	// WriteCombinator now.
-
-	fmt.Printf("Starting sync with alt sources %v\n", as)
-
-	//	fp.writeCombinator.ClearSource(priorityP2P)
 
 	// Deal with the sync here... We don't wait...
 
@@ -256,6 +262,11 @@ func (fp *FromProtocol) HandleDevInfo() error {
 			fp.alternateSourcesLock.Lock()
 			fp.alternateSources = altSources
 			fp.alternateSourcesLock.Unlock()
+
+			// May want to start sync here
+			if fp.startSyncAt == StartSyncASAP {
+				fp.getAltSourcesStartSync()
+			}
 		}
 	}()
 
@@ -494,7 +505,9 @@ func (fp *FromProtocol) HandleDirtyList(cb func(blocks []uint)) error {
 
 		// Once we get a DirtyList, we know we're in the dirty loop sync phase, so we can start sync if it's not already
 		// started.
-		fp.getAltSourcesStartSync()
+		if fp.startSyncAt == StartSyncDirty {
+			fp.getAltSourcesStartSync()
+		}
 
 		atomic.AddUint64(&fp.metricRecvDirtyList, 1)
 
