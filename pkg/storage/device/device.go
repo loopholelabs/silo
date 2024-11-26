@@ -34,6 +34,7 @@ const (
 )
 
 var syncConcurrency = map[int]int{storage.BlockTypeAny: 10}
+var syncGrabConcurrency = 100
 
 type Device struct {
 	Provider storage.Provider
@@ -376,9 +377,12 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 
 				var wg sync.WaitGroup
 
+				concurrency := make(chan bool, syncGrabConcurrency)
+
 				// Pull these blocks in parallel
 				for _, as := range startConfig.AlternateSources {
 					wg.Add(1)
+					concurrency <- true
 					go func(a packets.AlternateSource) {
 						buffer := make([]byte, a.Length)
 						n, err := s3dest.ReadAt(buffer, a.Offset)
@@ -396,6 +400,7 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 						if err != nil || n != int(a.Length) {
 							panic(fmt.Sprintf("sync.start unable to write data to device from S3. %v", err))
 						}
+						<-concurrency
 						wg.Done()
 					}(as)
 				}
