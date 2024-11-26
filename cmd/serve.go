@@ -319,7 +319,7 @@ func migrateDevice(log types.Logger, met metrics.SiloMetrics, devID uint32, name
 	dest := protocol.NewToProtocol(size, devID, pro)
 
 	// Maybe compress writes
-	dest.CompressedWrites = serveCompress
+	dest.SetCompression(serveCompress)
 
 	err := dest.SendDevInfo(name, uint32(sinfo.blockSize), sinfo.schema)
 	if err != nil {
