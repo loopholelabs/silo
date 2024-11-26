@@ -35,20 +35,25 @@ func NewWriteCombinator(prov storage.Provider, blockSize int) *WriteCombinator {
 }
 
 type WriteCombinatorMetrics struct {
-	WritesAllowed map[int]uint64
-	WritesBlocked map[int]uint64
+	WritesAllowed   map[int]uint64
+	WritesBlocked   map[int]uint64
+	AvailableBlocks map[int][]uint
+	NumBlocks       int
 }
 
 func (i *WriteCombinator) GetMetrics() *WriteCombinatorMetrics {
 	wcm := &WriteCombinatorMetrics{
-		WritesAllowed: make(map[int]uint64, 0),
-		WritesBlocked: make(map[int]uint64, 0),
+		WritesAllowed:   make(map[int]uint64, 0),
+		WritesBlocked:   make(map[int]uint64, 0),
+		NumBlocks:       i.numBlocks,
+		AvailableBlocks: make(map[int][]uint, 0),
 	}
 	i.writeLock.Lock()
 	defer i.writeLock.Unlock()
 	for priority, s := range i.sources {
 		wcm.WritesAllowed[priority] = atomic.LoadUint64(&s.metricWritesAllowed)
 		wcm.WritesBlocked[priority] = atomic.LoadUint64(&s.metricWritesBlocked)
+		wcm.AvailableBlocks[priority] = s.available.Collect(0, s.available.Length())
 	}
 	return wcm
 }
