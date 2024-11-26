@@ -3,6 +3,7 @@ package protocol
 import (
 	"context"
 	"crypto/sha256"
+	"fmt"
 	"sync"
 	"sync/atomic"
 
@@ -126,6 +127,7 @@ func (fp *FromProtocol) waitInitOrCancel() error {
 
 // Get any altSources needed and do the sync.start. Only process ONCE.
 func (fp *FromProtocol) getAltSourcesStartSync() {
+	fmt.Printf("Maybe getAllSourcesStartSync?\n")
 	fp.alternateSourcesLock.Lock()
 	if fp.alternateSourcesDone {
 		fp.alternateSourcesLock.Unlock()
@@ -140,8 +142,13 @@ func (fp *FromProtocol) getAltSourcesStartSync() {
 	// If we got a dirty WriteAt, then there's wasted work here, but it won't overwrite since we're using
 	// WriteCombinator now.
 
-	// Deal with the sync here, and WAIT if needed.
-	storage.SendSiloEvent(fp.prov, "sync.start", storage.SyncStartConfig{
+	fmt.Printf("Starting sync with alt sources %v\n", as)
+
+	//	fp.writeCombinator.ClearSource(priorityP2P)
+
+	// Deal with the sync here... We don't wait...
+
+	go storage.SendSiloEvent(fp.prov, "sync.start", storage.SyncStartConfig{
 		AlternateSources: as,
 		Destination:      fp.provAltSources,
 	})
@@ -167,8 +174,8 @@ func (fp *FromProtocol) HandleEvent(cb func(*packets.Event)) error {
 		atomic.AddUint64(&fp.metricRecvEvents, 1)
 
 		if ev.Type == packets.EventCompleted {
-			// Start the Sync, if it hasn't been started
-			go fp.getAltSourcesStartSync()
+			// Start the Sync, if it hasn't been started by dirtyBlocks
+			fp.getAltSourcesStartSync()
 		}
 
 		// Relay the event, wait, and then respond.
@@ -487,7 +494,7 @@ func (fp *FromProtocol) HandleDirtyList(cb func(blocks []uint)) error {
 
 		// Once we get a DirtyList, we know we're in the dirty loop sync phase, so we can start sync if it's not already
 		// started.
-		go fp.getAltSourcesStartSync()
+		fp.getAltSourcesStartSync()
 
 		atomic.AddUint64(&fp.metricRecvDirtyList, 1)
 
