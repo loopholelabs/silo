@@ -116,10 +116,6 @@ func (i *WaitingCache) waitForBlock(b uint, lockCB func(b uint)) {
 	atomic.AddUint64(&i.metricWaitForBlock, 1)
 
 	i.lockersLock.Lock()
-
-	atomic.AddUint64(&i.metricWaitForBlock, 1)
-
-	i.lockersLock.Lock()
 	// If we have it locally, return.
 	if i.local.available.BitSet(int(b)) {
 		i.lockersLock.Unlock()
@@ -166,10 +162,6 @@ func (i *WaitingCache) markAvailableRemoteBlock(b uint) {
 			Uint("block", b).
 			Msg("markAvailableRemoteBlock")
 	}
-	atomic.AddUint64(&i.metricMarkAvailableRemoteBlock, 1)
-
-	atomic.AddUint64(&i.metricMarkAvailableRemoteBlock, 1)
-
 	atomic.AddUint64(&i.metricMarkAvailableRemoteBlock, 1)
 
 	i.lockersLock.Lock()
