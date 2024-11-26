@@ -17,42 +17,69 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-// These are the heatmap buckets for volatilityMonitor
-var heatmapBuckets = []float64{
-	0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45,
-	0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1,
+type PrometheusMetricsConfig struct {
+	StorageHeatmapBuckets []float64
+	Namespace             string
+	SubSyncer             string
+	SubMigrator           string
+	SubProtocol           string
+	SubToProtocol         string
+	SubFromProtocol       string
+	SubS3                 string
+	SubDirtyTracker       string
+	SubVolatilityMonitor  string
+	SubMetrics            string
+	SubNBD                string
+	SubWaitingCache       string
+	TickMigrator          time.Duration
+	TickSyncer            time.Duration
+	TickProtocol          time.Duration
+	TickToProtocol        time.Duration
+	TickFromProtocol      time.Duration
+	TickS3                time.Duration
+	TickDirtyTracker      time.Duration
+	TickVolatilityMonitor time.Duration
+	TickMetrics           time.Duration
+	TickNBD               time.Duration
+	TickWaitingCache      time.Duration
 }
 
-// How often to poll metrics. We may want to do some less often etc
-const migratorTick = 100 * time.Millisecond
-const syncerTick = 100 * time.Millisecond
-const protocolTick = 100 * time.Millisecond
-const toProtocolTick = 100 * time.Millisecond
-const fromProtocolTick = 100 * time.Millisecond
-const s3Tick = 100 * time.Millisecond
-const dirtyTrackerTick = 100 * time.Millisecond
-const volatilityMonitorTick = 100 * time.Millisecond
-const metricsTick = 100 * time.Millisecond
-const nbdTick = 100 * time.Millisecond
-const waitingCacheTick = 100 * time.Millisecond
-
-const promNamespace = "silo"
-
-const promSubSyncer = "syncer"
-const promSubMigrator = "migrator"
-const promSubProtocol = "protocol"
-const promSubToProtocol = "toProtocol"
-const promSubFromProtocol = "fromProtocol"
-const promSubS3 = "s3"
-const promSubDirtyTracker = "dirtyTracker"
-const promSubVolatilityMonitor = "volatilityMonitor"
-const promSubMetrics = "metrics"
-const promSubNbd = "nbd"
-const promSubWaitingCache = "waitingCache"
+func DefaultConfig() *PrometheusMetricsConfig {
+	return &PrometheusMetricsConfig{
+		StorageHeatmapBuckets: []float64{
+			0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45,
+			0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1,
+		},
+		Namespace:             "silo",
+		SubSyncer:             "syncer",
+		SubMigrator:           "migrator",
+		SubProtocol:           "protocol",
+		SubToProtocol:         "toProtocol",
+		SubFromProtocol:       "fromProtocol",
+		SubS3:                 "s3",
+		SubDirtyTracker:       "dirtyTracker",
+		SubVolatilityMonitor:  "volatilityMonitor",
+		SubMetrics:            "metrics",
+		SubNBD:                "nbd",
+		SubWaitingCache:       "waitingCache",
+		TickMigrator:          100 * time.Millisecond,
+		TickSyncer:            100 * time.Millisecond,
+		TickProtocol:          100 * time.Millisecond,
+		TickToProtocol:        100 * time.Millisecond,
+		TickFromProtocol:      100 * time.Millisecond,
+		TickS3:                100 * time.Millisecond,
+		TickDirtyTracker:      100 * time.Millisecond,
+		TickVolatilityMonitor: 100 * time.Millisecond,
+		TickMetrics:           100 * time.Millisecond,
+		TickNBD:               100 * time.Millisecond,
+		TickWaitingCache:      100 * time.Millisecond,
+	}
+}
 
 type Metrics struct {
-	reg  prometheus.Registerer
-	lock sync.Mutex
+	reg    prometheus.Registerer
+	lock   sync.Mutex
+	config *PrometheusMetricsConfig
 
 	// syncer
 	syncerBlockSize           *prometheus.GaugeVec
@@ -169,211 +196,212 @@ type Metrics struct {
 	cancelfns map[string]context.CancelFunc
 }
 
-func New(reg prometheus.Registerer) *Metrics {
+func New(reg prometheus.Registerer, config *PrometheusMetricsConfig) *Metrics {
 
 	met := &Metrics{
-		reg: reg,
+		config: config,
+		reg:    reg,
 		// Syncer
 		syncerBlockSize: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubSyncer, Name: "block_size", Help: "Block size"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubSyncer, Name: "block_size", Help: "Block size"}, []string{"device"}),
 		syncerTotalBlocks: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubSyncer, Name: "total_blocks", Help: "Total blocks"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubSyncer, Name: "total_blocks", Help: "Total blocks"}, []string{"device"}),
 		syncerActiveBlocks: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubSyncer, Name: "active_blocks", Help: "Active blocks"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubSyncer, Name: "active_blocks", Help: "Active blocks"}, []string{"device"}),
 		syncerMigratedBlocks: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubSyncer, Name: "migrated_blocks", Help: "Migrated blocks"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubSyncer, Name: "migrated_blocks", Help: "Migrated blocks"}, []string{"device"}),
 		syncerReadyBlocks: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubSyncer, Name: "ready_blocks", Help: "Ready blocks"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubSyncer, Name: "ready_blocks", Help: "Ready blocks"}, []string{"device"}),
 		syncerTotalMigratedBlocks: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubSyncer, Name: "total_migrated_blocks", Help: "Total migrated blocks"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubSyncer, Name: "total_migrated_blocks", Help: "Total migrated blocks"}, []string{"device"}),
 
 		// Migrator
 		migratorBlockSize: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubMigrator, Name: "block_size", Help: "Block size"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubMigrator, Name: "block_size", Help: "Block size"}, []string{"device"}),
 		migratorTotalBlocks: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubMigrator, Name: "total_blocks", Help: "Total blocks"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubMigrator, Name: "total_blocks", Help: "Total blocks"}, []string{"device"}),
 		migratorActiveBlocks: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubMigrator, Name: "active_blocks", Help: "Active blocks"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubMigrator, Name: "active_blocks", Help: "Active blocks"}, []string{"device"}),
 		migratorMigratedBlocks: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubMigrator, Name: "migrated_blocks", Help: "Migrated blocks"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubMigrator, Name: "migrated_blocks", Help: "Migrated blocks"}, []string{"device"}),
 		migratorReadyBlocks: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubMigrator, Name: "ready_blocks", Help: "Ready blocks"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubMigrator, Name: "ready_blocks", Help: "Ready blocks"}, []string{"device"}),
 		migratorTotalMigratedBlocks: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubMigrator, Name: "total_migrated_blocks", Help: "Total migrated blocks"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubMigrator, Name: "total_migrated_blocks", Help: "Total migrated blocks"}, []string{"device"}),
 
 		// Protocol
 		protocolPacketsSent: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubProtocol, Name: "packets_sent", Help: "Packets sent"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubProtocol, Name: "packets_sent", Help: "Packets sent"}, []string{"device"}),
 		protocolDataSent: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubProtocol, Name: "data_sent", Help: "Data sent"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubProtocol, Name: "data_sent", Help: "Data sent"}, []string{"device"}),
 		protocolPacketsRecv: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubProtocol, Name: "packets_recv", Help: "Packets recv"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubProtocol, Name: "packets_recv", Help: "Packets recv"}, []string{"device"}),
 		protocolDataRecv: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubProtocol, Name: "data_recv", Help: "Data recv"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubProtocol, Name: "data_recv", Help: "Data recv"}, []string{"device"}),
 		protocolWrites: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubProtocol, Name: "writes", Help: "Writes"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubProtocol, Name: "writes", Help: "Writes"}, []string{"device"}),
 		protocolWriteErrors: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubProtocol, Name: "write_errors", Help: "Write errors"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubProtocol, Name: "write_errors", Help: "Write errors"}, []string{"device"}),
 		protocolWaitingForID: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubProtocol, Name: "waiting_for_id", Help: "Waiting for ID"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubProtocol, Name: "waiting_for_id", Help: "Waiting for ID"}, []string{"device"}),
 
 		// ToProtocol
 		toProtocolSentEvents: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubToProtocol, Name: "sent_events", Help: "sentEvents"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_events", Help: "sentEvents"}, []string{"device"}),
 		toProtocolSentAltSources: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubToProtocol, Name: "sent_alt_sources", Help: "sentAltSources"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_alt_sources", Help: "sentAltSources"}, []string{"device"}),
 		toProtocolSentHashes: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubToProtocol, Name: "sent_hashes", Help: "sentHashes"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_hashes", Help: "sentHashes"}, []string{"device"}),
 		toProtocolSentDevInfo: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubToProtocol, Name: "sent_dev_info", Help: "sentDevInfo"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_dev_info", Help: "sentDevInfo"}, []string{"device"}),
 		toProtocolSentDirtyList: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubToProtocol, Name: "sent_dirty_list", Help: "sentDirtyList"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_dirty_list", Help: "sentDirtyList"}, []string{"device"}),
 		toProtocolSentReadAt: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubToProtocol, Name: "sent_read_at", Help: "sentReadAt"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_read_at", Help: "sentReadAt"}, []string{"device"}),
 		toProtocolSentWriteAtHash: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubToProtocol, Name: "sent_write_at_hash", Help: "sentWriteAtHash"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_write_at_hash", Help: "sentWriteAtHash"}, []string{"device"}),
 		toProtocolSentWriteAtHashBytes: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubToProtocol, Name: "sent_write_at_hash_bytes", Help: "sentWriteAtHashBytes"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_write_at_hash_bytes", Help: "sentWriteAtHashBytes"}, []string{"device"}),
 		toProtocolSentWriteAtComp: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubToProtocol, Name: "sent_write_at_comp", Help: "sentWriteAtComp"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_write_at_comp", Help: "sentWriteAtComp"}, []string{"device"}),
 		toProtocolSentWriteAtCompBytes: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubToProtocol, Name: "sent_write_at_comp_bytes", Help: "sentWriteAtCompBytes"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_write_at_comp_bytes", Help: "sentWriteAtCompBytes"}, []string{"device"}),
 		toProtocolSentWriteAtCompDataBytes: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubToProtocol, Name: "sent_write_at_comp_data_bytes", Help: "sentWriteAtCompDataBytes"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_write_at_comp_data_bytes", Help: "sentWriteAtCompDataBytes"}, []string{"device"}),
 		toProtocolSentWriteAt: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubToProtocol, Name: "sent_write_at", Help: "sentWriteAt"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_write_at", Help: "sentWriteAt"}, []string{"device"}),
 		toProtocolSentWriteAtBytes: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubToProtocol, Name: "sent_write_at_bytes", Help: "sentWriteAtBytes"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_write_at_bytes", Help: "sentWriteAtBytes"}, []string{"device"}),
 		toProtocolSentWriteAtWithMap: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubToProtocol, Name: "sent_write_at_with_map", Help: "sentWriteAtWithMap"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_write_at_with_map", Help: "sentWriteAtWithMap"}, []string{"device"}),
 		toProtocolSentRemoveFromMap: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubToProtocol, Name: "sent_remove_from_map", Help: "sentRemoveFromMap"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_remove_from_map", Help: "sentRemoveFromMap"}, []string{"device"}),
 		toProtocolRecvNeedAt: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubToProtocol, Name: "recv_need_at", Help: "recvNeedAt"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "recv_need_at", Help: "recvNeedAt"}, []string{"device"}),
 		toProtocolRecvDontNeedAt: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubToProtocol, Name: "recv_dont_need_at", Help: "recvDontNeedAt"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "recv_dont_need_at", Help: "recvDontNeedAt"}, []string{"device"}),
 
 		// fromProtocol
 		fromProtocolRecvEvents: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubFromProtocol, Name: "recv_events", Help: "recvEvents"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "recv_events", Help: "recvEvents"}, []string{"device"}),
 		fromProtocolRecvHashes: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubFromProtocol, Name: "recv_hashes", Help: "recvHashes"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "recv_hashes", Help: "recvHashes"}, []string{"device"}),
 		fromProtocolRecvDevInfo: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubFromProtocol, Name: "recv_dev_info", Help: "recvDevInfo"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "recv_dev_info", Help: "recvDevInfo"}, []string{"device"}),
 		fromProtocolRecvAltSources: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubFromProtocol, Name: "recv_alt_sources", Help: "recvAltSources"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "recv_alt_sources", Help: "recvAltSources"}, []string{"device"}),
 		fromProtocolRecvReadAt: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubFromProtocol, Name: "recv_read_at", Help: "recvReadAt"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "recv_read_at", Help: "recvReadAt"}, []string{"device"}),
 		fromProtocolRecvWriteAtHash: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubFromProtocol, Name: "recv_write_at_hash", Help: "recvWriteAtHash"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "recv_write_at_hash", Help: "recvWriteAtHash"}, []string{"device"}),
 		fromProtocolRecvWriteAtComp: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubFromProtocol, Name: "recv_write_at_comp", Help: "recvWriteAtComp"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "recv_write_at_comp", Help: "recvWriteAtComp"}, []string{"device"}),
 		fromProtocolRecvWriteAt: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubFromProtocol, Name: "recv_write_at", Help: "recvWriteAt"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "recv_write_at", Help: "recvWriteAt"}, []string{"device"}),
 		fromProtocolRecvWriteAtWithMap: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubFromProtocol, Name: "recv_write_at_with_map", Help: "recvWriteAtWithMap"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "recv_write_at_with_map", Help: "recvWriteAtWithMap"}, []string{"device"}),
 		fromProtocolRecvRemoveFromMap: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubFromProtocol, Name: "recv_remove_from_map", Help: "recvRemoveFromMap"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "recv_remove_from_map", Help: "recvRemoveFromMap"}, []string{"device"}),
 		fromProtocolRecvRemoveDev: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubFromProtocol, Name: "recv_remove_dev", Help: "recvRemoveDev"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "recv_remove_dev", Help: "recvRemoveDev"}, []string{"device"}),
 		fromProtocolRecvDirtyList: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubFromProtocol, Name: "recv_dirty_list", Help: "recvDirtyList"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "recv_dirty_list", Help: "recvDirtyList"}, []string{"device"}),
 		fromProtocolSentNeedAt: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubFromProtocol, Name: "sent_need_at", Help: "sentNeedAt"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "sent_need_at", Help: "sentNeedAt"}, []string{"device"}),
 		fromProtocolSentDontNeedAt: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubFromProtocol, Name: "sent_dont_need_at", Help: "sentDontNeedAt"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "sent_dont_need_at", Help: "sentDontNeedAt"}, []string{"device"}),
 
 		// S3Storage
 		s3BlocksW: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubS3, Name: "blocks_w", Help: "Blocks w"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubS3, Name: "blocks_w", Help: "Blocks w"}, []string{"device"}),
 		s3BlocksWBytes: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubS3, Name: "blocks_w_bytes", Help: "Blocks w bytes"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubS3, Name: "blocks_w_bytes", Help: "Blocks w bytes"}, []string{"device"}),
 		s3BlocksR: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubS3, Name: "blocks_r", Help: "Blocks r"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubS3, Name: "blocks_r", Help: "Blocks r"}, []string{"device"}),
 		s3BlocksRBytes: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubS3, Name: "blocks_r_bytes", Help: "Blocks r bytes"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubS3, Name: "blocks_r_bytes", Help: "Blocks r bytes"}, []string{"device"}),
 		s3ActiveReads: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubS3, Name: "active_reads", Help: "Active reads"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubS3, Name: "active_reads", Help: "Active reads"}, []string{"device"}),
 		s3ActiveWrites: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubS3, Name: "active_writes", Help: "Active writes"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubS3, Name: "active_writes", Help: "Active writes"}, []string{"device"}),
 
 		// DirtyTracker
 		dirtyTrackerBlockSize: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubDirtyTracker, Name: "block_size", Help: "Block size"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubDirtyTracker, Name: "block_size", Help: "Block size"}, []string{"device"}),
 		dirtyTrackerTrackingBlocks: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubDirtyTracker, Name: "tracking_blocks", Help: "Blocks being tracked"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubDirtyTracker, Name: "tracking_blocks", Help: "Blocks being tracked"}, []string{"device"}),
 		dirtyTrackerDirtyBlocks: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubDirtyTracker, Name: "dirty_blocks", Help: "Blocks dirty"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubDirtyTracker, Name: "dirty_blocks", Help: "Blocks dirty"}, []string{"device"}),
 		dirtyTrackerMaxAgeDirtyMS: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubDirtyTracker, Name: "block_max_age", Help: "Block dirty max age"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubDirtyTracker, Name: "block_max_age", Help: "Block dirty max age"}, []string{"device"}),
 
 		// VolatilityMonitor
 		volatilityMonitorBlockSize: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubVolatilityMonitor, Name: "block_size", Help: "Block size"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubVolatilityMonitor, Name: "block_size", Help: "Block size"}, []string{"device"}),
 		volatilityMonitorAvailable: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubVolatilityMonitor, Name: "available", Help: "Blocks available"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubVolatilityMonitor, Name: "available", Help: "Blocks available"}, []string{"device"}),
 		volatilityMonitorVolatility: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubVolatilityMonitor, Name: "volatility", Help: "Volatility"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubVolatilityMonitor, Name: "volatility", Help: "Volatility"}, []string{"device"}),
 		volatilityMonitorHeatmap: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Namespace: promNamespace, Subsystem: promSubVolatilityMonitor, Name: "heatmap", Help: "Heatmap", Buckets: heatmapBuckets}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubVolatilityMonitor, Name: "heatmap", Help: "Heatmap", Buckets: config.StorageHeatmapBuckets}, []string{"device"}),
 
 		// Metrics
 		metricsReadOps: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubMetrics, Name: "read_ops", Help: "ReadOps"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubMetrics, Name: "read_ops", Help: "ReadOps"}, []string{"device"}),
 		metricsReadBytes: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubMetrics, Name: "read_bytes", Help: "ReadBytes"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubMetrics, Name: "read_bytes", Help: "ReadBytes"}, []string{"device"}),
 		metricsReadErrors: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubMetrics, Name: "read_errors", Help: "ReadErrors"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubMetrics, Name: "read_errors", Help: "ReadErrors"}, []string{"device"}),
 		metricsReadTime: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubMetrics, Name: "read_time", Help: "ReadTime"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubMetrics, Name: "read_time", Help: "ReadTime"}, []string{"device"}),
 		metricsWriteOps: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubMetrics, Name: "write_ops", Help: "WriteOps"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubMetrics, Name: "write_ops", Help: "WriteOps"}, []string{"device"}),
 		metricsWriteBytes: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubMetrics, Name: "write_bytes", Help: "WriteBytes"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubMetrics, Name: "write_bytes", Help: "WriteBytes"}, []string{"device"}),
 		metricsWriteErrors: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubMetrics, Name: "write_errors", Help: "WriteErrors"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubMetrics, Name: "write_errors", Help: "WriteErrors"}, []string{"device"}),
 		metricsWriteTime: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubMetrics, Name: "write_time", Help: "WriteTime"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubMetrics, Name: "write_time", Help: "WriteTime"}, []string{"device"}),
 		metricsFlushOps: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubMetrics, Name: "flush_ops", Help: "FlushOps"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubMetrics, Name: "flush_ops", Help: "FlushOps"}, []string{"device"}),
 		metricsFlushErrors: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubMetrics, Name: "flush_errors", Help: "FlushErrors"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubMetrics, Name: "flush_errors", Help: "FlushErrors"}, []string{"device"}),
 		metricsFlushTime: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubMetrics, Name: "flush_time", Help: "FlushTime"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubMetrics, Name: "flush_time", Help: "FlushTime"}, []string{"device"}),
 
 		// nbd
 		nbdPacketsIn: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubNbd, Name: "packets_in", Help: "PacketsIn"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubNBD, Name: "packets_in", Help: "PacketsIn"}, []string{"device"}),
 		nbdPacketsOut: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubNbd, Name: "packets_out", Help: "PacketsOut"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubNBD, Name: "packets_out", Help: "PacketsOut"}, []string{"device"}),
 		nbdReadAt: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubNbd, Name: "read_at", Help: "ReadAt"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubNBD, Name: "read_at", Help: "ReadAt"}, []string{"device"}),
 		nbdReadAtBytes: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubNbd, Name: "read_at_bytes", Help: "ReadAtBytes"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubNBD, Name: "read_at_bytes", Help: "ReadAtBytes"}, []string{"device"}),
 		nbdWriteAt: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubNbd, Name: "write_at", Help: "WriteAt"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubNBD, Name: "write_at", Help: "WriteAt"}, []string{"device"}),
 		nbdWriteAtBytes: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubNbd, Name: "write_at_bytes", Help: "WriteAtBytes"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubNBD, Name: "write_at_bytes", Help: "WriteAtBytes"}, []string{"device"}),
 
 		// waitingCache
 		waitingCacheWaitForBlock: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubWaitingCache, Name: "waiting_for_block", Help: "WaitingForBlock"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubWaitingCache, Name: "waiting_for_block", Help: "WaitingForBlock"}, []string{"device"}),
 		waitingCacheWaitForBlockHadRemote: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubWaitingCache, Name: "waiting_for_block_had_remote", Help: "WaitingForBlockHadRemote"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubWaitingCache, Name: "waiting_for_block_had_remote", Help: "WaitingForBlockHadRemote"}, []string{"device"}),
 		waitingCacheWaitForBlockHadLocal: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubWaitingCache, Name: "waiting_for_block_had_local", Help: "WaitingForBlockHadLocal"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubWaitingCache, Name: "waiting_for_block_had_local", Help: "WaitingForBlockHadLocal"}, []string{"device"}),
 		waitingCacheWaitForBlockLock: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubWaitingCache, Name: "waiting_for_block_lock", Help: "WaitingForBlockLock"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubWaitingCache, Name: "waiting_for_block_lock", Help: "WaitingForBlockLock"}, []string{"device"}),
 		waitingCacheWaitForBlockLockDone: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubWaitingCache, Name: "waiting_for_block_lock_done", Help: "WaitingForBlockLockDone"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubWaitingCache, Name: "waiting_for_block_lock_done", Help: "WaitingForBlockLockDone"}, []string{"device"}),
 		waitingCacheMarkAvailableLocalBlock: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubWaitingCache, Name: "mark_available_local_block", Help: "MarkAvailableLocalBlock"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubWaitingCache, Name: "mark_available_local_block", Help: "MarkAvailableLocalBlock"}, []string{"device"}),
 		waitingCacheMarkAvailableRemoteBlock: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubWaitingCache, Name: "mark_available_remote_block", Help: "MarkAvailableRemoteBlock"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubWaitingCache, Name: "mark_available_remote_block", Help: "MarkAvailableRemoteBlock"}, []string{"device"}),
 		waitingCacheAvailableLocal: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubWaitingCache, Name: "available_local", Help: "AvailableLocal"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubWaitingCache, Name: "available_local", Help: "AvailableLocal"}, []string{"device"}),
 		waitingCacheAvailableRemote: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: promNamespace, Subsystem: promSubWaitingCache, Name: "available_remote", Help: "AvailableRemote"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubWaitingCache, Name: "available_remote", Help: "AvailableRemote"}, []string{"device"}),
 
 		cancelfns: make(map[string]context.CancelFunc),
 	}
@@ -475,7 +503,7 @@ func (m *Metrics) Shutdown() {
 }
 
 func (m *Metrics) AddSyncer(name string, syncer *migrator.Syncer) {
-	m.add(promSubSyncer, name, syncerTick, func() {
+	m.add(m.config.SubSyncer, name, m.config.TickSyncer, func() {
 		met := syncer.GetMetrics()
 		if met != nil {
 			m.migratorBlockSize.WithLabelValues(name).Set(float64(met.BlockSize))
@@ -489,11 +517,11 @@ func (m *Metrics) AddSyncer(name string, syncer *migrator.Syncer) {
 }
 
 func (m *Metrics) RemoveSyncer(name string) {
-	m.remove(promSubSyncer, name)
+	m.remove(m.config.SubSyncer, name)
 }
 
 func (m *Metrics) AddMigrator(name string, mig *migrator.Migrator) {
-	m.add(promSubMigrator, name, migratorTick, func() {
+	m.add(m.config.SubMigrator, name, m.config.TickMigrator, func() {
 		met := mig.GetMetrics()
 		m.migratorBlockSize.WithLabelValues(name).Set(float64(met.BlockSize))
 		m.migratorTotalBlocks.WithLabelValues(name).Set(float64(met.TotalBlocks))
@@ -505,11 +533,11 @@ func (m *Metrics) AddMigrator(name string, mig *migrator.Migrator) {
 }
 
 func (m *Metrics) RemoveMigrator(name string) {
-	m.remove(promSubMigrator, name)
+	m.remove(m.config.SubMigrator, name)
 }
 
 func (m *Metrics) AddProtocol(name string, proto *protocol.RW) {
-	m.add(promSubProtocol, name, protocolTick, func() {
+	m.add(m.config.SubProtocol, name, m.config.TickProtocol, func() {
 		met := proto.GetMetrics()
 		m.protocolPacketsSent.WithLabelValues(name).Set(float64(met.PacketsSent))
 		m.protocolDataSent.WithLabelValues(name).Set(float64(met.DataSent))
@@ -522,11 +550,11 @@ func (m *Metrics) AddProtocol(name string, proto *protocol.RW) {
 }
 
 func (m *Metrics) RemoveProtocol(name string) {
-	m.remove(promSubProtocol, name)
+	m.remove(m.config.SubProtocol, name)
 }
 
 func (m *Metrics) AddToProtocol(name string, proto *protocol.ToProtocol) {
-	m.add(promSubToProtocol, name, toProtocolTick, func() {
+	m.add(m.config.SubToProtocol, name, m.config.TickToProtocol, func() {
 		met := proto.GetMetrics()
 
 		m.toProtocolSentEvents.WithLabelValues(name).Set(float64(met.SentEvents))
@@ -550,11 +578,11 @@ func (m *Metrics) AddToProtocol(name string, proto *protocol.ToProtocol) {
 }
 
 func (m *Metrics) RemoveToProtocol(name string) {
-	m.remove(promSubToProtocol, name)
+	m.remove(m.config.SubToProtocol, name)
 }
 
 func (m *Metrics) AddFromProtocol(name string, proto *protocol.FromProtocol) {
-	m.add(promSubFromProtocol, name, fromProtocolTick, func() {
+	m.add(m.config.SubFromProtocol, name, m.config.TickFromProtocol, func() {
 		met := proto.GetMetrics()
 
 		m.fromProtocolRecvEvents.WithLabelValues(name).Set(float64(met.RecvEvents))
@@ -575,11 +603,11 @@ func (m *Metrics) AddFromProtocol(name string, proto *protocol.FromProtocol) {
 }
 
 func (m *Metrics) RemoveFromProtocol(name string) {
-	m.remove(promSubFromProtocol, name)
+	m.remove(m.config.SubFromProtocol, name)
 }
 
 func (m *Metrics) AddS3Storage(name string, s3 *sources.S3Storage) {
-	m.add(promSubS3, name, s3Tick, func() {
+	m.add(m.config.SubS3, name, m.config.TickS3, func() {
 		met := s3.Metrics()
 		m.s3BlocksW.WithLabelValues(name).Set(float64(met.BlocksWCount))
 		m.s3BlocksWBytes.WithLabelValues(name).Set(float64(met.BlocksWBytes))
@@ -592,11 +620,11 @@ func (m *Metrics) AddS3Storage(name string, s3 *sources.S3Storage) {
 }
 
 func (m *Metrics) RemoveS3Storage(name string) {
-	m.remove(promSubS3, name)
+	m.remove(m.config.SubS3, name)
 }
 
 func (m *Metrics) AddDirtyTracker(name string, dt *dirtytracker.Remote) {
-	m.add(promSubDirtyTracker, name, dirtyTrackerTick, func() {
+	m.add(m.config.SubDirtyTracker, name, m.config.TickDirtyTracker, func() {
 		met := dt.GetMetrics()
 		m.dirtyTrackerBlockSize.WithLabelValues(name).Set(float64(met.BlockSize))
 		m.dirtyTrackerTrackingBlocks.WithLabelValues(name).Set(float64(met.TrackingBlocks))
@@ -606,11 +634,11 @@ func (m *Metrics) AddDirtyTracker(name string, dt *dirtytracker.Remote) {
 }
 
 func (m *Metrics) RemoveDirtyTracker(name string) {
-	m.remove(promSubDirtyTracker, name)
+	m.remove(m.config.SubDirtyTracker, name)
 }
 
 func (m *Metrics) AddVolatilityMonitor(name string, vm *volatilitymonitor.VolatilityMonitor) {
-	m.add(promSubVolatilityMonitor, name, volatilityMonitorTick, func() {
+	m.add(m.config.SubVolatilityMonitor, name, m.config.TickVolatilityMonitor, func() {
 		met := vm.GetMetrics()
 		m.volatilityMonitorBlockSize.WithLabelValues(name).Set(float64(met.BlockSize))
 		m.volatilityMonitorAvailable.WithLabelValues(name).Set(float64(met.Available))
@@ -626,11 +654,11 @@ func (m *Metrics) AddVolatilityMonitor(name string, vm *volatilitymonitor.Volati
 }
 
 func (m *Metrics) RemoveVolatilityMonitor(name string) {
-	m.remove(promSubVolatilityMonitor, name)
+	m.remove(m.config.SubVolatilityMonitor, name)
 }
 
 func (m *Metrics) AddMetrics(name string, mm *modules.Metrics) {
-	m.add(promSubMetrics, name, metricsTick, func() {
+	m.add(m.config.SubMetrics, name, m.config.TickMetrics, func() {
 		met := mm.GetMetrics()
 		m.metricsReadOps.WithLabelValues(name).Set(float64(met.ReadOps))
 		m.metricsReadBytes.WithLabelValues(name).Set(float64(met.ReadBytes))
@@ -647,11 +675,11 @@ func (m *Metrics) AddMetrics(name string, mm *modules.Metrics) {
 }
 
 func (m *Metrics) RemoveMetrics(name string) {
-	m.remove(promSubMetrics, name)
+	m.remove(m.config.SubMetrics, name)
 }
 
 func (m *Metrics) AddNBD(name string, mm *expose.ExposedStorageNBDNL) {
-	m.add(promSubNbd, name, nbdTick, func() {
+	m.add(m.config.SubNBD, name, m.config.TickNBD, func() {
 		met := mm.GetMetrics()
 		m.nbdPacketsIn.WithLabelValues(name).Set(float64(met.PacketsIn))
 		m.nbdPacketsOut.WithLabelValues(name).Set(float64(met.PacketsOut))
@@ -663,11 +691,11 @@ func (m *Metrics) AddNBD(name string, mm *expose.ExposedStorageNBDNL) {
 }
 
 func (m *Metrics) RemoveNBD(name string) {
-	m.remove(promSubNbd, name)
+	m.remove(m.config.SubNBD, name)
 }
 
 func (m *Metrics) AddWaitingCache(name string, wc *waitingcache.Remote) {
-	m.add(promSubWaitingCache, name, waitingCacheTick, func() {
+	m.add(m.config.SubWaitingCache, name, m.config.TickWaitingCache, func() {
 		met := wc.GetMetrics()
 		m.waitingCacheWaitForBlock.WithLabelValues(name).Set(float64(met.WaitForBlock))
 		m.waitingCacheWaitForBlockHadRemote.WithLabelValues(name).Set(float64(met.WaitForBlockHadRemote))
@@ -682,5 +710,5 @@ func (m *Metrics) AddWaitingCache(name string, wc *waitingcache.Remote) {
 }
 
 func (m *Metrics) RemoveWaitingCache(name string) {
-	m.remove(promSubWaitingCache, name)
+	m.remove(m.config.SubWaitingCache, name)
 }

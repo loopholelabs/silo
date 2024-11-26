@@ -95,7 +95,7 @@ func runConnect(_ *cobra.Command, _ []string) {
 
 	if connectMetrics != "" {
 		reg = prometheus.NewRegistry()
-		siloMetrics = siloprom.New(reg)
+		siloMetrics = siloprom.New(reg, siloprom.DefaultConfig())
 
 		// Add the default go metrics
 		reg.MustRegister(
