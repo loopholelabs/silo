@@ -74,6 +74,9 @@ type FromProtocolMetrics struct {
 	WritesBlockedP2P        uint64
 	WritesAllowedAltSources uint64
 	WritesBlockedAltSources uint64
+	NumBlocks               uint64
+	AvailableP2P            []uint
+	AvailableAltSources     []uint
 }
 
 func NewFromProtocol(ctx context.Context, dev uint32, provFactory func(*packets.DevInfo) storage.Provider, protocol Protocol) *FromProtocol {
@@ -113,6 +116,7 @@ func (fp *FromProtocol) GetMetrics() *FromProtocolMetrics {
 		WritesBlockedP2P:        0,
 		WritesAllowedAltSources: 0,
 		WritesBlockedAltSources: 0,
+		NumBlocks:               0,
 	}
 
 	if fp.writeCombinator != nil {
@@ -121,6 +125,9 @@ func (fp *FromProtocol) GetMetrics() *FromProtocolMetrics {
 		fpm.WritesBlockedP2P = met.WritesBlocked[priorityP2P]
 		fpm.WritesAllowedAltSources = met.WritesAllowed[priorityAltSources]
 		fpm.WritesBlockedAltSources = met.WritesBlocked[priorityAltSources]
+		fpm.AvailableP2P = met.AvailableBlocks[priorityP2P]
+		fpm.AvailableAltSources = met.AvailableBlocks[priorityAltSources]
+		fpm.NumBlocks = uint64(met.NumBlocks)
 	}
 	return fpm
 }
