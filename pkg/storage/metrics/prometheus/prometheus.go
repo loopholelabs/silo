@@ -464,6 +464,16 @@ func (m *Metrics) add(subsystem string, name string, interval time.Duration, tic
 	}()
 }
 
+// Shutdown everything
+func (m *Metrics) Shutdown() {
+	m.lock.Lock()
+	for _, cancelfn := range m.cancelfns {
+		cancelfn()
+	}
+	m.cancelfns = make(map[string]context.CancelFunc)
+	m.lock.Unlock()
+}
+
 func (m *Metrics) AddSyncer(name string, syncer *migrator.Syncer) {
 	m.add(promSubSyncer, name, syncerTick, func() {
 		met := syncer.GetMetrics()

@@ -12,6 +12,8 @@ import (
 )
 
 type SiloMetrics interface {
+	Shutdown()
+
 	AddSyncer(name string, sync *migrator.Syncer)
 	RemoveSyncer(name string)
 
