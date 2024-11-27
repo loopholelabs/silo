@@ -168,11 +168,10 @@ func (fp *FromProtocol) getAltSourcesStartSync() {
 	as = append(as, fp.alternateSources...)
 	fp.alternateSourcesLock.Unlock()
 
-	// If we got a dirty WriteAt, then there's wasted work here, but it won't overwrite since we're using
+	// If we got a dirty WriteAt or a localWrite (DontNeedAt sent), then there's wasted work here, but it won't overwrite since we're using
 	// WriteCombinator now.
 
 	// Deal with the sync here... We don't wait...
-
 	go storage.SendSiloEvent(fp.prov, "sync.start", storage.SyncStartConfig{
 		AlternateSources: as,
 		Destination:      fp.provAltSources,
