@@ -1,11 +1,13 @@
 package volatilitymonitor
 
 import (
+	"sync"
 	"time"
 )
 
 type volatilityData struct {
-	log []int64
+	lock sync.Mutex
+	log  []int64
 }
 
 /**
@@ -13,6 +15,8 @@ type volatilityData struct {
  * If not it'll append on the end.
  */
 func (bd *volatilityData) Add(expiry time.Duration) {
+	bd.lock.Lock()
+	defer bd.lock.Unlock()
 	n := time.Now().UnixNano()
 	for i := 0; i < len(bd.log); i++ {
 		if bd.log[i] < n-int64(expiry) {
@@ -24,6 +28,8 @@ func (bd *volatilityData) Add(expiry time.Duration) {
 }
 
 func (bd *volatilityData) Count(expiry time.Duration) int {
+	bd.lock.Lock()
+	defer bd.lock.Unlock()
 	if len(bd.log) == 0 {
 		return 0 // Special case this
 	}
@@ -38,6 +44,8 @@ func (bd *volatilityData) Count(expiry time.Duration) int {
 }
 
 func (bd *volatilityData) Clean(expiry time.Duration) {
+	bd.lock.Lock()
+	defer bd.lock.Unlock()
 	n := time.Now().UnixNano()
 	newlog := make([]int64, 0)
 	for i := 0; i < len(bd.log); i++ {

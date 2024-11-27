@@ -116,17 +116,16 @@ func (i *VolatilityMonitor) Remove(block int) {
 
 func (i *VolatilityMonitor) GetVolatility(block int) int {
 	i.blockDataLock.Lock()
-	defer i.blockDataLock.Unlock()
 	bd, ok := i.blockData[uint(block)]
 	if ok {
+		i.blockDataLock.Unlock()
 		return bd.Count(i.expiry)
 	}
+	i.blockDataLock.Unlock()
 	return 0
 }
 
 func (i *VolatilityMonitor) GetTotalVolatility() int {
-	i.blockDataLock.Lock()
-	defer i.blockDataLock.Unlock()
 	return i.totalData.Count(i.expiry)
 }
 
@@ -156,8 +155,9 @@ func (i *VolatilityMonitor) WriteAt(buffer []byte, offset int64) (int, error) {
 					bd = &volatilityData{log: make([]int64, 0)}
 					i.blockData[block] = bd
 				}
-				bd.Add(i.expiry)
 				i.blockDataLock.Unlock()
+
+				bd.Add(i.expiry)
 			}
 			// Always update the total
 			i.totalData.Add(i.expiry) // Add to the total volatility counter
