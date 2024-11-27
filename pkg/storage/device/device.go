@@ -14,7 +14,6 @@ import (
 
 	"github.com/loopholelabs/logging/types"
 	"github.com/loopholelabs/silo/pkg/storage"
-	"github.com/loopholelabs/silo/pkg/storage/blocks"
 	"github.com/loopholelabs/silo/pkg/storage/config"
 	"github.com/loopholelabs/silo/pkg/storage/dirtytracker"
 	"github.com/loopholelabs/silo/pkg/storage/expose"
@@ -23,6 +22,7 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/modules"
 	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
+	"github.com/loopholelabs/silo/pkg/storage/volatilitymonitor"
 )
 
 const (
@@ -35,6 +35,7 @@ const (
 
 var syncConcurrency = map[int]int{storage.BlockTypeAny: 10}
 var syncGrabConcurrency = 100
+var syncVolatilityExpiry = 10 * time.Minute
 
 type Device struct {
 	Provider storage.Provider
@@ -308,9 +309,11 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 
 		dirtyBlockSize := bs >> ds.Sync.Config.BlockShift
 
-		numBlocks := (int(prov.Size()) + bs - 1) / bs
+		//numBlocks := (int(prov.Size()) + bs - 1) / bs
 
-		sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(prov, dirtyBlockSize)
+		vm := volatilitymonitor.NewVolatilityMonitor(prov, bs, syncVolatilityExpiry)
+
+		sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(vm, dirtyBlockSize)
 		sourceStorage := modules.NewLockable(sourceDirtyLocal)
 
 		if met != nil {
@@ -318,7 +321,8 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 		}
 
 		// Setup a block order
-		orderer := blocks.NewAnyBlockOrder(numBlocks, nil)
+		orderer := vm
+		//orderer := blocks.NewAnyBlockOrder(numBlocks, nil)
 		orderer.AddAll()
 
 		checkPeriod, err := time.ParseDuration(ds.Sync.Config.CheckPeriod)
