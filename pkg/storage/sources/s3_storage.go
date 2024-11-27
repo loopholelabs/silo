@@ -43,6 +43,8 @@ type S3Storage struct {
 	metricsBlocksRDataBytes  uint64
 	metricsBlocksRBytes      uint64
 	metricsBlocksRTimeNS     uint64
+	metricsActiveWrites      int64
+	metricsActiveReads       int64
 }
 
 func NewS3Storage(secure bool, endpoint string,
@@ -161,15 +163,18 @@ func (i *S3Storage) ReadAt(buffer []byte, offset int64) (int, error) {
 		}
 		i.lockers[off/int64(i.blockSize)].RLock()
 		ctime := time.Now()
+		atomic.AddInt64(&i.metricsActiveReads, 1)
 		obj, err := i.client.GetObject(context.TODO(), i.bucket, fmt.Sprintf("%s-%d", i.prefix, off), minio.GetObjectOptions{})
 		i.lockers[off/int64(i.blockSize)].RUnlock()
 		if err != nil {
+			atomic.AddInt64(&i.metricsActiveReads, -1)
 			if err.Error() == errNoSuchKey.Error() {
 				return len(buff), nil
 			}
 			return 0, err
 		}
 		n, err := obj.Read(buff)
+		atomic.AddInt64(&i.metricsActiveReads, -1)
 		dtime := time.Since(ctime)
 		if err == io.EOF {
 			atomic.AddUint64(&i.metricsBlocksRCount, 1)
@@ -246,15 +251,18 @@ func (i *S3Storage) WriteAt(buffer []byte, offset int64) (int, error) {
 		ctx := context.TODO()
 		i.lockers[off/int64(i.blockSize)].RLock()
 		ctime := time.Now()
+		atomic.AddInt64(&i.metricsActiveReads, 1)
 		obj, err := i.client.GetObject(ctx, i.bucket, fmt.Sprintf("%s-%d", i.prefix, off), minio.GetObjectOptions{})
 		i.lockers[off/int64(i.blockSize)].RUnlock()
 		if err != nil {
+			atomic.AddInt64(&i.metricsActiveReads, -1)
 			if err.Error() == errNoSuchKey.Error() {
 				return len(buff), nil
 			}
 			return 0, err
 		}
 		n, err := obj.Read(buff)
+		atomic.AddInt64(&i.metricsActiveReads, -1)
 		dtime := time.Since(ctime)
 		if err == io.EOF {
 			atomic.AddUint64(&i.metricsBlocksWPreRCount, 1)
@@ -280,9 +288,11 @@ func (i *S3Storage) WriteAt(buffer []byte, offset int64) (int, error) {
 		i.setContext(int(block), cancelFn)
 
 		ctime := time.Now()
+		atomic.AddInt64(&i.metricsActiveWrites, 1)
 		obj, err := i.client.PutObject(ctx, i.bucket, fmt.Sprintf("%s-%d", i.prefix, off),
 			bytes.NewReader(buff), int64(i.blockSize),
 			minio.PutObjectOptions{})
+		atomic.AddInt64(&i.metricsActiveWrites, -1)
 		dtime := time.Since(ctime)
 
 		i.setContext(int(block), nil)
@@ -389,6 +399,8 @@ type S3Metrics struct {
 	BlocksRBytes     uint64
 	BlocksRDataBytes uint64
 	BlocksRTime      time.Duration
+	ActiveReads      uint64
+	ActiveWrites     uint64
 }
 
 func (i *S3Metrics) String() string {
@@ -412,5 +424,7 @@ func (i *S3Storage) Metrics() *S3Metrics {
 		BlocksRBytes:     atomic.LoadUint64(&i.metricsBlocksRBytes),
 		BlocksRDataBytes: atomic.LoadUint64(&i.metricsBlocksRDataBytes),
 		BlocksRTime:      time.Duration(atomic.LoadUint64(&i.metricsBlocksRTimeNS)),
+		ActiveReads:      uint64(atomic.LoadInt64(&i.metricsActiveReads)),
+		ActiveWrites:     uint64(atomic.LoadInt64(&i.metricsActiveWrites)),
 	}
 }

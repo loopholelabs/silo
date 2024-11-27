@@ -1,0 +1,32 @@
+version: "2.1"
+
+volumes:
+  prometheus_data: {}
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.38.0
+    container_name: prometheus
+    volumes:
+      - ./prometheus/:/etc/prometheus/
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yaml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention=200h"
+      - "--web.enable-lifecycle"
+    expose:
+      - 9090
+    ports:
+      - "9090:9090"
+    network_mode: host
+    labels:
+      org.label-schema.group: "monitoring"
+
+  grafana:
+    image: grafana/grafana:latest
+    #    ports:
+    #      - "3333:3000"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    network_mode: host

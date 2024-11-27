@@ -40,4 +40,8 @@ func TestWriteCombinatorBasic(t *testing.T) {
 	for i := 0; i < len(checkBuffer); i++ {
 		assert.Equal(t, uint8(2), checkBuffer[i])
 	}
+
+	met := combinator.GetMetrics()
+	assert.Equal(t, map[int]uint64{1: 1, 2: 2}, met.WritesAllowed)
+	assert.Equal(t, map[int]uint64{1: 1, 2: 0}, met.WritesBlocked)
 }

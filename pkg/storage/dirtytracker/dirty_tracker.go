@@ -28,6 +28,26 @@ type DirtyTracker struct {
 	writeLock     sync.RWMutex
 }
 
+type Metrics struct {
+	BlockSize      uint64
+	Size           uint64
+	TrackingBlocks uint64
+	DirtyBlocks    uint64
+	MaxAgeDirty    time.Duration
+}
+
+func (dtr *Remote) GetMetrics() *Metrics {
+	minAge := dtr.MeasureDirtyAge()
+
+	return &Metrics{
+		BlockSize:      uint64(dtr.dt.blockSize),
+		Size:           dtr.dt.size,
+		TrackingBlocks: uint64(dtr.dt.tracking.Count(0, dtr.dt.tracking.Length())),
+		DirtyBlocks:    uint64(dtr.dt.dirtyLog.Count(0, dtr.dt.dirtyLog.Length())),
+		MaxAgeDirty:    time.Since(minAge),
+	}
+}
+
 type Local struct {
 	storage.ProviderWithEvents
 	dt *DirtyTracker

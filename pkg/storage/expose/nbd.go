@@ -129,6 +129,14 @@ func NewExposedStorageNBDNL(prov storage.Provider, conf *Config) *ExposedStorage
 	}
 }
 
+func (n *ExposedStorageNBDNL) GetMetrics() *DispatchMetrics {
+	dm := &DispatchMetrics{}
+	for _, d := range n.dispatchers {
+		dm.Add(d.GetMetrics())
+	}
+	return dm
+}
+
 func (n *ExposedStorageNBDNL) SetProvider(prov storage.Provider) {
 	n.provLock.Lock()
 	n.prov = prov
@@ -179,7 +187,6 @@ func (n *ExposedStorageNBDNL) Device() string {
 func (n *ExposedStorageNBDNL) Init() error {
 
 	for {
-
 		socks := make([]*os.File, 0)
 
 		n.dispatchers = make([]*Dispatch, 0)

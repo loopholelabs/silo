@@ -18,6 +18,7 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/config"
 	"github.com/loopholelabs/silo/pkg/storage/dirtytracker"
 	"github.com/loopholelabs/silo/pkg/storage/expose"
+	"github.com/loopholelabs/silo/pkg/storage/metrics"
 	"github.com/loopholelabs/silo/pkg/storage/migrator"
 	"github.com/loopholelabs/silo/pkg/storage/modules"
 	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
@@ -31,6 +32,9 @@ const (
 	SystemS3         = "s3"
 	DefaultBlockSize = 4096
 )
+
+var syncConcurrency = map[int]int{storage.BlockTypeAny: 10}
+var syncGrabConcurrency = 100
 
 type Device struct {
 	Provider storage.Provider
@@ -68,6 +72,11 @@ func NewDevice(ds *config.DeviceSchema) (storage.Provider, storage.ExposedStorag
 }
 
 func NewDeviceWithLogging(ds *config.DeviceSchema, log types.Logger) (storage.Provider, storage.ExposedStorage, error) {
+	return NewDeviceWithLoggingMetrics(ds, log, nil)
+}
+
+func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met metrics.SiloMetrics) (storage.Provider, storage.ExposedStorage, error) {
+
 	if log != nil {
 		log.Debug().Str("name", ds.Name).Msg("creating new device")
 	}
@@ -245,17 +254,31 @@ func NewDeviceWithLogging(ds *config.DeviceSchema, log types.Logger) (storage.Pr
 		}
 	}
 
+	if met != nil {
+		// Expose some basic metrics for the devices storage.
+		metrics := modules.NewMetrics(prov)
+		met.AddMetrics(fmt.Sprintf("device_%s", ds.Name), metrics)
+		prov = metrics
+	}
+
 	// Now optionaly expose the device
 	// NB You may well need to call ex.SetProvider if you wish to insert other things in the chain.
 	var ex storage.ExposedStorage
 	if ds.Expose {
-
-		ex = expose.NewExposedStorageNBDNL(prov, expose.DefaultConfig.WithLogger(log))
+		nbdex := expose.NewExposedStorageNBDNL(prov, expose.DefaultConfig.WithLogger(log))
+		ex = nbdex
 
 		err := ex.Init()
 		if err != nil {
 			prov.Close()
 			return nil, nil, err
+		}
+		if log != nil {
+			log.Debug().Str("name", ds.Name).Str("device", ex.Device()).Msg("device exposed as nbd device")
+		}
+
+		if met != nil {
+			met.AddNBD(ds.Name, nbdex)
 		}
 	}
 
@@ -279,12 +302,20 @@ func NewDeviceWithLogging(ds *config.DeviceSchema, log types.Logger) (storage.Pr
 			return nil, nil, err
 		}
 
+		if met != nil {
+			met.AddS3Storage(fmt.Sprintf("s3sync_%s", ds.Name), s3dest)
+		}
+
 		dirtyBlockSize := bs >> ds.Sync.Config.BlockShift
 
 		numBlocks := (int(prov.Size()) + bs - 1) / bs
 
 		sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(prov, dirtyBlockSize)
 		sourceStorage := modules.NewLockable(sourceDirtyLocal)
+
+		if met != nil {
+			met.AddDirtyTracker(fmt.Sprintf("s3sync_%s", ds.Name), sourceDirtyRemote)
+		}
 
 		// Setup a block order
 		orderer := blocks.NewAnyBlockOrder(numBlocks, nil)
@@ -306,6 +337,7 @@ func NewDeviceWithLogging(ds *config.DeviceSchema, log types.Logger) (storage.Pr
 
 		// Start doing the sync...
 		syncer := migrator.NewSyncer(ctx, &migrator.SyncConfig{
+			Concurrency:      syncConcurrency,
 			Logger:           log,
 			Name:             ds.Name,
 			Integrity:        false,
@@ -325,6 +357,10 @@ func NewDeviceWithLogging(ds *config.DeviceSchema, log types.Logger) (storage.Pr
 			ErrorHandler:    func(_ *storage.BlockInfo, _ error) {},
 		})
 
+		if met != nil {
+			met.AddSyncer(fmt.Sprintf("s3sync_%s", ds.Name), syncer)
+		}
+
 		// The provider we return should feed into our sync here...
 		prov = sourceStorage
 
@@ -341,9 +377,12 @@ func NewDeviceWithLogging(ds *config.DeviceSchema, log types.Logger) (storage.Pr
 
 				var wg sync.WaitGroup
 
+				concurrency := make(chan bool, syncGrabConcurrency)
+
 				// Pull these blocks in parallel
 				for _, as := range startConfig.AlternateSources {
 					wg.Add(1)
+					concurrency <- true
 					go func(a packets.AlternateSource) {
 						buffer := make([]byte, a.Length)
 						n, err := s3dest.ReadAt(buffer, a.Offset)
@@ -361,6 +400,7 @@ func NewDeviceWithLogging(ds *config.DeviceSchema, log types.Logger) (storage.Pr
 						if err != nil || n != int(a.Length) {
 							panic(fmt.Sprintf("sync.start unable to write data to device from S3. %v", err))
 						}
+						<-concurrency
 						wg.Done()
 					}(as)
 				}
@@ -385,7 +425,7 @@ func NewDeviceWithLogging(ds *config.DeviceSchema, log types.Logger) (storage.Pr
 			return true
 		}
 
-		stopSync := func(_ storage.EventType, _ storage.EventData) storage.EventReturnData {
+		stopSyncing := func(cancelWrites bool) storage.EventReturnData {
 			if log != nil {
 				log.Debug().Str("name", ds.Name).Msg("sync.stop called")
 			}
@@ -395,6 +435,11 @@ func NewDeviceWithLogging(ds *config.DeviceSchema, log types.Logger) (storage.Pr
 				return nil
 			}
 			cancelfn()
+
+			if cancelWrites {
+				s3dest.CancelWrites(0, int64(s3dest.Size()))
+			}
+
 			// WAIT HERE for the sync to finish
 			wg.Wait()
 			syncRunning = false
@@ -419,6 +464,10 @@ func NewDeviceWithLogging(ds *config.DeviceSchema, log types.Logger) (storage.Pr
 			}
 
 			return altSources
+		}
+
+		stopSync := func(_ storage.EventType, _ storage.EventData) storage.EventReturnData {
+			return stopSyncing(false)
 		}
 
 		// If the storage gets a "sync.stop", we should cancel the sync, and return the safe blocks
@@ -446,8 +495,8 @@ func NewDeviceWithLogging(ds *config.DeviceSchema, log types.Logger) (storage.Pr
 
 		hooks := modules.NewHooks(prov)
 		hooks.PostClose = func(err error) error {
-			// We should stop any sync here...
-			stopSync("sync.stop", nil)
+			// We should stop any sync here, but ask it to cancel any existing writes if possible.
+			stopSyncing(true)
 			return err
 		}
 		prov = hooks

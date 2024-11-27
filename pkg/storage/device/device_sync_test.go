@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/loopholelabs/logging"
+	"github.com/loopholelabs/logging/types"
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/config"
 	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
@@ -49,7 +51,12 @@ func TestDeviceSync(t *testing.T) {
 	s := new(config.SiloSchema)
 	err := s.Decode([]byte(testSyncSchema))
 	assert.NoError(t, err)
-	devs, err := NewDevices(s.Device)
+
+	logBuffer := &testutils.SafeWriteBuffer{}
+	l := logging.New(logging.Zerolog, "device", logBuffer)
+	l.SetLevel(types.TraceLevel)
+
+	devs, err := NewDevicesWithLogging(s.Device, l)
 	assert.NoError(t, err)
 	t.Cleanup(func() {
 		os.Remove("./testdata/testfile_sync")
@@ -119,6 +126,8 @@ func TestDeviceSync(t *testing.T) {
 	assert.Equal(t, false, storage.SendSiloEvent(prov, "sync.running", nil)[0].(bool))
 
 	prov.Close()
+
+	assert.Greater(t, logBuffer.Len(), 0)
 }
 
 func TestDeviceSyncClose(t *testing.T) {

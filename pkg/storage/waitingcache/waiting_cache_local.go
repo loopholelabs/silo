@@ -19,6 +19,10 @@ func (wcl *Local) SendSiloEvent(eventType storage.EventType, eventData storage.E
 	return append(data, storage.SendSiloEvent(wcl.wc.prov, eventType, eventData)...)
 }
 
+func (wcl *Local) GetMetrics() *Metrics {
+	return wcl.wc.GetMetrics()
+}
+
 func (wcl *Local) ReadAt(buffer []byte, offset int64) (int, error) {
 	if wcl.wc.logger != nil {
 		wcl.wc.logger.Trace().
@@ -32,7 +36,6 @@ func (wcl *Local) ReadAt(buffer []byte, offset int64) (int, error) {
 			Int("length", len(buffer)).
 			Msg("local ReadAt complete")
 	}
-
 	end := uint64(offset + int64(len(buffer)))
 	if end > wcl.wc.size {
 		end = wcl.wc.size
@@ -90,7 +93,7 @@ func (wcl *Local) WriteAt(buffer []byte, offset int64) (int, error) {
 		if bEnd > bStart {
 			num := int32(0)
 			for b := bStart; b < bEnd; b++ {
-				wcl.wc.markAvailableBlockLocal(b)
+				wcl.wc.markAvailableLocalBlock(b)
 				num += int32(wcl.wc.blockSize)
 			}
 			wcl.DontNeedAt(int64(bStart)*int64(wcl.wc.blockSize), num)
