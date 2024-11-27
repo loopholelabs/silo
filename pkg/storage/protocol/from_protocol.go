@@ -28,8 +28,10 @@ type FromProtocol struct {
 	provAltSources  storage.Provider
 
 	providerFactory func(*packets.DevInfo) storage.Provider
+	devInfo         *packets.DevInfo
 	protocol        Protocol
 	init            chan bool
+	initLock        sync.Mutex
 	ctx             context.Context
 
 	// Collect alternate sources
@@ -76,7 +78,9 @@ type FromProtocolMetrics struct {
 	WritesBlockedAltSources uint64
 	NumBlocks               uint64
 	AvailableP2P            []uint
+	DuplicateP2P            []uint
 	AvailableAltSources     []uint
+	DeviceName              string
 }
 
 func NewFromProtocol(ctx context.Context, dev uint32, provFactory func(*packets.DevInfo) storage.Provider, protocol Protocol) *FromProtocol {
@@ -117,6 +121,13 @@ func (fp *FromProtocol) GetMetrics() *FromProtocolMetrics {
 		WritesAllowedAltSources: 0,
 		WritesBlockedAltSources: 0,
 		NumBlocks:               0,
+		DeviceName:              "",
+	}
+
+	fp.initLock.Lock()
+	defer fp.initLock.Unlock()
+	if fp.devInfo != nil {
+		fpm.DeviceName = fp.devInfo.Name
 	}
 
 	if fp.writeCombinator != nil {
@@ -127,6 +138,7 @@ func (fp *FromProtocol) GetMetrics() *FromProtocolMetrics {
 		fpm.WritesBlockedAltSources = met.WritesBlocked[priorityAltSources]
 		fpm.AvailableP2P = met.AvailableBlocks[priorityP2P]
 		fpm.AvailableAltSources = met.AvailableBlocks[priorityAltSources]
+		fpm.DuplicateP2P = met.DuplicatedBlocks[priorityP2P]
 		fpm.NumBlocks = uint64(met.NumBlocks)
 	}
 	return fpm
@@ -244,10 +256,13 @@ func (fp *FromProtocol) HandleDevInfo() error {
 	atomic.AddUint64(&fp.metricRecvDevInfo, 1)
 
 	// Create storage, and setup a writeCombinator with two inputs
+	fp.initLock.Lock()
 	fp.prov = fp.providerFactory(di)
+	fp.devInfo = di
 	fp.writeCombinator = modules.NewWriteCombinator(fp.prov, int(di.BlockSize))
 	fp.provAltSources = fp.writeCombinator.AddSource(priorityAltSources)
 	fp.provP2P = fp.writeCombinator.AddSource(priorityP2P)
+	fp.initLock.Unlock()
 
 	fp.init <- true // Confirm things have been initialized for this device.
 
