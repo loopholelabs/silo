@@ -309,7 +309,7 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 
 		dirtyBlockSize := bs >> ds.Sync.Config.BlockShift
 
-		//numBlocks := (int(prov.Size()) + bs - 1) / bs
+		// numBlocks := (int(prov.Size()) + bs - 1) / bs
 
 		vm := volatilitymonitor.NewVolatilityMonitor(prov, bs, syncVolatilityExpiry)
 
@@ -322,7 +322,7 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 
 		// Setup a block order
 		orderer := vm
-		//orderer := blocks.NewAnyBlockOrder(numBlocks, nil)
+		// orderer := blocks.NewAnyBlockOrder(numBlocks, nil)
 		orderer.AddAll()
 
 		checkPeriod, err := time.ParseDuration(ds.Sync.Config.CheckPeriod)

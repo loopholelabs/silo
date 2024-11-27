@@ -158,7 +158,7 @@ func TestMigratorS3Assisted(t *testing.T) {
 			_ = destFrom.HandleDevInfo()
 		}()
 		go func() {
-			_ = destFrom.HandleEvent(func(p *packets.Event) {})
+			_ = destFrom.HandleEvent(func(_ *packets.Event) {})
 		}()
 	}
 
@@ -205,9 +205,8 @@ func TestMigratorS3Assisted(t *testing.T) {
 		syncRunning := storage.SendSiloEvent(provDest, "sync.running", nil)[0].(bool)
 		if syncRunning {
 			break
-		} else {
-			time.Sleep(100 * time.Millisecond)
 		}
+		time.Sleep(100 * time.Millisecond)
 	}
 
 	// This will end with migration completed, and consumer Locked.
@@ -297,7 +296,7 @@ func TestMigratorS3AssistedChangeSource(t *testing.T) {
 			_ = destFrom.HandleDevInfo()
 		}()
 		go func() {
-			_ = destFrom.HandleEvent(func(p *packets.Event) {})
+			_ = destFrom.HandleEvent(func(_ *packets.Event) {})
 		}()
 	}
 
@@ -357,9 +356,8 @@ func TestMigratorS3AssistedChangeSource(t *testing.T) {
 		syncRunning := storage.SendSiloEvent(provDest, "sync.running", nil)[0].(bool)
 		if syncRunning {
 			break
-		} else {
-			time.Sleep(100 * time.Millisecond)
 		}
+		time.Sleep(100 * time.Millisecond)
 	}
 
 	// This will end with migration completed, and consumer Locked.

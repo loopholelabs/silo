@@ -475,26 +475,6 @@ func New(reg prometheus.Registerer, config *MetricsConfig) *Metrics {
 		met.waitingCacheAvailableRemote,
 	)
 
-	// Do a test histogram...
-	// This *seems* to work with heatmap set to time series...
-	// query is: sum(silo_test_test1_bucket) by (le)
-	test1 := prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Namespace: config.Namespace, Subsystem: "test", Name: "test1_bucket", Help: "test1_sum"}, []string{"le"})
-	//	test1sum := prometheus.NewGauge(prometheus.GaugeOpts{
-	//		Namespace: config.Namespace, Subsystem: "test", Name: "test1_sum", Help: "test1_sum"})
-	//	test1count := prometheus.NewGauge(prometheus.GaugeOpts{
-	//		Namespace: config.Namespace, Subsystem: "test", Name: "test1_count", Help: "test1_sum"})
-	reg.MustRegister(test1) //, test1sum, test1count)
-
-	test1.WithLabelValues("1").Set(10)
-	test1.WithLabelValues("2").Set(20)
-	test1.WithLabelValues("3").Set(10)
-	test1.WithLabelValues("4").Set(30)
-	test1.WithLabelValues("6").Set(10)
-
-	//	test1sum.Set(10 + 20 + 10 + 30 + 10)
-	//	test1count.Set(5)
-
 	return met
 }
 
