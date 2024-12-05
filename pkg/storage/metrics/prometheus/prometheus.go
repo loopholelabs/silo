@@ -95,13 +95,14 @@ type Metrics struct {
 	migratorTotalMigratedBlocks *prometheus.GaugeVec
 
 	// protocol
-	protocolPacketsSent  *prometheus.GaugeVec
-	protocolDataSent     *prometheus.GaugeVec
-	protocolPacketsRecv  *prometheus.GaugeVec
-	protocolDataRecv     *prometheus.GaugeVec
-	protocolWrites       *prometheus.GaugeVec
-	protocolWriteErrors  *prometheus.GaugeVec
-	protocolWaitingForID *prometheus.GaugeVec
+	protocolActivePacketsSending *prometheus.GaugeVec
+	protocolPacketsSent          *prometheus.GaugeVec
+	protocolDataSent             *prometheus.GaugeVec
+	protocolPacketsRecv          *prometheus.GaugeVec
+	protocolDataRecv             *prometheus.GaugeVec
+	protocolWrites               *prometheus.GaugeVec
+	protocolWriteErrors          *prometheus.GaugeVec
+	protocolWaitingForID         *prometheus.GaugeVec
 
 	// s3
 	s3BlocksR      *prometheus.GaugeVec
@@ -232,6 +233,8 @@ func New(reg prometheus.Registerer, config *MetricsConfig) *Metrics {
 			Namespace: config.Namespace, Subsystem: config.SubMigrator, Name: "total_migrated_blocks", Help: "Total migrated blocks"}, []string{"device"}),
 
 		// Protocol
+		protocolActivePacketsSending: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: config.Namespace, Subsystem: config.SubProtocol, Name: "active_packets_sending", Help: "Packets sending"}, []string{"device"}),
 		protocolPacketsSent: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: config.Namespace, Subsystem: config.SubProtocol, Name: "packets_sent", Help: "Packets sent"}, []string{"device"}),
 		protocolDataSent: prometheus.NewGaugeVec(prometheus.GaugeOpts{
@@ -423,7 +426,7 @@ func New(reg prometheus.Registerer, config *MetricsConfig) *Metrics {
 
 	reg.MustRegister(met.migratorBlockSize, met.migratorActiveBlocks, met.migratorTotalBlocks, met.migratorMigratedBlocks, met.migratorTotalMigratedBlocks, met.migratorReadyBlocks)
 
-	reg.MustRegister(met.protocolPacketsSent, met.protocolDataSent, met.protocolPacketsRecv, met.protocolDataRecv, met.protocolWrites, met.protocolWriteErrors, met.protocolWaitingForID)
+	reg.MustRegister(met.protocolActivePacketsSending, met.protocolPacketsSent, met.protocolDataSent, met.protocolPacketsRecv, met.protocolDataRecv, met.protocolWrites, met.protocolWriteErrors, met.protocolWaitingForID)
 
 	reg.MustRegister(met.s3BlocksR, met.s3BlocksRBytes, met.s3BlocksW, met.s3BlocksWBytes, met.s3ActiveReads, met.s3ActiveWrites)
 
@@ -554,6 +557,7 @@ func (m *Metrics) RemoveMigrator(name string) {
 func (m *Metrics) AddProtocol(name string, proto *protocol.RW) {
 	m.add(m.config.SubProtocol, name, m.config.TickProtocol, func() {
 		met := proto.GetMetrics()
+		m.protocolActivePacketsSending.WithLabelValues(name).Set(float64(met.ActivePacketsSending))
 		m.protocolPacketsSent.WithLabelValues(name).Set(float64(met.PacketsSent))
 		m.protocolDataSent.WithLabelValues(name).Set(float64(met.DataSent))
 		m.protocolPacketsRecv.WithLabelValues(name).Set(float64(met.PacketsRecv))
