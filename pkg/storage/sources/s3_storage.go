@@ -19,6 +19,8 @@ var (
 
 	//nolint:all
 	errNoSuchKey = errors.New("The specified key does not exist.") // Minio doesn't export errors
+
+	ErrDisabled = errors.New("disabled")
 )
 
 type S3Storage struct {
@@ -32,6 +34,8 @@ type S3Storage struct {
 	lockers                  []sync.RWMutex
 	contexts                 []context.CancelFunc
 	contextsLock             sync.Mutex
+	disableWrites            atomic.Bool
+	disableReads             atomic.Bool
 	metricsBlocksWCount      uint64
 	metricsBlocksWDataBytes  uint64
 	metricsBlocksWBytes      uint64
@@ -132,6 +136,11 @@ func NewS3StorageCreate(secure bool, endpoint string,
 	}, nil
 }
 
+func (i *S3Storage) SetReadWriteEnabled(disabledReads bool, disabledWrites bool) {
+	i.disableReads.Store(disabledReads)
+	i.disableWrites.Store(disabledWrites)
+}
+
 func (i *S3Storage) setContext(block int, cancel context.CancelFunc) {
 	i.contextsLock.Lock()
 	ex := i.contexts[block]
@@ -143,6 +152,9 @@ func (i *S3Storage) setContext(block int, cancel context.CancelFunc) {
 }
 
 func (i *S3Storage) ReadAt(buffer []byte, offset int64) (int, error) {
+	if i.disableReads.Load() {
+		return 0, ErrDisabled // Reads are disabled. Return with an error.
+	}
 	// Split the read up into blocks, and concurrenty perform the reads...
 	end := uint64(offset + int64(len(buffer)))
 	if end > i.size {
@@ -230,6 +242,9 @@ func (i *S3Storage) ReadAt(buffer []byte, offset int64) (int, error) {
 }
 
 func (i *S3Storage) WriteAt(buffer []byte, offset int64) (int, error) {
+	if i.disableWrites.Load() {
+		return 0, ErrDisabled // Reads are disabled. Return with an error.
+	}
 	// Split the read up into blocks, and concurrenty perform the reads...
 	end := uint64(offset + int64(len(buffer)))
 	if end > i.size {
