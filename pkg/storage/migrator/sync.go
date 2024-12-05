@@ -27,9 +27,10 @@ type SyncConfig struct {
 
 	BlockSize int
 
-	HashesHandler   func(map[uint][32]byte)
-	ProgressHandler func(p *MigrationProgress)
-	ErrorHandler    func(b *storage.BlockInfo, err error)
+	HashesHandler     func(map[uint][32]byte)
+	ProgressHandler   func(p *MigrationProgress)
+	ProgressRateLimit time.Duration
+	ErrorHandler      func(b *storage.BlockInfo, err error)
 
 	Concurrency  map[int]int
 	Integrity    bool
@@ -128,6 +129,7 @@ func (s *Syncer) Sync(syncAllFirst bool, continuous bool) (*MigrationProgress, e
 	conf.CancelWrites = s.config.CancelWrites
 	conf.DedupeWrites = s.config.DedupeWrites
 
+	conf.ProgressRateLimit = s.config.ProgressRateLimit
 	conf.ProgressHandler = func(p *MigrationProgress) {
 		if s.config.Logger != nil {
 			s.config.Logger.Debug().

@@ -376,6 +376,9 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 			if log != nil {
 				log.Debug().Str("name", ds.Name).Msg("sync.start called")
 			}
+			// Make sure we can read/write to S3
+			s3dest.SetReadWriteEnabled(false, false)
+
 			if data != nil {
 				startConfig := data.(storage.SyncStartConfig)
 
@@ -429,25 +432,33 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 			return true
 		}
 
-		stopSyncing := func(cancelWrites bool) storage.EventReturnData {
+		stopSyncing := func(cancelWrites bool, wait bool) {
 			if log != nil {
 				log.Debug().Str("name", ds.Name).Msg("sync.stop called")
 			}
 			syncLock.Lock()
 			if !syncRunning {
 				syncLock.Unlock()
-				return nil
+				return
 			}
 			cancelfn()
 
 			if cancelWrites {
+				// Stop any new writes coming in
+				s3dest.SetReadWriteEnabled(true, true)
+				// Cancel any pending writes
 				s3dest.CancelWrites(0, int64(s3dest.Size()))
 			}
-
-			// WAIT HERE for the sync to finish
-			wg.Wait()
+			// WAIT HERE for the sync to finish?
+			if wait {
+				wg.Wait()
+			}
 			syncRunning = false
 			syncLock.Unlock()
+		}
+
+		stopSync := func(_ storage.EventType, _ storage.EventData) storage.EventReturnData {
+			stopSyncing(true, true)
 
 			// Get the list of safe blocks we can use.
 			blocks := syncer.GetSafeBlockMap()
@@ -468,10 +479,6 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 			}
 
 			return altSources
-		}
-
-		stopSync := func(_ storage.EventType, _ storage.EventData) storage.EventReturnData {
-			return stopSyncing(false)
 		}
 
 		// If the storage gets a "sync.stop", we should cancel the sync, and return the safe blocks
@@ -500,7 +507,7 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 		hooks := modules.NewHooks(prov)
 		hooks.PostClose = func(err error) error {
 			// We should stop any sync here, but ask it to cancel any existing writes if possible.
-			stopSyncing(true)
+			stopSyncing(true, true)
 			return err
 		}
 		prov = hooks

@@ -5,6 +5,7 @@ import (
 	crand "crypto/rand"
 	"fmt"
 	"math/rand"
+	"slices"
 	"testing"
 	"time"
 
@@ -173,4 +174,76 @@ func TestSyncSimple(t *testing.T) {
 	eq, err := storage.Equals(sourceStorageMem, destStorage, blockSize)
 	assert.NoError(t, err)
 	assert.True(t, eq)
+}
+
+func TestSyncSimpleCancel(t *testing.T) {
+	size := 1024 * 1024
+	blockSize := 4096
+	numBlocks := (size + blockSize - 1) / blockSize
+
+	sourceStorageMem := sources.NewMemoryStorage(size)
+	sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(sourceStorageMem, blockSize)
+	sourceStorage := modules.NewLockable(sourceDirtyLocal)
+
+	// Set up some data here.
+	buffer := make([]byte, size)
+	_, err := crand.Read(buffer)
+	assert.NoError(t, err)
+
+	n, err := sourceStorage.WriteAt(buffer, 0)
+	assert.NoError(t, err)
+	assert.Equal(t, len(buffer), n)
+
+	orderer := blocks.NewAnyBlockOrder(numBlocks, nil)
+	orderer.AddAll()
+
+	// START moving data from sourceStorage to destStorage
+
+	// Error out here... APART FROM BLOCK 0 and block 8
+	destStorage := sources.NewMemoryStorage(size)
+	destHooks := modules.NewHooks(destStorage)
+	destHooks.PreWrite = func(data []byte, offset int64) (bool, int, error) {
+		if offset == 0 || offset == (8*int64(blockSize)) {
+			return false, 0, nil
+		}
+		return true, 0, context.Canceled
+	}
+
+	// Use sync
+	syncConfig := &SyncConfig{
+		Concurrency:      map[int]int{storage.BlockTypeAny: 100},
+		Name:             "simple",
+		Integrity:        false,
+		CancelWrites:     true,
+		DedupeWrites:     true,
+		Tracker:          sourceDirtyRemote,
+		Lockable:         sourceStorage,
+		Destination:      destHooks,
+		Orderer:          orderer,
+		DirtyCheckPeriod: 1 * time.Second,
+		DirtyBlockGetter: func() []uint {
+			b := sourceDirtyRemote.Sync()
+			return b.Collect(0, b.Length())
+		},
+		BlockSize:         blockSize,
+		ProgressRateLimit: 0,
+		ProgressHandler:   func(mp *MigrationProgress) {},
+		ErrorHandler:      func(b *storage.BlockInfo, err error) {},
+	}
+
+	syncer := NewSyncer(context.TODO(), syncConfig)
+	_, err = syncer.Sync(true, false)
+	assert.NoError(t, err)
+
+	// Here we should check that any blocks in progress aren't included - only the ones that were successful writes
+	bstatus := syncer.GetSafeBlockMap()
+	assert.Equal(t, 2, len(bstatus))
+
+	keys := make([]uint, 0)
+	for k, _ := range bstatus {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+
+	assert.Equal(t, []uint{0, 8}, keys)
 }
