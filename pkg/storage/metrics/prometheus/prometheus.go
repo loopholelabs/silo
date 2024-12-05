@@ -628,10 +628,6 @@ func (m *Metrics) AddFromProtocol(name string, proto *protocol.FromProtocol) {
 		m.fromProtocolWritesAllowedAltSources.WithLabelValues(name).Set(float64(met.WritesAllowedAltSources))
 		m.fromProtocolWritesBlockedAltSources.WithLabelValues(name).Set(float64(met.WritesBlockedAltSources))
 
-		// 0-10 range for P2P
-		// 10-20 range for AltSources
-		// 20-30 range for Dirty blocks
-
 		totalHeatmapP2P := make([]uint64, m.config.HeatmapResolution)
 		for _, block := range met.AvailableP2P {
 			part := uint64(block) * m.config.HeatmapResolution / met.NumBlocks
