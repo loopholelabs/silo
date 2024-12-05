@@ -202,7 +202,7 @@ func TestSyncSimpleCancel(t *testing.T) {
 	// Error out here... APART FROM BLOCK 0 and block 8
 	destStorage := sources.NewMemoryStorage(size)
 	destHooks := modules.NewHooks(destStorage)
-	destHooks.PreWrite = func(data []byte, offset int64) (bool, int, error) {
+	destHooks.PreWrite = func(_ []byte, offset int64) (bool, int, error) {
 		if offset == 0 || offset == (8*int64(blockSize)) {
 			return false, 0, nil
 		}
@@ -227,8 +227,8 @@ func TestSyncSimpleCancel(t *testing.T) {
 		},
 		BlockSize:         blockSize,
 		ProgressRateLimit: 0,
-		ProgressHandler:   func(mp *MigrationProgress) {},
-		ErrorHandler:      func(b *storage.BlockInfo, err error) {},
+		ProgressHandler:   func(_ *MigrationProgress) {},
+		ErrorHandler:      func(_ *storage.BlockInfo, _ error) {},
 	}
 
 	syncer := NewSyncer(context.TODO(), syncConfig)
@@ -240,7 +240,7 @@ func TestSyncSimpleCancel(t *testing.T) {
 	assert.Equal(t, 2, len(bstatus))
 
 	keys := make([]uint, 0)
-	for k, _ := range bstatus {
+	for k := range bstatus {
 		keys = append(keys, k)
 	}
 	slices.Sort(keys)

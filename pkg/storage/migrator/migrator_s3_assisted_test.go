@@ -128,7 +128,7 @@ func TestMigratorS3Assisted(t *testing.T) {
 	assert.Equal(t, len(buffer), n)
 
 	// Wait for the sync to do some bits.
-	time.Sleep(1 * time.Second)
+	time.Sleep(2 * time.Second)
 
 	orderer := blocks.NewAnyBlockOrder(numBlocks, nil)
 	orderer.AddAll()
@@ -266,7 +266,7 @@ func TestMigratorS3AssistedChangeSource(t *testing.T) {
 	assert.Equal(t, len(buffer), n)
 
 	// Wait for the sync to do some bits.
-	time.Sleep(1 * time.Second)
+	time.Sleep(2 * time.Second)
 
 	orderer := blocks.NewAnyBlockOrder(numBlocks, nil)
 	orderer.AddAll()
