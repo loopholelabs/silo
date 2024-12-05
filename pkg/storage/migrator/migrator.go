@@ -18,29 +18,31 @@ import (
 )
 
 type Config struct {
-	Logger          types.Logger
-	BlockSize       int
-	LockerHandler   func()
-	UnlockerHandler func()
-	ErrorHandler    func(b *storage.BlockInfo, err error)
-	ProgressHandler func(p *MigrationProgress)
-	BlockHandler    func(b *storage.BlockInfo, id uint64, block []byte)
-	Concurrency     map[int]int
-	Integrity       bool
-	CancelWrites    bool
-	DedupeWrites    bool
-	RecentWriteAge  time.Duration
+	Logger            types.Logger
+	BlockSize         int
+	LockerHandler     func()
+	UnlockerHandler   func()
+	ErrorHandler      func(b *storage.BlockInfo, err error)
+	ProgressHandler   func(p *MigrationProgress)
+	ProgressRateLimit time.Duration
+	BlockHandler      func(b *storage.BlockInfo, id uint64, block []byte)
+	Concurrency       map[int]int
+	Integrity         bool
+	CancelWrites      bool
+	DedupeWrites      bool
+	RecentWriteAge    time.Duration
 }
 
 func NewConfig() *Config {
 	return &Config{
-		Logger:          nil,
-		BlockSize:       0,
-		LockerHandler:   func() {},
-		UnlockerHandler: func() {},
-		ErrorHandler:    func(_ *storage.BlockInfo, _ error) {},
-		ProgressHandler: func(_ *MigrationProgress) {},
-		BlockHandler:    func(_ *storage.BlockInfo, _ uint64, _ []byte) {},
+		Logger:            nil,
+		BlockSize:         0,
+		LockerHandler:     func() {},
+		UnlockerHandler:   func() {},
+		ErrorHandler:      func(_ *storage.BlockInfo, _ error) {},
+		ProgressHandler:   func(_ *MigrationProgress) {},
+		ProgressRateLimit: 100 * time.Millisecond,
+		BlockHandler:      func(_ *storage.BlockInfo, _ uint64, _ []byte) {},
 		Concurrency: map[int]int{
 			storage.BlockTypeAny:      32,
 			storage.BlockTypeStandard: 32,
@@ -87,6 +89,7 @@ type Migrator struct {
 	progressLock           sync.Mutex
 	progressLast           time.Time
 	progressLastStatus     *MigrationProgress
+	progressRateLimit      time.Duration
 	blockSize              int
 	numBlocks              int
 	metricBlocksMigrated   int64
@@ -141,6 +144,7 @@ func NewMigrator(source storage.TrackingProvider,
 		blockLocks:             make([]sync.Mutex, numBlocks),
 		concurrency:            make(map[int]chan bool),
 		progressLastStatus:     &MigrationProgress{},
+		progressRateLimit:      config.ProgressRateLimit,
 		lastWrittenBlocks:      make([]time.Time, numBlocks),
 		recentWriteAge:         config.RecentWriteAge,
 		cancelWrites:           config.CancelWrites,
@@ -404,8 +408,8 @@ func (m *Migrator) reportProgress(forced bool) {
 	m.progressLock.Lock()
 	defer m.progressLock.Unlock()
 
-	if !forced && time.Since(m.progressLast).Milliseconds() < 100 {
-		return // Rate limit progress to once per 100ms
+	if !forced && time.Since(m.progressLast) < m.progressRateLimit {
+		return // Rate limit progress to once per progressRateLimit
 	}
 
 	migrated := m.migratedBlocks.Count(0, uint(m.numBlocks))

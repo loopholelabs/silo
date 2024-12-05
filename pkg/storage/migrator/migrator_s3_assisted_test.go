@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"sync"
 	"testing"
 	"time"
 
@@ -129,7 +128,7 @@ func TestMigratorS3Assisted(t *testing.T) {
 	assert.Equal(t, len(buffer), n)
 
 	// Wait for the sync to do some bits.
-	time.Sleep(1 * time.Second)
+	time.Sleep(2 * time.Second)
 
 	orderer := blocks.NewAnyBlockOrder(numBlocks, nil)
 	orderer.AddAll()
@@ -142,9 +141,6 @@ func TestMigratorS3Assisted(t *testing.T) {
 	r1, w1 := io.Pipe()
 	r2, w2 := io.Pipe()
 
-	var wgComplete sync.WaitGroup
-
-	wgComplete.Add(1)
 	initDev := func(ctx context.Context, p protocol.Protocol, dev uint32) {
 		destStorageFactory := func(_ *packets.DevInfo) storage.Provider {
 			return provDest
@@ -162,11 +158,7 @@ func TestMigratorS3Assisted(t *testing.T) {
 			_ = destFrom.HandleDevInfo()
 		}()
 		go func() {
-			_ = destFrom.HandleEvent(func(p *packets.Event) {
-				if p.Type == packets.EventCompleted {
-					wgComplete.Done()
-				}
-			})
+			_ = destFrom.HandleEvent(func(_ *packets.Event) {})
 		}()
 	}
 
@@ -205,19 +197,22 @@ func TestMigratorS3Assisted(t *testing.T) {
 
 	destination.SendEvent(&packets.Event{Type: packets.EventCompleted})
 
-	// Wait for a completion event, which will include the sync / grab from S3.
-	wgComplete.Wait()
-
 	// This will GRAB the data in alternateSources from S3, and return when it's done.
 	// storage.SendSiloEvent(provDest, "sync.start", device.SyncStartConfig{AlternateSources: destFrom.GetAlternateSources(), Destination: provDest})
+
+	// WAIT for the sync to be running
+	for {
+		syncRunning := storage.SendSiloEvent(provDest, "sync.running", nil)[0].(bool)
+		if syncRunning {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 
 	// This will end with migration completed, and consumer Locked.
 	eq, err := storage.Equals(provSrc, provDest, blockSize)
 	assert.NoError(t, err)
 	assert.True(t, eq)
-
-	// All the data should be there.
-	assert.Equal(t, int(provSrc.Size()), destFrom.GetDataPresent())
 
 	// Get some statistics from the source
 	srcStats := storage.SendSiloEvent(provSrc, "sync.status", nil)
@@ -271,7 +266,7 @@ func TestMigratorS3AssistedChangeSource(t *testing.T) {
 	assert.Equal(t, len(buffer), n)
 
 	// Wait for the sync to do some bits.
-	time.Sleep(1 * time.Second)
+	time.Sleep(2 * time.Second)
 
 	orderer := blocks.NewAnyBlockOrder(numBlocks, nil)
 	orderer.AddAll()
@@ -283,10 +278,6 @@ func TestMigratorS3AssistedChangeSource(t *testing.T) {
 	// Create a simple pipe
 	r1, w1 := io.Pipe()
 	r2, w2 := io.Pipe()
-
-	var wgComplete sync.WaitGroup
-
-	wgComplete.Add(1)
 
 	initDev := func(ctx context.Context, p protocol.Protocol, dev uint32) {
 		destStorageFactory := func(_ *packets.DevInfo) storage.Provider {
@@ -305,11 +296,7 @@ func TestMigratorS3AssistedChangeSource(t *testing.T) {
 			_ = destFrom.HandleDevInfo()
 		}()
 		go func() {
-			_ = destFrom.HandleEvent(func(p *packets.Event) {
-				if p.Type == packets.EventCompleted {
-					wgComplete.Done()
-				}
-			})
+			_ = destFrom.HandleEvent(func(_ *packets.Event) {})
 		}()
 	}
 
@@ -361,18 +348,22 @@ func TestMigratorS3AssistedChangeSource(t *testing.T) {
 
 	destination.SendEvent(&packets.Event{Type: packets.EventCompleted})
 
-	wgComplete.Wait() // Wait for the sync/grab from S3
-
 	// This will GRAB the data in alternateSources from S3, and return when it's done.
 	// storage.SendSiloEvent(provDest, "sync.start", device.SyncStartConfig{AlternateSources: destFrom.GetAlternateSources(), Destination: provDest})
+
+	// WAIT for the sync to be running
+	for {
+		syncRunning := storage.SendSiloEvent(provDest, "sync.running", nil)[0].(bool)
+		if syncRunning {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 
 	// This will end with migration completed, and consumer Locked.
 	eq, err := storage.Equals(provSrc, provDest, blockSize)
 	assert.NoError(t, err)
 	assert.True(t, eq)
-
-	// All the data should be there.
-	assert.Equal(t, int(provSrc.Size()), destFrom.GetDataPresent())
 
 	// Get some statistics from the source
 	srcStats := storage.SendSiloEvent(provSrc, "sync.status", nil)

@@ -35,25 +35,31 @@ func NewWriteCombinator(prov storage.Provider, blockSize int) *WriteCombinator {
 }
 
 type WriteCombinatorMetrics struct {
-	WritesAllowed   map[int]uint64
-	WritesBlocked   map[int]uint64
-	AvailableBlocks map[int][]uint
-	NumBlocks       int
+	WritesAllowed    map[int]uint64
+	WritesBlocked    map[int]uint64
+	WritesDuplicate  map[int]uint64
+	AvailableBlocks  map[int][]uint
+	DuplicatedBlocks map[int][]uint
+	NumBlocks        int
 }
 
 func (i *WriteCombinator) GetMetrics() *WriteCombinatorMetrics {
 	wcm := &WriteCombinatorMetrics{
-		WritesAllowed:   make(map[int]uint64, 0),
-		WritesBlocked:   make(map[int]uint64, 0),
-		NumBlocks:       i.numBlocks,
-		AvailableBlocks: make(map[int][]uint, 0),
+		WritesAllowed:    make(map[int]uint64, 0),
+		WritesBlocked:    make(map[int]uint64, 0),
+		WritesDuplicate:  make(map[int]uint64, 0),
+		NumBlocks:        i.numBlocks,
+		AvailableBlocks:  make(map[int][]uint, 0),
+		DuplicatedBlocks: make(map[int][]uint, 0),
 	}
 	i.writeLock.Lock()
 	defer i.writeLock.Unlock()
 	for priority, s := range i.sources {
 		wcm.WritesAllowed[priority] = atomic.LoadUint64(&s.metricWritesAllowed)
 		wcm.WritesBlocked[priority] = atomic.LoadUint64(&s.metricWritesBlocked)
+		wcm.WritesDuplicate[priority] = atomic.LoadUint64(&s.metricWritesDuplicate)
 		wcm.AvailableBlocks[priority] = s.available.Collect(0, s.available.Length())
+		wcm.DuplicatedBlocks[priority] = s.duplicated.Collect(0, s.duplicated.Length())
 	}
 	return wcm
 }
@@ -66,6 +72,7 @@ func (i *WriteCombinator) AddSource(priority int) storage.Provider {
 		priority:   priority,
 		combinator: i,
 		available:  util.NewBitfield(i.numBlocks),
+		duplicated: util.NewBitfield(i.numBlocks),
 	}
 	i.sources[priority] = ws
 	return ws
@@ -78,8 +85,18 @@ func (i *WriteCombinator) RemoveSource(priority int) {
 	delete(i.sources, priority)
 }
 
+// This clears the state for a source - eg we consider we have nothing for it.
+func (i *WriteCombinator) ClearSource(priority int) {
+	i.writeLock.Lock()
+	defer i.writeLock.Unlock()
+	i.sources[priority].available.Clear()
+}
+
 // Find the highest priority write for a block, or -1 if no writes
 func (i *WriteCombinator) getHighestPriorityForBlock(b uint) int {
+	i.writeLock.Lock()
+	defer i.writeLock.Unlock()
+
 	highestPriority := -1
 	for _, ws := range i.sources {
 		if ws.priority > highestPriority && ws.available.BitSet(int(b)) {
@@ -91,11 +108,13 @@ func (i *WriteCombinator) getHighestPriorityForBlock(b uint) int {
 
 type writeSource struct {
 	storage.ProviderWithEvents
-	priority            int
-	combinator          *WriteCombinator
-	available           *util.Bitfield
-	metricWritesAllowed uint64
-	metricWritesBlocked uint64
+	priority              int
+	combinator            *WriteCombinator
+	available             *util.Bitfield
+	duplicated            *util.Bitfield
+	metricWritesAllowed   uint64
+	metricWritesBlocked   uint64
+	metricWritesDuplicate uint64
 }
 
 // Relay events to embedded StorageProvider
@@ -106,9 +125,6 @@ func (ws *writeSource) SendSiloEvent(eventType storage.EventType, eventData stor
 
 // Writes only allowed through if they beat any existing writes
 func (ws *writeSource) WriteAt(buffer []byte, offset int64) (int, error) {
-	ws.combinator.writeLock.Lock()
-	defer ws.combinator.writeLock.Unlock()
-
 	end := uint64(offset + int64(len(buffer)))
 	if end > ws.combinator.size {
 		end = ws.combinator.size
@@ -122,12 +138,16 @@ func (ws *writeSource) WriteAt(buffer []byte, offset int64) (int, error) {
 	// Check block by block if we should let it through...
 	for b := bStart; b < bEnd; b++ {
 		existingPriority := ws.combinator.getHighestPriorityForBlock(b)
-		if ws.priority > existingPriority {
+		if ws.priority >= existingPriority {
 			// Allow the write through, and update our availability
 			blockEnd := blockOffset + int64(ws.combinator.blockSize)
 			if blockEnd > int64(ws.combinator.size) {
 				blockEnd = int64(ws.combinator.size)
 			}
+			if blockEnd > int64(len(buffer)) {
+				blockEnd = int64(len(buffer))
+			}
+
 			blockData := buffer[blockOffset:blockEnd]
 			_, err := ws.combinator.prov.WriteAt(blockData, offset+blockOffset)
 			if err != nil {
@@ -135,6 +155,10 @@ func (ws *writeSource) WriteAt(buffer []byte, offset int64) (int, error) {
 			}
 			ws.available.SetBit(int(b))
 			atomic.AddUint64(&ws.metricWritesAllowed, 1)
+			if ws.priority == existingPriority {
+				ws.duplicated.SetBit(int(b))
+				atomic.AddUint64(&ws.metricWritesDuplicate, 1)
+			}
 		} else {
 			atomic.AddUint64(&ws.metricWritesBlocked, 1)
 		}

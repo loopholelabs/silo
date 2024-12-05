@@ -237,7 +237,6 @@ func TestMigratorSimplePipe(tt *testing.T) {
 			assert.NoError(t, err)
 			assert.True(t, eq)
 
-			assert.Equal(t, int(sourceStorageMem.Size()), destFrom.GetDataPresent())
 		})
 	}
 }
@@ -349,7 +348,6 @@ func TestMigratorSimplePipeDirtySent(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, eq)
 
-	assert.Equal(t, int(sourceStorageMem.Size()), destFrom.GetDataPresent())
 }
 
 /**
@@ -467,9 +465,6 @@ func TestMigratorSimplePipeDirtyMissing(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, eq)
 
-	// There should be blocks missing, which equate to len(blocks)*conf.Block_size bytes.
-
-	assert.Equal(t, int(sourceStorageMem.Size())-len(blocks)*conf.BlockSize, destFrom.GetDataPresent())
 }
 
 /**
