@@ -24,25 +24,26 @@ type Waiters struct {
 }
 
 type RW struct {
-	ctx                context.Context
-	readers            []io.Reader
-	writers            []io.Writer
-	writerHeaders      [][]byte
-	writerLocks        []sync.Mutex
-	txID               uint32
-	activeDevs         map[uint32]bool
-	activeDevsLock     sync.Mutex
-	waiters            map[uint32]Waiters
-	waitersLock        sync.Mutex
-	newdevFn           func(context.Context, Protocol, uint32)
-	newdevProtocol     Protocol
-	metricPacketsSent  uint64
-	metricDataSent     uint64
-	metricPacketsRecv  uint64
-	metricDataRecv     uint64
-	metricWaitingForID int64
-	metricWrites       uint64
-	metricWriteErrors  uint64
+	ctx                        context.Context
+	readers                    []io.Reader
+	writers                    []io.Writer
+	writerHeaders              [][]byte
+	writerLocks                []sync.Mutex
+	txID                       uint32
+	activeDevs                 map[uint32]bool
+	activeDevsLock             sync.Mutex
+	waiters                    map[uint32]Waiters
+	waitersLock                sync.Mutex
+	newdevFn                   func(context.Context, Protocol, uint32)
+	newdevProtocol             Protocol
+	metricActivePacketsSending int64
+	metricPacketsSent          uint64
+	metricDataSent             uint64
+	metricPacketsRecv          uint64
+	metricDataRecv             uint64
+	metricWaitingForID         int64
+	metricWrites               uint64
+	metricWriteErrors          uint64
 }
 
 // Wrap the writers and gather metrics on them.
@@ -94,26 +95,28 @@ func NewRWWithBuffering(ctx context.Context, readers []io.Reader, writers []io.W
 }
 
 type Metrics struct {
-	PacketsSent       uint64
-	DataSent          uint64
-	UrgentPacketsSent uint64
-	UrgentDataSent    uint64
-	PacketsRecv       uint64
-	DataRecv          uint64
-	Writes            uint64
-	WriteErrors       uint64
-	WaitingForID      int64
+	ActivePacketsSending uint64
+	PacketsSent          uint64
+	DataSent             uint64
+	UrgentPacketsSent    uint64
+	UrgentDataSent       uint64
+	PacketsRecv          uint64
+	DataRecv             uint64
+	Writes               uint64
+	WriteErrors          uint64
+	WaitingForID         int64
 }
 
 func (p *RW) GetMetrics() *Metrics {
 	return &Metrics{
-		PacketsSent:  atomic.LoadUint64(&p.metricPacketsSent),
-		DataSent:     atomic.LoadUint64(&p.metricDataSent),
-		PacketsRecv:  atomic.LoadUint64(&p.metricPacketsRecv),
-		DataRecv:     atomic.LoadUint64(&p.metricDataRecv),
-		Writes:       atomic.LoadUint64(&p.metricWrites),
-		WriteErrors:  atomic.LoadUint64(&p.metricWriteErrors),
-		WaitingForID: atomic.LoadInt64(&p.metricWaitingForID),
+		ActivePacketsSending: uint64(atomic.LoadInt64(&p.metricActivePacketsSending)),
+		PacketsSent:          atomic.LoadUint64(&p.metricPacketsSent),
+		DataSent:             atomic.LoadUint64(&p.metricDataSent),
+		PacketsRecv:          atomic.LoadUint64(&p.metricPacketsRecv),
+		DataRecv:             atomic.LoadUint64(&p.metricDataRecv),
+		Writes:               atomic.LoadUint64(&p.metricWrites),
+		WriteErrors:          atomic.LoadUint64(&p.metricWriteErrors),
+		WaitingForID:         atomic.LoadInt64(&p.metricWaitingForID),
 	}
 }
 
@@ -144,6 +147,9 @@ func (p *RW) InitDev(dev uint32) {
 
 // Send a packet
 func (p *RW) SendPacket(dev uint32, id uint32, data []byte, urgency Urgency) (uint32, error) {
+	atomic.AddInt64(&p.metricActivePacketsSending, 1)
+	defer atomic.AddInt64(&p.metricActivePacketsSending, -1)
+
 	// If the context was cancelled, we should return that error
 	select {
 	case <-p.ctx.Done():
