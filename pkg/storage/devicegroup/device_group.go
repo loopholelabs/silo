@@ -1,6 +1,7 @@
 package devicegroup
 
 import (
+	"context"
 	"errors"
 	"time"
 
@@ -98,43 +99,16 @@ func New(ds []*config.DeviceSchema, log types.Logger, met metrics.SiloMetrics) (
 	return dg, nil
 }
 
+func (dg *DeviceGroup) GetProvider(index int) storage.Provider {
+	return dg.devices[index].storage
+}
+
 func (dg *DeviceGroup) SendDevInfo(pro protocol.Protocol) error {
 	var e error
 
 	for index, d := range dg.devices {
 		d.to = protocol.NewToProtocol(d.prov.Size(), uint32(index), pro)
 		d.to.SetCompression(true)
-
-		// Setup d.to
-		// TODO: We *may* want to check errors here, but it will surface elsewhere.
-		go d.to.HandleNeedAt(func(offset int64, length int32) {
-			// Prioritize blocks
-			endOffset := uint64(offset + int64(length))
-			if endOffset > d.size {
-				endOffset = d.size
-			}
-
-			startBlock := int(offset / int64(d.blockSize))
-			endBlock := int((endOffset-1)/d.blockSize) + 1
-			for b := startBlock; b < endBlock; b++ {
-				d.orderer.PrioritiseBlock(b)
-			}
-		})
-
-		// TODO: We *may* want to check errors here, but it will surface elsewhere.
-		go d.to.HandleDontNeedAt(func(offset int64, length int32) {
-			// Deprioritize blocks
-			endOffset := uint64(offset + int64(length))
-			if endOffset > d.size {
-				endOffset = d.size
-			}
-
-			startBlock := int(offset / int64(d.blockSize))
-			endBlock := int((endOffset-1)/d.blockSize) + 1
-			for b := startBlock; b < endBlock; b++ {
-				d.orderer.Remove(b)
-			}
-		})
 
 		if dg.met != nil {
 			dg.met.AddToProtocol(d.schema.Name, d.to)
@@ -158,13 +132,48 @@ func (dg *DeviceGroup) MigrateAll(progressHandler func(i int, p *migrator.Migrat
 		d.migrationError = make(chan error, 1) // We will just hold onto the first error for now.
 
 		setMigrationError := func(err error) {
-			if err != nil {
+			if err != nil && err != context.Canceled {
 				select {
 				case d.migrationError <- err:
 				default:
 				}
 			}
 		}
+
+		// Setup d.to
+		go func() {
+			err := d.to.HandleNeedAt(func(offset int64, length int32) {
+				// Prioritize blocks
+				endOffset := uint64(offset + int64(length))
+				if endOffset > d.size {
+					endOffset = d.size
+				}
+
+				startBlock := int(offset / int64(d.blockSize))
+				endBlock := int((endOffset-1)/d.blockSize) + 1
+				for b := startBlock; b < endBlock; b++ {
+					d.orderer.PrioritiseBlock(b)
+				}
+			})
+			setMigrationError(err)
+		}()
+
+		go func() {
+			err := d.to.HandleDontNeedAt(func(offset int64, length int32) {
+				// Deprioritize blocks
+				endOffset := uint64(offset + int64(length))
+				if endOffset > d.size {
+					endOffset = d.size
+				}
+
+				startBlock := int(offset / int64(d.blockSize))
+				endBlock := int((endOffset-1)/d.blockSize) + 1
+				for b := startBlock; b < endBlock; b++ {
+					d.orderer.Remove(b)
+				}
+			})
+			setMigrationError(err)
+		}()
 
 		cfg := migrator.NewConfig()
 		cfg.Logger = dg.log
