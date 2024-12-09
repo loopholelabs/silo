@@ -1,6 +1,7 @@
 package devicegroup
 
 import (
+	"errors"
 	"time"
 
 	"github.com/loopholelabs/logging/types"
@@ -11,12 +12,15 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/expose"
 	"github.com/loopholelabs/silo/pkg/storage/metrics"
 	"github.com/loopholelabs/silo/pkg/storage/modules"
+	"github.com/loopholelabs/silo/pkg/storage/protocol"
 	"github.com/loopholelabs/silo/pkg/storage/volatilitymonitor"
 )
 
 const volatilityExpiry = 30 * time.Minute
 
 type DeviceGroup struct {
+	log     types.Logger
+	met     metrics.SiloMetrics
 	devices []*DeviceInformation
 }
 
@@ -27,10 +31,13 @@ type DeviceInformation struct {
 	volatility  *volatilitymonitor.VolatilityMonitor
 	dirtyLocal  *dirtytracker.Local
 	dirtyRemote *dirtytracker.Remote
+	to          *protocol.ToProtocol
 }
 
 func New(ds []*config.DeviceSchema, log types.Logger, met metrics.SiloMetrics) (*DeviceGroup, error) {
 	dg := &DeviceGroup{
+		log:     log,
+		met:     met,
 		devices: make([]*DeviceInformation, 0),
 	}
 
@@ -39,10 +46,7 @@ func New(ds []*config.DeviceSchema, log types.Logger, met metrics.SiloMetrics) (
 		if err != nil {
 			// We should try to close / shutdown any successful devices we created here...
 			// But it's likely to be critical.
-			for _, d := range dg.devices {
-				d.exp.Shutdown()
-				d.prov.Close()
-			}
+			dg.CloseAll()
 			return nil, err
 		}
 
@@ -70,4 +74,41 @@ func New(ds []*config.DeviceSchema, log types.Logger, met metrics.SiloMetrics) (
 		})
 	}
 	return dg, nil
+}
+
+func (dg *DeviceGroup) SendDevInfo(pro protocol.Protocol) error {
+	var e error
+
+	for index, d := range dg.devices {
+		d.to = protocol.NewToProtocol(d.prov.Size(), uint32(index), pro)
+		d.to.SetCompression(true)
+
+		if dg.met != nil {
+			dg.met.AddToProtocol(d.schema.Name, d.to)
+		}
+
+		schema := d.schema.Encode()
+		err := d.to.SendDevInfo(d.schema.Name, uint32(d.schema.ByteBlockSize()), string(schema))
+		if err != nil {
+			e = errors.Join(e, err)
+		}
+	}
+	return e
+}
+
+func (dg *DeviceGroup) CloseAll() error {
+	var e error
+	for _, d := range dg.devices {
+		err := d.prov.Close()
+		if err != nil {
+			e = errors.Join(e, err)
+		}
+		if d.exp != nil {
+			err = d.exp.Shutdown()
+			if err != nil {
+				e = errors.Join(e, err)
+			}
+		}
+	}
+	return e
 }
