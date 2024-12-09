@@ -55,6 +55,9 @@ func New(ds []*config.DeviceSchema, log types.Logger, met metrics.SiloMetrics) (
 	for _, s := range ds {
 		prov, exp, err := device.NewDeviceWithLoggingMetrics(s, log, met)
 		if err != nil {
+			if log != nil {
+				log.Error().Err(err).Str("schema", string(s.Encode())).Msg("could not create device")
+			}
 			// We should try to close / shutdown any successful devices we created here...
 			// But it's likely to be critical.
 			dg.CloseAll()
@@ -96,6 +99,10 @@ func New(ds []*config.DeviceSchema, log types.Logger, met metrics.SiloMetrics) (
 			orderer:     orderer,
 		})
 	}
+
+	if log != nil {
+		log.Debug().Int("devices", len(dg.devices)).Msg("created device group")
+	}
 	return dg, nil
 }
 
@@ -114,9 +121,12 @@ func (dg *DeviceGroup) SendDevInfo(pro protocol.Protocol) error {
 			dg.met.AddToProtocol(d.schema.Name, d.to)
 		}
 
-		schema := d.schema.Encode()
-		err := d.to.SendDevInfo(d.schema.Name, uint32(d.schema.ByteBlockSize()), string(schema))
+		schema := string(d.schema.Encode())
+		err := d.to.SendDevInfo(d.schema.Name, uint32(d.schema.ByteBlockSize()), schema)
 		if err != nil {
+			if dg.log != nil {
+				dg.log.Error().Str("schema", schema).Msg("could not send DevInfo")
+			}
 			e = errors.Join(e, err)
 		}
 	}
@@ -125,6 +135,12 @@ func (dg *DeviceGroup) SendDevInfo(pro protocol.Protocol) error {
 
 // This will Migrate all devices to the 'to' setup in SendDevInfo stage.
 func (dg *DeviceGroup) MigrateAll(progressHandler func(i int, p *migrator.MigrationProgress)) error {
+	ctime := time.Now()
+
+	if dg.log != nil {
+		dg.log.Debug().Int("devices", len(dg.devices)).Msg("migrating device group")
+	}
+
 	// TODO: We can divide concurrency amongst devices depending on their size...
 	concurrency := 100
 
@@ -143,6 +159,14 @@ func (dg *DeviceGroup) MigrateAll(progressHandler func(i int, p *migrator.Migrat
 		// Setup d.to
 		go func() {
 			err := d.to.HandleNeedAt(func(offset int64, length int32) {
+				if dg.log != nil {
+					dg.log.Debug().
+						Int64("offset", offset).
+						Int32("length", length).
+						Int("dev", index).
+						Str("name", d.schema.Name).
+						Msg("NeedAt for device")
+				}
 				// Prioritize blocks
 				endOffset := uint64(offset + int64(length))
 				if endOffset > d.size {
@@ -160,6 +184,14 @@ func (dg *DeviceGroup) MigrateAll(progressHandler func(i int, p *migrator.Migrat
 
 		go func() {
 			err := d.to.HandleDontNeedAt(func(offset int64, length int32) {
+				if dg.log != nil {
+					dg.log.Debug().
+						Int64("offset", offset).
+						Int32("length", length).
+						Int("dev", index).
+						Str("name", d.schema.Name).
+						Msg("DontNeedAt for device")
+				}
 				// Deprioritize blocks
 				endOffset := uint64(offset + int64(length))
 				if endOffset > d.size {
@@ -220,35 +252,58 @@ func (dg *DeviceGroup) MigrateAll(progressHandler func(i int, p *migrator.Migrat
 	for _, d := range dg.devices {
 		migErr := <-errs
 		if migErr != nil {
+			if dg.log != nil {
+				dg.log.Error().Err(migErr).Msg("error migrating device group")
+			}
 			return migErr
 		}
 
 		err := d.migrator.WaitForCompletion()
 		if err != nil {
+			if dg.log != nil {
+				dg.log.Error().Err(err).Msg("error migrating device group waiting for completion")
+			}
 			return err
 		}
 
 		// Check for any migration error
 		select {
 		case err := <-d.migrationError:
+			if dg.log != nil {
+				dg.log.Error().Err(err).Msg("error migrating device group from goroutines")
+			}
 			return err
 		default:
 		}
+	}
+
+	if dg.log != nil {
+		dg.log.Debug().Int64("duration", time.Since(ctime).Milliseconds()).Int("devices", len(dg.devices)).Msg("migration of device group completed")
 	}
 
 	return nil
 }
 
 func (dg *DeviceGroup) CloseAll() error {
+	if dg.log != nil {
+		dg.log.Debug().Int("devices", len(dg.devices)).Msg("close device group")
+	}
+
 	var e error
 	for _, d := range dg.devices {
 		err := d.prov.Close()
 		if err != nil {
+			if dg.log != nil {
+				dg.log.Error().Err(err).Msg("error closing device group storage provider")
+			}
 			e = errors.Join(e, err)
 		}
 		if d.exp != nil {
 			err = d.exp.Shutdown()
 			if err != nil {
+				if dg.log != nil {
+					dg.log.Error().Err(err).Msg("error closing device group exposed storage")
+				}
 				e = errors.Join(e, err)
 			}
 		}
