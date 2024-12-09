@@ -134,17 +134,28 @@ func (dg *DeviceGroup) SendDevInfo(pro protocol.Protocol) error {
 }
 
 // This will Migrate all devices to the 'to' setup in SendDevInfo stage.
-func (dg *DeviceGroup) MigrateAll(progressHandler func(i int, p *migrator.MigrationProgress)) error {
+func (dg *DeviceGroup) MigrateAll(maxConcurrency int, progressHandler func(i int, p *migrator.MigrationProgress)) error {
 	ctime := time.Now()
 
 	if dg.log != nil {
 		dg.log.Debug().Int("devices", len(dg.devices)).Msg("migrating device group")
 	}
 
-	// TODO: We can divide concurrency amongst devices depending on their size...
-	concurrency := 100
+	// Add up device sizes, so we can allocate the concurrency proportionally
+	totalSize := uint64(0)
+	for _, d := range dg.devices {
+		totalSize += d.size
+	}
+
+	// We need at least this much...
+	if maxConcurrency < len(dg.devices) {
+		maxConcurrency = len(dg.devices)
+	}
+	// We will allocate each device at least ONE...
+	maxConcurrency -= len(dg.devices)
 
 	for index, d := range dg.devices {
+		concurrency := 1 + (uint64(maxConcurrency) * d.size / totalSize)
 		d.migrationError = make(chan error, 1) // We will just hold onto the first error for now.
 
 		setMigrationError := func(err error) {
@@ -211,7 +222,7 @@ func (dg *DeviceGroup) MigrateAll(progressHandler func(i int, p *migrator.Migrat
 		cfg.Logger = dg.log
 		cfg.BlockSize = int(d.blockSize)
 		cfg.Concurrency = map[int]int{
-			storage.BlockTypeAny: concurrency,
+			storage.BlockTypeAny: int(concurrency),
 		}
 		cfg.LockerHandler = func() {
 			setMigrationError(d.to.SendEvent(&packets.Event{Type: packets.EventPreLock}))
@@ -236,6 +247,13 @@ func (dg *DeviceGroup) MigrateAll(progressHandler func(i int, p *migrator.Migrat
 		d.migrator = mig
 		if dg.met != nil {
 			dg.met.AddMigrator(d.schema.Name, mig)
+		}
+		if dg.log != nil {
+			dg.log.Debug().
+				Uint64("concurrency", concurrency).
+				Int("index", index).
+				Str("name", d.schema.Name).
+				Msg("Setup migrator")
 		}
 	}
 

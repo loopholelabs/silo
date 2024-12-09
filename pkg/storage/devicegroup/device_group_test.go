@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/loopholelabs/logging"
+	"github.com/loopholelabs/logging/types"
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/config"
 	"github.com/loopholelabs/silo/pkg/storage/migrator"
@@ -202,7 +204,10 @@ func TestDeviceGroupMigrate(t *testing.T) {
 		_ = prDest.Handle()
 	}()
 
-	dg, err := New(ds, nil, nil)
+	log := logging.New(logging.Zerolog, "silo", os.Stdout)
+	log.SetLevel(types.TraceLevel)
+
+	dg, err := New(ds, log, nil)
 	assert.NoError(t, err)
 
 	// Lets write some data...
@@ -221,7 +226,7 @@ func TestDeviceGroupMigrate(t *testing.T) {
 
 	pHandler := func(_ int, _ *migrator.MigrationProgress) {}
 
-	err = dg.MigrateAll(pHandler)
+	err = dg.MigrateAll(100, pHandler)
 	assert.NoError(t, err)
 
 	// Check the data all got migrated correctly
