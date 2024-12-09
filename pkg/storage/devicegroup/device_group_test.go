@@ -3,6 +3,7 @@ package devicegroup
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/user"
 	"testing"
 
@@ -41,6 +42,11 @@ func TestDeviceGroupBasic(t *testing.T) {
 		},
 	}
 
+	t.Cleanup(func() {
+		os.Remove("testdev_test1")
+		os.Remove("testdev_test2")
+	})
+
 	dg, err := New(ds, nil, nil)
 	assert.NoError(t, err)
 
@@ -76,6 +82,11 @@ func TestDeviceGroupSendDevInfo(t *testing.T) {
 			Location:  "testdev_test2",
 		},
 	}
+
+	t.Cleanup(func() {
+		os.Remove("testdev_test1")
+		os.Remove("testdev_test2")
+	})
 
 	dg, err := New(ds, nil, nil)
 	assert.NoError(t, err)
