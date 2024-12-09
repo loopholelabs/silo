@@ -219,7 +219,7 @@ func TestDeviceGroupMigrate(t *testing.T) {
 	err = dg.SendDevInfo(prSource)
 	assert.NoError(t, err)
 
-	pHandler := func(index int, p *migrator.MigrationProgress) {}
+	pHandler := func(_ int, _ *migrator.MigrationProgress) {}
 
 	err = dg.MigrateAll(pHandler)
 	assert.NoError(t, err)
