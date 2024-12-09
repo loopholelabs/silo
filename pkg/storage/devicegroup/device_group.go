@@ -68,7 +68,7 @@ func New(ds []*config.DeviceSchema, log types.Logger, met metrics.SiloMetrics) (
 		dirtyLocal, dirtyRemote := dirtytracker.NewDirtyTracker(mlocal, blockSize)
 		vmonitor := volatilitymonitor.NewVolatilityMonitor(dirtyLocal, blockSize, volatilityExpiry)
 
-		totalBlocks := (int(local.Size()) + int(blockSize) - 1) / int(blockSize)
+		totalBlocks := (int(local.Size()) + blockSize - 1) / blockSize
 		orderer := blocks.NewPriorityBlockOrder(totalBlocks, vmonitor)
 		orderer.AddAll()
 
@@ -191,7 +191,7 @@ func (dg *DeviceGroup) MigrateAll(progressHandler func(i int, p *migrator.Migrat
 			d.storage.Unlock()
 			setMigrationError(d.to.SendEvent(&packets.Event{Type: packets.EventPostUnlock}))
 		}
-		cfg.ErrorHandler = func(b *storage.BlockInfo, err error) {
+		cfg.ErrorHandler = func(_ *storage.BlockInfo, err error) {
 			setMigrationError(err)
 		}
 		cfg.ProgressHandler = func(p *migrator.MigrationProgress) {
