@@ -21,94 +21,69 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestDeviceGroupBasic(t *testing.T) {
+var testDeviceSchema = []*config.DeviceSchema{
+	{
+		Name:      "test1",
+		Size:      "8m",
+		System:    "file",
+		BlockSize: "1m",
+		Expose:    true,
+		Location:  "testdev_test1",
+	},
+	{
+		Name:      "test2",
+		Size:      "16m",
+		System:    "file",
+		BlockSize: "1m",
+		Expose:    true,
+		Location:  "testdev_test2",
+	},
+}
+
+func setupDeviceGroup(t *testing.T) *DeviceGroup {
 	currentUser, err := user.Current()
 	if err != nil {
 		panic(err)
 	}
 	if currentUser.Username != "root" {
 		fmt.Printf("Cannot run test unless we are root.\n")
-		return
+		return nil
 	}
 
-	ds := []*config.DeviceSchema{
-		{
-			Name:      "test1",
-			Size:      "8m",
-			System:    "file",
-			BlockSize: "1m",
-			Expose:    true,
-			Location:  "testdev_test1",
-		},
-		{
-			Name:      "test2",
-			Size:      "16m",
-			System:    "file",
-			BlockSize: "1m",
-			Expose:    true,
-			Location:  "testdev_test2",
-		},
-	}
+	dg, err := New(testDeviceSchema, nil, nil)
+	assert.NoError(t, err)
 
 	t.Cleanup(func() {
+		err = dg.CloseAll()
+		assert.NoError(t, err)
+
 		os.Remove("testdev_test1")
 		os.Remove("testdev_test2")
 	})
 
-	dg, err := New(ds, nil, nil)
-	assert.NoError(t, err)
+	return dg
+}
 
-	err = dg.CloseAll()
-	assert.NoError(t, err)
+func TestDeviceGroupBasic(t *testing.T) {
+	dg := setupDeviceGroup(t)
+	if dg == nil {
+		return
+	}
 }
 
 func TestDeviceGroupSendDevInfo(t *testing.T) {
-	currentUser, err := user.Current()
-	if err != nil {
-		panic(err)
-	}
-	if currentUser.Username != "root" {
-		fmt.Printf("Cannot run test unless we are root.\n")
+	dg := setupDeviceGroup(t)
+	if dg == nil {
 		return
 	}
 
-	ds := []*config.DeviceSchema{
-		{
-			Name:      "test1",
-			Size:      "8m",
-			System:    "file",
-			BlockSize: "1m",
-			Expose:    true,
-			Location:  "testdev_test1",
-		},
-		{
-			Name:      "test2",
-			Size:      "16m",
-			System:    "file",
-			BlockSize: "1m",
-			Expose:    true,
-			Location:  "testdev_test2",
-		},
-	}
-
-	t.Cleanup(func() {
-		os.Remove("testdev_test1")
-		os.Remove("testdev_test2")
-	})
-
-	dg, err := New(ds, nil, nil)
-	assert.NoError(t, err)
-
 	pro := protocol.NewMockProtocol(context.TODO())
 
-	err = dg.StartMigrationTo(pro)
-	assert.NoError(t, err)
-
-	err = dg.CloseAll()
+	err := dg.StartMigrationTo(pro)
 	assert.NoError(t, err)
 
 	// Make sure they all got sent correctly...
-	for index, r := range ds {
+	for index, r := range testDeviceSchema {
 		_, data, err := pro.WaitForCommand(uint32(index), packets.CommandDevInfo)
 		assert.NoError(t, err)
 
@@ -123,38 +98,13 @@ func TestDeviceGroupSendDevInfo(t *testing.T) {
 }
 
 func TestDeviceGroupMigrate(t *testing.T) {
-	currentUser, err := user.Current()
-	if err != nil {
-		panic(err)
-	}
-	if currentUser.Username != "root" {
-		fmt.Printf("Cannot run test unless we are root.\n")
+	dg := setupDeviceGroup(t)
+	if dg == nil {
 		return
 	}
 
-	ds := []*config.DeviceSchema{
-		{
-			Name:      "test1",
-			Size:      "8m",
-			System:    "file",
-			BlockSize: "1m",
-			Expose:    true,
-			Location:  "testdev_test1",
-		},
-		{
-			Name:      "test2",
-			Size:      "16m",
-			System:    "file",
-			BlockSize: "1m",
-			Expose:    true,
-			Location:  "testdev_test2",
-		},
-	}
-
-	t.Cleanup(func() {
-		os.Remove("testdev_test1")
-		os.Remove("testdev_test2")
-	})
+	log := logging.New(logging.Zerolog, "silo", os.Stdout)
+	log.SetLevel(types.TraceLevel)
 
 	// Create a simple pipe
 	r1, w1 := io.Pipe()
@@ -204,14 +154,8 @@ func TestDeviceGroupMigrate(t *testing.T) {
 		_ = prDest.Handle()
 	}()
 
-	log := logging.New(logging.Zerolog, "silo", os.Stdout)
-	log.SetLevel(types.TraceLevel)
-
-	dg, err := New(ds, log, nil)
-	assert.NoError(t, err)
-
 	// Lets write some data...
-	for i := range ds {
+	for i := range testDeviceSchema {
 		prov := dg.GetProvider(i)
 		buff := make([]byte, prov.Size())
 		_, err := rand.Read(buff)
@@ -221,7 +165,7 @@ func TestDeviceGroupMigrate(t *testing.T) {
 	}
 
 	// Send all the dev info...
-	err = dg.StartMigrationTo(prSource)
+	err := dg.StartMigrationTo(prSource)
 	assert.NoError(t, err)
 
 	pHandler := func(_ int, _ *migrator.MigrationProgress) {}
@@ -230,7 +174,7 @@ func TestDeviceGroupMigrate(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Check the data all got migrated correctly
-	for i := range ds {
+	for i := range testDeviceSchema {
 		prov := dg.GetProvider(i)
 		destProvider := incomingProviders[uint32(i)]
 		assert.NotNil(t, destProvider)
@@ -239,9 +183,5 @@ func TestDeviceGroupMigrate(t *testing.T) {
 		assert.True(t, eq)
 	}
 
-	err = dg.CloseAll()
-	assert.NoError(t, err)
-
 	cancelfn()
-
 }
