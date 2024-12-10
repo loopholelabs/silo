@@ -311,17 +311,26 @@ func (dg *DeviceGroup) MigrateAll(maxConcurrency int, progressHandler func(i int
 }
 
 type MigrateDirtyHooks struct {
-	PostGetDirty     func(index int, blocks []uint)
-	PostMigrateDirty func(index int) bool
-	Completed        func(index int)
+	PreGetDirty      func(index int, to *protocol.ToProtocol, dirtyHistory []int)
+	PostGetDirty     func(index int, to *protocol.ToProtocol, dirtyHistory []int, blocks []uint)
+	PostMigrateDirty func(index int, to *protocol.ToProtocol, dirtyHistory []int) bool
+	Completed        func(index int, to *protocol.ToProtocol)
 }
+
+const maxDirtyHistory = 32
 
 func (dg *DeviceGroup) MigrateDirty(hooks *MigrateDirtyHooks) error {
 	errs := make(chan error, len(dg.devices))
 
 	for index, d := range dg.devices {
 		go func() {
+			dirtyHistory := make([]int, 0)
+
 			for {
+				if hooks != nil && hooks.PreGetDirty != nil {
+					hooks.PreGetDirty(index, d.to, dirtyHistory)
+				}
+
 				blocks := d.migrator.GetLatestDirty()
 				if dg.log != nil {
 					dg.log.Debug().
@@ -330,8 +339,15 @@ func (dg *DeviceGroup) MigrateDirty(hooks *MigrateDirtyHooks) error {
 						Str("name", d.schema.Name).
 						Msg("migrating dirty blocks")
 				}
+
+				dirtyHistory = append(dirtyHistory, len(blocks))
+				// Cap it at a certain MAX LENGTH
+				if len(dirtyHistory) > maxDirtyHistory {
+					dirtyHistory = dirtyHistory[1:]
+				}
+
 				if hooks != nil && hooks.PostGetDirty != nil {
-					hooks.PostGetDirty(index, blocks)
+					hooks.PostGetDirty(index, d.to, dirtyHistory, blocks)
 				}
 
 				if len(blocks) == 0 {
@@ -351,7 +367,7 @@ func (dg *DeviceGroup) MigrateDirty(hooks *MigrateDirtyHooks) error {
 				}
 
 				if hooks != nil && hooks.PostMigrateDirty != nil {
-					if hooks.PostMigrateDirty(index) {
+					if hooks.PostMigrateDirty(index, d.to, dirtyHistory) {
 						break // PostMigrateDirty returned true, which means stop doing any dirty loop business.
 					}
 				}
@@ -370,7 +386,7 @@ func (dg *DeviceGroup) MigrateDirty(hooks *MigrateDirtyHooks) error {
 			}
 
 			if hooks != nil && hooks.Completed != nil {
-				hooks.Completed(index)
+				hooks.Completed(index, d.to)
 			}
 
 			if dg.log != nil {
