@@ -101,7 +101,7 @@ func TestDeviceGroupSendDevInfo(t *testing.T) {
 
 	pro := protocol.NewMockProtocol(context.TODO())
 
-	err = dg.SendDevInfo(pro)
+	err = dg.StartMigrationTo(pro)
 	assert.NoError(t, err)
 
 	err = dg.CloseAll()
@@ -221,7 +221,7 @@ func TestDeviceGroupMigrate(t *testing.T) {
 	}
 
 	// Send all the dev info...
-	err = dg.SendDevInfo(prSource)
+	err = dg.StartMigrationTo(prSource)
 	assert.NoError(t, err)
 
 	pHandler := func(_ int, _ *migrator.MigrationProgress) {}
