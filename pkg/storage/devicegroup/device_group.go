@@ -22,6 +22,8 @@ import (
 
 const volatilityExpiry = 30 * time.Minute
 
+var errNotSetup = errors.New("toProtocol not setup")
+
 type DeviceGroup struct {
 	log     types.Logger
 	met     metrics.SiloMetrics
@@ -110,7 +112,7 @@ func (dg *DeviceGroup) GetProvider(index int) storage.Provider {
 	return dg.devices[index].storage
 }
 
-func (dg *DeviceGroup) SendDevInfo(pro protocol.Protocol) error {
+func (dg *DeviceGroup) StartMigrationTo(pro protocol.Protocol) error {
 	var e error
 
 	for index, d := range dg.devices {
@@ -135,6 +137,12 @@ func (dg *DeviceGroup) SendDevInfo(pro protocol.Protocol) error {
 
 // This will Migrate all devices to the 'to' setup in SendDevInfo stage.
 func (dg *DeviceGroup) MigrateAll(maxConcurrency int, progressHandler func(i int, p *migrator.MigrationProgress)) error {
+	for _, d := range dg.devices {
+		if d.to == nil {
+			return errNotSetup
+		}
+	}
+
 	ctime := time.Now()
 
 	if dg.log != nil {
@@ -297,6 +305,91 @@ func (dg *DeviceGroup) MigrateAll(maxConcurrency int, progressHandler func(i int
 
 	if dg.log != nil {
 		dg.log.Debug().Int64("duration", time.Since(ctime).Milliseconds()).Int("devices", len(dg.devices)).Msg("migration of device group completed")
+	}
+
+	return nil
+}
+
+type MigrateDirtyHooks struct {
+	PostGetDirty     func(index int, blocks []uint)
+	PostMigrateDirty func(index int) bool
+	Completed        func(index int)
+}
+
+func (dg *DeviceGroup) MigrateDirty(hooks *MigrateDirtyHooks) error {
+	errs := make(chan error, len(dg.devices))
+
+	for index, d := range dg.devices {
+		go func() {
+			for {
+				blocks := d.migrator.GetLatestDirty()
+				if dg.log != nil {
+					dg.log.Debug().
+						Int("blocks", len(blocks)).
+						Int("index", index).
+						Str("name", d.schema.Name).
+						Msg("migrating dirty blocks")
+				}
+				if hooks != nil && hooks.PostGetDirty != nil {
+					hooks.PostGetDirty(index, blocks)
+				}
+
+				if len(blocks) == 0 {
+					break
+				}
+
+				err := d.to.DirtyList(int(d.blockSize), blocks)
+				if err != nil {
+					errs <- err
+					return
+				}
+
+				err = d.migrator.MigrateDirty(blocks)
+				if err != nil {
+					errs <- err
+					return
+				}
+
+				if hooks != nil && hooks.PostMigrateDirty != nil {
+					if hooks.PostMigrateDirty(index) {
+						break // PostMigrateDirty returned true, which means stop doing any dirty loop business.
+					}
+				}
+			}
+
+			err := d.migrator.WaitForCompletion()
+			if err != nil {
+				errs <- err
+				return
+			}
+
+			err = d.to.SendEvent(&packets.Event{Type: packets.EventCompleted})
+			if err != nil {
+				errs <- err
+				return
+			}
+
+			if hooks != nil && hooks.Completed != nil {
+				hooks.Completed(index)
+			}
+
+			if dg.log != nil {
+				dg.log.Debug().
+					Int("index", index).
+					Str("name", d.schema.Name).
+					Msg("migrating dirty blocks completed")
+			}
+
+			errs <- nil
+		}()
+	}
+
+	// Wait for all dirty migrations to complete
+	// Check for any error and return it
+	for err := range errs {
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
