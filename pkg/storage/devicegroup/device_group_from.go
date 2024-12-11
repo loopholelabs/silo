@@ -1,15 +1,23 @@
 package devicegroup
 
 import (
-	"fmt"
+	"context"
+	"sync"
 
 	"github.com/loopholelabs/logging/types"
+	"github.com/loopholelabs/silo/pkg/storage"
+	"github.com/loopholelabs/silo/pkg/storage/config"
 	"github.com/loopholelabs/silo/pkg/storage/metrics"
 	"github.com/loopholelabs/silo/pkg/storage/protocol"
 	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
 )
 
-func NewFromProtocol(pro protocol.Protocol, log types.Logger, met metrics.SiloMetrics) (*DeviceGroup, error) {
+func NewFromProtocol(ctx context.Context,
+	pro protocol.Protocol,
+	tweakDeviceSchema func(index int, name string, schema string) string,
+	log types.Logger,
+	met metrics.SiloMetrics) (*DeviceGroup, error) {
+
 	// This is our control channel, and we're expecting a DeviceGroupInfo
 	_, dgData, err := pro.WaitForCommand(0, packets.CommandDeviceGroupInfo)
 	if err != nil {
@@ -20,34 +28,71 @@ func NewFromProtocol(pro protocol.Protocol, log types.Logger, met metrics.SiloMe
 		return nil, err
 	}
 
-	fmt.Printf("DeviceGroupInfo %v\n", dgi)
-	/*
-		for index, di := range dgi.Devices {
-			destStorageFactory := func(di *packets.DevInfo) storage.Provider {
-				store := sources.NewMemoryStorage(int(di.Size))
-				incomingLock.Lock()
-				incomingProviders[uint32(index)] = store
-				incomingLock.Unlock()
-				return store
-			}
+	devices := make([]*config.DeviceSchema, 0)
 
-			from := protocol.NewFromProtocol(ctx, uint32(index), destStorageFactory, prDest)
-			err = from.SetDevInfo(di)
-			assert.NoError(t, err)
-			go func() {
-				err := from.HandleReadAt()
-				assert.ErrorIs(t, err, context.Canceled)
-			}()
-			go func() {
-				err := from.HandleWriteAt()
-				assert.ErrorIs(t, err, context.Canceled)
-			}()
-			go func() {
-				err := from.HandleDirtyList(func(_ []uint) {
-				})
-				assert.ErrorIs(t, err, context.Canceled)
-			}()
+	// First create the devices we need using the schemas sent...
+	for index, di := range dgi.Devices {
+		ds := &config.DeviceSchema{}
+		// We may want to tweak schemas here eg autoStart = false on sync. Or modify pathnames.
+		schema := di.Schema
+		if tweakDeviceSchema != nil {
+			schema = tweakDeviceSchema(index-1, di.Name, schema)
 		}
-	*/
-	return nil, nil
+		err := ds.Decode(schema)
+		if err != nil {
+			return nil, err
+		}
+		devices = append(devices, ds)
+	}
+
+	dg, err := NewFromSchema(devices, log, met)
+	if err != nil {
+		return nil, err
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(len(dg.devices))
+
+	// We need to create the FromProtocol for each device, and associated goroutines here.
+	for index, di := range dgi.Devices {
+		destStorageFactory := func(di *packets.DevInfo) storage.Provider {
+			// TODO: WaitingCache should go in here...
+			return dg.GetProvider(index - 1)
+		}
+
+		from := protocol.NewFromProtocol(ctx, uint32(index), destStorageFactory, pro)
+		err = from.SetDevInfo(di)
+		if err != nil {
+			return nil, err
+		}
+		go func() {
+			_ = from.HandleReadAt()
+		}()
+		go func() {
+			_ = from.HandleWriteAt()
+		}()
+		go func() {
+			_ = from.HandleDirtyList(func(_ []uint) {
+				// TODO: Tell the waitingCache about it
+			})
+		}()
+		go func() {
+			from.HandleEvent(func(p *packets.Event) {
+				if p.Type == packets.EventCompleted {
+					wg.Done()
+				}
+				// TODO: Pass events on
+			})
+		}()
+	}
+
+	// Wait for completion events from all devices here.
+	// TODO: Split this up into a separate call...
+	wg.Wait()
+
+	return dg, nil
+}
+
+func (dg *DeviceGroup) Wait() {
+
 }

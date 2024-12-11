@@ -368,21 +368,8 @@ func (dg *DeviceGroup) MigrateDirty(hooks *MigrateDirtyHooks) error {
 				return
 			}
 
-			err = d.to.SendEvent(&packets.Event{Type: packets.EventCompleted})
-			if err != nil {
-				errs <- err
-				return
-			}
-
 			if hooks != nil && hooks.Completed != nil {
 				hooks.Completed(index, d.to)
-			}
-
-			if dg.log != nil {
-				dg.log.Debug().
-					Int("index", index).
-					Str("name", d.schema.Name).
-					Msg("migrating dirty blocks completed")
 			}
 
 			errs <- nil
@@ -398,5 +385,22 @@ func (dg *DeviceGroup) MigrateDirty(hooks *MigrateDirtyHooks) error {
 		}
 	}
 
+	return nil
+}
+
+func (dg *DeviceGroup) Completed() error {
+	for index, d := range dg.devices {
+		err := d.to.SendEvent(&packets.Event{Type: packets.EventCompleted})
+		if err != nil {
+			return err
+		}
+
+		if dg.log != nil {
+			dg.log.Debug().
+				Int("index", index).
+				Str("name", d.schema.Name).
+				Msg("migration completed")
+		}
+	}
 	return nil
 }
