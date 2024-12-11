@@ -9,6 +9,7 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/metrics"
 	"github.com/loopholelabs/silo/pkg/storage/protocol"
 	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
+	"github.com/loopholelabs/silo/pkg/storage/waitingcache"
 )
 
 func NewFromProtocol(ctx context.Context,
@@ -53,9 +54,16 @@ func NewFromProtocol(ctx context.Context,
 
 	// We need to create the FromProtocol for each device, and associated goroutines here.
 	for index, di := range dgi.Devices {
+		d := dg.devices[index-1]
+
 		destStorageFactory := func(di *packets.DevInfo) storage.Provider {
-			// TODO: WaitingCache should go in here...
-			return dg.GetProvider(index - 1)
+			d.waitingCacheLocal, d.waitingCacheRemote = waitingcache.NewWaitingCacheWithLogger(d.prov, int(di.BlockSize), dg.log)
+
+			if dg.devices[index-1].exp != nil {
+				dg.devices[index-1].exp.SetProvider(d.waitingCacheLocal)
+			}
+
+			return d.waitingCacheRemote
 		}
 
 		from := protocol.NewFromProtocol(ctx, uint32(index), destStorageFactory, pro)
@@ -70,8 +78,9 @@ func NewFromProtocol(ctx context.Context,
 			_ = from.HandleWriteAt()
 		}()
 		go func() {
-			_ = from.HandleDirtyList(func(_ []uint) {
-				// TODO: Tell the waitingCache about it
+			_ = from.HandleDirtyList(func(dirtyBlocks []uint) {
+				// Tell the waitingCache about it
+				d.waitingCacheLocal.DirtyBlocks(dirtyBlocks)
 			})
 		}()
 		go func() {

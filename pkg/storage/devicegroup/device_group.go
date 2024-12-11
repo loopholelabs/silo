@@ -14,6 +14,7 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/migrator"
 	"github.com/loopholelabs/silo/pkg/storage/protocol"
 	"github.com/loopholelabs/silo/pkg/storage/volatilitymonitor"
+	"github.com/loopholelabs/silo/pkg/storage/waitingcache"
 )
 
 const volatilityExpiry = 30 * time.Minute
@@ -31,20 +32,22 @@ type DeviceGroup struct {
 }
 
 type DeviceInformation struct {
-	size           uint64
-	blockSize      uint64
-	numBlocks      int
-	schema         *config.DeviceSchema
-	prov           storage.Provider
-	storage        storage.LockableProvider
-	exp            storage.ExposedStorage
-	volatility     *volatilitymonitor.VolatilityMonitor
-	dirtyLocal     *dirtytracker.Local
-	dirtyRemote    *dirtytracker.Remote
-	to             *protocol.ToProtocol
-	orderer        *blocks.PriorityBlockOrder
-	migrator       *migrator.Migrator
-	migrationError chan error
+	size               uint64
+	blockSize          uint64
+	numBlocks          int
+	schema             *config.DeviceSchema
+	prov               storage.Provider
+	storage            storage.LockableProvider
+	exp                storage.ExposedStorage
+	volatility         *volatilitymonitor.VolatilityMonitor
+	dirtyLocal         *dirtytracker.Local
+	dirtyRemote        *dirtytracker.Remote
+	to                 *protocol.ToProtocol
+	orderer            *blocks.PriorityBlockOrder
+	migrator           *migrator.Migrator
+	migrationError     chan error
+	waitingCacheLocal  *waitingcache.Local
+	waitingCacheRemote *waitingcache.Remote
 }
 
 func (dg *DeviceGroup) GetProvider(index int) storage.Provider {
