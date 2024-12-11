@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/user"
+	"strings"
 	"sync"
 	"testing"
 
@@ -203,6 +204,12 @@ func TestDeviceGroupMigrate(t *testing.T) {
 		return
 	}
 
+	// Remove the receiving files
+	t.Cleanup(func() {
+		os.Remove("testrecv_test1")
+		os.Remove("testrecv_test2")
+	})
+
 	log := logging.New(logging.Zerolog, "silo", os.Stdout)
 	log.SetLevel(types.TraceLevel)
 
@@ -235,9 +242,24 @@ func TestDeviceGroupMigrate(t *testing.T) {
 		assert.NoError(t, err)
 	}
 
+	var dg2 *DeviceGroup
+	var wg sync.WaitGroup
+
+	// We will tweak schema in recv here so we have separate paths.
+	tweak := func(index int, name string, schema string) string {
+		s := strings.ReplaceAll(schema, "testdev_test1", "testrecv_test1")
+		s = strings.ReplaceAll(s, "testdev_test2", "testrecv_test2")
+		return s
+	}
+
+	wg.Add(1)
 	go func() {
-		dg2, err := NewFromProtocol(prDest, log, nil)
-		fmt.Printf("NewFromProtocol finished %v %v\n", dg2, err)
+		var err error
+		dg2, err = NewFromProtocol(ctx, prDest, tweak, nil, nil)
+
+		fmt.Printf("DG2 setup as %v\n", dg2)
+		assert.NoError(t, err)
+		wg.Done()
 	}()
 
 	// Send all the dev info...
@@ -249,7 +271,20 @@ func TestDeviceGroupMigrate(t *testing.T) {
 	err = dg.MigrateAll(100, pHandler)
 	assert.NoError(t, err)
 
-	// TODO: Check the data all got migrated correctly
+	err = dg.Completed()
+	assert.NoError(t, err)
+
+	wg.Wait()
+
+	// Check the data all got migrated correctly from dg to dg2.
+	for i := range testDeviceSchema {
+		prov := dg.GetProvider(i)
+		destProvider := dg2.GetProvider(i)
+		assert.NotNil(t, destProvider)
+		eq, err := storage.Equals(prov, destProvider, 1024*1024)
+		assert.NoError(t, err)
+		assert.True(t, eq)
+	}
 
 	cancelfn()
 }
