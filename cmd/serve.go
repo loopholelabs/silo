@@ -135,11 +135,13 @@ func runServe(_ *cobra.Command, _ []string) {
 			panic(err)
 		}
 
-		err = dg.MigrateAll(1000, func(index int, p *migrator.MigrationProgress) {
-			fmt.Printf("[%d] Progress Moved: %d/%d %.2f%% Clean: %d/%d %.2f%% InProgress: %d\n",
-				index, p.MigratedBlocks, p.TotalBlocks, p.MigratedBlocksPerc,
-				p.ReadyBlocks, p.TotalBlocks, p.ReadyBlocksPerc,
-				p.ActiveBlocks)
+		err = dg.MigrateAll(1000, func(ps []*migrator.MigrationProgress) {
+			for index, p := range ps {
+				fmt.Printf("[%d] Progress Moved: %d/%d %.2f%% Clean: %d/%d %.2f%% InProgress: %d\n",
+					index, p.MigratedBlocks, p.TotalBlocks, p.MigratedBlocksPerc,
+					p.ReadyBlocks, p.TotalBlocks, p.ReadyBlocksPerc,
+					p.ActiveBlocks)
+			}
 		})
 		if err != nil {
 			dg.CloseAll()
