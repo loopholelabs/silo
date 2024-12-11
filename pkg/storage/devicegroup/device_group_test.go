@@ -50,7 +50,7 @@ func setupDeviceGroup(t *testing.T) *DeviceGroup {
 		return nil
 	}
 
-	dg, err := New(testDeviceSchema, nil, nil)
+	dg, err := NewFromSchema(testDeviceSchema, nil, nil)
 	assert.NoError(t, err)
 
 	t.Cleanup(func() {
@@ -99,7 +99,7 @@ func TestDeviceGroupSendDevInfo(t *testing.T) {
 	}
 }
 
-func TestDeviceGroupMigrate(t *testing.T) {
+func TestDeviceGroupMigrateTo(t *testing.T) {
 	dg := setupDeviceGroup(t)
 	if dg == nil {
 		return
@@ -129,7 +129,6 @@ func TestDeviceGroupMigrate(t *testing.T) {
 		assert.NoError(t, err)
 		dgi, err := packets.DecodeDeviceGroupInfo(dgData)
 		assert.NoError(t, err)
-		fmt.Printf("Device Group %v\n", dgi)
 
 		for index, di := range dgi.Devices {
 			destStorageFactory := func(di *packets.DevInfo) storage.Provider {
@@ -194,6 +193,63 @@ func TestDeviceGroupMigrate(t *testing.T) {
 		assert.NoError(t, err)
 		assert.True(t, eq)
 	}
+
+	cancelfn()
+}
+
+func TestDeviceGroupMigrate(t *testing.T) {
+	dg := setupDeviceGroup(t)
+	if dg == nil {
+		return
+	}
+
+	log := logging.New(logging.Zerolog, "silo", os.Stdout)
+	log.SetLevel(types.TraceLevel)
+
+	// Create a simple pipe
+	r1, w1 := io.Pipe()
+	r2, w2 := io.Pipe()
+
+	ctx, cancelfn := context.WithCancel(context.TODO())
+
+	initDev := func(ctx context.Context, p protocol.Protocol, dev uint32) {
+	}
+
+	prSource := protocol.NewRW(ctx, []io.Reader{r1}, []io.Writer{w2}, nil)
+	prDest := protocol.NewRW(ctx, []io.Reader{r2}, []io.Writer{w1}, initDev)
+
+	go func() {
+		_ = prSource.Handle()
+	}()
+	go func() {
+		_ = prDest.Handle()
+	}()
+
+	// Lets write some data...
+	for i := range testDeviceSchema {
+		prov := dg.GetProvider(i)
+		buff := make([]byte, prov.Size())
+		_, err := rand.Read(buff)
+		assert.NoError(t, err)
+		_, err = prov.WriteAt(buff, 0)
+		assert.NoError(t, err)
+	}
+
+	go func() {
+		dg2, err := NewFromProtocol(prDest, log, nil)
+		fmt.Printf("NewFromProtocol finished %v %v\n", dg2, err)
+	}()
+
+	// Send all the dev info...
+	err := dg.StartMigrationTo(prSource)
+	assert.NoError(t, err)
+
+	pHandler := func(_ int, _ *migrator.MigrationProgress) {}
+
+	err = dg.MigrateAll(100, pHandler)
+	assert.NoError(t, err)
+
+	// TODO: Check the data all got migrated correctly
 
 	cancelfn()
 }
