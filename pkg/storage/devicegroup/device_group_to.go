@@ -404,3 +404,25 @@ func (dg *DeviceGroup) Completed() error {
 	}
 	return nil
 }
+
+func (dg *DeviceGroup) SendCustomData(customData []byte) error {
+
+	// Send the single TransferAuthority packet down our control channel 0
+	taData := packets.EncodeEvent(&packets.Event{
+		Type:          packets.EventCustom,
+		CustomType:    0,
+		CustomPayload: customData,
+	})
+	id, err := dg.controlProtocol.SendPacket(0, protocol.IDPickAny, taData, protocol.UrgencyUrgent)
+	if err != nil {
+		return err
+	}
+
+	// Wait for ack
+	ackData, err := dg.controlProtocol.WaitForPacket(0, id)
+	if err != nil {
+		return err
+	}
+
+	return packets.DecodeEventResponse(ackData)
+}

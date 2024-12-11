@@ -2,6 +2,7 @@ package devicegroup
 
 import (
 	"context"
+	"errors"
 
 	"github.com/loopholelabs/logging/types"
 	"github.com/loopholelabs/silo/pkg/storage"
@@ -49,6 +50,8 @@ func NewFromProtocol(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
+
+	dg.controlProtocol = pro
 
 	dg.incomingDevicesWg.Add(len(dg.devices))
 
@@ -99,4 +102,31 @@ func NewFromProtocol(ctx context.Context,
 // Wait for completion events from all devices here.
 func (dg *DeviceGroup) WaitForCompletion() {
 	dg.incomingDevicesWg.Wait()
+}
+
+func (dg *DeviceGroup) HandleCustomData(cb func(customData []byte)) error {
+	for {
+		// This is our control channel, and we're expecting a DeviceGroupInfo
+		id, evData, err := dg.controlProtocol.WaitForCommand(0, packets.CommandEvent)
+		if err != nil {
+			return err
+		}
+		ev, err := packets.DecodeEvent(evData)
+		if err != nil {
+			return err
+		}
+
+		if ev.Type != packets.EventCustom || ev.CustomType != 0 {
+			return errors.New("unexpected event")
+		}
+
+		cb(ev.CustomPayload)
+
+		// Reply with ack
+		eack := packets.EncodeEventResponse()
+		_, err = dg.controlProtocol.SendPacket(0, id, eack, protocol.UrgencyUrgent)
+		if err != nil {
+			return err
+		}
+	}
 }

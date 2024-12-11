@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/loopholelabs/logging"
 	"github.com/loopholelabs/logging/types"
@@ -264,16 +265,36 @@ func TestDeviceGroupMigrate(t *testing.T) {
 	err := dg.StartMigrationTo(prSource)
 	assert.NoError(t, err)
 
+	// Make sure the incoming devices were setup completely
+	wg.Wait()
+
+	// TransferAuthority
+	var tawg sync.WaitGroup
+	tawg.Add(1)
+	go func() {
+		err := dg2.HandleCustomData(func(data []byte) {
+			assert.Equal(t, []byte("Hello"), data)
+			tawg.Done()
+		})
+		assert.ErrorIs(t, err, context.Canceled)
+	}()
+
+	tawg.Add(1)
+	time.AfterFunc(100*time.Millisecond, func() {
+		dg.SendCustomData([]byte("Hello"))
+		tawg.Done()
+	})
+
 	pHandler := func(_ int, _ *migrator.MigrationProgress) {}
 
 	err = dg.MigrateAll(100, pHandler)
 	assert.NoError(t, err)
 
+	// Make sure authority has been transferred as expected.
+	tawg.Wait()
+
 	err = dg.Completed()
 	assert.NoError(t, err)
-
-	// Make sure the incoming devices were setup completely
-	wg.Wait()
 
 	// Make sure all incoming devices are complete
 	dg2.WaitForCompletion()
