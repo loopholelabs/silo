@@ -2,6 +2,7 @@ package devicegroup
 
 import (
 	"errors"
+	"sync"
 	"time"
 
 	"github.com/loopholelabs/logging/types"
@@ -22,10 +23,11 @@ const maxDirtyHistory = 32
 var errNotSetup = errors.New("toProtocol not setup")
 
 type DeviceGroup struct {
-	log             types.Logger
-	met             metrics.SiloMetrics
-	devices         []*DeviceInformation
-	controlProtocol protocol.Protocol
+	log               types.Logger
+	met               metrics.SiloMetrics
+	devices           []*DeviceInformation
+	controlProtocol   protocol.Protocol
+	incomingDevicesWg sync.WaitGroup
 }
 
 type DeviceInformation struct {

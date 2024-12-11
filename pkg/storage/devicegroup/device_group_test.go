@@ -256,8 +256,6 @@ func TestDeviceGroupMigrate(t *testing.T) {
 	go func() {
 		var err error
 		dg2, err = NewFromProtocol(ctx, prDest, tweak, nil, nil)
-
-		fmt.Printf("DG2 setup as %v\n", dg2)
 		assert.NoError(t, err)
 		wg.Done()
 	}()
@@ -274,7 +272,11 @@ func TestDeviceGroupMigrate(t *testing.T) {
 	err = dg.Completed()
 	assert.NoError(t, err)
 
+	// Make sure the incoming devices were setup completely
 	wg.Wait()
+
+	// Make sure all incoming devices are complete
+	dg2.WaitForCompletion()
 
 	// Check the data all got migrated correctly from dg to dg2.
 	for i := range testDeviceSchema {
