@@ -2,7 +2,6 @@ package devicegroup
 
 import (
 	"context"
-	"sync"
 
 	"github.com/loopholelabs/logging/types"
 	"github.com/loopholelabs/silo/pkg/storage"
@@ -50,8 +49,7 @@ func NewFromProtocol(ctx context.Context,
 		return nil, err
 	}
 
-	var wg sync.WaitGroup
-	wg.Add(len(dg.devices))
+	dg.incomingDevicesWg.Add(len(dg.devices))
 
 	// We need to create the FromProtocol for each device, and associated goroutines here.
 	for index, di := range dgi.Devices {
@@ -79,20 +77,17 @@ func NewFromProtocol(ctx context.Context,
 		go func() {
 			from.HandleEvent(func(p *packets.Event) {
 				if p.Type == packets.EventCompleted {
-					wg.Done()
+					dg.incomingDevicesWg.Done()
 				}
-				// TODO: Pass events on
+				// TODO: Pass events on to caller so they can be handled upstream
 			})
 		}()
 	}
 
-	// Wait for completion events from all devices here.
-	// TODO: Split this up into a separate call...
-	wg.Wait()
-
 	return dg, nil
 }
 
-func (dg *DeviceGroup) Wait() {
-
+// Wait for completion events from all devices here.
+func (dg *DeviceGroup) WaitForCompletion() {
+	dg.incomingDevicesWg.Wait()
 }
