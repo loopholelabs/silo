@@ -21,6 +21,8 @@ import (
 )
 
 const volatilityExpiry = 30 * time.Minute
+const defaultBlockSize = 1024 * 1024
+const maxDirtyHistory = 32
 
 var errNotSetup = errors.New("toProtocol not setup")
 
@@ -67,6 +69,9 @@ func New(ds []*config.DeviceSchema, log types.Logger, met metrics.SiloMetrics) (
 		}
 
 		blockSize := int(s.ByteBlockSize())
+		if blockSize == 0 {
+			blockSize = defaultBlockSize
+		}
 
 		local := modules.NewLockable(prov)
 		mlocal := modules.NewMetrics(local)
@@ -77,12 +82,16 @@ func New(ds []*config.DeviceSchema, log types.Logger, met metrics.SiloMetrics) (
 		orderer := blocks.NewPriorityBlockOrder(totalBlocks, vmonitor)
 		orderer.AddAll()
 
-		exp.SetProvider(vmonitor)
+		if exp != nil {
+			exp.SetProvider(vmonitor)
+		}
 
 		// Add to metrics if given.
 		if met != nil {
 			met.AddMetrics(s.Name, mlocal)
-			met.AddNBD(s.Name, exp.(*expose.ExposedStorageNBDNL))
+			if exp != nil {
+				met.AddNBD(s.Name, exp.(*expose.ExposedStorageNBDNL))
+			}
 			met.AddDirtyTracker(s.Name, dirtyRemote)
 			met.AddVolatilityMonitor(s.Name, vmonitor)
 		}
@@ -124,7 +133,8 @@ func (dg *DeviceGroup) StartMigrationTo(pro protocol.Protocol) error {
 		}
 
 		schema := string(d.schema.Encode())
-		err := d.to.SendDevInfo(d.schema.Name, uint32(d.schema.ByteBlockSize()), schema)
+
+		err := d.to.SendDevInfo(d.schema.Name, uint32(d.blockSize), schema)
 		if err != nil {
 			if dg.log != nil {
 				dg.log.Error().Str("schema", schema).Msg("could not send DevInfo")
@@ -270,24 +280,27 @@ func (dg *DeviceGroup) MigrateAll(maxConcurrency int, progressHandler func(i int
 	// Now start them all migrating, and collect err
 	for _, d := range dg.devices {
 		go func() {
-			errs <- d.migrator.Migrate(d.numBlocks)
+			err := d.migrator.Migrate(d.numBlocks)
+			errs <- err
 		}()
 	}
 
 	// Check for error from Migrate, and then Wait for completion of all devices...
-	for _, d := range dg.devices {
+	for index := range dg.devices {
 		migErr := <-errs
 		if migErr != nil {
 			if dg.log != nil {
-				dg.log.Error().Err(migErr).Msg("error migrating device group")
+				dg.log.Error().Err(migErr).Int("index", index).Msg("error migrating device group")
 			}
 			return migErr
 		}
+	}
 
+	for index, d := range dg.devices {
 		err := d.migrator.WaitForCompletion()
 		if err != nil {
 			if dg.log != nil {
-				dg.log.Error().Err(err).Msg("error migrating device group waiting for completion")
+				dg.log.Error().Err(err).Int("index", index).Msg("error migrating device group waiting for completion")
 			}
 			return err
 		}
@@ -296,7 +309,7 @@ func (dg *DeviceGroup) MigrateAll(maxConcurrency int, progressHandler func(i int
 		select {
 		case err := <-d.migrationError:
 			if dg.log != nil {
-				dg.log.Error().Err(err).Msg("error migrating device group from goroutines")
+				dg.log.Error().Err(err).Int("index", index).Msg("error migrating device group from goroutines")
 			}
 			return err
 		default:
@@ -316,8 +329,6 @@ type MigrateDirtyHooks struct {
 	PostMigrateDirty func(index int, to *protocol.ToProtocol, dirtyHistory []int) bool
 	Completed        func(index int, to *protocol.ToProtocol)
 }
-
-const maxDirtyHistory = 32
 
 func (dg *DeviceGroup) MigrateDirty(hooks *MigrateDirtyHooks) error {
 	errs := make(chan error, len(dg.devices))
@@ -402,7 +413,8 @@ func (dg *DeviceGroup) MigrateDirty(hooks *MigrateDirtyHooks) error {
 
 	// Wait for all dirty migrations to complete
 	// Check for any error and return it
-	for err := range errs {
+	for range dg.devices {
+		err := <-errs
 		if err != nil {
 			return err
 		}
@@ -418,6 +430,10 @@ func (dg *DeviceGroup) CloseAll() error {
 
 	var e error
 	for _, d := range dg.devices {
+		// Unlock the storage so nothing blocks here...
+		// If we don't unlock there may be pending nbd writes that can't be completed.
+		d.storage.Unlock()
+
 		err := d.prov.Close()
 		if err != nil {
 			if dg.log != nil {
