@@ -251,9 +251,13 @@ func (fp *FromProtocol) HandleDevInfo() error {
 	if err != nil {
 		return err
 	}
-
 	atomic.AddUint64(&fp.metricRecvDevInfo, 1)
 
+	return fp.SetDevInfo(di)
+}
+
+// Alternatively, you can call SetDevInfo to setup the DevInfo.
+func (fp *FromProtocol) SetDevInfo(di *packets.DevInfo) error {
 	// Create storage, and setup a writeCombinator with two inputs
 	fp.initLock.Lock()
 	fp.prov = fp.providerFactory(di)

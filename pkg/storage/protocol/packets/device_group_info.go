@@ -11,6 +11,7 @@ type DeviceGroupInfo struct {
 
 func EncodeDeviceGroupInfo(dgi *DeviceGroupInfo) []byte {
 	var buffer bytes.Buffer
+	buffer.WriteByte(CommandDeviceGroupInfo)
 	diHeader := make([]byte, 8)
 
 	for index, di := range dgi.Devices {
@@ -28,7 +29,11 @@ func DecodeDeviceGroupInfo(buff []byte) (*DeviceGroupInfo, error) {
 		Devices: make(map[int]*DevInfo),
 	}
 
-	ptr := 0
+	if len(buff) < 1 || buff[0] != CommandDeviceGroupInfo {
+		return nil, ErrInvalidPacket
+	}
+
+	ptr := 1
 	for {
 		if ptr == len(buff) {
 			break

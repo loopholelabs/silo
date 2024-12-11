@@ -324,7 +324,15 @@ func (p *RW) WaitForPacket(dev uint32, id uint32) ([]byte, error) {
 
 func (p *RW) WaitForCommand(dev uint32, cmd byte) (uint32, []byte, error) {
 	p.waitersLock.Lock()
-	w := p.waiters[dev]
+	w, ok := p.waiters[dev]
+	if !ok {
+		p.activeDevs[dev] = true
+		w = Waiters{
+			byCmd: make(map[byte]chan packetinfo),
+			byID:  make(map[uint32]chan packetinfo),
+		}
+		p.waiters[dev] = w
+	}
 	wq, okk := w.byCmd[cmd]
 	if !okk {
 		wq = make(chan packetinfo, packetBufferSize)
