@@ -27,9 +27,10 @@ const maxDirtyHistory = 32
 var errNotSetup = errors.New("toProtocol not setup")
 
 type DeviceGroup struct {
-	log     types.Logger
-	met     metrics.SiloMetrics
-	devices []*DeviceInformation
+	log             types.Logger
+	met             metrics.SiloMetrics
+	devices         []*DeviceInformation
+	controlProtocol protocol.Protocol
 }
 
 type DeviceInformation struct {
@@ -122,27 +123,39 @@ func (dg *DeviceGroup) GetProvider(index int) storage.Provider {
 }
 
 func (dg *DeviceGroup) StartMigrationTo(pro protocol.Protocol) error {
-	var e error
+	// We will use dev 0 to communicate
+	dg.controlProtocol = pro
 
+	// First lets setup the ToProtocol
 	for index, d := range dg.devices {
-		d.to = protocol.NewToProtocol(d.prov.Size(), uint32(index), pro)
+		d.to = protocol.NewToProtocol(d.prov.Size(), uint32(index+1), pro)
 		d.to.SetCompression(true)
 
 		if dg.met != nil {
 			dg.met.AddToProtocol(d.schema.Name, d.to)
 		}
-
-		schema := string(d.schema.Encode())
-
-		err := d.to.SendDevInfo(d.schema.Name, uint32(d.blockSize), schema)
-		if err != nil {
-			if dg.log != nil {
-				dg.log.Error().Str("schema", schema).Msg("could not send DevInfo")
-			}
-			e = errors.Join(e, err)
-		}
 	}
-	return e
+
+	// Now package devices up into a single DeviceGroupInfo
+	dgi := &packets.DeviceGroupInfo{
+		Devices: make(map[int]*packets.DevInfo),
+	}
+
+	for index, d := range dg.devices {
+		di := &packets.DevInfo{
+			Size:      d.prov.Size(),
+			BlockSize: uint32(d.blockSize),
+			Name:      d.schema.Name,
+			Schema:    string(d.schema.Encode()),
+		}
+		dgi.Devices[index+1] = di
+	}
+
+	// Send the single DeviceGroupInfo packet down our control channel 0
+	dgiData := packets.EncodeDeviceGroupInfo(dgi)
+	_, err := dg.controlProtocol.SendPacket(0, protocol.IDPickAny, dgiData, protocol.UrgencyUrgent)
+
+	return err
 }
 
 // This will Migrate all devices to the 'to' setup in SendDevInfo stage.

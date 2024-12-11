@@ -83,12 +83,14 @@ func TestDeviceGroupSendDevInfo(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Make sure they all got sent correctly...
-	for index, r := range testDeviceSchema {
-		_, data, err := pro.WaitForCommand(uint32(index), packets.CommandDevInfo)
-		assert.NoError(t, err)
+	_, data, err := pro.WaitForCommand(0, packets.CommandDeviceGroupInfo)
+	assert.NoError(t, err)
 
-		di, err := packets.DecodeDevInfo(data)
-		assert.NoError(t, err)
+	dgi, err := packets.DecodeDeviceGroupInfo(data)
+	assert.NoError(t, err)
+
+	for index, r := range testDeviceSchema {
+		di := dgi.Devices[index+1]
 
 		assert.Equal(t, r.Name, di.Name)
 		assert.Equal(t, uint64(r.ByteSize()), di.Size)
@@ -116,36 +118,46 @@ func TestDeviceGroupMigrate(t *testing.T) {
 	incomingProviders := make(map[uint32]storage.Provider)
 
 	initDev := func(ctx context.Context, p protocol.Protocol, dev uint32) {
-		destStorageFactory := func(di *packets.DevInfo) storage.Provider {
-			store := sources.NewMemoryStorage(int(di.Size))
-			incomingLock.Lock()
-			incomingProviders[dev] = store
-			incomingLock.Unlock()
-			return store
-		}
-
-		from := protocol.NewFromProtocol(ctx, dev, destStorageFactory, p)
-		go func() {
-			err := from.HandleReadAt()
-			assert.ErrorIs(t, err, context.Canceled)
-		}()
-		go func() {
-			err := from.HandleWriteAt()
-			assert.ErrorIs(t, err, context.Canceled)
-		}()
-		go func() {
-			err := from.HandleDevInfo()
-			assert.NoError(t, err)
-		}()
-		go func() {
-			err := from.HandleDirtyList(func(_ []uint) {
-			})
-			assert.ErrorIs(t, err, context.Canceled)
-		}()
 	}
 
 	prSource := protocol.NewRW(ctx, []io.Reader{r1}, []io.Writer{w2}, nil)
 	prDest := protocol.NewRW(ctx, []io.Reader{r2}, []io.Writer{w1}, initDev)
+
+	go func() {
+		// This is our control channel, and we're expecting a DeviceGroupInfo
+		_, dgData, err := prDest.WaitForCommand(0, packets.CommandDeviceGroupInfo)
+		assert.NoError(t, err)
+		dgi, err := packets.DecodeDeviceGroupInfo(dgData)
+		assert.NoError(t, err)
+		fmt.Printf("Device Group %v\n", dgi)
+
+		for index, di := range dgi.Devices {
+			destStorageFactory := func(di *packets.DevInfo) storage.Provider {
+				store := sources.NewMemoryStorage(int(di.Size))
+				incomingLock.Lock()
+				incomingProviders[uint32(index)] = store
+				incomingLock.Unlock()
+				return store
+			}
+
+			from := protocol.NewFromProtocol(ctx, uint32(index), destStorageFactory, prDest)
+			err = from.SetDevInfo(di)
+			assert.NoError(t, err)
+			go func() {
+				err := from.HandleReadAt()
+				assert.ErrorIs(t, err, context.Canceled)
+			}()
+			go func() {
+				err := from.HandleWriteAt()
+				assert.ErrorIs(t, err, context.Canceled)
+			}()
+			go func() {
+				err := from.HandleDirtyList(func(_ []uint) {
+				})
+				assert.ErrorIs(t, err, context.Canceled)
+			}()
+		}
+	}()
 
 	go func() {
 		_ = prSource.Handle()
@@ -176,7 +188,7 @@ func TestDeviceGroupMigrate(t *testing.T) {
 	// Check the data all got migrated correctly
 	for i := range testDeviceSchema {
 		prov := dg.GetProvider(i)
-		destProvider := incomingProviders[uint32(i)]
+		destProvider := incomingProviders[uint32(i+1)]
 		assert.NotNil(t, destProvider)
 		eq, err := storage.Equals(prov, destProvider, 1024*1024)
 		assert.NoError(t, err)
