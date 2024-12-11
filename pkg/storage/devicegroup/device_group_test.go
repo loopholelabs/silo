@@ -181,7 +181,13 @@ func TestDeviceGroupMigrateTo(t *testing.T) {
 	err := dg.StartMigrationTo(prSource)
 	assert.NoError(t, err)
 
-	pHandler := func(_ int, _ *migrator.MigrationProgress) {}
+	pHandler := func(prog []*migrator.MigrationProgress) {
+		for index, p := range prog {
+			if p != nil {
+				fmt.Printf("[%d] %d / %d\n", index, p.ReadyBlocks, p.TotalBlocks)
+			}
+		}
+	}
 
 	err = dg.MigrateAll(100, pHandler)
 	assert.NoError(t, err)
@@ -285,7 +291,7 @@ func TestDeviceGroupMigrate(t *testing.T) {
 		tawg.Done()
 	})
 
-	pHandler := func(_ int, _ *migrator.MigrationProgress) {}
+	pHandler := func(_ []*migrator.MigrationProgress) {}
 
 	err = dg.MigrateAll(100, pHandler)
 	assert.NoError(t, err)

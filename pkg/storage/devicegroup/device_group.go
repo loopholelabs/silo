@@ -29,6 +29,8 @@ type DeviceGroup struct {
 	devices           []*DeviceInformation
 	controlProtocol   protocol.Protocol
 	incomingDevicesWg sync.WaitGroup
+	progressLock      sync.Mutex
+	progress          []*migrator.MigrationProgress
 }
 
 type DeviceInformation struct {
