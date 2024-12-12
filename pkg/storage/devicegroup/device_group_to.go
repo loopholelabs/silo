@@ -228,14 +228,14 @@ func (dg *DeviceGroup) MigrateAll(maxConcurrency int, progressHandler func(p []*
 			storage.BlockTypeAny: int(concurrency),
 		}
 		cfg.LockerHandler = func() {
-			setMigrationError(d.to.SendEvent(&packets.Event{Type: packets.EventPreLock}))
+			//			setMigrationError(d.to.SendEvent(&packets.Event{Type: packets.EventPreLock}))
 			d.storage.Lock()
-			setMigrationError(d.to.SendEvent(&packets.Event{Type: packets.EventPostLock}))
+			//			setMigrationError(d.to.SendEvent(&packets.Event{Type: packets.EventPostLock}))
 		}
 		cfg.UnlockerHandler = func() {
-			setMigrationError(d.to.SendEvent(&packets.Event{Type: packets.EventPreUnlock}))
+			//			setMigrationError(d.to.SendEvent(&packets.Event{Type: packets.EventPreUnlock}))
 			d.storage.Unlock()
-			setMigrationError(d.to.SendEvent(&packets.Event{Type: packets.EventPostUnlock}))
+			//			setMigrationError(d.to.SendEvent(&packets.Event{Type: packets.EventPostUnlock}))
 		}
 		cfg.ErrorHandler = func(_ *storage.BlockInfo, err error) {
 			setMigrationError(err)
@@ -319,9 +319,19 @@ type MigrateDirtyHooks struct {
 }
 
 func (dg *DeviceGroup) MigrateDirty(hooks *MigrateDirtyHooks) error {
+	// If StartMigrationTo or MigrateAll have not been called, return error.
+	for _, d := range dg.devices {
+		if d.to == nil || d.migrator == nil {
+			return errNotSetup
+		}
+	}
+
 	errs := make(chan error, len(dg.devices))
 
 	for index, d := range dg.devices {
+		// First unlock the storage if it is locked due to a previous MigrateDirty call
+		d.storage.Unlock()
+
 		go func() {
 			dirtyHistory := make([]int, 0)
 

@@ -36,6 +36,7 @@ var (
 
 var serveAddr string
 var serveConf string
+var serveContinuous bool
 
 var serveMetrics string
 var serveDebug bool
@@ -46,6 +47,7 @@ func init() {
 	cmdServe.Flags().StringVarP(&serveConf, "conf", "c", "silo.conf", "Configuration file")
 	cmdServe.Flags().BoolVarP(&serveDebug, "debug", "d", false, "Debug logging (trace)")
 	cmdServe.Flags().StringVarP(&serveMetrics, "metrics", "m", "", "Prom metrics address")
+	cmdServe.Flags().BoolVarP(&serveContinuous, "continuous", "C", false, "Continuous sync")
 }
 
 func runServe(_ *cobra.Command, _ []string) {
@@ -150,29 +152,42 @@ func runServe(_ *cobra.Command, _ []string) {
 
 		fmt.Printf("All devices migrated in %dms.\n", time.Since(ctime).Milliseconds())
 
-		// Now do a dirty block phase...
-		hooks := &devicegroup.MigrateDirtyHooks{
-			PreGetDirty: func(index int, to *protocol.ToProtocol, dirtyHistory []int) {
-				fmt.Printf("# [%d]PreGetDirty %v\n", index, dirtyHistory)
-			},
-			PostGetDirty: func(index int, to *protocol.ToProtocol, dirtyHistory []int, blocks []uint) {
-				fmt.Printf("# [%d]PostGetDirty %v\n", index, dirtyHistory)
-			},
-			PostMigrateDirty: func(index int, to *protocol.ToProtocol, dirtyHistory []int) bool {
-				fmt.Printf("# [%d]PostMigrateDirty %v\n", index, dirtyHistory)
-				return false
-			},
-			Completed: func(index int, to *protocol.ToProtocol) {
-				fmt.Printf("# [%d]Completed\n", index)
-			},
+		for {
+
+			// Now do a dirty block phase...
+			hooks := &devicegroup.MigrateDirtyHooks{
+				PreGetDirty: func(index int, to *protocol.ToProtocol, dirtyHistory []int) {
+					fmt.Printf("# [%d]PreGetDirty %v\n", index, dirtyHistory)
+				},
+				PostGetDirty: func(index int, to *protocol.ToProtocol, dirtyHistory []int, blocks []uint) {
+					fmt.Printf("# [%d]PostGetDirty %v\n", index, dirtyHistory)
+				},
+				PostMigrateDirty: func(index int, to *protocol.ToProtocol, dirtyHistory []int) bool {
+					fmt.Printf("# [%d]PostMigrateDirty %v\n", index, dirtyHistory)
+					time.Sleep(1 * time.Second) // Wait a bit for next dirty loop
+					return false
+				},
+				Completed: func(index int, to *protocol.ToProtocol) {
+					fmt.Printf("# [%d]Completed\n", index)
+				},
+			}
+			err = dg.MigrateDirty(hooks)
+			if err != nil {
+				dg.CloseAll()
+				panic(err)
+			}
+
+			if !serveContinuous {
+				break
+			}
 		}
-		err = dg.MigrateDirty(hooks)
+		fmt.Printf("All devices migrated(including dirty) in %dms.\n", time.Since(ctime).Milliseconds())
+
+		err = dg.Completed() // Send completion events for the devices.
 		if err != nil {
 			dg.CloseAll()
 			panic(err)
 		}
-
-		fmt.Printf("All devices migrated(including dirty) in %dms.\n", time.Since(ctime).Milliseconds())
 
 		if log != nil {
 			metrics := pro.GetMetrics()

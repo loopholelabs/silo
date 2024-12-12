@@ -5,7 +5,7 @@ All internat concerns such as volatilityMonitor, waitingCache, as well as the ne
 
 ## Creation
 
-There are two methods to create a `DeviceGroup`
+There are two methods to create a `DeviceGroup`.
 
 ### NewFromSchema
 
@@ -57,3 +57,5 @@ There is also support for sending custom data. This would typically be done eith
 
     // Wait for migration completion
 	dg.WaitForCompletion()
+
+Once a `DeviceGroup` is has been created and migration is completed, you can then send the devices somewhere else with `StartMigration(protocol)`.
