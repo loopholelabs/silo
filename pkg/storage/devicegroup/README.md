@@ -32,10 +32,23 @@ Devices in a `DeviceGroup` are sent together, which allows Silo to optimize all 
     // hooks gives some control over the dirty loop
 	err = dg.MigrateDirty(hooks)
 
+    // Send completion events for all devices
+    err = dg.Completed()
+
     // Close everything
     dg.CloseAll()
 
-There is also support for sending custom data. This would typically be done either in `pHandler` (The progress handler), or in one of the `MigrateDirty` hooks.
+Within the `MigrateDirty` there are a number of hooks we can use to control things. MigrateDirty will return once all devices have no more dirty data. You can of course then call MigrateDirty again eg for continuous sync.
+
+    type MigrateDirtyHooks struct {
+        PreGetDirty      func(index int, to *protocol, ToProtocol, dirtyHistory []int)
+        PostGetDirty     func(index int, to *protocol.ToProtocol, dirtyHistory []int, blocks []uint)
+        PostMigrateDirty func(index int, to *protocol.ToProtocol, dirtyHistory []int) bool
+        Completed        func(index int, to *protocol.ToProtocol)
+    }
+
+
+There is also support for sending global custom data. This would typically be done either in `pHandler` (The progress handler), or in one of the `MigrateDirty` hooks.
 
     pHandler := func(ps []*migrator.MigrationProgress) {
         // Do some test here to see if enough data migrated
@@ -47,10 +60,11 @@ There is also support for sending custom data. This would typically be done eith
 ## Usage (Receiving devices)
 
     // Create a DeviceGroup from protocol
-    // tweak allows us to modify the schema
+    // tweak func allows us to modify the schema, eg pathnames
 	dg, err = NewFromProtocol(ctx, protocol, tweak, nil, nil)
 
-    // Handle any custom data
+    // Handle any custom data events
+    // For example resume the VM here.
 	go dg.HandleCustomData(func(data []byte) {
         // We got sent some custom data!
     })
