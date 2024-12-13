@@ -323,6 +323,7 @@ func (p *RW) WaitForPacket(dev uint32, id uint32) ([]byte, error) {
 }
 
 func (p *RW) WaitForCommand(dev uint32, cmd byte) (uint32, []byte, error) {
+	p.activeDevsLock.Lock()
 	p.waitersLock.Lock()
 	w, ok := p.waiters[dev]
 	if !ok {
@@ -339,6 +340,7 @@ func (p *RW) WaitForCommand(dev uint32, cmd byte) (uint32, []byte, error) {
 		w.byCmd[cmd] = wq
 	}
 	p.waitersLock.Unlock()
+	p.activeDevsLock.Unlock()
 
 	select {
 	case p := <-wq:

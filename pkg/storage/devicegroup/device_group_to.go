@@ -118,7 +118,7 @@ func (dg *DeviceGroup) StartMigrationTo(pro protocol.Protocol) error {
 			Size:      d.prov.Size(),
 			BlockSize: uint32(d.blockSize),
 			Name:      d.schema.Name,
-			Schema:    string(d.schema.Encode()),
+			Schema:    string(d.schema.EncodeAsBlock()),
 		}
 		dgi.Devices[index+1] = di
 	}

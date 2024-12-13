@@ -33,13 +33,12 @@ func NewFromProtocol(ctx context.Context,
 
 	// First create the devices we need using the schemas sent...
 	for index, di := range dgi.Devices {
-		ds := &config.DeviceSchema{}
 		// We may want to tweak schemas here eg autoStart = false on sync. Or modify pathnames.
 		schema := di.Schema
 		if tweakDeviceSchema != nil {
 			schema = tweakDeviceSchema(index-1, di.Name, schema)
 		}
-		err := ds.Decode(schema)
+		ds, err := config.DecodeDeviceFromBlock(schema)
 		if err != nil {
 			return nil, err
 		}

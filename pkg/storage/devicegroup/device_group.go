@@ -52,8 +52,22 @@ type DeviceInformation struct {
 	waitingCacheRemote *waitingcache.Remote
 }
 
-func (dg *DeviceGroup) GetProvider(index int) storage.Provider {
-	return dg.devices[index].storage
+func (dg *DeviceGroup) GetExposedDeviceByName(name string) string {
+	for _, di := range dg.devices {
+		if di.schema.Name == name && di.exp != nil {
+			return di.exp.Device()
+		}
+	}
+	return ""
+}
+
+func (dg *DeviceGroup) GetProviderByName(name string) storage.Provider {
+	for _, di := range dg.devices {
+		if di.schema.Name == name {
+			return di.prov
+		}
+	}
+	return nil
 }
 
 func (dg *DeviceGroup) CloseAll() error {
