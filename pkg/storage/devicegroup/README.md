@@ -1,7 +1,7 @@
 # Device Group
 
 The `DeviceGroup` combines some number of Silo devices into a single unit, which can then be migrated to another Silo instance.
-All internat concerns such as volatilityMonitor, waitingCache, as well as the new S3 assist, are now hidden from the consumer.
+All internal concerns such as volatilityMonitor, waitingCache, as well as the new S3 assist, are now hidden from the consumer.
 
 ## Creation
 
@@ -41,7 +41,7 @@ Devices in a `DeviceGroup` are sent together, which allows Silo to optimize all 
 Within the `MigrateDirty` there are a number of hooks we can use to control things. MigrateDirty will return once all devices have no more dirty data. You can of course then call MigrateDirty again eg for continuous sync.
 
     type MigrateDirtyHooks struct {
-        PreGetDirty      func(index int, to *protocol, ToProtocol, dirtyHistory []int)
+        PreGetDirty      func(index int, to *protocol.ToProtocol, dirtyHistory []int)
         PostGetDirty     func(index int, to *protocol.ToProtocol, dirtyHistory []int, blocks []uint)
         PostMigrateDirty func(index int, to *protocol.ToProtocol, dirtyHistory []int) bool
         Completed        func(index int, to *protocol.ToProtocol)
