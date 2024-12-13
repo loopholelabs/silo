@@ -95,7 +95,7 @@ func Equals(sp1 Provider, sp2 Provider, blockSize int) (bool, error) {
 		}
 		for j := 0; j < n; j++ {
 			if sourceBuff[j] != destBuff[j] {
-				fmt.Printf("Equals: Block %d differs\n", i/blockSize)
+				fmt.Printf("Equals: Block %d differs [sp1 %d, sp2 %d]\n", i/blockSize, sourceBuff[j], destBuff[j])
 				return false, nil
 			}
 		}

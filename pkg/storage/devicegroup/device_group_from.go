@@ -29,7 +29,7 @@ func NewFromProtocol(ctx context.Context,
 		return nil, err
 	}
 
-	devices := make([]*config.DeviceSchema, 0)
+	devices := make([]*config.DeviceSchema, len(dgi.Devices))
 
 	// First create the devices we need using the schemas sent...
 	for index, di := range dgi.Devices {
@@ -42,7 +42,7 @@ func NewFromProtocol(ctx context.Context,
 		if err != nil {
 			return nil, err
 		}
-		devices = append(devices, ds)
+		devices[index-1] = ds
 	}
 
 	dg, err := NewFromSchema(devices, log, met)
@@ -56,13 +56,14 @@ func NewFromProtocol(ctx context.Context,
 
 	// We need to create the FromProtocol for each device, and associated goroutines here.
 	for index, di := range dgi.Devices {
-		d := dg.devices[index-1]
+		dev := index - 1
+		d := dg.devices[dev]
 
 		destStorageFactory := func(di *packets.DevInfo) storage.Provider {
 			d.waitingCacheLocal, d.waitingCacheRemote = waitingcache.NewWaitingCacheWithLogger(d.prov, int(di.BlockSize), dg.log)
 
-			if dg.devices[index-1].exp != nil {
-				dg.devices[index-1].exp.SetProvider(d.waitingCacheLocal)
+			if d.exp != nil {
+				d.exp.SetProvider(d.waitingCacheLocal)
 			}
 
 			return d.waitingCacheRemote
