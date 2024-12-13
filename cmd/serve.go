@@ -96,6 +96,13 @@ func runServe(_ *cobra.Command, _ []string) {
 		panic(err)
 	}
 
+	for _, d := range siloConf.Device {
+		expName := dg.GetExposedDeviceByName(d.Name)
+		if expName != "" {
+			fmt.Printf("Device %s exposed at %s\n", d.Name, expName)
+		}
+	}
+
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	go func() {

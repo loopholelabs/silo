@@ -135,16 +135,17 @@ func runConnect(_ *cobra.Command, _ []string) {
 
 	dg, err = devicegroup.NewFromProtocol(protoCtx, pro, tweak, log, siloMetrics)
 
+	for _, d := range dg.GetDeviceSchema() {
+		expName := dg.GetExposedDeviceByName(d.Name)
+		if expName != "" {
+			fmt.Printf("Device %s exposed at %s\n", d.Name, expName)
+		}
+	}
+
 	// Wait for completion events.
 	dg.WaitForCompletion()
 
 	fmt.Printf("\nMigrations completed. Please ctrl-c if you want to shut down, or wait an hour :)\n")
-
-	prov := dg.GetProvider(0)
-
-	buffer := make([]byte, prov.Size())
-	prov.ReadAt(buffer, 0)
-	fmt.Printf("DATA is [%s]\n", string(buffer))
 
 	// We should pause here, to allow the user to do things with the devices
 	time.Sleep(1 * time.Hour)

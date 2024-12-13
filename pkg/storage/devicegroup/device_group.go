@@ -52,6 +52,14 @@ type DeviceInformation struct {
 	waitingCacheRemote *waitingcache.Remote
 }
 
+func (dg *DeviceGroup) GetDeviceSchema() []*config.DeviceSchema {
+	s := make([]*config.DeviceSchema, 0)
+	for _, di := range dg.devices {
+		s = append(s, di.schema)
+	}
+	return s
+}
+
 func (dg *DeviceGroup) GetExposedDeviceByName(name string) string {
 	for _, di := range dg.devices {
 		if di.schema.Name == name && di.exp != nil {
