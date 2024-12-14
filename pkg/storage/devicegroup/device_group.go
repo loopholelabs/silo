@@ -13,6 +13,7 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/metrics"
 	"github.com/loopholelabs/silo/pkg/storage/migrator"
 	"github.com/loopholelabs/silo/pkg/storage/protocol"
+	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
 	"github.com/loopholelabs/silo/pkg/storage/volatilitymonitor"
 	"github.com/loopholelabs/silo/pkg/storage/waitingcache"
 )
@@ -34,48 +35,67 @@ type DeviceGroup struct {
 }
 
 type DeviceInformation struct {
-	size               uint64
-	blockSize          uint64
-	numBlocks          int
-	schema             *config.DeviceSchema
-	prov               storage.Provider
-	storage            storage.LockableProvider
-	exp                storage.ExposedStorage
-	volatility         *volatilitymonitor.VolatilityMonitor
-	dirtyLocal         *dirtytracker.Local
-	dirtyRemote        *dirtytracker.Remote
-	to                 *protocol.ToProtocol
-	orderer            *blocks.PriorityBlockOrder
-	migrator           *migrator.Migrator
+	Size               uint64
+	BlockSize          uint64
+	NumBlocks          int
+	Schema             *config.DeviceSchema
+	Prov               storage.Provider
+	Storage            storage.LockableProvider
+	Exp                storage.ExposedStorage
+	Volatility         *volatilitymonitor.VolatilityMonitor
+	DirtyLocal         *dirtytracker.Local
+	DirtyRemote        *dirtytracker.Remote
+	To                 *protocol.ToProtocol
+	Orderer            *blocks.PriorityBlockOrder
+	Migrator           *migrator.Migrator
 	migrationError     chan error
-	waitingCacheLocal  *waitingcache.Local
-	waitingCacheRemote *waitingcache.Remote
+	WaitingCacheLocal  *waitingcache.Local
+	WaitingCacheRemote *waitingcache.Remote
+	EventHandler       func(e *packets.Event)
 }
 
 func (dg *DeviceGroup) GetDeviceSchema() []*config.DeviceSchema {
 	s := make([]*config.DeviceSchema, 0)
 	for _, di := range dg.devices {
-		s = append(s, di.schema)
+		s = append(s, di.Schema)
 	}
 	return s
 }
 
-func (dg *DeviceGroup) GetExposedDeviceByName(name string) string {
+func (dg *DeviceGroup) GetDeviceInformationByName(name string) *DeviceInformation {
 	for _, di := range dg.devices {
-		if di.schema.Name == name && di.exp != nil {
-			return di.exp.Device()
+		if di.Schema.Name == name {
+			return di
 		}
 	}
-	return ""
+	return nil
+}
+
+func (dg *DeviceGroup) GetExposedDeviceByName(name string) storage.ExposedStorage {
+	for _, di := range dg.devices {
+		if di.Schema.Name == name && di.Exp != nil {
+			return di.Exp
+		}
+	}
+	return nil
 }
 
 func (dg *DeviceGroup) GetProviderByName(name string) storage.Provider {
 	for _, di := range dg.devices {
-		if di.schema.Name == name {
-			return di.prov
+		if di.Schema.Name == name {
+			return di.Prov
 		}
 	}
 	return nil
+}
+
+func (dg *DeviceGroup) GetBlockSizeByName(name string) int {
+	for _, di := range dg.devices {
+		if di.Schema.Name == name {
+			return int(di.BlockSize)
+		}
+	}
+	return -1
 }
 
 func (dg *DeviceGroup) CloseAll() error {
@@ -87,17 +107,17 @@ func (dg *DeviceGroup) CloseAll() error {
 	for _, d := range dg.devices {
 		// Unlock the storage so nothing blocks here...
 		// If we don't unlock there may be pending nbd writes that can't be completed.
-		d.storage.Unlock()
+		d.Storage.Unlock()
 
-		err := d.prov.Close()
+		err := d.Prov.Close()
 		if err != nil {
 			if dg.log != nil {
 				dg.log.Error().Err(err).Msg("error closing device group storage provider")
 			}
 			e = errors.Join(e, err)
 		}
-		if d.exp != nil {
-			err = d.exp.Shutdown()
+		if d.Exp != nil {
+			err = d.Exp.Shutdown()
 			if err != nil {
 				if dg.log != nil {
 					dg.log.Error().Err(err).Msg("error closing device group exposed storage")

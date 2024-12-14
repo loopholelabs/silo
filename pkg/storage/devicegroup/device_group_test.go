@@ -120,11 +120,8 @@ func TestDeviceGroupMigrateTo(t *testing.T) {
 	var incomingLock sync.Mutex
 	incomingProviders := make(map[string]storage.Provider)
 
-	initDev := func(ctx context.Context, p protocol.Protocol, dev uint32) {
-	}
-
 	prSource := protocol.NewRW(ctx, []io.Reader{r1}, []io.Writer{w2}, nil)
-	prDest := protocol.NewRW(ctx, []io.Reader{r2}, []io.Writer{w1}, initDev)
+	prDest := protocol.NewRW(ctx, []io.Reader{r2}, []io.Writer{w1}, nil)
 
 	go func() {
 		// This is our control channel, and we're expecting a DeviceGroupInfo
@@ -183,7 +180,7 @@ func TestDeviceGroupMigrateTo(t *testing.T) {
 	err := dg.StartMigrationTo(prSource)
 	assert.NoError(t, err)
 
-	pHandler := func(prog []*migrator.MigrationProgress) {}
+	pHandler := func(_ []*migrator.MigrationProgress) {}
 
 	err = dg.MigrateAll(100, pHandler)
 	assert.NoError(t, err)
@@ -223,11 +220,8 @@ func TestDeviceGroupMigrate(t *testing.T) {
 
 	ctx, cancelfn := context.WithCancel(context.TODO())
 
-	initDev := func(ctx context.Context, p protocol.Protocol, dev uint32) {
-	}
-
 	prSource := protocol.NewRW(ctx, []io.Reader{r1}, []io.Writer{w2}, nil)
-	prDest := protocol.NewRW(ctx, []io.Reader{r2}, []io.Writer{w1}, initDev)
+	prDest := protocol.NewRW(ctx, []io.Reader{r2}, []io.Writer{w1}, nil)
 
 	var prDone sync.WaitGroup
 
@@ -255,7 +249,7 @@ func TestDeviceGroupMigrate(t *testing.T) {
 	var wg sync.WaitGroup
 
 	// We will tweak schema in recv here so we have separate paths.
-	tweak := func(index int, name string, schema string) string {
+	tweak := func(_ int, _ string, schema string) string {
 		s := strings.ReplaceAll(schema, "testdev_test1", "testrecv_test1")
 		s = strings.ReplaceAll(s, "testdev_test2", "testrecv_test2")
 		return s
@@ -264,7 +258,7 @@ func TestDeviceGroupMigrate(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		var err error
-		dg2, err = NewFromProtocol(ctx, prDest, tweak, nil, nil)
+		dg2, err = NewFromProtocol(ctx, prDest, tweak, nil, nil, nil)
 		assert.NoError(t, err)
 		wg.Done()
 	}()

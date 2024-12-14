@@ -108,9 +108,7 @@ func runConnect(_ *cobra.Command, _ []string) {
 
 	protoCtx, protoCancelfn := context.WithCancel(context.TODO())
 
-	handleIncomingDevice := func(ctx context.Context, pro protocol.Protocol, dev uint32) {}
-
-	pro := protocol.NewRW(protoCtx, []io.Reader{con}, []io.Writer{con}, handleIncomingDevice)
+	pro := protocol.NewRW(protoCtx, []io.Reader{con}, []io.Writer{con}, nil)
 
 	// Let the protocol do its thing.
 	go func() {
@@ -129,16 +127,16 @@ func runConnect(_ *cobra.Command, _ []string) {
 	}
 
 	// TODO: Modify schemas a bit here...
-	tweak := func(index int, name string, schema string) string {
+	tweak := func(_ int, _ string, schema string) string {
 		return schema
 	}
 
-	dg, err = devicegroup.NewFromProtocol(protoCtx, pro, tweak, log, siloMetrics)
+	dg, err = devicegroup.NewFromProtocol(protoCtx, pro, tweak, nil, log, siloMetrics)
 
 	for _, d := range dg.GetDeviceSchema() {
 		expName := dg.GetExposedDeviceByName(d.Name)
-		if expName != "" {
-			fmt.Printf("Device %s exposed at %s\n", d.Name, expName)
+		if expName != nil {
+			fmt.Printf("Device %s exposed at %s\n", d.Name, expName.Device())
 		}
 	}
 

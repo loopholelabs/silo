@@ -68,17 +68,17 @@ func NewFromSchema(ds []*config.DeviceSchema, log types.Logger, met metrics.Silo
 		}
 
 		dg.devices = append(dg.devices, &DeviceInformation{
-			size:        local.Size(),
-			blockSize:   uint64(blockSize),
-			numBlocks:   totalBlocks,
-			schema:      s,
-			prov:        prov,
-			storage:     local,
-			exp:         exp,
-			volatility:  vmonitor,
-			dirtyLocal:  dirtyLocal,
-			dirtyRemote: dirtyRemote,
-			orderer:     orderer,
+			Size:        local.Size(),
+			BlockSize:   uint64(blockSize),
+			NumBlocks:   totalBlocks,
+			Schema:      s,
+			Prov:        prov,
+			Storage:     local,
+			Exp:         exp,
+			Volatility:  vmonitor,
+			DirtyLocal:  dirtyLocal,
+			DirtyRemote: dirtyRemote,
+			Orderer:     orderer,
 		})
 
 		// Set these two at least, so we know *something* about every device in progress handler.
@@ -100,11 +100,11 @@ func (dg *DeviceGroup) StartMigrationTo(pro protocol.Protocol) error {
 
 	// First lets setup the ToProtocol
 	for index, d := range dg.devices {
-		d.to = protocol.NewToProtocol(d.prov.Size(), uint32(index+1), pro)
-		d.to.SetCompression(true)
+		d.To = protocol.NewToProtocol(d.Prov.Size(), uint32(index+1), pro)
+		d.To.SetCompression(true)
 
 		if dg.met != nil {
-			dg.met.AddToProtocol(d.schema.Name, d.to)
+			dg.met.AddToProtocol(d.Schema.Name, d.To)
 		}
 	}
 
@@ -115,10 +115,10 @@ func (dg *DeviceGroup) StartMigrationTo(pro protocol.Protocol) error {
 
 	for index, d := range dg.devices {
 		di := &packets.DevInfo{
-			Size:      d.prov.Size(),
-			BlockSize: uint32(d.blockSize),
-			Name:      d.schema.Name,
-			Schema:    string(d.schema.EncodeAsBlock()),
+			Size:      d.Prov.Size(),
+			BlockSize: uint32(d.BlockSize),
+			Name:      d.Schema.Name,
+			Schema:    string(d.Schema.EncodeAsBlock()),
 		}
 		dgi.Devices[index+1] = di
 	}
@@ -133,7 +133,7 @@ func (dg *DeviceGroup) StartMigrationTo(pro protocol.Protocol) error {
 // This will Migrate all devices to the 'to' setup in SendDevInfo stage.
 func (dg *DeviceGroup) MigrateAll(maxConcurrency int, progressHandler func(p []*migrator.MigrationProgress)) error {
 	for _, d := range dg.devices {
-		if d.to == nil {
+		if d.To == nil {
 			return errNotSetup
 		}
 	}
@@ -147,7 +147,7 @@ func (dg *DeviceGroup) MigrateAll(maxConcurrency int, progressHandler func(p []*
 	// Add up device sizes, so we can allocate the concurrency proportionally
 	totalSize := uint64(0)
 	for _, d := range dg.devices {
-		totalSize += d.size
+		totalSize += d.Size
 	}
 
 	// We need at least this much...
@@ -158,7 +158,7 @@ func (dg *DeviceGroup) MigrateAll(maxConcurrency int, progressHandler func(p []*
 	maxConcurrency -= len(dg.devices)
 
 	for index, d := range dg.devices {
-		concurrency := 1 + (uint64(maxConcurrency) * d.size / totalSize)
+		concurrency := 1 + (uint64(maxConcurrency) * d.Size / totalSize)
 		d.migrationError = make(chan error, 1) // We will just hold onto the first error for now.
 
 		setMigrationError := func(err error) {
@@ -172,50 +172,50 @@ func (dg *DeviceGroup) MigrateAll(maxConcurrency int, progressHandler func(p []*
 
 		// Setup d.to
 		go func() {
-			err := d.to.HandleNeedAt(func(offset int64, length int32) {
+			err := d.To.HandleNeedAt(func(offset int64, length int32) {
 				if dg.log != nil {
 					dg.log.Debug().
 						Int64("offset", offset).
 						Int32("length", length).
 						Int("dev", index).
-						Str("name", d.schema.Name).
+						Str("name", d.Schema.Name).
 						Msg("NeedAt for device")
 				}
 				// Prioritize blocks
 				endOffset := uint64(offset + int64(length))
-				if endOffset > d.size {
-					endOffset = d.size
+				if endOffset > d.Size {
+					endOffset = d.Size
 				}
 
-				startBlock := int(offset / int64(d.blockSize))
-				endBlock := int((endOffset-1)/d.blockSize) + 1
+				startBlock := int(offset / int64(d.BlockSize))
+				endBlock := int((endOffset-1)/d.BlockSize) + 1
 				for b := startBlock; b < endBlock; b++ {
-					d.orderer.PrioritiseBlock(b)
+					d.Orderer.PrioritiseBlock(b)
 				}
 			})
 			setMigrationError(err)
 		}()
 
 		go func() {
-			err := d.to.HandleDontNeedAt(func(offset int64, length int32) {
+			err := d.To.HandleDontNeedAt(func(offset int64, length int32) {
 				if dg.log != nil {
 					dg.log.Debug().
 						Int64("offset", offset).
 						Int32("length", length).
 						Int("dev", index).
-						Str("name", d.schema.Name).
+						Str("name", d.Schema.Name).
 						Msg("DontNeedAt for device")
 				}
 				// Deprioritize blocks
 				endOffset := uint64(offset + int64(length))
-				if endOffset > d.size {
-					endOffset = d.size
+				if endOffset > d.Size {
+					endOffset = d.Size
 				}
 
-				startBlock := int(offset / int64(d.blockSize))
-				endBlock := int((endOffset-1)/d.blockSize) + 1
+				startBlock := int(offset / int64(d.BlockSize))
+				endBlock := int((endOffset-1)/d.BlockSize) + 1
 				for b := startBlock; b < endBlock; b++ {
-					d.orderer.Remove(b)
+					d.Orderer.Remove(b)
 				}
 			})
 			setMigrationError(err)
@@ -223,18 +223,18 @@ func (dg *DeviceGroup) MigrateAll(maxConcurrency int, progressHandler func(p []*
 
 		cfg := migrator.NewConfig()
 		cfg.Logger = dg.log
-		cfg.BlockSize = int(d.blockSize)
+		cfg.BlockSize = int(d.BlockSize)
 		cfg.Concurrency = map[int]int{
 			storage.BlockTypeAny: int(concurrency),
 		}
 		cfg.LockerHandler = func() {
 			//			setMigrationError(d.to.SendEvent(&packets.Event{Type: packets.EventPreLock}))
-			d.storage.Lock()
+			d.Storage.Lock()
 			//			setMigrationError(d.to.SendEvent(&packets.Event{Type: packets.EventPostLock}))
 		}
 		cfg.UnlockerHandler = func() {
 			//			setMigrationError(d.to.SendEvent(&packets.Event{Type: packets.EventPreUnlock}))
-			d.storage.Unlock()
+			d.Storage.Unlock()
 			//			setMigrationError(d.to.SendEvent(&packets.Event{Type: packets.EventPostUnlock}))
 		}
 		cfg.ErrorHandler = func(_ *storage.BlockInfo, err error) {
@@ -246,19 +246,19 @@ func (dg *DeviceGroup) MigrateAll(maxConcurrency int, progressHandler func(p []*
 			progressHandler(dg.progress)
 			dg.progressLock.Unlock()
 		}
-		mig, err := migrator.NewMigrator(d.dirtyRemote, d.to, d.orderer, cfg)
+		mig, err := migrator.NewMigrator(d.DirtyRemote, d.To, d.Orderer, cfg)
 		if err != nil {
 			return err
 		}
-		d.migrator = mig
+		d.Migrator = mig
 		if dg.met != nil {
-			dg.met.AddMigrator(d.schema.Name, mig)
+			dg.met.AddMigrator(d.Schema.Name, mig)
 		}
 		if dg.log != nil {
 			dg.log.Debug().
 				Uint64("concurrency", concurrency).
 				Int("index", index).
-				Str("name", d.schema.Name).
+				Str("name", d.Schema.Name).
 				Msg("Setup migrator")
 		}
 	}
@@ -268,7 +268,7 @@ func (dg *DeviceGroup) MigrateAll(maxConcurrency int, progressHandler func(p []*
 	// Now start them all migrating, and collect err
 	for _, d := range dg.devices {
 		go func() {
-			err := d.migrator.Migrate(d.numBlocks)
+			err := d.Migrator.Migrate(d.NumBlocks)
 			errs <- err
 		}()
 	}
@@ -285,7 +285,7 @@ func (dg *DeviceGroup) MigrateAll(maxConcurrency int, progressHandler func(p []*
 	}
 
 	for index, d := range dg.devices {
-		err := d.migrator.WaitForCompletion()
+		err := d.Migrator.WaitForCompletion()
 		if err != nil {
 			if dg.log != nil {
 				dg.log.Error().Err(err).Int("index", index).Msg("error migrating device group waiting for completion")
@@ -321,7 +321,7 @@ type MigrateDirtyHooks struct {
 func (dg *DeviceGroup) MigrateDirty(hooks *MigrateDirtyHooks) error {
 	// If StartMigrationTo or MigrateAll have not been called, return error.
 	for _, d := range dg.devices {
-		if d.to == nil || d.migrator == nil {
+		if d.To == nil || d.Migrator == nil {
 			return errNotSetup
 		}
 	}
@@ -330,22 +330,22 @@ func (dg *DeviceGroup) MigrateDirty(hooks *MigrateDirtyHooks) error {
 
 	for index, d := range dg.devices {
 		// First unlock the storage if it is locked due to a previous MigrateDirty call
-		d.storage.Unlock()
+		d.Storage.Unlock()
 
 		go func() {
 			dirtyHistory := make([]int, 0)
 
 			for {
 				if hooks != nil && hooks.PreGetDirty != nil {
-					hooks.PreGetDirty(index, d.to, dirtyHistory)
+					hooks.PreGetDirty(index, d.To, dirtyHistory)
 				}
 
-				blocks := d.migrator.GetLatestDirty()
+				blocks := d.Migrator.GetLatestDirty()
 				if dg.log != nil {
 					dg.log.Debug().
 						Int("blocks", len(blocks)).
 						Int("index", index).
-						Str("name", d.schema.Name).
+						Str("name", d.Schema.Name).
 						Msg("migrating dirty blocks")
 				}
 
@@ -356,40 +356,40 @@ func (dg *DeviceGroup) MigrateDirty(hooks *MigrateDirtyHooks) error {
 				}
 
 				if hooks != nil && hooks.PostGetDirty != nil {
-					hooks.PostGetDirty(index, d.to, dirtyHistory, blocks)
+					hooks.PostGetDirty(index, d.To, dirtyHistory, blocks)
 				}
 
 				if len(blocks) == 0 {
 					break
 				}
 
-				err := d.to.DirtyList(int(d.blockSize), blocks)
+				err := d.To.DirtyList(int(d.BlockSize), blocks)
 				if err != nil {
 					errs <- err
 					return
 				}
 
-				err = d.migrator.MigrateDirty(blocks)
+				err = d.Migrator.MigrateDirty(blocks)
 				if err != nil {
 					errs <- err
 					return
 				}
 
 				if hooks != nil && hooks.PostMigrateDirty != nil {
-					if hooks.PostMigrateDirty(index, d.to, dirtyHistory) {
+					if hooks.PostMigrateDirty(index, d.To, dirtyHistory) {
 						break // PostMigrateDirty returned true, which means stop doing any dirty loop business.
 					}
 				}
 			}
 
-			err := d.migrator.WaitForCompletion()
+			err := d.Migrator.WaitForCompletion()
 			if err != nil {
 				errs <- err
 				return
 			}
 
 			if hooks != nil && hooks.Completed != nil {
-				hooks.Completed(index, d.to)
+				hooks.Completed(index, d.To)
 			}
 
 			errs <- nil
@@ -410,7 +410,7 @@ func (dg *DeviceGroup) MigrateDirty(hooks *MigrateDirtyHooks) error {
 
 func (dg *DeviceGroup) Completed() error {
 	for index, d := range dg.devices {
-		err := d.to.SendEvent(&packets.Event{Type: packets.EventCompleted})
+		err := d.To.SendEvent(&packets.Event{Type: packets.EventCompleted})
 		if err != nil {
 			return err
 		}
@@ -418,7 +418,7 @@ func (dg *DeviceGroup) Completed() error {
 		if dg.log != nil {
 			dg.log.Debug().
 				Int("index", index).
-				Str("name", d.schema.Name).
+				Str("name", d.Schema.Name).
 				Msg("migration completed")
 		}
 	}

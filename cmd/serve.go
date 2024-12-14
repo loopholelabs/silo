@@ -98,8 +98,8 @@ func runServe(_ *cobra.Command, _ []string) {
 
 	for _, d := range siloConf.Device {
 		expName := dg.GetExposedDeviceByName(d.Name)
-		if expName != "" {
-			fmt.Printf("Device %s exposed at %s\n", d.Name, expName)
+		if expName != nil {
+			fmt.Printf("Device %s exposed at %s\n", d.Name, expName.Device())
 		}
 	}
 
@@ -163,18 +163,18 @@ func runServe(_ *cobra.Command, _ []string) {
 
 			// Now do a dirty block phase...
 			hooks := &devicegroup.MigrateDirtyHooks{
-				PreGetDirty: func(index int, to *protocol.ToProtocol, dirtyHistory []int) {
+				PreGetDirty: func(index int, _ *protocol.ToProtocol, dirtyHistory []int) {
 					fmt.Printf("# [%d]PreGetDirty %v\n", index, dirtyHistory)
 				},
-				PostGetDirty: func(index int, to *protocol.ToProtocol, dirtyHistory []int, blocks []uint) {
+				PostGetDirty: func(index int, _ *protocol.ToProtocol, dirtyHistory []int, _ []uint) {
 					fmt.Printf("# [%d]PostGetDirty %v\n", index, dirtyHistory)
 				},
-				PostMigrateDirty: func(index int, to *protocol.ToProtocol, dirtyHistory []int) bool {
+				PostMigrateDirty: func(index int, _ *protocol.ToProtocol, dirtyHistory []int) bool {
 					fmt.Printf("# [%d]PostMigrateDirty %v\n", index, dirtyHistory)
 					time.Sleep(1 * time.Second) // Wait a bit for next dirty loop
 					return false
 				},
-				Completed: func(index int, to *protocol.ToProtocol) {
+				Completed: func(index int, _ *protocol.ToProtocol) {
 					fmt.Printf("# [%d]Completed\n", index)
 				},
 			}

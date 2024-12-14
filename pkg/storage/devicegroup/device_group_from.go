@@ -16,6 +16,7 @@ import (
 func NewFromProtocol(ctx context.Context,
 	pro protocol.Protocol,
 	tweakDeviceSchema func(index int, name string, schema string) string,
+	eventHandler func(e *packets.Event),
 	log types.Logger,
 	met metrics.SiloMetrics) (*DeviceGroup, error) {
 
@@ -58,15 +59,16 @@ func NewFromProtocol(ctx context.Context,
 	for index, di := range dgi.Devices {
 		dev := index - 1
 		d := dg.devices[dev]
+		d.EventHandler = eventHandler
 
 		destStorageFactory := func(di *packets.DevInfo) storage.Provider {
-			d.waitingCacheLocal, d.waitingCacheRemote = waitingcache.NewWaitingCacheWithLogger(d.prov, int(di.BlockSize), dg.log)
+			d.WaitingCacheLocal, d.WaitingCacheRemote = waitingcache.NewWaitingCacheWithLogger(d.Prov, int(di.BlockSize), dg.log)
 
-			if d.exp != nil {
-				d.exp.SetProvider(d.waitingCacheLocal)
+			if d.Exp != nil {
+				d.Exp.SetProvider(d.WaitingCacheLocal)
 			}
 
-			return d.waitingCacheRemote
+			return d.WaitingCacheRemote
 		}
 
 		from := protocol.NewFromProtocol(ctx, uint32(index), destStorageFactory, pro)
@@ -83,7 +85,7 @@ func NewFromProtocol(ctx context.Context,
 		go func() {
 			_ = from.HandleDirtyList(func(dirtyBlocks []uint) {
 				// Tell the waitingCache about it
-				d.waitingCacheLocal.DirtyBlocks(dirtyBlocks)
+				d.WaitingCacheLocal.DirtyBlocks(dirtyBlocks)
 			})
 		}()
 		go func() {
@@ -91,7 +93,9 @@ func NewFromProtocol(ctx context.Context,
 				if p.Type == packets.EventCompleted {
 					dg.incomingDevicesWg.Done()
 				}
-				// TODO: Pass events on to caller so they can be handled upstream
+				if d.EventHandler != nil {
+					d.EventHandler(p)
+				}
 			})
 		}()
 	}
