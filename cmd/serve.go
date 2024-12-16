@@ -159,35 +159,34 @@ func runServe(_ *cobra.Command, _ []string) {
 
 		fmt.Printf("All devices migrated in %dms.\n", time.Since(ctime).Milliseconds())
 
-		for {
-
-			// Now do a dirty block phase...
-			hooks := &devicegroup.MigrateDirtyHooks{
-				PreGetDirty: func(index int, _ *protocol.ToProtocol, dirtyHistory []int) {
-					fmt.Printf("# [%d]PreGetDirty %v\n", index, dirtyHistory)
-				},
-				PostGetDirty: func(index int, _ *protocol.ToProtocol, dirtyHistory []int, _ []uint) {
-					fmt.Printf("# [%d]PostGetDirty %v\n", index, dirtyHistory)
-				},
-				PostMigrateDirty: func(index int, _ *protocol.ToProtocol, dirtyHistory []int) bool {
-					fmt.Printf("# [%d]PostMigrateDirty %v\n", index, dirtyHistory)
-					time.Sleep(1 * time.Second) // Wait a bit for next dirty loop
-					return false
-				},
-				Completed: func(index int, _ *protocol.ToProtocol) {
-					fmt.Printf("# [%d]Completed\n", index)
-				},
-			}
-			err = dg.MigrateDirty(hooks)
-			if err != nil {
-				dg.CloseAll()
-				panic(err)
-			}
-
-			if !serveContinuous {
-				break
-			}
+		// Now do a dirty block phase...
+		hooks := &devicegroup.MigrateDirtyHooks{
+			PreGetDirty: func(name string) error {
+				fmt.Printf("# [%s]PreGetDirty\n", name)
+				return nil
+			},
+			PostGetDirty: func(name string, blocks []uint) (bool, error) {
+				fmt.Printf("# [%s]PostGetDirty %d\n", name, len(blocks))
+				if serveContinuous {
+					return true, nil
+				}
+				return len(blocks) > 0, nil
+			},
+			PostMigrateDirty: func(name string, blocks []uint) (bool, error) {
+				fmt.Printf("# [%s]PostMigrateDirty %d\n", name, len(blocks))
+				time.Sleep(1 * time.Second) // Wait a bit for next dirty loop
+				return true, nil
+			},
+			Completed: func(name string) {
+				fmt.Printf("# [%s]Completed\n", name)
+			},
 		}
+		err = dg.MigrateDirty(hooks)
+		if err != nil {
+			dg.CloseAll()
+			panic(err)
+		}
+
 		fmt.Printf("All devices migrated(including dirty) in %dms.\n", time.Since(ctime).Milliseconds())
 
 		err = dg.Completed() // Send completion events for the devices.

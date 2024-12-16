@@ -20,7 +20,6 @@ import (
 
 const volatilityExpiry = 30 * time.Minute
 const defaultBlockSize = 1024 * 1024
-const maxDirtyHistory = 32
 
 var errNotSetup = errors.New("toProtocol not setup")
 
@@ -60,6 +59,14 @@ func (dg *DeviceGroup) GetDeviceSchema() []*config.DeviceSchema {
 		s = append(s, di.Schema)
 	}
 	return s
+}
+
+func (dg *DeviceGroup) GetAllNames() []string {
+	names := make([]string, 0)
+	for _, di := range dg.devices {
+		names = append(names, di.Schema.Name)
+	}
+	return names
 }
 
 func (dg *DeviceGroup) GetDeviceInformationByName(name string) *DeviceInformation {

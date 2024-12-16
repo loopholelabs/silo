@@ -229,12 +229,12 @@ func (dg *DeviceGroup) MigrateAll(maxConcurrency int, progressHandler func(p []*
 		}
 		cfg.LockerHandler = func() {
 			//			setMigrationError(d.to.SendEvent(&packets.Event{Type: packets.EventPreLock}))
-			d.Storage.Lock()
+			// d.Storage.Lock()
 			//			setMigrationError(d.to.SendEvent(&packets.Event{Type: packets.EventPostLock}))
 		}
 		cfg.UnlockerHandler = func() {
 			//			setMigrationError(d.to.SendEvent(&packets.Event{Type: packets.EventPreUnlock}))
-			d.Storage.Unlock()
+			// d.Storage.Unlock()
 			//			setMigrationError(d.to.SendEvent(&packets.Event{Type: packets.EventPostUnlock}))
 		}
 		cfg.ErrorHandler = func(_ *storage.BlockInfo, err error) {
@@ -312,10 +312,10 @@ func (dg *DeviceGroup) MigrateAll(maxConcurrency int, progressHandler func(p []*
 }
 
 type MigrateDirtyHooks struct {
-	PreGetDirty      func(index int, to *protocol.ToProtocol, dirtyHistory []int)
-	PostGetDirty     func(index int, to *protocol.ToProtocol, dirtyHistory []int, blocks []uint)
-	PostMigrateDirty func(index int, to *protocol.ToProtocol, dirtyHistory []int) bool
-	Completed        func(index int, to *protocol.ToProtocol)
+	PreGetDirty      func(name string) error
+	PostGetDirty     func(name string, blocks []uint) (bool, error)
+	PostMigrateDirty func(name string, blocks []uint) (bool, error)
+	Completed        func(name string)
 }
 
 func (dg *DeviceGroup) MigrateDirty(hooks *MigrateDirtyHooks) error {
@@ -333,11 +333,9 @@ func (dg *DeviceGroup) MigrateDirty(hooks *MigrateDirtyHooks) error {
 		d.Storage.Unlock()
 
 		go func() {
-			dirtyHistory := make([]int, 0)
-
 			for {
 				if hooks != nil && hooks.PreGetDirty != nil {
-					hooks.PreGetDirty(index, d.To, dirtyHistory)
+					hooks.PreGetDirty(d.Schema.Name)
 				}
 
 				blocks := d.Migrator.GetLatestDirty()
@@ -349,18 +347,14 @@ func (dg *DeviceGroup) MigrateDirty(hooks *MigrateDirtyHooks) error {
 						Msg("migrating dirty blocks")
 				}
 
-				dirtyHistory = append(dirtyHistory, len(blocks))
-				// Cap it at a certain MAX LENGTH
-				if len(dirtyHistory) > maxDirtyHistory {
-					dirtyHistory = dirtyHistory[1:]
-				}
-
 				if hooks != nil && hooks.PostGetDirty != nil {
-					hooks.PostGetDirty(index, d.To, dirtyHistory, blocks)
-				}
-
-				if len(blocks) == 0 {
-					break
+					cont, err := hooks.PostGetDirty(d.Schema.Name, blocks)
+					if err != nil {
+						errs <- err
+					}
+					if !cont {
+						break
+					}
 				}
 
 				err := d.To.DirtyList(int(d.BlockSize), blocks)
@@ -376,8 +370,12 @@ func (dg *DeviceGroup) MigrateDirty(hooks *MigrateDirtyHooks) error {
 				}
 
 				if hooks != nil && hooks.PostMigrateDirty != nil {
-					if hooks.PostMigrateDirty(index, d.To, dirtyHistory) {
-						break // PostMigrateDirty returned true, which means stop doing any dirty loop business.
+					cont, err := hooks.PostMigrateDirty(d.Schema.Name, blocks)
+					if err != nil {
+						errs <- err
+					}
+					if !cont {
+						break
 					}
 				}
 			}
@@ -389,7 +387,7 @@ func (dg *DeviceGroup) MigrateDirty(hooks *MigrateDirtyHooks) error {
 			}
 
 			if hooks != nil && hooks.Completed != nil {
-				hooks.Completed(index, d.To)
+				hooks.Completed(d.Schema.Name)
 			}
 
 			errs <- nil
