@@ -30,7 +30,7 @@ type DeviceGroup struct {
 	controlProtocol   protocol.Protocol
 	incomingDevicesWg sync.WaitGroup
 	progressLock      sync.Mutex
-	progress          []*migrator.MigrationProgress
+	progress          map[string]*migrator.MigrationProgress
 }
 
 type DeviceInformation struct {

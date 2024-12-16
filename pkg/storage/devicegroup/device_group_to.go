@@ -24,7 +24,7 @@ func NewFromSchema(ds []*config.DeviceSchema, log types.Logger, met metrics.Silo
 		log:      log,
 		met:      met,
 		devices:  make([]*DeviceInformation, 0),
-		progress: make([]*migrator.MigrationProgress, 0),
+		progress: make(map[string]*migrator.MigrationProgress),
 	}
 
 	for _, s := range ds {
@@ -82,10 +82,10 @@ func NewFromSchema(ds []*config.DeviceSchema, log types.Logger, met metrics.Silo
 		})
 
 		// Set these two at least, so we know *something* about every device in progress handler.
-		dg.progress = append(dg.progress, &migrator.MigrationProgress{
+		dg.progress[s.Name] = &migrator.MigrationProgress{
 			BlockSize:   blockSize,
 			TotalBlocks: totalBlocks,
-		})
+		}
 	}
 
 	if log != nil {
@@ -131,7 +131,7 @@ func (dg *DeviceGroup) StartMigrationTo(pro protocol.Protocol) error {
 }
 
 // This will Migrate all devices to the 'to' setup in SendDevInfo stage.
-func (dg *DeviceGroup) MigrateAll(maxConcurrency int, progressHandler func(p []*migrator.MigrationProgress)) error {
+func (dg *DeviceGroup) MigrateAll(maxConcurrency int, progressHandler func(p map[string]*migrator.MigrationProgress)) error {
 	for _, d := range dg.devices {
 		if d.To == nil {
 			return errNotSetup
@@ -242,7 +242,7 @@ func (dg *DeviceGroup) MigrateAll(maxConcurrency int, progressHandler func(p []*
 		}
 		cfg.ProgressHandler = func(p *migrator.MigrationProgress) {
 			dg.progressLock.Lock()
-			dg.progress[index] = p
+			dg.progress[d.Schema.Name] = p
 			progressHandler(dg.progress)
 			dg.progressLock.Unlock()
 		}

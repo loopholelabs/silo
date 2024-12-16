@@ -180,7 +180,7 @@ func TestDeviceGroupMigrateTo(t *testing.T) {
 	err := dg.StartMigrationTo(prSource)
 	assert.NoError(t, err)
 
-	pHandler := func(_ []*migrator.MigrationProgress) {}
+	pHandler := func(_ map[string]*migrator.MigrationProgress) {}
 
 	err = dg.MigrateAll(100, pHandler)
 	assert.NoError(t, err)
@@ -287,7 +287,7 @@ func TestDeviceGroupMigrate(t *testing.T) {
 		tawg.Done()
 	})
 
-	pHandler := func(_ []*migrator.MigrationProgress) {}
+	pHandler := func(_ map[string]*migrator.MigrationProgress) {}
 
 	err = dg.MigrateAll(100, pHandler)
 	assert.NoError(t, err)
