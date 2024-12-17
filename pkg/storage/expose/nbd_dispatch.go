@@ -14,7 +14,7 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage"
 )
 
-var ErrShuttingDown = errors.New("shutting down. Cannot serve any new requests.")
+var ErrShuttingDown = errors.New("shutting down. Cannot serve any new requests")
 
 const dispatchBufferSize = 4 * 1024 * 1024
 
