@@ -293,11 +293,6 @@ func (n *ExposedStorageNBDNL) Shutdown() error {
 	// First cancel the context, which will stop waiting on pending readAt/writeAt...
 	n.cancelfn()
 
-	// Now wait for any pending responses to be sent
-	for _, d := range n.dispatchers {
-		d.Wait()
-	}
-
 	// Now ask to disconnect
 	err := nbdnl.Disconnect(uint32(n.deviceIndex))
 	if err != nil {
@@ -319,6 +314,12 @@ func (n *ExposedStorageNBDNL) Shutdown() error {
 			break
 		}
 		time.Sleep(100 * time.Nanosecond)
+	}
+
+	// Now wait for any pending responses to be sent. There should not be any new
+	// Requests received since we have Disconnected.
+	for _, d := range n.dispatchers {
+		d.Wait()
 	}
 
 	if n.config.Logger != nil {
