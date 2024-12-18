@@ -131,7 +131,7 @@ func runConnect(_ *cobra.Command, _ []string) {
 		return schema
 	}
 
-	dg, err = devicegroup.NewFromProtocol(protoCtx, pro, tweak, nil, log, siloMetrics)
+	dg, err = devicegroup.NewFromProtocol(protoCtx, pro, tweak, nil, nil, log, siloMetrics)
 
 	for _, d := range dg.GetDeviceSchema() {
 		expName := dg.GetExposedDeviceByName(d.Name)

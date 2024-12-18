@@ -1,6 +1,7 @@
 package devicegroup
 
 import (
+	"context"
 	"errors"
 	"sync"
 	"time"
@@ -26,9 +27,10 @@ var errNotSetup = errors.New("toProtocol not setup")
 type DeviceGroup struct {
 	log               types.Logger
 	met               metrics.SiloMetrics
+	ctx               context.Context
 	devices           []*DeviceInformation
 	controlProtocol   protocol.Protocol
-	incomingDevicesWg sync.WaitGroup
+	incomingDevicesCh chan bool
 	progressLock      sync.Mutex
 	progress          map[string]*migrator.MigrationProgress
 }

@@ -17,6 +17,7 @@ func NewFromProtocol(ctx context.Context,
 	pro protocol.Protocol,
 	tweakDeviceSchema func(index int, name string, schema string) string,
 	eventHandler func(e *packets.Event),
+	customDataHandler func(data []byte),
 	log types.Logger,
 	met metrics.SiloMetrics) (*DeviceGroup, error) {
 
@@ -31,6 +32,45 @@ func NewFromProtocol(ctx context.Context,
 	}
 
 	devices := make([]*config.DeviceSchema, len(dgi.Devices))
+
+	// Setup something to listen for custom data...
+	handleCustomDataEvent := func() error {
+		// This is our control channel, and we're expecting a DeviceGroupInfo
+		id, evData, err := pro.WaitForCommand(0, packets.CommandEvent)
+		if err != nil {
+			return err
+		}
+		ev, err := packets.DecodeEvent(evData)
+		if err != nil {
+			return err
+		}
+		if ev.Type != packets.EventCustom || ev.CustomType != 0 {
+			return err
+		}
+
+		if customDataHandler != nil {
+			customDataHandler(ev.CustomPayload)
+		}
+
+		// Reply with ack
+		eack := packets.EncodeEventResponse()
+		_, err = pro.SendPacket(0, id, eack, protocol.UrgencyUrgent)
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+
+	// Listen for custom data events
+	go func() {
+		for {
+			err := handleCustomDataEvent()
+			if err != nil && !errors.Is(err, context.Canceled) {
+				log.Debug().Err(err).Msg("handleCustomDataEvenet returned")
+				return
+			}
+		}
+	}()
 
 	// First create the devices we need using the schemas sent...
 	for index, di := range dgi.Devices {
@@ -52,8 +92,9 @@ func NewFromProtocol(ctx context.Context,
 	}
 
 	dg.controlProtocol = pro
+	dg.ctx = ctx
 
-	dg.incomingDevicesWg.Add(len(dg.devices))
+	dg.incomingDevicesCh = make(chan bool, len(dg.devices))
 
 	// We need to create the FromProtocol for each device, and associated goroutines here.
 	for index, di := range dgi.Devices {
@@ -77,26 +118,38 @@ func NewFromProtocol(ctx context.Context,
 			return nil, err
 		}
 		go func() {
-			_ = from.HandleReadAt()
+			err := from.HandleReadAt()
+			if err != nil && !errors.Is(err, context.Canceled) {
+				log.Debug().Err(err).Msg("HandleReadAt returned")
+			}
 		}()
 		go func() {
-			_ = from.HandleWriteAt()
+			err := from.HandleWriteAt()
+			if err != nil && !errors.Is(err, context.Canceled) {
+				log.Debug().Err(err).Msg("HandleWriteAt returned")
+			}
 		}()
 		go func() {
-			_ = from.HandleDirtyList(func(dirtyBlocks []uint) {
+			err := from.HandleDirtyList(func(dirtyBlocks []uint) {
 				// Tell the waitingCache about it
 				d.WaitingCacheLocal.DirtyBlocks(dirtyBlocks)
 			})
+			if err != nil && !errors.Is(err, context.Canceled) {
+				log.Debug().Err(err).Msg("HandleDirtyList returned")
+			}
 		}()
 		go func() {
-			from.HandleEvent(func(p *packets.Event) {
+			err := from.HandleEvent(func(p *packets.Event) {
 				if p.Type == packets.EventCompleted {
-					dg.incomingDevicesWg.Done()
+					dg.incomingDevicesCh <- true
 				}
 				if d.EventHandler != nil {
 					d.EventHandler(p)
 				}
 			})
+			if err != nil && !errors.Is(err, context.Canceled) {
+				log.Debug().Err(err).Msg("HandleEvent returned")
+			}
 		}()
 	}
 
@@ -104,33 +157,13 @@ func NewFromProtocol(ctx context.Context,
 }
 
 // Wait for completion events from all devices here.
-func (dg *DeviceGroup) WaitForCompletion() {
-	dg.incomingDevicesWg.Wait()
-}
-
-func (dg *DeviceGroup) HandleCustomData(cb func(customData []byte)) error {
-	for {
-		// This is our control channel, and we're expecting a DeviceGroupInfo
-		id, evData, err := dg.controlProtocol.WaitForCommand(0, packets.CommandEvent)
-		if err != nil {
-			return err
-		}
-		ev, err := packets.DecodeEvent(evData)
-		if err != nil {
-			return err
-		}
-
-		if ev.Type != packets.EventCustom || ev.CustomType != 0 {
-			return errors.New("unexpected event")
-		}
-
-		cb(ev.CustomPayload)
-
-		// Reply with ack
-		eack := packets.EncodeEventResponse()
-		_, err = dg.controlProtocol.SendPacket(0, id, eack, protocol.UrgencyUrgent)
-		if err != nil {
-			return err
+func (dg *DeviceGroup) WaitForCompletion() error {
+	for range dg.devices {
+		select {
+		case <-dg.incomingDevicesCh:
+		case <-dg.ctx.Done():
+			return dg.ctx.Err()
 		}
 	}
+	return nil
 }

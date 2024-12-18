@@ -243,7 +243,9 @@ func (dg *DeviceGroup) MigrateAll(maxConcurrency int, progressHandler func(p map
 		cfg.ProgressHandler = func(p *migrator.MigrationProgress) {
 			dg.progressLock.Lock()
 			dg.progress[d.Schema.Name] = p
-			progressHandler(dg.progress)
+			if progressHandler != nil {
+				progressHandler(dg.progress)
+			}
 			dg.progressLock.Unlock()
 		}
 		mig, err := migrator.NewMigrator(d.DirtyRemote, d.To, d.Orderer, cfg)

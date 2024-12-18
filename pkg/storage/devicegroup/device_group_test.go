@@ -255,10 +255,18 @@ func TestDeviceGroupMigrate(t *testing.T) {
 		return s
 	}
 
+	// TransferAuthority
+	var tawg sync.WaitGroup
+	tawg.Add(1)
+	cdh := func(data []byte) {
+		assert.Equal(t, []byte("Hello"), data)
+		tawg.Done()
+	}
+
 	wg.Add(1)
 	go func() {
 		var err error
-		dg2, err = NewFromProtocol(ctx, prDest, tweak, nil, nil, nil)
+		dg2, err = NewFromProtocol(ctx, prDest, tweak, nil, cdh, nil, nil)
 		assert.NoError(t, err)
 		wg.Done()
 	}()
@@ -271,16 +279,6 @@ func TestDeviceGroupMigrate(t *testing.T) {
 	wg.Wait()
 
 	// TransferAuthority
-	var tawg sync.WaitGroup
-	tawg.Add(1)
-	go func() {
-		err := dg2.HandleCustomData(func(data []byte) {
-			assert.Equal(t, []byte("Hello"), data)
-			tawg.Done()
-		})
-		assert.ErrorIs(t, err, context.Canceled)
-	}()
-
 	tawg.Add(1)
 	time.AfterFunc(100*time.Millisecond, func() {
 		dg.SendCustomData([]byte("Hello"))
