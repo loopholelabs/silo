@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -121,6 +122,25 @@ func (ds *DeviceSchema) Encode() []byte {
 	f := hclwrite.NewEmptyFile()
 	gohcl.EncodeIntoBody(ds, f.Body())
 	return f.Bytes()
+}
+
+func (ds *DeviceSchema) EncodeAsBlock() []byte {
+	f := hclwrite.NewEmptyFile()
+	block := gohcl.EncodeAsBlock(ds, "device")
+	f.Body().AppendBlock(block)
+	return f.Bytes()
+}
+
+func DecodeDeviceFromBlock(schema string) (*DeviceSchema, error) {
+	sf := &SiloSchema{}
+	err := sf.Decode([]byte(schema))
+	if err != nil {
+		return nil, err
+	}
+	if len(sf.Device) != 1 {
+		return nil, errors.New("more than one device in schema")
+	}
+	return sf.Device[0], nil
 }
 
 func (ds *DeviceSchema) Decode(schema string) error {

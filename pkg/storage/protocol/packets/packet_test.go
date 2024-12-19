@@ -371,3 +371,29 @@ func TestAlternateSources(t *testing.T) {
 	assert.Equal(t, sources[0].Location, sources2[0].Location)
 
 }
+
+func TestDeviceGroupInfo(t *testing.T) {
+	dgi := &DeviceGroupInfo{
+		Devices: map[int]*DevInfo{
+			0: {Size: 100, BlockSize: 1, Name: "a-hello", Schema: "a-1234"},
+			1: {Size: 200, BlockSize: 2, Name: "b-hello", Schema: "b-1234"},
+			3: {Size: 300, BlockSize: 3, Name: "c-hello", Schema: "c-1234"},
+		},
+	}
+	b := EncodeDeviceGroupInfo(dgi)
+
+	dgi2, err := DecodeDeviceGroupInfo(b)
+	assert.NoError(t, err)
+
+	// Check that dgi and dgi2 are the same...
+	assert.Equal(t, len(dgi.Devices), len(dgi2.Devices))
+
+	for index, di := range dgi.Devices {
+		di2, ok := dgi2.Devices[index]
+		assert.True(t, ok)
+		assert.Equal(t, di.Size, di2.Size)
+		assert.Equal(t, di.BlockSize, di2.BlockSize)
+		assert.Equal(t, di.Name, di2.Name)
+		assert.Equal(t, di.Schema, di2.Schema)
+	}
+}

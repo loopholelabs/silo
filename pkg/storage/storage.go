@@ -65,6 +65,7 @@ type SyncStartConfig struct {
  */
 func Equals(sp1 Provider, sp2 Provider, blockSize int) (bool, error) {
 	if sp1.Size() != sp2.Size() {
+		fmt.Printf("Equals: Size differs (%d %d)\n", sp1.Size(), sp2.Size())
 		return false, nil
 	}
 
@@ -78,20 +79,23 @@ func Equals(sp1 Provider, sp2 Provider, blockSize int) (bool, error) {
 
 		n, err := sp1.ReadAt(sourceBuff, int64(i))
 		if err != nil {
+			fmt.Printf("Equals: sp1.ReadAt %v\n", err)
 			return false, err
 		}
 		sourceBuff = sourceBuff[:n]
 		n, err = sp2.ReadAt(destBuff, int64(i))
 		if err != nil {
+			fmt.Printf("Equals: sp2.ReadAt %v\n", err)
 			return false, err
 		}
 		destBuff = destBuff[:n]
 		if len(sourceBuff) != len(destBuff) {
+			fmt.Printf("Equals: data len sp1 sp2 %d %d\n", len(sourceBuff), len(destBuff))
 			return false, nil
 		}
 		for j := 0; j < n; j++ {
 			if sourceBuff[j] != destBuff[j] {
-				fmt.Printf("Equals: Block %d differs\n", i/blockSize)
+				fmt.Printf("Equals: Block %d differs [sp1 %d, sp2 %d]\n", i/blockSize, sourceBuff[j], destBuff[j])
 				return false, nil
 			}
 		}

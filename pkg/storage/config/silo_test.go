@@ -66,3 +66,31 @@ func TestSiloConfig(t *testing.T) {
 	assert.NoError(t, err)
 	// TODO: Check data is as expected
 }
+
+func TestSiloConfigBlock(t *testing.T) {
+
+	schema := `device Disk0 {
+		size = "1G"
+		expose = true
+		system = "memory"
+	}
+	
+	device Disk1 {
+		size = "2M"
+		system = "memory"
+	}
+	`
+
+	s := new(SiloSchema)
+	err := s.Decode([]byte(schema))
+	assert.NoError(t, err)
+
+	block0 := s.Device[0].EncodeAsBlock()
+
+	ds := &SiloSchema{}
+	err = ds.Decode(block0)
+	assert.NoError(t, err)
+
+	// Make sure it used the label
+	assert.Equal(t, ds.Device[0].Name, s.Device[0].Name)
+}

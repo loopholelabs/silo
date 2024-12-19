@@ -22,6 +22,7 @@ const (
 	CommandRemoveDev        = CommandRequest | byte(10)
 	CommandRemoveFromMap    = CommandRequest | byte(11)
 	CommandAlternateSources = CommandRequest | byte(12)
+	CommandDeviceGroupInfo  = CommandRequest | byte(13)
 )
 
 const (

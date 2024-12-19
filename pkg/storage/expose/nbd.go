@@ -108,6 +108,7 @@ type ExposedStorageNBDNL struct {
 	provLock    sync.RWMutex
 	deviceIndex int
 	dispatchers []*Dispatch
+	handlersWg  sync.WaitGroup
 }
 
 func NewExposedStorageNBDNL(prov storage.Provider, conf *Config) *ExposedStorageNBDNL {
@@ -210,6 +211,7 @@ func (n *ExposedStorageNBDNL) Init() error {
 			d.asyncReads = n.config.AsyncReads
 			d.asyncWrites = n.config.AsyncWrites
 			// Start reading commands on the socket and dispatching them to our provider
+			n.handlersWg.Add(1)
 			go func() {
 				err := d.Handle()
 				if n.config.Logger != nil {
@@ -218,6 +220,7 @@ func (n *ExposedStorageNBDNL) Init() error {
 						Err(err).
 						Msg("nbd dispatch completed")
 				}
+				n.handlersWg.Done()
 			}()
 			n.socks = append(n.socks, serverc)
 			socks = append(socks, client)
@@ -293,7 +296,19 @@ func (n *ExposedStorageNBDNL) Shutdown() error {
 	// First cancel the context, which will stop waiting on pending readAt/writeAt...
 	n.cancelfn()
 
-	// Now wait for any pending responses to be sent
+	// Close all the socket pairs...
+	for _, v := range n.socks {
+		err := v.Close()
+		if err != nil {
+			return err
+		}
+	}
+
+	// Now wait until the handlers return
+	n.handlersWg.Wait()
+
+	// Now wait for any pending responses to be sent. There should not be any new
+	// Requests received since we have Disconnected.
 	for _, d := range n.dispatchers {
 		d.Wait()
 	}
@@ -302,14 +317,6 @@ func (n *ExposedStorageNBDNL) Shutdown() error {
 	err := nbdnl.Disconnect(uint32(n.deviceIndex))
 	if err != nil {
 		return err
-	}
-
-	// Close all the socket pairs...
-	for _, v := range n.socks {
-		err = v.Close()
-		if err != nil {
-			return err
-		}
 	}
 
 	// Wait until it's completely disconnected...
