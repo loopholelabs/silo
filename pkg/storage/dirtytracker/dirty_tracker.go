@@ -265,9 +265,9 @@ func (dtr *Remote) GetDirtyBlocks(maxAge time.Duration, limit int, groupByShift 
 	rblocks := make([]uint, 0)
 	for rb, blocks := range groupedBlocks {
 		for _, b := range blocks {
+			dtr.dt.trackingLock.Lock()
 			dtr.dt.tracking.ClearBit(int(b))
 			dtr.dt.dirtyLog.ClearBit(int(b))
-			dtr.dt.trackingLock.Lock()
 			delete(dtr.dt.trackingTimes, b)
 			dtr.dt.trackingLock.Unlock()
 		}
@@ -323,13 +323,14 @@ func (dt *DirtyTracker) localWriteAt(buffer []byte, offset int64) (int, error) {
 		bStart := uint(offset / int64(dt.blockSize))
 		bEnd := uint((end-1)/uint64(dt.blockSize)) + 1
 
-		dt.dirtyLog.SetBitsIf(dt.tracking, bStart, bEnd)
-
 		// Update tracking times for last block write
 		dt.trackingLock.Lock()
+		dt.dirtyLog.SetBitsIf(dt.tracking, bStart, bEnd)
 		now := time.Now()
 		for b := bStart; b < bEnd; b++ {
-			dt.trackingTimes[b] = now
+			if dt.tracking.BitSet(int(b)) {
+				dt.trackingTimes[b] = now
+			}
 		}
 		dt.trackingLock.Unlock()
 	}
