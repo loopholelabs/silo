@@ -249,10 +249,10 @@ func TestDeviceGroupMigrate(t *testing.T) {
 	var wg sync.WaitGroup
 
 	// We will tweak schema in recv here so we have separate paths.
-	tweak := func(_ int, _ string, schema string) string {
-		s := strings.ReplaceAll(schema, "testdev_test1", "testrecv_test1")
-		s = strings.ReplaceAll(s, "testdev_test2", "testrecv_test2")
-		return s
+	tweak := func(_ int, _ string, schema *config.DeviceSchema) *config.DeviceSchema {
+		schema.Location = strings.ReplaceAll(schema.Location, "testdev_test1", "testrecv_test1")
+		schema.Location = strings.ReplaceAll(schema.Location, "testdev_test2", "testrecv_test2")
+		return schema
 	}
 
 	// TransferAuthority
