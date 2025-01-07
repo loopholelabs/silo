@@ -15,7 +15,7 @@ import (
 
 func NewFromProtocol(ctx context.Context,
 	pro protocol.Protocol,
-	tweakDeviceSchema func(index int, name string, schema string) string,
+	tweakDeviceSchema func(index int, name string, schema *config.DeviceSchema) *config.DeviceSchema,
 	eventHandler func(e *packets.Event),
 	customDataHandler func(data []byte),
 	log types.Logger,
@@ -75,13 +75,12 @@ func NewFromProtocol(ctx context.Context,
 	// First create the devices we need using the schemas sent...
 	for index, di := range dgi.Devices {
 		// We may want to tweak schemas here eg autoStart = false on sync. Or modify pathnames.
-		schema := di.Schema
-		if tweakDeviceSchema != nil {
-			schema = tweakDeviceSchema(index-1, di.Name, schema)
-		}
-		ds, err := config.DecodeDeviceFromBlock(schema)
+		ds, err := config.DecodeDeviceFromBlock(di.Schema)
 		if err != nil {
 			return nil, err
+		}
+		if tweakDeviceSchema != nil {
+			ds = tweakDeviceSchema(index-1, di.Name, ds)
 		}
 		devices[index-1] = ds
 	}

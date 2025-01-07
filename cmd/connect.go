@@ -13,6 +13,7 @@ import (
 
 	"github.com/loopholelabs/logging"
 	"github.com/loopholelabs/logging/types"
+	"github.com/loopholelabs/silo/pkg/storage/config"
 	"github.com/loopholelabs/silo/pkg/storage/devicegroup"
 	"github.com/loopholelabs/silo/pkg/storage/metrics"
 	siloprom "github.com/loopholelabs/silo/pkg/storage/metrics/prometheus"
@@ -127,7 +128,7 @@ func runConnect(_ *cobra.Command, _ []string) {
 	}
 
 	// TODO: Modify schemas a bit here...
-	tweak := func(_ int, _ string, schema string) string {
+	tweak := func(_ int, _ string, schema *config.DeviceSchema) *config.DeviceSchema {
 		return schema
 	}
 
