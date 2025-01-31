@@ -53,7 +53,7 @@ func setupDeviceGroup(t *testing.T) *DeviceGroup {
 			return nil
 		}
 	*/
-	dg, err := NewFromSchema(testDeviceSchema, nil, nil)
+	dg, err := NewFromSchema(testDeviceSchema, false, nil, nil)
 	assert.NoError(t, err)
 
 	t.Cleanup(func() {

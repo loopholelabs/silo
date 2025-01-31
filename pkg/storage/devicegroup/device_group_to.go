@@ -17,9 +17,10 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/protocol"
 	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
 	"github.com/loopholelabs/silo/pkg/storage/volatilitymonitor"
+	"github.com/loopholelabs/silo/pkg/storage/waitingcache"
 )
 
-func NewFromSchema(ds []*config.DeviceSchema, log types.Logger, met metrics.SiloMetrics) (*DeviceGroup, error) {
+func NewFromSchema(ds []*config.DeviceSchema, createWC bool, log types.Logger, met metrics.SiloMetrics) (*DeviceGroup, error) {
 	dg := &DeviceGroup{
 		log:      log,
 		met:      met,
@@ -42,6 +43,13 @@ func NewFromSchema(ds []*config.DeviceSchema, log types.Logger, met metrics.Silo
 		blockSize := int(s.ByteBlockSize())
 		if blockSize == 0 {
 			blockSize = defaultBlockSize
+		}
+
+		var waitingCacheLocal *waitingcache.Local
+		var waitingCacheRemote *waitingcache.Remote
+		if createWC {
+			waitingCacheLocal, waitingCacheRemote = waitingcache.NewWaitingCacheWithLogger(prov, blockSize, dg.log)
+			prov = waitingCacheLocal
 		}
 
 		local := modules.NewLockable(prov)
@@ -68,17 +76,19 @@ func NewFromSchema(ds []*config.DeviceSchema, log types.Logger, met metrics.Silo
 		}
 
 		dg.devices = append(dg.devices, &DeviceInformation{
-			Size:        local.Size(),
-			BlockSize:   uint64(blockSize),
-			NumBlocks:   totalBlocks,
-			Schema:      s,
-			Prov:        prov,
-			Storage:     local,
-			Exp:         exp,
-			Volatility:  vmonitor,
-			DirtyLocal:  dirtyLocal,
-			DirtyRemote: dirtyRemote,
-			Orderer:     orderer,
+			Size:               local.Size(),
+			BlockSize:          uint64(blockSize),
+			NumBlocks:          totalBlocks,
+			Schema:             s,
+			Prov:               prov,
+			Storage:            local,
+			Exp:                exp,
+			Volatility:         vmonitor,
+			DirtyLocal:         dirtyLocal,
+			DirtyRemote:        dirtyRemote,
+			Orderer:            orderer,
+			WaitingCacheLocal:  waitingCacheLocal,
+			WaitingCacheRemote: waitingCacheRemote,
 		})
 
 		// Set these two at least, so we know *something* about every device in progress handler.

@@ -91,7 +91,7 @@ func runServe(_ *cobra.Command, _ []string) {
 		panic(err)
 	}
 
-	dg, err := devicegroup.NewFromSchema(siloConf.Device, log, siloMetrics)
+	dg, err := devicegroup.NewFromSchema(siloConf.Device, false, log, siloMetrics)
 	if err != nil {
 		panic(err)
 	}
