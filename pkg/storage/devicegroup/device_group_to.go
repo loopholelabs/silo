@@ -48,7 +48,7 @@ func NewFromSchema(ds []*config.DeviceSchema, createWC bool, log types.Logger, m
 		var waitingCacheLocal *waitingcache.Local
 		var waitingCacheRemote *waitingcache.Remote
 		if createWC {
-			waitingCacheLocal, waitingCacheRemote = waitingcache.NewWaitingCacheWithLogger(prov, int(blockSize), dg.log)
+			waitingCacheLocal, waitingCacheRemote = waitingcache.NewWaitingCacheWithLogger(prov, blockSize, dg.log)
 			prov = waitingCacheLocal
 		}
 
