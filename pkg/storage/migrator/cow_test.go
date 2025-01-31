@@ -22,6 +22,8 @@ func TestMigratorCow(t *testing.T) {
 	blockSize := 4096
 	numBlocks := (size + blockSize - 1) / blockSize
 
+	sourceStorageBaseMem := sources.NewMemoryStorage(size)
+
 	sourceStorageMem := sources.NewMemoryStorage(size)
 	sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(sourceStorageMem, blockSize)
 	sourceStorage := modules.NewLockable(sourceDirtyLocal)
@@ -31,9 +33,25 @@ func TestMigratorCow(t *testing.T) {
 	_, err := crand.Read(buffer)
 	assert.NoError(t, err)
 
-	n, err := sourceStorage.WriteAt(buffer, 0)
+	n, err := sourceStorageBaseMem.WriteAt(buffer, 0)
 	assert.NoError(t, err)
 	assert.Equal(t, len(buffer), n)
+
+	n, err = sourceStorageMem.WriteAt(buffer, 0)
+	assert.NoError(t, err)
+	assert.Equal(t, len(buffer), n)
+
+	// Change a few bits in sourceStorageMem
+
+	chgdata := make([]byte, 4096)
+	_, err = crand.Read(chgdata)
+	assert.NoError(t, err)
+
+	for _, off := range []int64{0, 65536, 80913} {
+		n, err = sourceStorageMem.WriteAt(chgdata, off)
+		assert.NoError(t, err)
+		assert.Equal(t, len(chgdata), n)
+	}
 
 	orderer := blocks.NewAnyBlockOrder(numBlocks, nil)
 	orderer.AddAll()
@@ -77,7 +95,9 @@ func TestMigratorCow(t *testing.T) {
 	}()
 
 	// Pipe a destination to the protocol
-	destination := protocol.NewToProtocol(sourceDirtyRemote.Size(), 17, prSource)
+	//	destination := protocol.NewToProtocol(sourceDirtyRemote.Size(), 17, prSource)
+
+	destination := protocol.NewToProtocolWithBase(sourceDirtyRemote.Size(), 17, prSource, sourceStorageBaseMem)
 
 	err = destination.SendDevInfo("test", uint32(blockSize), "")
 	assert.NoError(t, err)
@@ -108,4 +128,12 @@ func TestMigratorCow(t *testing.T) {
 	srcDataRecv := prSource.GetMetrics().DataRecv
 
 	fmt.Printf("Transfer [device size %d] transfer bytes: %d sent, %d recv\n", size, srcDataSent, srcDataRecv)
+
+	assert.Less(t, srcDataSent, uint64(size))
+
+	destMetrics := destination.GetMetrics()
+
+	fmt.Printf("Sent %d WriteAt     %d bytes\n", destMetrics.SentWriteAt, destMetrics.SentWriteAtBytes)
+	fmt.Printf("Sent %d WriteAtComp %d bytes\n", destMetrics.SentWriteAtComp, destMetrics.SentWriteAtCompBytes)
+	fmt.Printf("Sent %d WriteAtHash %d bytes\n", destMetrics.SentWriteAtHash, destMetrics.SentWriteAtHashBytes)
 }

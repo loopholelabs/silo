@@ -373,7 +373,7 @@ func (fp *FromProtocol) HandleWriteAt() error {
 
 		if len(data) > 1 && data[1] == packets.WriteAtHash {
 			// It could be a WriteAtHash command...
-			_, length, _, errWriteAtHash := packets.DecodeWriteAtHash(data)
+			_, length, _, _, errWriteAtHash := packets.DecodeWriteAtHash(data)
 			if errWriteAtHash != nil {
 				return err
 			}
