@@ -10,7 +10,6 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/metrics"
 	"github.com/loopholelabs/silo/pkg/storage/protocol"
 	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
-	"github.com/loopholelabs/silo/pkg/storage/waitingcache"
 )
 
 func NewFromProtocol(ctx context.Context,
@@ -85,7 +84,7 @@ func NewFromProtocol(ctx context.Context,
 		devices[index-1] = ds
 	}
 
-	dg, err := NewFromSchema(devices, log, met)
+	dg, err := NewFromSchema(devices, true, log, met)
 	if err != nil {
 		return nil, err
 	}
@@ -102,12 +101,13 @@ func NewFromProtocol(ctx context.Context,
 		d.EventHandler = eventHandler
 
 		destStorageFactory := func(di *packets.DevInfo) storage.Provider {
-			d.WaitingCacheLocal, d.WaitingCacheRemote = waitingcache.NewWaitingCacheWithLogger(d.Prov, int(di.BlockSize), dg.log)
+			/*
+				d.WaitingCacheLocal, d.WaitingCacheRemote = waitingcache.NewWaitingCacheWithLogger(d.Prov, int(di.BlockSize), dg.log)
 
-			if d.Exp != nil {
-				d.Exp.SetProvider(d.WaitingCacheLocal)
-			}
-
+				if d.Exp != nil {
+					d.Exp.SetProvider(d.WaitingCacheLocal)
+				}
+			*/
 			return d.WaitingCacheRemote
 		}
 
