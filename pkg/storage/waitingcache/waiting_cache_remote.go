@@ -15,6 +15,22 @@ type Remote struct {
 
 // Relay events to embedded StorageProvider
 func (wcr *Remote) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
+	if eventType == storage.EventType("available") {
+		markRange := eventData.([]int64)
+		// offset, length
+		offset := markRange[0]
+		length := markRange[1]
+		end := uint64(offset + length)
+		if end > wcr.wc.size {
+			end = wcr.wc.size
+		}
+
+		bStart := uint(offset / int64(wcr.wc.blockSize))
+		bEnd := uint((end-1)/uint64(wcr.wc.blockSize)) + 1
+
+		wcr.wc.markAvailableRemoteBlocks(bStart, bEnd)
+	}
+
 	data := wcr.ProviderWithEvents.SendSiloEvent(eventType, eventData)
 	return append(data, storage.SendSiloEvent(wcr.wc.prov, eventType, eventData)...)
 }
