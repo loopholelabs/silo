@@ -21,6 +21,13 @@ type CopyOnWrite struct {
 
 // Relay events to embedded StorageProvider
 func (i *CopyOnWrite) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
+	// Something is asking for a Base provider. Respond with the source provider.
+	if eventType == storage.EventType("getbase") {
+		return []storage.EventReturnData{
+			i.source,
+		}
+	}
+
 	data := i.ProviderWithEvents.SendSiloEvent(eventType, eventData)
 	data = append(data, storage.SendSiloEvent(i.cache, eventType, eventData)...)
 	return append(data, storage.SendSiloEvent(i.source, eventType, eventData)...)
