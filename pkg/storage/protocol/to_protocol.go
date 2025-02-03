@@ -251,7 +251,7 @@ func (i *ToProtocol) WriteAt(buffer []byte, offset int64) (int, error) {
 	var baseProv storage.Provider
 	i.baseImageLock.Lock()
 	baseProv = i.baseImage
-	i.baseImageLock.Lock()
+	i.baseImageLock.Unlock()
 
 	if baseProv != nil {
 		hash := sha256.Sum256(buffer)
