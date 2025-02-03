@@ -104,14 +104,14 @@ func NewFromSchema(ds []*config.DeviceSchema, createWC bool, log types.Logger, m
 	return dg, nil
 }
 
-func (dg *DeviceGroup) StartMigrationTo(pro protocol.Protocol) error {
+func (dg *DeviceGroup) StartMigrationTo(pro protocol.Protocol, compression bool) error {
 	// We will use dev 0 to communicate
 	dg.controlProtocol = pro
 
 	// First lets setup the ToProtocol
 	for index, d := range dg.devices {
 		d.To = protocol.NewToProtocol(d.Prov.Size(), uint32(index+1), pro)
-		d.To.SetCompression(true)
+		d.To.SetCompression(compression)
 
 		if dg.met != nil {
 			dg.met.AddToProtocol(d.Schema.Name, d.To)
