@@ -15,7 +15,7 @@ type Remote struct {
 
 // Relay events to embedded StorageProvider
 func (wcr *Remote) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
-	if eventType == storage.EventType("available") {
+	if eventType == storage.EventTypeAvailable {
 		markRange := eventData.([]int64)
 		// offset, length
 		offset := markRange[0]

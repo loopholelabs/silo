@@ -2,8 +2,11 @@ package migrator
 
 import (
 	"context"
+	crand "crypto/rand"
+	"fmt"
 	"io"
 	"testing"
+	"time"
 
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/blocks"
@@ -12,6 +15,7 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/protocol"
 	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
+	"github.com/stretchr/testify/assert"
 )
 
 func BenchmarkMigration(mb *testing.B) {
@@ -83,7 +87,7 @@ type testConfig struct {
 
 func BenchmarkMigrationPipe(mb *testing.B) {
 
-	size := 15 * 1024 * 1024
+	size := 10 * 1024 * 1024
 	tests := []testConfig{
 		{name: "32-concurrency", numPipes: 1, concurrency: 32, blockSize: 64 * 1024, shardSize: 64 * 1024, compress: false},
 		{name: "128-concurrency", numPipes: 1, concurrency: 128, blockSize: 64 * 1024, shardSize: 64 * 1024, compress: false},
@@ -243,6 +247,150 @@ func BenchmarkMigrationPipe(mb *testing.B) {
 			}
 			//			duration := time.Since(ctime)
 			//			fmt.Printf("Completed %d migrations in %dms - avg %dms\n", b.N, duration.Milliseconds(), int64(duration.Milliseconds())/int64(b.N))
+		})
+
+	}
+}
+
+func BenchmarkBigMigrationPipe(mb *testing.B) {
+
+	size := 50 * 1024 * 1024 * 1024
+	tests := []testConfig{
+		{name: "64k-blocks", numPipes: 32, concurrency: 100, blockSize: 64 * 1024, shardSize: 64 * 1024, compress: false},
+		{name: "256k-blocks", numPipes: 32, concurrency: 100, blockSize: 256 * 1024, shardSize: 64 * 1024, compress: false},
+		{name: "1m-blocks", numPipes: 32, concurrency: 100, blockSize: 1 * 1024 * 1024, shardSize: 64 * 1024, compress: false},
+		{name: "2m-blocks", numPipes: 32, concurrency: 100, blockSize: 2 * 1024 * 1024, shardSize: 64 * 1024, compress: false},
+		{name: "4m-blocks", numPipes: 32, concurrency: 100, blockSize: 4 * 1024 * 1024, shardSize: 64 * 1024, compress: false},
+		{name: "8m-blocks", numPipes: 32, concurrency: 100, blockSize: 8 * 1024 * 1024, shardSize: 64 * 1024, compress: false},
+		{name: "16m-blocks", numPipes: 32, concurrency: 100, blockSize: 16 * 1024 * 1024, shardSize: 64 * 1024, compress: false},
+		{name: "32m-blocks", numPipes: 32, concurrency: 100, blockSize: 32 * 1024 * 1024, shardSize: 64 * 1024, compress: false},
+	}
+
+	for _, testconf := range tests {
+
+		mb.Run(testconf.name, func(b *testing.B) {
+			blockSize := testconf.blockSize
+			numBlocks := (size + blockSize - 1) / blockSize
+
+			sourceStorageMem, err := sources.NewFileStorageCreate(fmt.Sprintf("%s.src", testconf.name), int64(size))
+			assert.NoError(mb, err)
+
+			// Write some random data to the file...
+			rdata := make([]byte, 1*1024*1024)
+			crand.Read(rdata)
+
+			for o := 0; o < size; o += len(rdata) {
+				_, err = sourceStorageMem.WriteAt(rdata, int64(o))
+				assert.NoError(mb, err)
+			}
+
+			sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(sourceStorageMem, blockSize)
+			sourceStorage := modules.NewLockable(sourceDirtyLocal)
+
+			orderer := blocks.NewAnyBlockOrder(numBlocks, nil)
+			orderer.AddAll()
+
+			num := testconf.numPipes
+
+			readers1 := make([]io.Reader, 0)
+			readers2 := make([]io.Reader, 0)
+			writers1 := make([]io.Writer, 0)
+			writers2 := make([]io.Writer, 0)
+
+			for i := 0; i < num; i++ {
+				r1, w1 := io.Pipe()
+				r2, w2 := io.Pipe()
+				readers1 = append(readers1, r1)
+				writers1 = append(writers1, w1)
+
+				readers2 = append(readers2, r2)
+				writers2 = append(writers2, w2)
+			}
+
+			initDev := func(ctx context.Context, p protocol.Protocol, dev uint32) {
+				destStorageFactory := func(di *packets.DevInfo) storage.Provider {
+					destStorage, err := sources.NewFileStorageCreate(fmt.Sprintf("%s.dest", di.Name), int64(size))
+					assert.NoError(mb, err)
+
+					return destStorage
+				}
+
+				// Pipe from the protocol to destWaiting
+				destFrom := protocol.NewFromProtocol(ctx, dev, destStorageFactory, p)
+				go func() {
+					_ = destFrom.HandleReadAt()
+				}()
+				go func() {
+					_ = destFrom.HandleWriteAt()
+				}()
+				go func() {
+					_ = destFrom.HandleDevInfo()
+				}()
+			}
+
+			prSource := protocol.NewRW(context.TODO(), readers1, writers2, nil)
+			prDest := protocol.NewRW(context.TODO(), readers2, writers1, initDev)
+
+			go func() {
+				_ = prSource.Handle()
+			}()
+			go func() {
+				_ = prDest.Handle()
+			}()
+
+			// Pipe a destination to the protocol
+			destination := protocol.NewToProtocol(sourceDirtyRemote.Size(), 17, prSource)
+
+			if testconf.compress {
+				destination.SetCompression(true)
+			}
+
+			err = destination.SendDevInfo("test", uint32(blockSize), "")
+			if err != nil {
+				panic(err)
+			}
+
+			conf := NewConfig().WithBlockSize(blockSize)
+			conf.LockerHandler = sourceStorage.Lock
+			conf.UnlockerHandler = sourceStorage.Unlock
+			conf.Concurrency = map[int]int{
+				storage.BlockTypeAny:      testconf.concurrency,
+				storage.BlockTypeStandard: testconf.concurrency,
+				storage.BlockTypeDirty:    testconf.concurrency,
+				storage.BlockTypePriority: testconf.concurrency,
+			}
+
+			mig, err := NewMigrator(sourceDirtyRemote,
+				destination,
+				orderer,
+				conf)
+
+			if err != nil {
+				panic(err)
+			}
+
+			b.ResetTimer()
+			b.SetBytes(int64(size))
+			//			b.ReportAllocs()
+
+			ctime := time.Now()
+			// Migrate some number of times...
+			for i := 0; i < b.N; i++ {
+				orderer.AddAll()
+
+				err = mig.Migrate(numBlocks)
+				if err != nil {
+					panic(err)
+				}
+
+				err = mig.WaitForCompletion()
+				if err != nil {
+					panic(err)
+				}
+				fmt.Printf("Migrate #%d / %d\n", i, b.N)
+			}
+			duration := time.Since(ctime)
+			fmt.Printf("Completed %d migrations in %dms - avg %dms\n", b.N, duration.Milliseconds(), duration.Milliseconds()/int64(b.N))
 		})
 
 	}

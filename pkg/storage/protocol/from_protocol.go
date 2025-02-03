@@ -373,7 +373,7 @@ func (fp *FromProtocol) HandleWriteAt() error {
 
 		if len(data) > 1 && data[1] == packets.WriteAtHash {
 			// It could be a WriteAtHash command...
-			_, length, _, _, errWriteAtHash := packets.DecodeWriteAtHash(data)
+			offset, length, _, loc, errWriteAtHash := packets.DecodeWriteAtHash(data)
 			if errWriteAtHash != nil {
 				return err
 			}
@@ -388,6 +388,13 @@ func (fp *FromProtocol) HandleWriteAt() error {
 			if err != nil {
 				return err
 			}
+
+			// Tell anything down the chain about this 'write'
+			if loc == packets.DataLocationBaseImage {
+				// Is provP2P the right thing here? Or should it be prov... or does it matter...
+				storage.SendSiloEvent(fp.provP2P, storage.EventTypeAvailable, storage.EventData([]int64{offset, length}))
+			}
+
 		} else {
 
 			var offset int64

@@ -24,7 +24,7 @@ type CopyOnWrite struct {
 func (i *CopyOnWrite) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
 	if i.sharedBase {
 		// Something is asking for a Base provider. Respond with the source provider.
-		if eventType == storage.EventType("base.get") {
+		if eventType == storage.EventTypeBaseGet {
 			return []storage.EventReturnData{
 				i.source,
 			}

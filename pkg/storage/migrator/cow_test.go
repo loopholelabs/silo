@@ -15,9 +15,11 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/device"
 	"github.com/loopholelabs/silo/pkg/storage/dirtytracker"
 	"github.com/loopholelabs/silo/pkg/storage/migrator"
+	"github.com/loopholelabs/silo/pkg/storage/modules"
 	"github.com/loopholelabs/silo/pkg/storage/protocol"
 	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
+	"github.com/loopholelabs/silo/pkg/storage/waitingcache"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -72,6 +74,7 @@ func setupCowDevice(t *testing.T) (storage.Provider, int, []byte) {
 		chgData := make([]byte, 4*1024)
 		_, err = crand.Read(chgData)
 		assert.NoError(t, err)
+		fmt.Printf("Write data %d\n", offset)
 		_, err = prov.WriteAt(chgData, offset)
 		assert.NoError(t, err)
 	}
@@ -82,7 +85,7 @@ func setupCowDevice(t *testing.T) (storage.Provider, int, []byte) {
 func TestCowGetBase(t *testing.T) {
 	prov, _, baseData := setupCowDevice(t)
 
-	erd := storage.SendSiloEvent(prov, storage.EventType("base.get"), nil)
+	erd := storage.SendSiloEvent(prov, storage.EventTypeBaseGet, nil)
 	// Check it returns the base provider...
 	assert.Equal(t, 1, len(erd))
 
@@ -117,16 +120,29 @@ func TestMigratorCow(t *testing.T) {
 	// START moving data from sourceStorage to destStorage
 
 	var destStorage storage.Provider
+	var destOverlay storage.Provider
 	var destFrom *protocol.FromProtocol
 
 	// Create a simple pipe
 	r1, w1 := io.Pipe()
 	r2, w2 := io.Pipe()
 
+	// Open the base image
+	baseProvider, err := sources.NewFileStorage(path.Join(testCowDir, "test_rosource"), int64(prov.Size()))
+	assert.NoError(t, err)
+
+	var waitingCacheLocal *waitingcache.Local
+	var waitingCacheRemote *waitingcache.Remote
+
 	initDev := func(ctx context.Context, p protocol.Protocol, dev uint32) {
 		destStorageFactory := func(di *packets.DevInfo) storage.Provider {
-			destStorage = sources.NewMemoryStorage(int(di.Size))
-			return destStorage
+			destOverlay, err = sources.NewFileStorageCreate(path.Join(testCowDir, "test_overlay_dest"), int64(di.Size))
+			assert.NoError(t, err)
+
+			destStorage = modules.NewCopyOnWrite(baseProvider, destOverlay, blockSize)
+
+			waitingCacheLocal, waitingCacheRemote = waitingcache.NewWaitingCache(destStorage, blockSize)
+			return waitingCacheRemote
 		}
 
 		// Pipe from the protocol to destWaiting
@@ -157,7 +173,7 @@ func TestMigratorCow(t *testing.T) {
 
 	destination := protocol.NewToProtocol(sourceDirtyRemote.Size(), 17, prSource)
 
-	err := destination.SendDevInfo("test", uint32(blockSize), "")
+	err = destination.SendDevInfo("test", uint32(blockSize), "")
 	assert.NoError(t, err)
 
 	conf := migrator.NewConfig().WithBlockSize(blockSize)
@@ -174,6 +190,8 @@ func TestMigratorCow(t *testing.T) {
 
 	err = mig.WaitForCompletion()
 	assert.NoError(t, err)
+
+	assert.NotNil(t, destStorage)
 
 	// This will end with migration completed.
 	eq, err := storage.Equals(prov, destStorage, blockSize)
@@ -192,4 +210,12 @@ func TestMigratorCow(t *testing.T) {
 	fmt.Printf("Sent %d WriteAt     %d bytes\n", destMetrics.SentWriteAt, destMetrics.SentWriteAtBytes)
 	fmt.Printf("Sent %d WriteAtComp %d bytes\n", destMetrics.SentWriteAtComp, destMetrics.SentWriteAtCompBytes)
 	fmt.Printf("Sent %d WriteAtHash %d bytes\n", destMetrics.SentWriteAtHash, destMetrics.SentWriteAtHashBytes)
+
+	waitMetrics := waitingCacheLocal.GetMetrics()
+
+	fmt.Printf("Available.local %d\n", waitMetrics.AvailableLocal)
+	fmt.Printf("Available.remote %d\n", waitMetrics.AvailableRemote)
+
+	// The waiting cache should consider ALL blocks present and correct.
+	assert.Equal(t, numBlocks, int(waitMetrics.AvailableRemote))
 }

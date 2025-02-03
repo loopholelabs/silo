@@ -103,12 +103,12 @@ func (i *ToProtocol) GetMetrics() *ToProtocolMetrics {
 
 // Support Silo Events
 func (i *ToProtocol) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
-	if eventType == storage.EventType("sources") {
+	if eventType == storage.EventTypeSources {
 		i.alternateSources = eventData.([]packets.AlternateSource)
 		// Send the list of alternate sources here...
 		i.SendAltSources(i.alternateSources)
 		// For now, we do not check the error. If there was a protocol / io error, we should see it on the next send
-	} else if eventType == storage.EventType("base.set") {
+	} else if eventType == storage.EventTypeBaseSet {
 		// We have been told a base image that we can use when migrating CoW or similar.
 		i.baseImageLock.Lock()
 		i.baseImage = eventData.(storage.Provider)

@@ -213,9 +213,9 @@ func (m *Migrator) startMigration() {
 	}
 
 	// Tell the source to stop sync, and send alternateSources to the destination.
-	as := storage.SendSiloEvent(m.sourceTracker, "sync.stop", nil)
+	as := storage.SendSiloEvent(m.sourceTracker, storage.EventSyncStop, nil)
 	if len(as) == 1 {
-		storage.SendSiloEvent(m.dest, "sources", as[0])
+		storage.SendSiloEvent(m.dest, storage.EventTypeSources, as[0])
 		if m.logger != nil {
 			m.logger.Debug().
 				Str("uuid", m.uuid.String()).
@@ -226,9 +226,9 @@ func (m *Migrator) startMigration() {
 	}
 
 	// Find any base image from the source, and send it to the destination.
-	baseSrc := storage.SendSiloEvent(m.sourceTracker, "base.get", nil)
+	baseSrc := storage.SendSiloEvent(m.sourceTracker, storage.EventTypeBaseGet, nil)
 	if len(baseSrc) == 1 {
-		storage.SendSiloEvent(m.dest, "base.set", baseSrc[0])
+		storage.SendSiloEvent(m.dest, storage.EventTypeBaseSet, baseSrc[0])
 		if m.logger != nil {
 			m.logger.Debug().
 				Str("uuid", m.uuid.String()).
