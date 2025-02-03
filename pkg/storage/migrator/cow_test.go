@@ -1,57 +1,114 @@
-package migrator
+package migrator_test
 
 import (
 	"context"
 	crand "crypto/rand"
 	"fmt"
 	"io"
+	"os"
+	"path"
 	"testing"
 
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/blocks"
+	"github.com/loopholelabs/silo/pkg/storage/config"
+	"github.com/loopholelabs/silo/pkg/storage/device"
 	"github.com/loopholelabs/silo/pkg/storage/dirtytracker"
-	"github.com/loopholelabs/silo/pkg/storage/modules"
+	"github.com/loopholelabs/silo/pkg/storage/migrator"
 	"github.com/loopholelabs/silo/pkg/storage/protocol"
 	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
 	"github.com/stretchr/testify/assert"
 )
 
-func TestMigratorCow(t *testing.T) {
-	size := 10 * 1024 * 1024
-	blockSize := 4096
-	numBlocks := (size + blockSize - 1) / blockSize
+const testCowDir = "test_migrate_cow"
 
-	sourceStorageBaseMem := sources.NewMemoryStorage(size)
-
-	sourceStorageMem := sources.NewMemoryStorage(size)
-	sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(sourceStorageMem, blockSize)
-	sourceStorage := modules.NewLockable(sourceDirtyLocal)
-
-	// Set up some data here.
-	buffer := make([]byte, size)
-	_, err := crand.Read(buffer)
+func setupCowDevice(t *testing.T) (storage.Provider, int, []byte) {
+	err := os.Mkdir(testCowDir, 0777)
 	assert.NoError(t, err)
 
-	n, err := sourceStorageBaseMem.WriteAt(buffer, 0)
-	assert.NoError(t, err)
-	assert.Equal(t, len(buffer), n)
-
-	n, err = sourceStorageMem.WriteAt(buffer, 0)
-	assert.NoError(t, err)
-	assert.Equal(t, len(buffer), n)
-
-	// Change a few bits in sourceStorageMem
-
-	chgdata := make([]byte, 4096)
-	_, err = crand.Read(chgdata)
-	assert.NoError(t, err)
-
-	for _, off := range []int64{0, 65536, 80913} {
-		n, err = sourceStorageMem.WriteAt(chgdata, off)
+	t.Cleanup(func() {
+		err := os.RemoveAll(testCowDir)
 		assert.NoError(t, err)
-		assert.Equal(t, len(chgdata), n)
+	})
+
+	ds := &config.DeviceSchema{
+		Name:      "test",
+		Size:      "10m",
+		System:    "sparsefile",
+		BlockSize: "64k",
+		Expose:    false,
+		Location:  path.Join(testCowDir, "test_overlay"),
+		ROSource: &config.DeviceSchema{
+			Name:      path.Join(testCowDir, "test_state"),
+			Size:      "10m",
+			System:    "file",
+			BlockSize: "64k",
+			Expose:    false,
+			Location:  path.Join(testCowDir, "test_rosource"),
+		},
 	}
+
+	// Write some base data
+	baseData := make([]byte, ds.ByteSize())
+	_, err = crand.Read(baseData)
+	assert.NoError(t, err)
+
+	err = os.WriteFile(path.Join(testCowDir, "test_rosource"), baseData, 0666)
+	assert.NoError(t, err)
+
+	blockSize := int(ds.ByteBlockSize())
+
+	prov, _, err := device.NewDevice(ds)
+	assert.NoError(t, err)
+
+	t.Cleanup(func() {
+		prov.Close()
+	})
+
+	// Write some changes to the device...
+	for _, offset := range []int64{0, 10 * 1024, 100 * 1024} {
+		chgData := make([]byte, 4*1024)
+		_, err = crand.Read(chgData)
+		assert.NoError(t, err)
+		_, err = prov.WriteAt(chgData, offset)
+		assert.NoError(t, err)
+	}
+
+	return prov, blockSize, baseData
+}
+
+func TestCowGetBase(t *testing.T) {
+	prov, _, baseData := setupCowDevice(t)
+
+	erd := storage.SendSiloEvent(prov, storage.EventType("getbase"), nil)
+	// Check it returns the base provider...
+	assert.Equal(t, 1, len(erd))
+
+	baseprov := erd[0].(storage.Provider)
+
+	provBuffer := make([]byte, prov.Size())
+	_, err := prov.ReadAt(provBuffer, 0)
+	assert.NoError(t, err)
+
+	// The base data and provider data shouldn't be the same...
+	assert.NotEqual(t, baseData, provBuffer)
+
+	baseBuffer := make([]byte, baseprov.Size())
+	_, err = baseprov.ReadAt(baseBuffer, 0)
+	assert.NoError(t, err)
+
+	// The base data should be as we expect
+	assert.Equal(t, baseData, baseBuffer)
+
+}
+
+func TestMigratorCow(t *testing.T) {
+	prov, blockSize, _ := setupCowDevice(t)
+
+	_, sourceDirtyRemote := dirtytracker.NewDirtyTracker(prov, blockSize)
+
+	numBlocks := (int(prov.Size()) + blockSize - 1) / blockSize
 
 	orderer := blocks.NewAnyBlockOrder(numBlocks, nil)
 	orderer.AddAll()
@@ -97,16 +154,14 @@ func TestMigratorCow(t *testing.T) {
 	// Pipe a destination to the protocol
 	//	destination := protocol.NewToProtocol(sourceDirtyRemote.Size(), 17, prSource)
 
-	destination := protocol.NewToProtocolWithBase(sourceDirtyRemote.Size(), 17, prSource, sourceStorageBaseMem)
+	destination := protocol.NewToProtocol(sourceDirtyRemote.Size(), 17, prSource)
 
-	err = destination.SendDevInfo("test", uint32(blockSize), "")
+	err := destination.SendDevInfo("test", uint32(blockSize), "")
 	assert.NoError(t, err)
 
-	conf := NewConfig().WithBlockSize(blockSize)
-	conf.LockerHandler = sourceStorage.Lock
-	conf.UnlockerHandler = sourceStorage.Unlock
+	conf := migrator.NewConfig().WithBlockSize(blockSize)
 
-	mig, err := NewMigrator(sourceDirtyRemote,
+	mig, err := migrator.NewMigrator(sourceDirtyRemote,
 		destination,
 		orderer,
 		conf)
@@ -119,17 +174,17 @@ func TestMigratorCow(t *testing.T) {
 	err = mig.WaitForCompletion()
 	assert.NoError(t, err)
 
-	// This will end with migration completed, and consumer Locked.
-	eq, err := storage.Equals(sourceStorageMem, destStorage, blockSize)
+	// This will end with migration completed.
+	eq, err := storage.Equals(prov, destStorage, blockSize)
 	assert.NoError(t, err)
 	assert.True(t, eq)
 
 	srcDataSent := prSource.GetMetrics().DataSent
 	srcDataRecv := prSource.GetMetrics().DataRecv
 
-	fmt.Printf("Transfer [device size %d] transfer bytes: %d sent, %d recv\n", size, srcDataSent, srcDataRecv)
+	fmt.Printf("Transfer [device size %d] transfer bytes: %d sent, %d recv\n", prov.Size(), srcDataSent, srcDataRecv)
 
-	assert.Less(t, srcDataSent, uint64(size))
+	assert.Less(t, srcDataSent, prov.Size())
 
 	destMetrics := destination.GetMetrics()
 
