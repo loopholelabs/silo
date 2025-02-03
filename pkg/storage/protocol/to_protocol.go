@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
+	"sync"
 	"sync/atomic"
 
 	"github.com/loopholelabs/silo/pkg/storage"
@@ -13,6 +14,7 @@ import (
 type ToProtocol struct {
 	storage.ProviderWithEvents
 	baseImage                      storage.Provider
+	baseImageLock                  sync.Mutex
 	size                           uint64
 	dev                            uint32
 	protocol                       Protocol
@@ -106,6 +108,11 @@ func (i *ToProtocol) SendSiloEvent(eventType storage.EventType, eventData storag
 		// Send the list of alternate sources here...
 		i.SendAltSources(i.alternateSources)
 		// For now, we do not check the error. If there was a protocol / io error, we should see it on the next send
+	} else if eventType == storage.EventType("base.set") {
+		// We have been told a base image that we can use when migrating CoW or similar.
+		i.baseImageLock.Lock()
+		i.baseImage = eventData.(storage.Provider)
+		i.baseImageLock.Unlock()
 	}
 	return nil
 }
@@ -241,10 +248,15 @@ func (i *ToProtocol) WriteAt(buffer []byte, offset int64) (int, error) {
 	dontSendData := false
 
 	// Check if the data is in a base image. If so, send a WriteAtHash command instead of the data.
-	if i.baseImage != nil {
+	var baseProv storage.Provider
+	i.baseImageLock.Lock()
+	baseProv = i.baseImage
+	i.baseImageLock.Lock()
+
+	if baseProv != nil {
 		hash := sha256.Sum256(buffer)
 		baseBuffer := make([]byte, len(buffer))
-		n, err := i.baseImage.ReadAt(baseBuffer, offset)
+		n, err := baseProv.ReadAt(baseBuffer, offset)
 		if err == nil && n == len(baseBuffer) {
 			baseHash := sha256.Sum256(baseBuffer)
 			if bytes.Equal(hash[:], baseHash[:]) {
