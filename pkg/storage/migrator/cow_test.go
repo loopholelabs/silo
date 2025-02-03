@@ -81,7 +81,7 @@ func setupCowDevice(t *testing.T) (storage.Provider, int, []byte) {
 func TestCowGetBase(t *testing.T) {
 	prov, _, baseData := setupCowDevice(t)
 
-	erd := storage.SendSiloEvent(prov, storage.EventType("getbase"), nil)
+	erd := storage.SendSiloEvent(prov, storage.EventType("base.get"), nil)
 	// Check it returns the base provider...
 	assert.Equal(t, 1, len(erd))
 

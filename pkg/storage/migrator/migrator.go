@@ -224,6 +224,18 @@ func (m *Migrator) startMigration() {
 				Msg("Migrator alternate sources sent to destination")
 		}
 	}
+
+	// Find any base image from the source, and send it to the destination.
+	baseSrc := storage.SendSiloEvent(m.sourceTracker, "base.get", nil)
+	if len(baseSrc) == 1 {
+		storage.SendSiloEvent(m.dest, "base.set", baseSrc[0])
+		if m.logger != nil {
+			m.logger.Debug().
+				Str("uuid", m.uuid.String()).
+				Uint64("size", m.sourceTracker.Size()).
+				Msg("Migrator base image sent to destination")
+		}
+	}
 }
 
 /**
