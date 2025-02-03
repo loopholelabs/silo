@@ -8,7 +8,7 @@ require (
 	github.com/Merovius/nbd v0.0.0-20231017152624-27b78b60d8da
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/hcl/v2 v2.23.0
-	github.com/loopholelabs/logging v0.3.1
+	github.com/loopholelabs/logging v0.3.2
 	github.com/minio/minio-go/v7 v7.0.83
 	github.com/ory/dockertest/v3 v3.11.0
 	github.com/prometheus/client_golang v1.20.5
