@@ -18,16 +18,17 @@ type SiloSchema struct {
 }
 
 type DeviceSchema struct {
-	Name          string        `hcl:"name,label"`
-	Size          string        `hcl:"size,attr"`
-	System        string        `hcl:"system,attr"`
-	BlockSize     string        `hcl:"blocksize,optional"`
-	Expose        bool          `hcl:"expose,optional"`
-	Location      string        `hcl:"location,optional"`
-	ROSource      *DeviceSchema `hcl:"source,block"`
-	Binlog        string        `hcl:"binlog,optional"`
-	PageServerPID int           `hcl:"pid,optional"`
-	Sync          *SyncS3Schema `hcl:"sync,block"`
+	Name           string        `hcl:"name,label"`
+	Size           string        `hcl:"size,attr"`
+	System         string        `hcl:"system,attr"`
+	BlockSize      string        `hcl:"blocksize,optional"`
+	Expose         bool          `hcl:"expose,optional"`
+	Location       string        `hcl:"location,optional"`
+	ROSource       *DeviceSchema `hcl:"source,block"`
+	ROSourceShared bool          `hcl:"sourceshared,optional"`
+	Binlog         string        `hcl:"binlog,optional"`
+	PageServerPID  int           `hcl:"pid,optional"`
+	Sync           *SyncS3Schema `hcl:"sync,block"`
 }
 
 type SyncConfigSchema struct {

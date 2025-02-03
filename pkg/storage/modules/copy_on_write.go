@@ -9,22 +9,25 @@ import (
 
 type CopyOnWrite struct {
 	storage.ProviderWithEvents
-	source    storage.Provider
-	cache     storage.Provider
-	exists    *util.Bitfield
-	size      uint64
-	blockSize int
-	CloseFn   func()
-	lock      sync.Mutex
-	wg        sync.WaitGroup
+	source     storage.Provider
+	cache      storage.Provider
+	exists     *util.Bitfield
+	size       uint64
+	blockSize  int
+	CloseFn    func()
+	lock       sync.Mutex
+	wg         sync.WaitGroup
+	sharedBase bool
 }
 
 // Relay events to embedded StorageProvider
 func (i *CopyOnWrite) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
-	// Something is asking for a Base provider. Respond with the source provider.
-	if eventType == storage.EventType("base.get") {
-		return []storage.EventReturnData{
-			i.source,
+	if i.sharedBase {
+		// Something is asking for a Base provider. Respond with the source provider.
+		if eventType == storage.EventType("base.get") {
+			return []storage.EventReturnData{
+				i.source,
+			}
 		}
 	}
 
@@ -36,12 +39,26 @@ func (i *CopyOnWrite) SendSiloEvent(eventType storage.EventType, eventData stora
 func NewCopyOnWrite(source storage.Provider, cache storage.Provider, blockSize int) *CopyOnWrite {
 	numBlocks := (source.Size() + uint64(blockSize) - 1) / uint64(blockSize)
 	return &CopyOnWrite{
-		source:    source,
-		cache:     cache,
-		exists:    util.NewBitfield(int(numBlocks)),
-		size:      source.Size(),
-		blockSize: blockSize,
-		CloseFn:   func() {},
+		source:     source,
+		cache:      cache,
+		exists:     util.NewBitfield(int(numBlocks)),
+		size:       source.Size(),
+		blockSize:  blockSize,
+		CloseFn:    func() {},
+		sharedBase: true,
+	}
+}
+
+func NewCopyOnWriteHiddenBase(source storage.Provider, cache storage.Provider, blockSize int) *CopyOnWrite {
+	numBlocks := (source.Size() + uint64(blockSize) - 1) / uint64(blockSize)
+	return &CopyOnWrite{
+		source:     source,
+		cache:      cache,
+		exists:     util.NewBitfield(int(numBlocks)),
+		size:       source.Size(),
+		blockSize:  blockSize,
+		CloseFn:    func() {},
+		sharedBase: false,
 	}
 }
 

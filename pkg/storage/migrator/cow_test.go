@@ -33,12 +33,13 @@ func setupCowDevice(t *testing.T) (storage.Provider, int, []byte) {
 	})
 
 	ds := &config.DeviceSchema{
-		Name:      "test",
-		Size:      "10m",
-		System:    "sparsefile",
-		BlockSize: "64k",
-		Expose:    false,
-		Location:  path.Join(testCowDir, "test_overlay"),
+		Name:           "test",
+		Size:           "10m",
+		System:         "sparsefile",
+		BlockSize:      "64k",
+		Expose:         false,
+		Location:       path.Join(testCowDir, "test_overlay"),
+		ROSourceShared: true,
 		ROSource: &config.DeviceSchema{
 			Name:      path.Join(testCowDir, "test_state"),
 			Size:      "10m",
