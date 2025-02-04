@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"io"
 
@@ -102,6 +103,27 @@ func Equals(sp1 Provider, sp2 Provider, blockSize int) (bool, error) {
 	}
 
 	return true, nil
+}
+
+/**
+ * Calc the hash of a device
+ *
+ */
+func Hash(sp Provider, blockSize int) ([]byte, error) {
+	size := int(sp.Size())
+
+	hasher := sha256.New()
+
+	sourceBuff := make([]byte, blockSize)
+	for i := 0; i < size; i += blockSize {
+		n, err := sp.ReadAt(sourceBuff, int64(i))
+		if err != nil {
+			return nil, err
+		}
+		hasher.Write(sourceBuff[:n])
+	}
+
+	return hasher.Sum(nil), nil
 }
 
 /**
