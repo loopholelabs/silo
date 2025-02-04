@@ -213,15 +213,27 @@ func (m *Migrator) startMigration() {
 	}
 
 	// Tell the source to stop sync, and send alternateSources to the destination.
-	as := storage.SendSiloEvent(m.sourceTracker, "sync.stop", nil)
+	as := storage.SendSiloEvent(m.sourceTracker, storage.EventSyncStop, nil)
 	if len(as) == 1 {
-		storage.SendSiloEvent(m.dest, "sources", as[0])
+		storage.SendSiloEvent(m.dest, storage.EventTypeSources, as[0])
 		if m.logger != nil {
 			m.logger.Debug().
 				Str("uuid", m.uuid.String()).
 				Uint64("size", m.sourceTracker.Size()).
 				Int("sources", len(as[0].([]packets.AlternateSource))).
 				Msg("Migrator alternate sources sent to destination")
+		}
+	}
+
+	// Find any base image from the source, and send it to the destination.
+	baseSrc := storage.SendSiloEvent(m.sourceTracker, storage.EventTypeBaseGet, nil)
+	if len(baseSrc) == 1 {
+		storage.SendSiloEvent(m.dest, storage.EventTypeBaseSet, baseSrc[0])
+		if m.logger != nil {
+			m.logger.Debug().
+				Str("uuid", m.uuid.String()).
+				Uint64("size", m.sourceTracker.Size()).
+				Msg("Migrator base image sent to destination")
 		}
 	}
 }

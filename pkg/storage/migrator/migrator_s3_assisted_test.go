@@ -98,8 +98,8 @@ func setupDevices(t *testing.T, size int, blockSize int) (storage.Provider, stor
 	require.Equal(t, 1, len(devDest))
 
 	// Make sure the sync is running on src, but NOT on dest.
-	assert.Equal(t, true, storage.SendSiloEvent(devSrc["TestSync"].Provider, "sync.running", nil)[0].(bool))
-	assert.Equal(t, false, storage.SendSiloEvent(devDest["TestSync"].Provider, "sync.running", nil)[0].(bool))
+	assert.Equal(t, true, storage.SendSiloEvent(devSrc["TestSync"].Provider, storage.EventSyncRunning, nil)[0].(bool))
+	assert.Equal(t, false, storage.SendSiloEvent(devDest["TestSync"].Provider, storage.EventSyncRunning, nil)[0].(bool))
 
 	return devSrc["TestSync"].Provider, devDest["TestSync"].Provider
 }
@@ -202,7 +202,7 @@ func TestMigratorS3Assisted(t *testing.T) {
 
 	// WAIT for the sync to be running
 	for {
-		syncRunning := storage.SendSiloEvent(provDest, "sync.running", nil)[0].(bool)
+		syncRunning := storage.SendSiloEvent(provDest, storage.EventSyncRunning, nil)[0].(bool)
 		if syncRunning {
 			break
 		}
@@ -215,12 +215,12 @@ func TestMigratorS3Assisted(t *testing.T) {
 	assert.True(t, eq)
 
 	// Get some statistics from the source
-	srcStats := storage.SendSiloEvent(provSrc, "sync.status", nil)
+	srcStats := storage.SendSiloEvent(provSrc, storage.EventSyncStatus, nil)
 	require.Equal(t, 1, len(srcStats))
 	srcMetrics := srcStats[0].(*sources.S3Metrics)
 
 	// Get some statistics from the destination puller
-	destStats := storage.SendSiloEvent(provDest, "sync.status", nil)
+	destStats := storage.SendSiloEvent(provDest, storage.EventSyncStatus, nil)
 	require.Equal(t, 1, len(destStats))
 	destMetrics := destStats[0].(*sources.S3Metrics)
 
@@ -233,12 +233,12 @@ func TestMigratorS3Assisted(t *testing.T) {
 	assert.Less(t, int(destMetrics.BlocksRCount), numBlocks)
 
 	// Sync should be running on the dest and NOT on src
-	assert.Equal(t, false, storage.SendSiloEvent(provSrc, "sync.running", nil)[0].(bool))
-	assert.Equal(t, true, storage.SendSiloEvent(provDest, "sync.running", nil)[0].(bool))
+	assert.Equal(t, false, storage.SendSiloEvent(provSrc, storage.EventSyncRunning, nil)[0].(bool))
+	assert.Equal(t, true, storage.SendSiloEvent(provDest, storage.EventSyncRunning, nil)[0].(bool))
 
 	err = provDest.Close()
 	assert.NoError(t, err)
-	assert.Equal(t, false, storage.SendSiloEvent(provDest, "sync.running", nil)[0].(bool))
+	assert.Equal(t, false, storage.SendSiloEvent(provDest, storage.EventSyncRunning, nil)[0].(bool))
 
 }
 
@@ -353,7 +353,7 @@ func TestMigratorS3AssistedChangeSource(t *testing.T) {
 
 	// WAIT for the sync to be running
 	for {
-		syncRunning := storage.SendSiloEvent(provDest, "sync.running", nil)[0].(bool)
+		syncRunning := storage.SendSiloEvent(provDest, storage.EventSyncRunning, nil)[0].(bool)
 		if syncRunning {
 			break
 		}
@@ -366,12 +366,12 @@ func TestMigratorS3AssistedChangeSource(t *testing.T) {
 	assert.True(t, eq)
 
 	// Get some statistics from the source
-	srcStats := storage.SendSiloEvent(provSrc, "sync.status", nil)
+	srcStats := storage.SendSiloEvent(provSrc, storage.EventSyncStatus, nil)
 	require.Equal(t, 1, len(srcStats))
 	srcMetrics := srcStats[0].(*sources.S3Metrics)
 
 	// Get some statistics from the destination puller
-	destStats := storage.SendSiloEvent(provDest, "sync.status", nil)
+	destStats := storage.SendSiloEvent(provDest, storage.EventSyncStatus, nil)
 	require.Equal(t, 1, len(destStats))
 	destMetrics := destStats[0].(*sources.S3Metrics)
 
@@ -384,11 +384,11 @@ func TestMigratorS3AssistedChangeSource(t *testing.T) {
 	assert.Less(t, int(destMetrics.BlocksRCount), numBlocks)
 
 	// Sync should be running on the dest and NOT on src
-	assert.Equal(t, false, storage.SendSiloEvent(provSrc, "sync.running", nil)[0].(bool))
-	assert.Equal(t, true, storage.SendSiloEvent(provDest, "sync.running", nil)[0].(bool))
+	assert.Equal(t, false, storage.SendSiloEvent(provSrc, storage.EventSyncRunning, nil)[0].(bool))
+	assert.Equal(t, true, storage.SendSiloEvent(provDest, storage.EventSyncRunning, nil)[0].(bool))
 
 	err = provDest.Close()
 	assert.NoError(t, err)
-	assert.Equal(t, false, storage.SendSiloEvent(provDest, "sync.running", nil)[0].(bool))
+	assert.Equal(t, false, storage.SendSiloEvent(provDest, storage.EventSyncRunning, nil)[0].(bool))
 
 }

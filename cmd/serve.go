@@ -138,7 +138,7 @@ func runServe(_ *cobra.Command, _ []string) {
 		ctime := time.Now()
 
 		// Migrate everything to the destination...
-		err = dg.StartMigrationTo(pro)
+		err = dg.StartMigrationTo(pro, true)
 		if err != nil {
 			dg.CloseAll()
 			panic(err)

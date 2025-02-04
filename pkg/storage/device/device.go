@@ -208,7 +208,12 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 		}
 
 		// Now hook it in as the read only source for this device...
-		cow := modules.NewCopyOnWrite(rodev, prov, bs)
+		var cow *modules.CopyOnWrite
+		if ds.ROSourceShared {
+			cow = modules.NewCopyOnWrite(rodev, prov, bs)
+		} else {
+			cow = modules.NewCopyOnWriteHiddenBase(rodev, prov, bs)
+		}
 		prov = cow
 		// If we can find a cow file, load it up...
 		data, err := os.ReadFile(ds.ROSource.Name)
@@ -482,18 +487,18 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 		}
 
 		// If the storage gets a "sync.stop", we should cancel the sync, and return the safe blocks
-		storage.AddSiloEventNotification(prov, "sync.stop", stopSync)
+		storage.AddSiloEventNotification(prov, storage.EventSyncStop, stopSync)
 
 		// If the storage gets a "sync.start", we should start syncing to S3.
-		storage.AddSiloEventNotification(prov, "sync.start", startSync)
+		storage.AddSiloEventNotification(prov, storage.EventSyncStart, startSync)
 
 		// If the storage gets a "sync.status", get some status on the S3Storage
-		storage.AddSiloEventNotification(prov, "sync.status", func(_ storage.EventType, _ storage.EventData) storage.EventReturnData {
+		storage.AddSiloEventNotification(prov, storage.EventSyncStatus, func(_ storage.EventType, _ storage.EventData) storage.EventReturnData {
 			return s3dest.Metrics()
 		})
 
 		// If the storage gets a "sync.running", return
-		storage.AddSiloEventNotification(prov, "sync.running", func(_ storage.EventType, _ storage.EventData) storage.EventReturnData {
+		storage.AddSiloEventNotification(prov, storage.EventSyncRunning, func(_ storage.EventType, _ storage.EventData) storage.EventReturnData {
 			syncLock.Lock()
 			defer syncLock.Unlock()
 			return syncRunning
@@ -501,7 +506,7 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 
 		if ds.Sync.AutoStart {
 			// Start the sync here...
-			startSync("sync.start", nil)
+			startSync(storage.EventSyncStart, nil)
 		}
 
 		hooks := modules.NewHooks(prov)

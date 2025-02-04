@@ -88,10 +88,10 @@ func TestDeviceSync(t *testing.T) {
 	// Should be enough time here to migrate the changed data blocks, since we have set the config.
 	time.Sleep(500 * time.Millisecond)
 
-	assert.Equal(t, true, storage.SendSiloEvent(prov, "sync.running", nil)[0].(bool))
+	assert.Equal(t, true, storage.SendSiloEvent(prov, storage.EventSyncRunning, nil)[0].(bool))
 
 	// Tell the sync to stop, and return the AlternateSource details.
-	asources := storage.SendSiloEvent(prov, "sync.stop", nil)
+	asources := storage.SendSiloEvent(prov, storage.EventSyncStop, nil)
 
 	locs := make([]string, 0)
 
@@ -115,7 +115,7 @@ func TestDeviceSync(t *testing.T) {
 	assert.Equal(t, numBlocks, len(locs))
 
 	// Get some statistics
-	stats := storage.SendSiloEvent(prov, "sync.status", nil)
+	stats := storage.SendSiloEvent(prov, storage.EventSyncStatus, nil)
 
 	assert.Equal(t, 1, len(stats))
 	metrics := stats[0].(*sources.S3Metrics)
@@ -123,7 +123,7 @@ func TestDeviceSync(t *testing.T) {
 	// Do some asserts on the S3Metrics... It should have written each block at least once by now.
 	assert.GreaterOrEqual(t, int(metrics.BlocksWCount), numBlocks)
 
-	assert.Equal(t, false, storage.SendSiloEvent(prov, "sync.running", nil)[0].(bool))
+	assert.Equal(t, false, storage.SendSiloEvent(prov, storage.EventSyncRunning, nil)[0].(bool))
 
 	prov.Close()
 
@@ -199,6 +199,6 @@ func TestDeviceSyncClose(t *testing.T) {
 	assert.NoError(t, err)
 
 	// sync should have stopped
-	assert.Equal(t, false, storage.SendSiloEvent(prov, "sync.running", nil)[0].(bool))
+	assert.Equal(t, false, storage.SendSiloEvent(prov, storage.EventSyncRunning, nil)[0].(bool))
 
 }

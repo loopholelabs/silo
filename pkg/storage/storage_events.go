@@ -2,6 +2,16 @@ package storage
 
 import "sync"
 
+const EventTypeSources = EventType("sources")
+const EventTypeBaseSet = EventType("base.set")
+const EventTypeBaseGet = EventType("base.get")
+const EventTypeAvailable = EventType("available")
+
+const EventSyncStop = EventType("sync.stop")
+const EventSyncStart = EventType("sync.start")
+const EventSyncStatus = EventType("sync.status")
+const EventSyncRunning = EventType("sync.running")
+
 /**
  * Events are an optional addition to StorageProvider.
  *
