@@ -122,6 +122,8 @@ func TestMigratorCow(t *testing.T) {
 	var destStorage storage.Provider
 	var destOverlay storage.Provider
 	var destFrom *protocol.FromProtocol
+	var waitingCacheLocal *waitingcache.Local
+	var waitingCacheRemote *waitingcache.Remote
 
 	// Create a simple pipe
 	r1, w1 := io.Pipe()
@@ -131,11 +133,9 @@ func TestMigratorCow(t *testing.T) {
 	baseProvider, err := sources.NewFileStorage(path.Join(testCowDir, "test_rosource"), int64(prov.Size()))
 	assert.NoError(t, err)
 
-	var waitingCacheLocal *waitingcache.Local
-	var waitingCacheRemote *waitingcache.Remote
-
 	initDev := func(ctx context.Context, p protocol.Protocol, dev uint32) {
 		destStorageFactory := func(di *packets.DevInfo) storage.Provider {
+			var err error
 			destOverlay, err = sources.NewFileStorageCreate(path.Join(testCowDir, "test_overlay_dest"), int64(di.Size))
 			assert.NoError(t, err)
 
