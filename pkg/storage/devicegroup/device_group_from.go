@@ -64,7 +64,7 @@ func NewFromProtocol(ctx context.Context,
 	go func() {
 		for {
 			err := handleCustomDataEvent()
-			if err != nil && !errors.Is(err, context.Canceled) {
+			if err != nil {
 				log.Debug().Err(err).Msg("handleCustomDataEvenet returned")
 				return
 			}
