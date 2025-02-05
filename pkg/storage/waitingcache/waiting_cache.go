@@ -37,6 +37,8 @@ type WaitingCache struct {
 	metricWaitForBlockLockDone     uint64
 	metricMarkAvailableLocalBlock  uint64
 	metricMarkAvailableRemoteBlock uint64
+	completeFunc                   func()
+	completeFuncLock               sync.Mutex
 }
 
 type Metrics struct {
@@ -66,6 +68,7 @@ func NewWaitingCacheWithLogger(prov storage.Provider, blockSize int, log types.L
 		size:             prov.Size(),
 		lockers:          make(map[uint]*sync.RWMutex),
 		allowLocalWrites: true,
+		completeFunc:     func() {},
 	}
 	wc.local = &Local{
 		wc:         wc,
@@ -78,6 +81,12 @@ func NewWaitingCacheWithLogger(prov storage.Provider, blockSize int, log types.L
 		available: *util.NewBitfield(numBlocks),
 	}
 	return wc.local, wc.remote
+}
+
+func (i *WaitingCache) SetCompletedFunc(fn func()) {
+	i.completeFuncLock.Lock()
+	i.completeFunc = fn
+	i.completeFuncLock.Unlock()
 }
 
 func (i *WaitingCache) GetMetrics() *Metrics {
