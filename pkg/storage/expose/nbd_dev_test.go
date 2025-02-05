@@ -146,7 +146,7 @@ func BenchmarkDevReadNLLatency(mb *testing.B) {
 				mb.Run(name, func(b *testing.B) {
 
 					store := sources.NewMemoryStorage(diskSize)
-					lstore := modules.NewArtificialLatency(store, lts, 0, lts, 0)
+					lstore := modules.NewArtificialLatency(store, lts, 0, lts, 0, 0, 0)
 					//					logstore := modules.NewLogger(lstore)
 					driver := modules.NewMetrics(lstore)
 
