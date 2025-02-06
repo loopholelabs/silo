@@ -175,22 +175,15 @@ func BenchmarkMigrationPipe(mb *testing.B) {
 				}()
 			}
 
-			prSourceRW := protocol.NewRW(context.TODO(), readers1, writers2, nil)
-			prDestRW := protocol.NewRW(context.TODO(), readers2, writers1, initDev)
+			prSource := protocol.NewRW(context.TODO(), readers1, writers2, nil)
+			prDest := protocol.NewRW(context.TODO(), readers2, writers1, initDev)
 
 			go func() {
-				_ = prSourceRW.Handle()
+				_ = prSource.Handle()
 			}()
 			go func() {
-				_ = prDestRW.Handle()
+				_ = prDest.Handle()
 			}()
-
-			prSource := protocol.NewTestProtocolBandwidth(prSourceRW, 1024*1024*1024) // 1GB/sec
-			prDest := protocol.NewTestProtocolBandwidth(prDestRW, 1024*1024*1024)     // 1GB/sec
-
-			// Make sure new devs get given the latency/bandwidth protocol...
-
-			prDestRW.SetNewDevProtocol(prDest)
 
 			// Pipe a destination to the protocol
 			destination := protocol.NewToProtocol(sourceDirtyRemote.Size(), 17, prSource)
@@ -224,7 +217,8 @@ func BenchmarkMigrationPipe(mb *testing.B) {
 			}
 
 			b.ResetTimer()
-			b.SetBytes(int64(size))
+
+			//b.SetBytes(int64(size))
 			//			b.ReportAllocs()
 
 			//			ctime := time.Now()
