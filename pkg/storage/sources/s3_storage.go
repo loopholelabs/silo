@@ -192,7 +192,7 @@ func (i *S3Storage) ReadAt(buffer []byte, offset int64) (int, error) {
 			atomic.AddUint64(&i.metricsBlocksRCount, 1)
 			atomic.AddUint64(&i.metricsBlocksRBytes, uint64(n))
 			atomic.AddUint64(&i.metricsBlocksRTimeNS, uint64(dtime.Nanoseconds()))
-		} else if err.Error() == errNoSuchKey.Error() {
+		} else if err != nil && err.Error() == errNoSuchKey.Error() {
 			return len(buff), nil
 		}
 

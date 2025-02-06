@@ -64,8 +64,10 @@ func NewFromProtocol(ctx context.Context,
 	go func() {
 		for {
 			err := handleCustomDataEvent()
-			if err != nil && !errors.Is(err, context.Canceled) {
-				log.Debug().Err(err).Msg("handleCustomDataEvenet returned")
+			if err != nil {
+				if log != nil {
+					log.Debug().Err(err).Msg("handleCustomDataEvenet returned")
+				}
 				return
 			}
 		}
@@ -126,13 +128,17 @@ func NewFromProtocol(ctx context.Context,
 		go func() {
 			err := from.HandleReadAt()
 			if err != nil && !errors.Is(err, context.Canceled) {
-				log.Debug().Err(err).Msg("HandleReadAt returned")
+				if log != nil {
+					log.Debug().Err(err).Msg("HandleReadAt returned")
+				}
 			}
 		}()
 		go func() {
 			err := from.HandleWriteAt()
 			if err != nil && !errors.Is(err, context.Canceled) {
-				log.Debug().Err(err).Msg("HandleWriteAt returned")
+				if log != nil {
+					log.Debug().Err(err).Msg("HandleWriteAt returned")
+				}
 			}
 		}()
 		go func() {
@@ -141,7 +147,9 @@ func NewFromProtocol(ctx context.Context,
 				d.WaitingCacheLocal.DirtyBlocks(dirtyBlocks)
 			})
 			if err != nil && !errors.Is(err, context.Canceled) {
-				log.Debug().Err(err).Msg("HandleDirtyList returned")
+				if log != nil {
+					log.Debug().Err(err).Msg("HandleDirtyList returned")
+				}
 			}
 		}()
 		go func() {
@@ -154,7 +162,9 @@ func NewFromProtocol(ctx context.Context,
 				}
 			})
 			if err != nil && !errors.Is(err, context.Canceled) {
-				log.Debug().Err(err).Msg("HandleEvent returned")
+				if log != nil {
+					log.Debug().Err(err).Msg("HandleEvent returned")
+				}
 			}
 		}()
 	}
