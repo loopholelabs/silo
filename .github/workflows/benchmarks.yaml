@@ -1,5 +1,5 @@
 name: Silo benchmarks
-on: workflow_dispatch
+on: push
 
 #on:
 #  push:
