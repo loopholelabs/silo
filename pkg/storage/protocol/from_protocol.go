@@ -40,6 +40,9 @@ type FromProtocol struct {
 	alternateSources     []packets.AlternateSource
 	startSyncAt          StartSyncBehaviour
 
+	completeFunc     func()
+	completeFuncLock sync.Mutex
+
 	// metrics
 	metricRecvEvents         uint64
 	metricRecvHashes         uint64
@@ -172,10 +175,27 @@ func (fp *FromProtocol) getAltSourcesStartSync() {
 	// WriteCombinator now.
 
 	// Deal with the sync here... We don't wait...
-	go storage.SendSiloEvent(fp.prov, "sync.start", storage.SyncStartConfig{
-		AlternateSources: as,
-		Destination:      fp.provAltSources,
-	})
+	go func() {
+		storage.SendSiloEvent(fp.prov, "sync.start", storage.SyncStartConfig{
+			AlternateSources: as,
+			Destination:      fp.provAltSources,
+		})
+		// Notify anyone interested that the S3 grab completed...
+		fp.completeFuncLock.Lock()
+		if fp.completeFunc != nil {
+			fp.completeFunc()
+		}
+		fp.completeFuncLock.Unlock()
+	}()
+}
+
+/**
+ * Set a function to be called when S3 grab is completed and S3 sync started.
+ */
+func (fp *FromProtocol) SetCompleteFunc(f func()) {
+	fp.completeFuncLock.Lock()
+	fp.completeFunc = f
+	fp.completeFuncLock.Unlock()
 }
 
 // Handle any Events
