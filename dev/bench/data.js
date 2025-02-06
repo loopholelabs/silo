@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1738867968361,
+  "lastUpdate": 1738870335794,
   "repoUrl": "https://github.com/loopholelabs/silo",
   "entries": {
     "Silo Go Benchmark": [
@@ -114,6 +114,120 @@ window.BENCHMARK_DATA = {
             "value": 37269859,
             "unit": "ns/op",
             "extra": "31 times\n4 procs"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "jamesmoore@loopholelabs.io",
+            "name": "Jimmy Moore",
+            "username": "jimmyaxod"
+          },
+          "committer": {
+            "email": "jamesmoore@loopholelabs.io",
+            "name": "Jimmy Moore",
+            "username": "jimmyaxod"
+          },
+          "distinct": true,
+          "id": "349705d445e0003cf2e82f53935b5b6272e3a3e2",
+          "message": "Lint fix\n\nSigned-off-by: Jimmy Moore <jamesmoore@loopholelabs.io>",
+          "timestamp": "2025-02-06T19:31:28Z",
+          "tree_id": "5b2dc70b8df3c3ea76846a39d69a84168455e79d",
+          "url": "https://github.com/loopholelabs/silo/commit/349705d445e0003cf2e82f53935b5b6272e3a3e2"
+        },
+        "date": 1738870335347,
+        "tool": "go",
+        "benches": [
+          {
+            "name": "BenchmarkMigrationPipe/32-concurrency",
+            "value": 3867205,
+            "unit": "ns/op",
+            "extra": "286 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMigrationPipe/128-concurrency",
+            "value": 4556622,
+            "unit": "ns/op",
+            "extra": "264 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMigrationPipe/max-concurrency",
+            "value": 4753827,
+            "unit": "ns/op",
+            "extra": "249 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMigrationPipe/1-pipe",
+            "value": 4667554,
+            "unit": "ns/op",
+            "extra": "250 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMigrationPipe/4-pipes",
+            "value": 2904951,
+            "unit": "ns/op",
+            "extra": "388 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMigrationPipe/32-pipes",
+            "value": 2952607,
+            "unit": "ns/op",
+            "extra": "352 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMigrationPipe/4k-blocks",
+            "value": 28749062,
+            "unit": "ns/op",
+            "extra": "64 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMigrationPipe/64k-blocks",
+            "value": 2889057,
+            "unit": "ns/op",
+            "extra": "410 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMigrationPipe/256k-blocks",
+            "value": 2621996,
+            "unit": "ns/op",
+            "extra": "447 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMigrationPipe/no-sharding",
+            "value": 2716517,
+            "unit": "ns/op",
+            "extra": "448 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMigrationPipe/4k-shards",
+            "value": 3014672,
+            "unit": "ns/op",
+            "extra": "379 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMigrationPipe/64k-shards",
+            "value": 2640764,
+            "unit": "ns/op",
+            "extra": "434 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMigrationPipe/256k-shards",
+            "value": 2589898,
+            "unit": "ns/op",
+            "extra": "438 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMigrationPipe/no-compress",
+            "value": 2639414,
+            "unit": "ns/op",
+            "extra": "451 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMigrationPipe/compress",
+            "value": 37306166,
+            "unit": "ns/op",
+            "extra": "30 times\n4 procs"
           }
         ]
       }
