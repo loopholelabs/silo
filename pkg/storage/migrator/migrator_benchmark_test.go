@@ -218,7 +218,7 @@ func BenchmarkMigrationPipe(mb *testing.B) {
 
 			b.ResetTimer()
 
-			//b.SetBytes(int64(size))
+			// b.SetBytes(int64(size))
 			//			b.ReportAllocs()
 
 			//			ctime := time.Now()
