@@ -31,6 +31,7 @@ type DeviceGroup struct {
 	devices           []*DeviceInformation
 	controlProtocol   protocol.Protocol
 	incomingDevicesCh chan bool
+	readyDevicesCh    chan bool
 	progressLock      sync.Mutex
 	progress          map[string]*migrator.MigrationProgress
 }

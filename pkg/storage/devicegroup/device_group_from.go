@@ -93,6 +93,7 @@ func NewFromProtocol(ctx context.Context,
 	dg.ctx = ctx
 
 	dg.incomingDevicesCh = make(chan bool, len(dg.devices))
+	dg.readyDevicesCh = make(chan bool, len(dg.devices))
 
 	// We need to create the FromProtocol for each device, and associated goroutines here.
 	for index, di := range dgi.Devices {
@@ -112,6 +113,12 @@ func NewFromProtocol(ctx context.Context,
 		}
 
 		from := protocol.NewFromProtocol(ctx, uint32(index), destStorageFactory, pro)
+
+		// Set something up to tell us when sync started
+		from.SetCompleteFunc(func() {
+			dg.readyDevicesCh <- true
+		})
+
 		err = from.SetDevInfo(di)
 		if err != nil {
 			return nil, err
@@ -160,6 +167,18 @@ func (dg *DeviceGroup) WaitForCompletion() error {
 	for range dg.devices {
 		select {
 		case <-dg.incomingDevicesCh:
+		case <-dg.ctx.Done():
+			return dg.ctx.Err()
+		}
+	}
+	return nil
+}
+
+// Wait for devices to be ready (all data local)
+func (dg *DeviceGroup) WaitForReady() error {
+	for range dg.devices {
+		select {
+		case <-dg.readyDevicesCh:
 		case <-dg.ctx.Done():
 			return dg.ctx.Err()
 		}
