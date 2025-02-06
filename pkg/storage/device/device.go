@@ -405,7 +405,7 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 						// Check the data in S3 hasn't changed.
 						hash := sha256.Sum256(buffer)
 						if !bytes.Equal(hash[:], a.Hash[:]) {
-							panic("The data in S3 is corrupt.")
+							panic(fmt.Sprintf("The data in S3 is corrupt. %x != %x (Off=%d Len=%d)", hash[:], a.Hash[:], a.Offset, a.Length))
 						}
 
 						n, err = startConfig.Destination.WriteAt(buffer, a.Offset)
@@ -470,9 +470,15 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 			// Translate these to locations so they can be sent to a destination...
 			altSources := make([]packets.AlternateSource, 0)
 			for block, hash := range blocks {
+				l := int64(bs)
+				o := int64(block * uint(bs))
+				// If it's the last block, we may need to truncate the length
+				if o+l > int64(prov.Size()) {
+					l = int64(prov.Size()) - o
+				}
 				as := packets.AlternateSource{
-					Offset:   int64(block * uint(bs)),
-					Length:   int64(bs),
+					Offset:   o,
+					Length:   l,
 					Hash:     hash,
 					Location: fmt.Sprintf("%s %s %s", ds.Sync.Endpoint, ds.Sync.Bucket, ds.Name),
 				}
