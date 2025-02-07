@@ -95,6 +95,36 @@ func NewS3StorageDummy(size uint64,
 	}, nil
 }
 
+func NewS3StorageCreateNoBucketCheck(secure bool, endpoint string,
+	access string,
+	secretAccess string,
+	bucket string,
+	prefix string,
+	size uint64,
+	blockSize int) (*S3Storage, error) {
+
+	client, err := minio.New(endpoint, &minio.Options{
+		Creds:  credentials.NewStaticV4(access, secretAccess, ""),
+		Secure: secure,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	numBlocks := (int(size) + blockSize - 1) / blockSize
+
+	return &S3Storage{
+		size:      size,
+		blockSize: blockSize,
+		client:    client,
+		bucket:    bucket,
+		prefix:    prefix,
+		lockers:   make([]sync.RWMutex, numBlocks),
+		contexts:  make([]context.CancelFunc, numBlocks),
+	}, nil
+
+}
+
 func NewS3StorageCreate(secure bool, endpoint string,
 	access string,
 	secretAccess string,
