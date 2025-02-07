@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
@@ -216,5 +217,44 @@ func TestCopyOnWriteCRCIssue(t *testing.T) {
 
 	buffRef := make([]byte, reference.Size())
 	_, err = reference.ReadAt(buffRef, 0)
+	assert.NoError(t, err)
+}
+
+func TestCopyOnWriteClose(t *testing.T) {
+
+	// Create a new block storage, backed by memory storage
+	size := 1024 * 1024
+	mem := sources.NewMemoryStorage(size)
+	cache := sources.NewMemoryStorage(size)
+
+	// Make reads take a little while...
+	memHooks := NewHooks(mem)
+	memHooks.PreRead = func(_ []byte, _ int64) (bool, int, error) {
+		time.Sleep(100 * time.Millisecond)
+		return true, 0, nil
+	}
+
+	cow := NewCopyOnWrite(memHooks, cache, 10)
+
+	// ReadAt1
+	go func() {
+		buff := make([]byte, 30)
+		_, err := cow.ReadAt(buff, 18)
+		assert.NoError(t, err)
+	}()
+
+	// ReadAt2
+	go func() {
+		time.Sleep(75 * time.Millisecond)
+		buff := make([]byte, 30)
+		_, err := cow.ReadAt(buff, 18)
+		assert.ErrorIs(t, err, ErrClosed) // We'd expect there to be an error here
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+
+	// Here, ReadAt1 should still be in progress...
+	// The ReadAt2 should happen during this close, which will cause a panic.
+	err := cow.Close()
 	assert.NoError(t, err)
 }

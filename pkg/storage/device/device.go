@@ -292,7 +292,7 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 			log.Debug().Str("name", ds.Name).Msg("setting up S3 sync")
 		}
 
-		s3dest, err := sources.NewS3StorageCreate(ds.Sync.Secure,
+		s3dest, err := sources.NewS3StorageCreateNoBucketCheck(ds.Sync.Secure,
 			ds.Sync.Endpoint,
 			ds.Sync.AccessKey,
 			ds.Sync.SecretKey,

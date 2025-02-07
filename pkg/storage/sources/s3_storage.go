@@ -51,6 +51,29 @@ type S3Storage struct {
 	metricsActiveReads       int64
 }
 
+func CreateBucket(secure bool, endpoint string, access string, secretAccess string, bucket string) error {
+	client, err := minio.New(endpoint, &minio.Options{
+		Creds:  credentials.NewStaticV4(access, secretAccess, ""),
+		Secure: secure,
+	})
+	if err != nil {
+		return err
+	}
+
+	exists, err := client.BucketExists(context.TODO(), bucket)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		// If the bucket doesn't exist, Create the bucket...
+		err = client.MakeBucket(context.TODO(), bucket, minio.MakeBucketOptions{})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func NewS3Storage(secure bool, endpoint string,
 	access string,
 	secretAccess string,
@@ -93,6 +116,36 @@ func NewS3StorageDummy(size uint64,
 		lockers:   make([]sync.RWMutex, numBlocks),
 		contexts:  make([]context.CancelFunc, numBlocks),
 	}, nil
+}
+
+func NewS3StorageCreateNoBucketCheck(secure bool, endpoint string,
+	access string,
+	secretAccess string,
+	bucket string,
+	prefix string,
+	size uint64,
+	blockSize int) (*S3Storage, error) {
+
+	client, err := minio.New(endpoint, &minio.Options{
+		Creds:  credentials.NewStaticV4(access, secretAccess, ""),
+		Secure: secure,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	numBlocks := (int(size) + blockSize - 1) / blockSize
+
+	return &S3Storage{
+		size:      size,
+		blockSize: blockSize,
+		client:    client,
+		bucket:    bucket,
+		prefix:    prefix,
+		lockers:   make([]sync.RWMutex, numBlocks),
+		contexts:  make([]context.CancelFunc, numBlocks),
+	}, nil
+
 }
 
 func NewS3StorageCreate(secure bool, endpoint string,

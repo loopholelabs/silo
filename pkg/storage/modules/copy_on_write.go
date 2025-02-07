@@ -1,6 +1,7 @@
 package modules
 
 import (
+	"errors"
 	"sync"
 
 	"github.com/loopholelabs/silo/pkg/storage"
@@ -15,10 +16,15 @@ type CopyOnWrite struct {
 	size       uint64
 	blockSize  int
 	CloseFn    func()
-	lock       sync.Mutex
-	wg         sync.WaitGroup
+	writeLock  sync.Mutex // TODO: Do this at the block level to increase throughput
 	sharedBase bool
+
+	wg        sync.WaitGroup
+	closing   bool
+	closeLock sync.Mutex
 }
+
+var ErrClosed = errors.New("device is closing or already closed")
 
 // Relay events to embedded StorageProvider
 func (i *CopyOnWrite) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
@@ -46,6 +52,7 @@ func NewCopyOnWrite(source storage.Provider, cache storage.Provider, blockSize i
 		blockSize:  blockSize,
 		CloseFn:    func() {},
 		sharedBase: true,
+		closing:    false,
 	}
 }
 
@@ -59,6 +66,7 @@ func NewCopyOnWriteHiddenBase(source storage.Provider, cache storage.Provider, b
 		blockSize:  blockSize,
 		CloseFn:    func() {},
 		sharedBase: false,
+		closing:    false,
 	}
 }
 
@@ -73,7 +81,14 @@ func (i *CopyOnWrite) GetBlockExists() []uint {
 }
 
 func (i *CopyOnWrite) ReadAt(buffer []byte, offset int64) (int, error) {
+	i.closeLock.Lock()
+	if i.closing {
+		i.closeLock.Unlock()
+		return 0, ErrClosed
+	}
 	i.wg.Add(1)
+	i.closeLock.Unlock()
+
 	defer i.wg.Done()
 
 	bufferEnd := int64(len(buffer))
@@ -165,11 +180,18 @@ func (i *CopyOnWrite) ReadAt(buffer []byte, offset int64) (int, error) {
 }
 
 func (i *CopyOnWrite) WriteAt(buffer []byte, offset int64) (int, error) {
+	i.closeLock.Lock()
+	if i.closing {
+		i.closeLock.Unlock()
+		return 0, ErrClosed
+	}
 	i.wg.Add(1)
+	i.closeLock.Unlock()
+
 	defer i.wg.Done()
 
-	i.lock.Lock()
-	defer i.lock.Unlock()
+	i.writeLock.Lock()
+	defer i.writeLock.Unlock()
 
 	bufferEnd := int64(len(buffer))
 	if offset+int64(len(buffer)) > int64(i.size) {
@@ -276,6 +298,11 @@ func (i *CopyOnWrite) Size() uint64 {
 }
 
 func (i *CopyOnWrite) Close() error {
+	//
+	i.closeLock.Lock()
+	i.closing = true
+	i.closeLock.Unlock()
+
 	i.wg.Wait() // Wait for any pending reads/writes to complete
 	i.cache.Close()
 	i.source.Close()

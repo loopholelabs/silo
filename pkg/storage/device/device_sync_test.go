@@ -54,6 +54,10 @@ func TestDeviceSync(t *testing.T) {
 	err := s.Decode([]byte(testSyncSchema))
 	assert.NoError(t, err)
 
+	s3conf := s.Device[0].Sync
+	err = sources.CreateBucket(s3conf.Secure, s3conf.Endpoint, s3conf.AccessKey, s3conf.SecretKey, s3conf.Bucket)
+	assert.NoError(t, err)
+
 	logBuffer := &testutils.SafeWriteBuffer{}
 	l := logging.New(logging.Zerolog, "device", logBuffer)
 	l.SetLevel(types.TraceLevel)
@@ -167,6 +171,11 @@ func TestDeviceSyncClose(t *testing.T) {
 	s := new(config.SiloSchema)
 	err := s.Decode([]byte(testSyncSchema))
 	assert.NoError(t, err)
+
+	s3conf := s.Device[0].Sync
+	err = sources.CreateBucket(s3conf.Secure, s3conf.Endpoint, s3conf.AccessKey, s3conf.SecretKey, s3conf.Bucket)
+	assert.NoError(t, err)
+
 	devs, err := NewDevices(s.Device)
 	assert.NoError(t, err)
 	t.Cleanup(func() {
