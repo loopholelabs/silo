@@ -286,10 +286,14 @@ func syncMigrateS3(_ uint32, name string,
 					break
 				default:
 				}
-				err := blr.ExecuteNext(1)
+				provErr, err := blr.Next(1, true)
 				if errors.Is(err, io.EOF) {
 					break
-				} else if err != nil {
+				}
+				if err != nil {
+					cancelFn()
+					panic(err)
+				} else if provErr != nil {
 					cancelFn()
 					panic(err)
 				}
