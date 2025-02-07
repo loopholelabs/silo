@@ -38,16 +38,18 @@ type SyncConfigSchema struct {
 	MinChanged  int    `hcl:"minchanged,attr"`
 	CheckPeriod string `hcl:"checkperiod,attr"`
 	Limit       int    `hcl:"limit,attr"`
+	Concurrency int    `hcl:"concurrency,attr"`
 }
 
 type SyncS3Schema struct {
-	Secure    bool              `hcl:"secure,attr"`
-	AccessKey string            `hcl:"accesskey,attr"`
-	SecretKey string            `hcl:"secretkey,attr"`
-	Endpoint  string            `hcl:"endpoint,attr"`
-	Bucket    string            `hcl:"bucket,attr"`
-	Config    *SyncConfigSchema `hcl:"config,block"`
-	AutoStart bool              `hcl:"autostart,attr"`
+	Secure          bool              `hcl:"secure,attr"`
+	AccessKey       string            `hcl:"accesskey,attr"`
+	SecretKey       string            `hcl:"secretkey,attr"`
+	Endpoint        string            `hcl:"endpoint,attr"`
+	Bucket          string            `hcl:"bucket,attr"`
+	Config          *SyncConfigSchema `hcl:"config,block"`
+	AutoStart       bool              `hcl:"autostart,attr"`
+	GrabConcurrency int               `hcl:"grabconcurrency,attr"`
 }
 
 func parseByteValue(val string) int64 {

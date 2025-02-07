@@ -40,6 +40,7 @@ func setupDevices(t *testing.T, size int, blockSize int) (storage.Provider, stor
 			secretkey = "silosilo"
 			endpoint = "%s"
 			bucket = "silosilo"
+			grabconcurrency = 10
 			config {
 			    onlydirty = true
 				blockshift = 2
@@ -47,6 +48,7 @@ func setupDevices(t *testing.T, size int, blockSize int) (storage.Provider, stor
 				minchanged = 4
 				limit = 8
 				checkperiod = "1s"
+				concurrency = 10
 			}
 		}
 	}
@@ -65,6 +67,7 @@ func setupDevices(t *testing.T, size int, blockSize int) (storage.Provider, stor
 			secretkey = "silosilo"
 			endpoint = "%s"
 			bucket = "silosilo"
+			grabconcurrency = 10
 			config {
 			    onlydirty = true
 				blockshift = 2
@@ -72,6 +75,7 @@ func setupDevices(t *testing.T, size int, blockSize int) (storage.Provider, stor
 				minchanged = 4
 				limit = 8
 				checkperiod = "1s"
+				concurrency = 10
 			}
 		}
 	}

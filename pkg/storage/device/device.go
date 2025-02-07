@@ -33,8 +33,6 @@ const (
 	DefaultBlockSize = 4096
 )
 
-var syncConcurrency = map[int]int{storage.BlockTypeAny: 10}
-var syncGrabConcurrency = 100
 var syncVolatilityExpiry = 10 * time.Minute
 
 type Device struct {
@@ -346,7 +344,7 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 
 		// Start doing the sync...
 		syncer := migrator.NewSyncer(ctx, &migrator.SyncConfig{
-			Concurrency:      syncConcurrency,
+			Concurrency:      map[int]int{storage.BlockTypeAny: ds.Sync.Config.Concurrency},
 			Logger:           log,
 			Name:             ds.Name,
 			Integrity:        false,
@@ -389,7 +387,7 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 
 				var wg sync.WaitGroup
 
-				concurrency := make(chan bool, syncGrabConcurrency)
+				concurrency := make(chan bool, ds.Sync.GrabConcurrency)
 
 				// Pull these blocks in parallel
 				for _, as := range startConfig.AlternateSources {
