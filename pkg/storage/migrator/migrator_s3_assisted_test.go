@@ -84,6 +84,11 @@ func setupDevices(t *testing.T, size int, blockSize int) (storage.Provider, stor
 	sSrc := new(config.SiloSchema)
 	err := sSrc.Decode([]byte(testSyncSchemaSrc))
 	assert.NoError(t, err)
+
+	s3conf := sSrc.Device[0].Sync
+	err = sources.CreateBucket(s3conf.Secure, s3conf.Endpoint, s3conf.AccessKey, s3conf.SecretKey, s3conf.Bucket)
+	assert.NoError(t, err)
+
 	devSrc, err := device.NewDevices(sSrc.Device)
 	assert.NoError(t, err)
 

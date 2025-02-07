@@ -229,7 +229,7 @@ func TestCopyOnWriteClose(t *testing.T) {
 
 	// Make reads take a little while...
 	memHooks := NewHooks(mem)
-	memHooks.PreRead = func(buffer []byte, offset int64) (bool, int, error) {
+	memHooks.PreRead = func(_ []byte, _ int64) (bool, int, error) {
 		time.Sleep(100 * time.Millisecond)
 		return true, 0, nil
 	}
