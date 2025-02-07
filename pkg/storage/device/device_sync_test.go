@@ -36,6 +36,7 @@ func TestDeviceSync(t *testing.T) {
 			secretkey = "silosilo"
 			endpoint = "%s"
 			bucket = "silosilo"
+			grabconcurrency = 10
 			config {
 				onlydirty = true
 				blockshift = 2
@@ -43,6 +44,7 @@ func TestDeviceSync(t *testing.T) {
 				minchanged = 4
 				limit = 256
 				checkperiod = "100ms"
+				concurrency = 10
 			}
 		}
 	}
@@ -148,6 +150,7 @@ func TestDeviceSyncClose(t *testing.T) {
 			secretkey = "silosilo"
 			endpoint = "%s"
 			bucket = "silosilo"
+			grabconcurrency = 10
 			config {
 				onlydirty = true
 				blockshift = 2
@@ -155,6 +158,7 @@ func TestDeviceSyncClose(t *testing.T) {
 				minchanged = 4
 				limit = 256
 				checkperiod = "100ms"
+				concurrency = 10
 			}
 		}
 	}
