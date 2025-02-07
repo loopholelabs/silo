@@ -52,6 +52,7 @@ func NewCopyOnWrite(source storage.Provider, cache storage.Provider, blockSize i
 		blockSize:  blockSize,
 		CloseFn:    func() {},
 		sharedBase: true,
+		closing:    false,
 	}
 }
 
@@ -65,6 +66,7 @@ func NewCopyOnWriteHiddenBase(source storage.Provider, cache storage.Provider, b
 		blockSize:  blockSize,
 		CloseFn:    func() {},
 		sharedBase: false,
+		closing:    false,
 	}
 }
 
