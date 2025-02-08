@@ -108,6 +108,31 @@ func TestCowGetBase(t *testing.T) {
 
 }
 
+func TestCowGetBlocks(t *testing.T) {
+	prov, _, _ := setupCowDevice(t)
+
+	// Setup a dirty tracker
+	_, trackRemote := dirtytracker.NewDirtyTracker(prov, 65536)
+
+	erd := storage.SendSiloEvent(prov, storage.EventTypeCowGetBlocks, trackRemote)
+	// Check it returns a list of blocks
+	assert.Equal(t, 1, len(erd))
+
+	// A list of blocks
+	blocks := erd[0].([]int)
+
+	for _, b := range blocks {
+		fmt.Printf("BLOCK %d\n", b)
+	}
+
+	// Check they're being tracked now
+	tracking := trackRemote.GetTrackedBlocks()
+
+	for _, b := range tracking {
+		fmt.Printf("TRACKING %d\n", b)
+	}
+}
+
 func TestMigratorCow(t *testing.T) {
 	prov, blockSize, _ := setupCowDevice(t)
 

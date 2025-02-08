@@ -155,6 +155,14 @@ func (dtr *Remote) TrackAt(offset int64, length int64) {
 }
 
 /**
+ * Check which blocks are being tracked
+ *
+ */
+func (dtr *Remote) GetTrackedBlocks() []uint {
+	return dtr.dt.tracking.Collect(0, dtr.dt.tracking.Length())
+}
+
+/**
  * Get a quick measure of how many blocks are currently dirty
  *
  */
