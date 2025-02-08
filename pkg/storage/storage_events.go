@@ -8,6 +8,7 @@ const EventTypeBaseGet = EventType("base.get")
 const EventTypeAvailable = EventType("available")
 
 const EventTypeCowGetBlocks = EventType("cow.get.blocks")
+const EventTypeCowSetBlocks = EventType("cow.set.blocks")
 
 const EventSyncStop = EventType("sync.stop")
 const EventSyncStart = EventType("sync.start")

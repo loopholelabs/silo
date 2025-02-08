@@ -111,6 +111,10 @@ type Migrator struct {
 	recentWriteAge         time.Duration
 	migrationStarted       bool
 	migrationStartTime     time.Time
+
+	// For now
+	ImprovedCowMigration bool
+	baseBlocks           map[uint]uint
 }
 
 func NewMigrator(source storage.TrackingProvider,
@@ -225,17 +229,44 @@ func (m *Migrator) startMigration() {
 		}
 	}
 
-	// Find any base image from the source, and send it to the destination.
-	baseSrc := storage.SendSiloEvent(m.sourceTracker, storage.EventTypeBaseGet, nil)
-	if len(baseSrc) == 1 {
-		storage.SendSiloEvent(m.dest, storage.EventTypeBaseSet, baseSrc[0])
-		if m.logger != nil {
-			m.logger.Debug().
-				Str("uuid", m.uuid.String()).
-				Uint64("size", m.sourceTracker.Size()).
-				Msg("Migrator base image sent to destination")
+	if m.ImprovedCowMigration {
+		// Snapshot blocks from any CoW, and update the tracking
+		cowBlocks := storage.SendSiloEvent(m.sourceTracker, storage.EventTypeCowGetBlocks, m.sourceTracker)
+		if len(cowBlocks) == 1 {
+			blocks := cowBlocks[0].([]uint)
+			bmap := make(map[uint]uint, 0) // TODO struct or something better
+			// We need to translate these into offsets
+			for _, b := range blocks {
+				bmap[b*uint(m.blockSize)] = uint(m.blockSize)
+			}
+
+			m.baseBlocks = bmap
+
+			// Tell the to_protocol
+			storage.SendSiloEvent(m.dest, storage.EventTypeCowSetBlocks, bmap)
+			if m.logger != nil {
+				m.logger.Debug().
+					Str("uuid", m.uuid.String()).
+					Uint64("size", m.sourceTracker.Size()).
+					Int("cow_size", len(blocks)*m.blockSize).
+					Msg("Migrator cow blocks sent to destination")
+			}
+		}
+	} else {
+		// Find any base image from the source, and send it to the destination.
+		baseSrc := storage.SendSiloEvent(m.sourceTracker, storage.EventTypeBaseGet, nil)
+		if len(baseSrc) == 1 {
+
+			storage.SendSiloEvent(m.dest, storage.EventTypeBaseSet, baseSrc[0])
+			if m.logger != nil {
+				m.logger.Debug().
+					Str("uuid", m.uuid.String()).
+					Uint64("size", m.sourceTracker.Size()).
+					Msg("Migrator base image sent to destination")
+			}
 		}
 	}
+
 }
 
 /**
@@ -509,30 +540,45 @@ func (m *Migrator) migrateBlock(block int) ([]byte, error) {
 	m.movingBlocks.SetBit(block)
 	defer m.movingBlocks.ClearBit(block)
 
-	// TODO: Pool these somewhere...
 	buff := make([]byte, m.blockSize)
 	offset := block * m.blockSize
-	// Read from source
-	n, err := m.sourceTracker.ReadAt(buff, int64(offset))
-	if err != nil {
-		if m.logger != nil {
-			m.logger.Error().
-				Str("uuid", m.uuid.String()).
-				Uint64("size", m.sourceTracker.Size()).
-				Err(err).
-				Msg("Migration error reading from source")
+
+	// Check if it's something we don't actually need to read.
+	doRead := true
+	if m.baseBlocks != nil {
+		if m.baseBlocks[uint(offset)] == uint(m.blockSize) {
+			// Read it as normal
+		} else {
+			// We don't need to read it.
+			doRead = false
 		}
-		return nil, err
 	}
 
 	var idmap map[uint64]uint64
-	if m.sourceMapped != nil {
-		idmap = m.sourceMapped.GetMapForSourceRange(int64(offset), m.blockSize)
+	if doRead {
+		// Read from source
+		n, err := m.sourceTracker.ReadAt(buff, int64(offset))
+		if err != nil {
+			if m.logger != nil {
+				m.logger.Error().
+					Str("uuid", m.uuid.String()).
+					Uint64("size", m.sourceTracker.Size()).
+					Err(err).
+					Msg("Migration error reading from source")
+			}
+			return nil, err
+		}
+
+		if m.sourceMapped != nil {
+			idmap = m.sourceMapped.GetMapForSourceRange(int64(offset), m.blockSize)
+		}
+
+		// If it was a partial read, truncate
+		buff = buff[:n]
 	}
 
-	// If it was a partial read, truncate
-	buff = buff[:n]
-
+	var n int
+	var err error
 	if m.sourceMapped != nil {
 		n, err = m.destWriteWithMap(buff, int64(offset), idmap)
 	} else {

@@ -36,8 +36,10 @@ func (i *CopyOnWrite) SendSiloEvent(eventType storage.EventType, eventData stora
 			}
 		} else if eventType == storage.EventTypeCowGetBlocks {
 			tracker := eventData.(storage.TrackingProvider)
-			i.writeLock.Lock()
-			defer i.writeLock.Unlock()
+			tracker.LockWrites() // Make sure nothing is allowed in during this
+
+			i.writeLock.Lock() // Just makes sure that no writes are in progress.
+
 			// Go through and track the blocks we don't have. And return the blocks we do.
 			for b := 0; b < int(i.exists.Length()); b++ {
 				if !i.exists.BitSet(b) {
@@ -48,6 +50,8 @@ func (i *CopyOnWrite) SendSiloEvent(eventType storage.EventType, eventData stora
 					tracker.TrackAt(int64(length), int64(offset))
 				}
 			}
+			i.writeLock.Unlock()
+			tracker.UnlockWrites()
 			return []storage.EventReturnData{
 				i.exists.Collect(0, i.exists.Length()),
 			}

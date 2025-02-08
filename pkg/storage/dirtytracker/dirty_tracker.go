@@ -146,6 +146,14 @@ func (dt *DirtyTracker) trackArea(length int64, offset int64) {
 	dt.tracking.SetBits(bStart, bEnd)
 }
 
+func (dtr *Remote) LockWrites() {
+	dtr.dt.writeLock.Lock()
+}
+
+func (dtr *Remote) UnlockWrites() {
+	dtr.dt.writeLock.Unlock()
+}
+
 /**
  * Start tracking at the given offset and length
  *
