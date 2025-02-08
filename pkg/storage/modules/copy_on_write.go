@@ -34,6 +34,23 @@ func (i *CopyOnWrite) SendSiloEvent(eventType storage.EventType, eventData stora
 			return []storage.EventReturnData{
 				i.source,
 			}
+		} else if eventType == storage.EventTypeCowGetBlocks {
+			tracker := eventData.(storage.TrackingProvider)
+			i.writeLock.Lock()
+			defer i.writeLock.Unlock()
+			// Go through and track the blocks we don't have. And return the blocks we do.
+			for b := 0; b < int(i.exists.Length()); b++ {
+				if !i.exists.BitSet(b) {
+					offset := b * i.blockSize
+					length := i.blockSize
+
+					// NB overflow here shouldn't matter. TrackAt will cope and truncate it.
+					tracker.TrackAt(int64(length), int64(offset))
+				}
+			}
+			return []storage.EventReturnData{
+				i.exists.Collect(0, i.exists.Length()),
+			}
 		}
 	}
 

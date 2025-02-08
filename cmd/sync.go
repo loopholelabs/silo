@@ -311,7 +311,7 @@ func syncMigrateS3(_ uint32, name string,
 			mig.SetMigratedBlock(b)
 		}
 
-		sinfo.tracker.TrackAt(0, int64(sinfo.tracker.Size()))
+		sinfo.tracker.TrackAt(int64(sinfo.tracker.Size()), 0)
 	} else {
 		fmt.Printf("Doing migration...\n")
 

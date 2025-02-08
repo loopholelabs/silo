@@ -150,7 +150,7 @@ func (dt *DirtyTracker) trackArea(length int64, offset int64) {
  * Start tracking at the given offset and length
  *
  */
-func (dtr *Remote) TrackAt(offset int64, length int64) {
+func (dtr *Remote) TrackAt(length int64, offset int64) {
 	dtr.dt.trackArea(length, offset)
 }
 

@@ -71,7 +71,7 @@ func setupCowDevice(t *testing.T) (storage.Provider, int, []byte) {
 	})
 
 	// Write some changes to the device...
-	for _, offset := range []int64{0, 10 * 1024, 100 * 1024} {
+	for _, offset := range []int64{0, 10 * 1024, 400000, 701902} {
 		chgData := make([]byte, 4*1024)
 		_, err = crand.Read(chgData)
 		assert.NoError(t, err)
@@ -119,18 +119,22 @@ func TestCowGetBlocks(t *testing.T) {
 	assert.Equal(t, 1, len(erd))
 
 	// A list of blocks
-	blocks := erd[0].([]int)
+	blocks, ok := erd[0].([]uint)
+	assert.True(t, ok)
 
-	for _, b := range blocks {
-		fmt.Printf("BLOCK %d\n", b)
-	}
+	assert.Equal(t, []uint{0, 6, 10}, blocks)
 
 	// Check they're being tracked now
 	tracking := trackRemote.GetTrackedBlocks()
 
-	for _, b := range tracking {
-		fmt.Printf("TRACKING %d\n", b)
+	expected := make([]uint, 0)
+	for v := 0; v < 800; v++ {
+		if v != 0 && v != 6 && v != 10 {
+			expected = append(expected, uint(v))
+		}
 	}
+
+	assert.Equal(t, expected, tracking)
 }
 
 func TestMigratorCow(t *testing.T) {
