@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"testing"
+	"time"
 
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/blocks"
@@ -36,7 +37,7 @@ func setupCowDevice(t *testing.T) (storage.Provider, int, []byte) {
 
 	ds := &config.DeviceSchema{
 		Name:           "test",
-		Size:           "10m",
+		Size:           "50m",
 		System:         "sparsefile",
 		BlockSize:      "64k",
 		Expose:         false,
@@ -44,7 +45,7 @@ func setupCowDevice(t *testing.T) (storage.Provider, int, []byte) {
 		ROSourceShared: true,
 		ROSource: &config.DeviceSchema{
 			Name:      path.Join(testCowDir, "test_state"),
-			Size:      "10m",
+			Size:      "50m",
 			System:    "file",
 			BlockSize: "64k",
 			Expose:    false,
@@ -110,9 +111,12 @@ func TestCowGetBase(t *testing.T) {
 func TestMigratorCow(t *testing.T) {
 	prov, blockSize, _ := setupCowDevice(t)
 
-	_, sourceDirtyRemote := dirtytracker.NewDirtyTracker(prov, blockSize)
+	// Add some metrics
+	provMetrics := modules.NewMetrics(prov)
 
-	numBlocks := (int(prov.Size()) + blockSize - 1) / blockSize
+	_, sourceDirtyRemote := dirtytracker.NewDirtyTracker(provMetrics, blockSize)
+
+	numBlocks := (int(provMetrics.Size()) + blockSize - 1) / blockSize
 
 	orderer := blocks.NewAnyBlockOrder(numBlocks, nil)
 	orderer.AddAll()
@@ -130,7 +134,7 @@ func TestMigratorCow(t *testing.T) {
 	r2, w2 := io.Pipe()
 
 	// Open the base image
-	baseProvider, err := sources.NewFileStorage(path.Join(testCowDir, "test_rosource"), int64(prov.Size()))
+	baseProvider, err := sources.NewFileStorage(path.Join(testCowDir, "test_rosource"), int64(provMetrics.Size()))
 	assert.NoError(t, err)
 
 	initDev := func(ctx context.Context, p protocol.Protocol, dev uint32) {
@@ -193,7 +197,12 @@ func TestMigratorCow(t *testing.T) {
 
 	assert.NotNil(t, destStorage)
 
-	// This will end with migration completed.
+	// Check how much of the base we had to read
+	metrics := provMetrics.GetMetrics()
+
+	fmt.Printf("Provider reads %d (%d bytes) in %dms\n", metrics.ReadOps, metrics.ReadBytes, time.Duration(metrics.ReadTime).Milliseconds())
+
+	// This will end with migration completed. (Go direct to prov here instead of provMetrics)
 	eq, err := storage.Equals(prov, destStorage, blockSize)
 	assert.NoError(t, err)
 	assert.True(t, eq)
