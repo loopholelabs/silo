@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
-	"fmt"
 	"sync"
 	"sync/atomic"
 
@@ -111,7 +110,6 @@ func (i *ToProtocol) SendSiloEvent(eventType storage.EventType, eventData storag
 		i.baseImageLock.Lock()
 		i.baseBlocks = eventData.(map[uint]uint)
 		i.baseImageLock.Unlock()
-		fmt.Printf("CowSetBlocks in toProtocol %v\n", eventData)
 	}
 	return nil
 }
