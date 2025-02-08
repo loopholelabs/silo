@@ -26,6 +26,7 @@ type LockableProvider interface {
 
 type TrackingProvider interface {
 	Provider
+	TrackAt(length int64, offset int64)
 	Sync() *util.Bitfield
 }
 
