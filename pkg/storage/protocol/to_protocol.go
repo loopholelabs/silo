@@ -271,8 +271,6 @@ func (i *ToProtocol) WriteAt(buffer []byte, offset int64) (int, error) {
 		}
 	} else if baseBlocks != nil {
 		if baseBlocks[uint(offset)] == uint(len(buffer)) {
-			// It's part of the overlay. Send it as usual.
-		} else {
 			// The data is exactly the same as our "base" image. Send it as WriteAtHash commands.
 			hash := make([]byte, sha256.Size) // Empty for now
 			data := packets.EncodeWriteAtHash(offset, int64(len(buffer)), hash, packets.DataLocationBaseImage)

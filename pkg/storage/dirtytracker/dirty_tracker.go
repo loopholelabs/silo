@@ -146,12 +146,29 @@ func (dt *DirtyTracker) trackArea(length int64, offset int64) {
 	dt.tracking.SetBits(bStart, bEnd)
 }
 
-func (dtr *Remote) LockWrites() {
+/**
+ * Ask downstream if there are blocks that aren't required for a migration.
+ * Typically these would be a base overlay, but could be something else.
+ */
+func (dtr *Remote) GetUnrequiredBlocks() []uint {
+	// Make sure no writes get through...
 	dtr.dt.writeLock.Lock()
-}
+	defer dtr.dt.writeLock.Unlock()
 
-func (dtr *Remote) UnlockWrites() {
-	dtr.dt.writeLock.Unlock()
+	// Snapshot blocks from any CoW, and update the tracking
+	cowBlocks := storage.SendSiloEvent(dtr.dt.prov, storage.EventTypeCowGetBlocks, dtr)
+	if len(cowBlocks) == 1 {
+		blocks := cowBlocks[0].([]uint)
+		for _, b := range blocks {
+			offset := b * uint(dtr.dt.blockSize)
+			length := uint(dtr.dt.blockSize)
+
+			// NB overflow here shouldn't matter. TrackArea will cope and truncate it.
+			dtr.dt.trackArea(int64(length), int64(offset))
+		}
+		return blocks
+	}
+	return nil
 }
 
 /**

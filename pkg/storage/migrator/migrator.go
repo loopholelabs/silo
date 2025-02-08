@@ -153,6 +153,8 @@ func NewMigrator(source storage.TrackingProvider,
 		recentWriteAge:         config.RecentWriteAge,
 		cancelWrites:           config.CancelWrites,
 		dedupeWrites:           config.DedupeWrites,
+
+		ImprovedCowMigration: true,
 	}
 
 	if m.dest.Size() != m.sourceTracker.Size() {
@@ -230,10 +232,8 @@ func (m *Migrator) startMigration() {
 	}
 
 	if m.ImprovedCowMigration {
-		// Snapshot blocks from any CoW, and update the tracking
-		cowBlocks := storage.SendSiloEvent(m.sourceTracker, storage.EventTypeCowGetBlocks, m.sourceTracker)
-		if len(cowBlocks) == 1 {
-			blocks := cowBlocks[0].([]uint)
+		blocks := m.sourceTracker.GetUnrequiredBlocks()
+		if blocks != nil {
 			bmap := make(map[uint]uint, 0) // TODO struct or something better
 			// We need to translate these into offsets
 			for _, b := range blocks {
@@ -547,8 +547,6 @@ func (m *Migrator) migrateBlock(block int) ([]byte, error) {
 	doRead := true
 	if m.baseBlocks != nil {
 		if m.baseBlocks[uint(offset)] == uint(m.blockSize) {
-			// Read it as normal
-		} else {
 			// We don't need to read it.
 			doRead = false
 		}
