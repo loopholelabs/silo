@@ -363,6 +363,7 @@ func (dg *DeviceGroup) MigrateDirty(hooks *MigrateDirtyHooks) error {
 					cont, err := hooks.PostGetDirty(d.Schema.Name, blocks)
 					if err != nil {
 						errs <- err
+						return
 					}
 					if !cont {
 						break

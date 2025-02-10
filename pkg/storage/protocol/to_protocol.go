@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
+	"fmt"
 	"sync"
 	"sync/atomic"
 
@@ -108,7 +109,14 @@ func (i *ToProtocol) SendSiloEvent(eventType storage.EventType, eventData storag
 	} else if eventType == storage.EventTypeCowSetBlocks {
 		// We have been told which blocks are in the CoW overlay
 		i.baseImageLock.Lock()
-		i.baseBlocks = eventData.(map[uint]uint)
+		blocks, ok := eventData.(map[uint]uint)
+		if ok {
+			fmt.Printf("-Setting baseBlocks to %v\n", blocks)
+			i.baseBlocks = blocks
+		} else {
+			fmt.Printf("-Setting baseBlocks to nil\n")
+			i.baseBlocks = nil
+		}
 		i.baseImageLock.Unlock()
 	}
 	return nil
@@ -269,7 +277,8 @@ func (i *ToProtocol) WriteAt(buffer []byte, offset int64) (int, error) {
 				dontSendData = true
 			}
 		}
-	} else if baseBlocks != nil {
+	} else if len(baseBlocks) > 0 {
+		fmt.Printf("Using baseBlocks\n")
 		if baseBlocks[uint(offset)] == uint(len(buffer)) {
 			// The data is exactly the same as our "base" image. Send it as WriteAtHash commands.
 			hash := make([]byte, sha256.Size) // Empty for now

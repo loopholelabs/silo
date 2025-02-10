@@ -110,6 +110,7 @@ type Migrator struct {
 	dedupeWrites           bool
 	recentWriteAge         time.Duration
 	migrationStarted       bool
+	migrationDirtyStarted  bool
 	migrationStartTime     time.Time
 
 	// For now
@@ -203,6 +204,26 @@ func (m *Migrator) SetMigratedBlock(block int) {
 	m.lastWrittenBlocks[block] = time.Now()
 
 	m.reportProgress(false)
+}
+
+func (m *Migrator) startMigrationDirty() {
+	if m.migrationDirtyStarted {
+		return
+	}
+	m.migrationDirtyStarted = true
+
+	// Tell the to_protocol to not interfere
+	if m.ImprovedCowMigration {
+
+		storage.SendSiloEvent(m.dest, storage.EventTypeCowSetBlocks, nil)
+		if m.logger != nil {
+			m.logger.Debug().
+				Str("uuid", m.uuid.String()).
+				Uint64("size", m.sourceTracker.Size()).
+				Msg("Migrator cow blocks cleared")
+		}
+		m.baseBlocks = nil
+	}
 }
 
 func (m *Migrator) startMigration() {
@@ -363,6 +384,8 @@ func (m *Migrator) MigrateDirty(blocks []uint) error {
  * You can give a tracking ID which will turn up at block_fn on success
  */
 func (m *Migrator) MigrateDirtyWithID(blocks []uint, tid uint64) error {
+	m.startMigrationDirty()
+
 	if m.logger != nil {
 		m.logger.Debug().
 			Str("uuid", m.uuid.String()).
@@ -462,11 +485,6 @@ func (m *Migrator) reportProgress(forced bool) {
 
 	completed := m.cleanBlocks.Count(0, uint(m.numBlocks))
 	percComplete := float64(completed*100) / float64(m.numBlocks)
-
-	if completed == m.progressLastStatus.ReadyBlocks &&
-		migrated == m.progressLastStatus.MigratedBlocks {
-		return // Nothing has really changed
-	}
 
 	m.progressLast = time.Now()
 	m.progressLastStatus = &MigrationProgress{
