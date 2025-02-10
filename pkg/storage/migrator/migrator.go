@@ -113,6 +113,7 @@ type Migrator struct {
 	migrationStartTime     time.Time
 
 	// For now
+	NoCowMigration       bool
 	ImprovedCowMigration bool
 	baseBlocks           map[uint]uint
 }
@@ -231,42 +232,43 @@ func (m *Migrator) startMigration() {
 		}
 	}
 
-	if m.ImprovedCowMigration {
-		blocks := m.sourceTracker.GetUnrequiredBlocks()
-		if blocks != nil {
-			bmap := make(map[uint]uint, 0) // TODO struct or something better
-			// We need to translate these into offsets
-			for _, b := range blocks {
-				bmap[b*uint(m.blockSize)] = uint(m.blockSize)
+	if !m.NoCowMigration {
+		if m.ImprovedCowMigration {
+			blocks := m.sourceTracker.GetUnrequiredBlocks()
+			if blocks != nil {
+				bmap := make(map[uint]uint, 0) // TODO struct or something better
+				// We need to translate these into offsets
+				for _, b := range blocks {
+					bmap[b*uint(m.blockSize)] = uint(m.blockSize)
+				}
+
+				m.baseBlocks = bmap
+
+				// Tell the to_protocol
+				storage.SendSiloEvent(m.dest, storage.EventTypeCowSetBlocks, bmap)
+				if m.logger != nil {
+					m.logger.Debug().
+						Str("uuid", m.uuid.String()).
+						Uint64("size", m.sourceTracker.Size()).
+						Int("cow_size", len(blocks)*m.blockSize).
+						Msg("Migrator cow blocks sent to destination")
+				}
 			}
+		} else {
+			// Find any base image from the source, and send it to the destination.
+			baseSrc := storage.SendSiloEvent(m.sourceTracker, storage.EventTypeBaseGet, nil)
+			if len(baseSrc) == 1 {
 
-			m.baseBlocks = bmap
-
-			// Tell the to_protocol
-			storage.SendSiloEvent(m.dest, storage.EventTypeCowSetBlocks, bmap)
-			if m.logger != nil {
-				m.logger.Debug().
-					Str("uuid", m.uuid.String()).
-					Uint64("size", m.sourceTracker.Size()).
-					Int("cow_size", len(blocks)*m.blockSize).
-					Msg("Migrator cow blocks sent to destination")
-			}
-		}
-	} else {
-		// Find any base image from the source, and send it to the destination.
-		baseSrc := storage.SendSiloEvent(m.sourceTracker, storage.EventTypeBaseGet, nil)
-		if len(baseSrc) == 1 {
-
-			storage.SendSiloEvent(m.dest, storage.EventTypeBaseSet, baseSrc[0])
-			if m.logger != nil {
-				m.logger.Debug().
-					Str("uuid", m.uuid.String()).
-					Uint64("size", m.sourceTracker.Size()).
-					Msg("Migrator base image sent to destination")
+				storage.SendSiloEvent(m.dest, storage.EventTypeBaseSet, baseSrc[0])
+				if m.logger != nil {
+					m.logger.Debug().
+						Str("uuid", m.uuid.String()).
+						Uint64("size", m.sourceTracker.Size()).
+						Msg("Migrator base image sent to destination")
+				}
 			}
 		}
 	}
-
 }
 
 /**

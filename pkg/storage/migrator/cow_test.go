@@ -3,6 +3,7 @@ package migrator_test
 import (
 	"context"
 	crand "crypto/rand"
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"os"
@@ -137,17 +138,19 @@ func TestCowGetBlocks(t *testing.T) {
 }
 
 type migratorCowTest struct {
-	name       string
-	sharedBase bool
-	useNew     bool
+	name           string
+	sharedBase     bool
+	useNew         bool
+	noCowMigration bool
 }
 
 func TestMigratorCow(tt *testing.T) {
 
 	for _, v := range []migratorCowTest{
-		{name: "standard", sharedBase: false, useNew: false},
-		{name: "basic", sharedBase: true, useNew: false},
-		{name: "improved", sharedBase: true, useNew: true},
+		{name: "standard", sharedBase: false, useNew: false, noCowMigration: false},
+		{name: "basic", sharedBase: true, useNew: false, noCowMigration: false},
+		{name: "improved", sharedBase: true, useNew: true, noCowMigration: false},
+		{name: "better", sharedBase: true, useNew: false, noCowMigration: true}, // We do things outside the migrator...
 	} {
 		tt.Run(v.name, func(t *testing.T) {
 			prov, blockSize, _ := setupCowDevice(t, v.sharedBase)
@@ -160,7 +163,6 @@ func TestMigratorCow(tt *testing.T) {
 			numBlocks := (int(provMetrics.Size()) + blockSize - 1) / blockSize
 
 			orderer := blocks.NewAnyBlockOrder(numBlocks, nil)
-			orderer.AddAll()
 
 			// START moving data from sourceStorage to destStorage
 
@@ -213,13 +215,37 @@ func TestMigratorCow(tt *testing.T) {
 				_ = prDest.Handle()
 			}()
 
-			// Pipe a destination to the protocol
-			//	destination := protocol.NewToProtocol(sourceDirtyRemote.Size(), 17, prSource)
+			orderer.AddAll()
 
+			// Pipe a destination to the protocol
 			destination := protocol.NewToProtocol(sourceDirtyRemote.Size(), 17, prSource)
 
 			err = destination.SendDevInfo("test", uint32(blockSize), "")
 			assert.NoError(t, err)
+
+			migrateBlocks := numBlocks
+
+			if v.noCowMigration {
+				hash := make([]byte, sha256.Size) // Empty for now
+				// With this, ONLY migrate the blocks we need... For the others, we'll send cmds manually...
+				unrequired := sourceDirtyRemote.GetUnrequiredBlocks()
+				for _, b := range unrequired {
+					orderer.Remove(int(b))
+					// Send the data here...
+
+					// FIXME: Combine these into a single packet
+					offset := b * uint(blockSize)
+					data := packets.EncodeWriteAtHash(int64(offset), int64(blockSize), hash, packets.DataLocationBaseImage)
+					id, err := prSource.SendPacket(17, protocol.IDPickAny, data, protocol.UrgencyNormal)
+					assert.NoError(t, err)
+					// Wait for ACK
+					_, err = prSource.WaitForPacket(17, id)
+					assert.NoError(t, err)
+
+					// We need less blocks here...
+					migrateBlocks--
+				}
+			}
 
 			conf := migrator.NewConfig().WithBlockSize(blockSize)
 
@@ -231,8 +257,9 @@ func TestMigratorCow(tt *testing.T) {
 			assert.NoError(t, err)
 
 			mig.ImprovedCowMigration = v.useNew
+			mig.NoCowMigration = v.noCowMigration
 
-			err = mig.Migrate(numBlocks)
+			err = mig.Migrate(migrateBlocks)
 			assert.NoError(t, err)
 
 			err = mig.WaitForCompletion()
@@ -257,10 +284,19 @@ func TestMigratorCow(tt *testing.T) {
 
 			destMetrics := destination.GetMetrics()
 
+			rMetrics := destFrom.GetMetrics()
+
+			fmt.Printf("Recv WriteAt %d | WriteAtComp %d | WriteAtHash %d | WriteAtYouAlreadyHave %d\n",
+				rMetrics.RecvWriteAt,
+				rMetrics.RecvWriteAtComp,
+				rMetrics.RecvWriteAtHash,
+				rMetrics.RecvWriteAtYouAlreadyHave)
+
 			fmt.Printf("Sent WriteAt %d (%d bytes) | WriteAtComp %d (%d bytes) | WriteAtHash %d (%d bytes)\n",
 				destMetrics.SentWriteAt, destMetrics.SentWriteAtBytes,
 				destMetrics.SentWriteAtComp, destMetrics.SentWriteAtCompBytes,
-				destMetrics.SentWriteAtHash, destMetrics.SentWriteAtHashBytes)
+				destMetrics.SentWriteAtHash, destMetrics.SentWriteAtHashBytes,
+			)
 
 			waitMetrics := waitingCacheLocal.GetMetrics()
 

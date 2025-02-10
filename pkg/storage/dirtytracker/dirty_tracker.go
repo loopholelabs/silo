@@ -149,6 +149,7 @@ func (dt *DirtyTracker) trackArea(length int64, offset int64) {
 /**
  * Ask downstream if there are blocks that aren't required for a migration.
  * Typically these would be a base overlay, but could be something else.
+ * As well as returning the blocks, this call will update the dirty tracker as if the blocks had been read (To start tracking dirty changes)
  */
 func (dtr *Remote) GetUnrequiredBlocks() []uint {
 	// Make sure no writes get through...

@@ -44,46 +44,48 @@ type FromProtocol struct {
 	completeFuncLock sync.Mutex
 
 	// metrics
-	metricRecvEvents         uint64
-	metricRecvHashes         uint64
-	metricRecvDevInfo        uint64
-	metricRecvAltSources     uint64
-	metricRecvReadAt         uint64
-	metricRecvWriteAtHash    uint64
-	metricRecvWriteAtComp    uint64
-	metricRecvWriteAt        uint64
-	metricRecvWriteAtWithMap uint64
-	metricRecvRemoveFromMap  uint64
-	metricRecvRemoveDev      uint64
-	metricRecvDirtyList      uint64
-	metricSentNeedAt         uint64
-	metricSentDontNeedAt     uint64
+	metricRecvEvents                uint64
+	metricRecvHashes                uint64
+	metricRecvDevInfo               uint64
+	metricRecvAltSources            uint64
+	metricRecvReadAt                uint64
+	metricRecvWriteAtHash           uint64
+	metricRecvWriteAtYouAlreadyHave uint64
+	metricRecvWriteAtComp           uint64
+	metricRecvWriteAt               uint64
+	metricRecvWriteAtWithMap        uint64
+	metricRecvRemoveFromMap         uint64
+	metricRecvRemoveDev             uint64
+	metricRecvDirtyList             uint64
+	metricSentNeedAt                uint64
+	metricSentDontNeedAt            uint64
 }
 
 type FromProtocolMetrics struct {
-	RecvEvents              uint64
-	RecvHashes              uint64
-	RecvDevInfo             uint64
-	RecvAltSources          uint64
-	RecvReadAt              uint64
-	RecvWriteAtHash         uint64
-	RecvWriteAtComp         uint64
-	RecvWriteAt             uint64
-	RecvWriteAtWithMap      uint64
-	RecvRemoveFromMap       uint64
-	RecvRemoveDev           uint64
-	RecvDirtyList           uint64
-	SentNeedAt              uint64
-	SentDontNeedAt          uint64
-	WritesAllowedP2P        uint64
-	WritesBlockedP2P        uint64
-	WritesAllowedAltSources uint64
-	WritesBlockedAltSources uint64
-	NumBlocks               uint64
-	AvailableP2P            []uint
-	DuplicateP2P            []uint
-	AvailableAltSources     []uint
-	DeviceName              string
+	RecvEvents                uint64
+	RecvHashes                uint64
+	RecvDevInfo               uint64
+	RecvAltSources            uint64
+	RecvReadAt                uint64
+	RecvWriteAtHash           uint64
+	RecvWriteAtYouAlreadyHave uint64
+	RecvWriteAtComp           uint64
+	RecvWriteAt               uint64
+	RecvWriteAtWithMap        uint64
+	RecvRemoveFromMap         uint64
+	RecvRemoveDev             uint64
+	RecvDirtyList             uint64
+	SentNeedAt                uint64
+	SentDontNeedAt            uint64
+	WritesAllowedP2P          uint64
+	WritesBlockedP2P          uint64
+	WritesAllowedAltSources   uint64
+	WritesBlockedAltSources   uint64
+	NumBlocks                 uint64
+	AvailableP2P              []uint
+	DuplicateP2P              []uint
+	AvailableAltSources       []uint
+	DeviceName                string
 }
 
 func NewFromProtocol(ctx context.Context, dev uint32, provFactory func(*packets.DevInfo) storage.Provider, protocol Protocol) *FromProtocol {
@@ -105,26 +107,27 @@ func NewFromProtocolWithSyncBehaviour(ctx context.Context, dev uint32, provFacto
 
 func (fp *FromProtocol) GetMetrics() *FromProtocolMetrics {
 	fpm := &FromProtocolMetrics{
-		RecvEvents:              atomic.LoadUint64(&fp.metricRecvEvents),
-		RecvHashes:              atomic.LoadUint64(&fp.metricRecvHashes),
-		RecvDevInfo:             atomic.LoadUint64(&fp.metricRecvDevInfo),
-		RecvAltSources:          atomic.LoadUint64(&fp.metricRecvAltSources),
-		RecvReadAt:              atomic.LoadUint64(&fp.metricRecvReadAt),
-		RecvWriteAtHash:         atomic.LoadUint64(&fp.metricRecvWriteAtHash),
-		RecvWriteAtComp:         atomic.LoadUint64(&fp.metricRecvWriteAtComp),
-		RecvWriteAt:             atomic.LoadUint64(&fp.metricRecvWriteAt),
-		RecvWriteAtWithMap:      atomic.LoadUint64(&fp.metricRecvWriteAtWithMap),
-		RecvRemoveFromMap:       atomic.LoadUint64(&fp.metricRecvRemoveFromMap),
-		RecvRemoveDev:           atomic.LoadUint64(&fp.metricRecvRemoveDev),
-		RecvDirtyList:           atomic.LoadUint64(&fp.metricRecvDirtyList),
-		SentNeedAt:              atomic.LoadUint64(&fp.metricSentNeedAt),
-		SentDontNeedAt:          atomic.LoadUint64(&fp.metricSentDontNeedAt),
-		WritesAllowedP2P:        0,
-		WritesBlockedP2P:        0,
-		WritesAllowedAltSources: 0,
-		WritesBlockedAltSources: 0,
-		NumBlocks:               0,
-		DeviceName:              "",
+		RecvEvents:                atomic.LoadUint64(&fp.metricRecvEvents),
+		RecvHashes:                atomic.LoadUint64(&fp.metricRecvHashes),
+		RecvDevInfo:               atomic.LoadUint64(&fp.metricRecvDevInfo),
+		RecvAltSources:            atomic.LoadUint64(&fp.metricRecvAltSources),
+		RecvReadAt:                atomic.LoadUint64(&fp.metricRecvReadAt),
+		RecvWriteAtHash:           atomic.LoadUint64(&fp.metricRecvWriteAtHash),
+		RecvWriteAtYouAlreadyHave: atomic.LoadUint64(&fp.metricRecvWriteAtYouAlreadyHave),
+		RecvWriteAtComp:           atomic.LoadUint64(&fp.metricRecvWriteAtComp),
+		RecvWriteAt:               atomic.LoadUint64(&fp.metricRecvWriteAt),
+		RecvWriteAtWithMap:        atomic.LoadUint64(&fp.metricRecvWriteAtWithMap),
+		RecvRemoveFromMap:         atomic.LoadUint64(&fp.metricRecvRemoveFromMap),
+		RecvRemoveDev:             atomic.LoadUint64(&fp.metricRecvRemoveDev),
+		RecvDirtyList:             atomic.LoadUint64(&fp.metricRecvDirtyList),
+		SentNeedAt:                atomic.LoadUint64(&fp.metricSentNeedAt),
+		SentDontNeedAt:            atomic.LoadUint64(&fp.metricSentDontNeedAt),
+		WritesAllowedP2P:          0,
+		WritesBlockedP2P:          0,
+		WritesAllowedAltSources:   0,
+		WritesBlockedAltSources:   0,
+		NumBlocks:                 0,
+		DeviceName:                "",
 	}
 
 	fp.initLock.Lock()
@@ -393,8 +396,8 @@ func (fp *FromProtocol) HandleWriteAt() error {
 
 		if len(data) > 1 && data[1] == packets.WriteAtHash {
 			// It could be a WriteAtHash command...
-			offset, length, _, loc, errWriteAtHash := packets.DecodeWriteAtHash(data)
-			if errWriteAtHash != nil {
+			offset, length, _, loc, err := packets.DecodeWriteAtHash(data)
+			if err != nil {
 				return err
 			}
 
@@ -411,6 +414,31 @@ func (fp *FromProtocol) HandleWriteAt() error {
 
 			// Tell anything down the chain about this 'write'
 			if loc == packets.DataLocationBaseImage {
+				// Is provP2P the right thing here? Or should it be prov... or does it matter...
+				storage.SendSiloEvent(fp.provP2P, storage.EventTypeAvailable, storage.EventData([]int64{offset, length}))
+			}
+		} else if len(data) > 1 && data[1] == packets.WriteAtYouAlreadyHave {
+			// It could be a WriteAtYouAlreadyHave command...
+			blockSize, blocks, err := packets.DecodeYouAlreadyHave(data)
+			if err != nil {
+				return err
+			}
+
+			atomic.AddUint64(&fp.metricRecvWriteAtYouAlreadyHave, 1)
+
+			// Ack
+			war := &packets.WriteAtResponse{
+				Error: nil,
+				Bytes: int(uint64(len(blocks)) * blockSize),
+			}
+			_, err = fp.protocol.SendPacket(fp.dev, id, packets.EncodeWriteAtResponse(war), UrgencyNormal)
+			if err != nil {
+				return err
+			}
+
+			for _, b := range blocks {
+				offset := int64(uint64(b) * blockSize)
+				length := int64(blockSize)
 				// Is provP2P the right thing here? Or should it be prov... or does it matter...
 				storage.SendSiloEvent(fp.provP2P, storage.EventTypeAvailable, storage.EventData([]int64{offset, length}))
 			}
