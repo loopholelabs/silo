@@ -7,6 +7,7 @@ import (
 const WriteAtData = 0
 const WriteAtHash = 1
 const WriteAtCompRLE = 2
+const WriteAtYouAlreadyHave = 3
 
 func EncodeWriteAt(offset int64, data []byte) []byte {
 	buff := make([]byte, 2+8+len(data))
