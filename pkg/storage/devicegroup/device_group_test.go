@@ -3,9 +3,9 @@ package devicegroup
 import (
 	"context"
 	"crypto/rand"
+	"fmt"
 	"io"
 	"os"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -29,7 +29,7 @@ var testDeviceSchema = []*config.DeviceSchema{
 		System:    "file",
 		BlockSize: "1m",
 		//	Expose:    true,
-		Location: "testdev_test1",
+		Location: "test_data/test1",
 	},
 
 	{
@@ -38,11 +38,21 @@ var testDeviceSchema = []*config.DeviceSchema{
 		System:    "file",
 		BlockSize: "1m",
 		//		Expose:    true,
-		Location: "testdev_test2",
+		Location: "test_data/test2",
+		ROSource: &config.DeviceSchema{
+			Name:      "test_data/test2state",
+			Size:      "16m",
+			System:    "file",
+			BlockSize: "1m",
+			Location:  "test_data/test2base",
+		},
+		ROSourceShared: true,
 	},
 }
 
 func setupDeviceGroup(t *testing.T) *DeviceGroup {
+	err := os.Mkdir("test_data", 0777)
+	assert.NoError(t, err)
 	/*
 		currentUser, err := user.Current()
 		if err != nil {
@@ -60,8 +70,7 @@ func setupDeviceGroup(t *testing.T) *DeviceGroup {
 		err = dg.CloseAll()
 		assert.NoError(t, err)
 
-		os.Remove("testdev_test1")
-		os.Remove("testdev_test2")
+		os.RemoveAll("test_data")
 	})
 
 	return dg
@@ -205,12 +214,6 @@ func TestDeviceGroupMigrate(t *testing.T) {
 		return
 	}
 
-	// Remove the receiving files
-	t.Cleanup(func() {
-		os.Remove("testrecv_test1")
-		os.Remove("testrecv_test2")
-	})
-
 	log := logging.New(logging.Zerolog, "silo", os.Stdout)
 	log.SetLevel(types.TraceLevel)
 
@@ -236,13 +239,23 @@ func TestDeviceGroupMigrate(t *testing.T) {
 	}()
 
 	// Lets write some data...
+	buff := make([]byte, 4096)
 	for _, s := range testDeviceSchema {
 		prov := dg.GetProviderByName(s.Name)
-		buff := make([]byte, prov.Size())
-		_, err := rand.Read(buff)
-		assert.NoError(t, err)
-		_, err = prov.WriteAt(buff, 0)
-		assert.NoError(t, err)
+		if s.Name == "test1" {
+			allBuff := make([]byte, prov.Size())
+			_, err := rand.Read(allBuff)
+			assert.NoError(t, err)
+			_, err = prov.WriteAt(allBuff, 0)
+			assert.NoError(t, err)
+		} else {
+			for _, offset := range []int64{10000, 300000, 700000} {
+				_, err := rand.Read(buff)
+				assert.NoError(t, err)
+				_, err = prov.WriteAt(buff, offset)
+				assert.NoError(t, err)
+			}
+		}
 	}
 
 	var dg2 *DeviceGroup
@@ -250,8 +263,12 @@ func TestDeviceGroupMigrate(t *testing.T) {
 
 	// We will tweak schema in recv here so we have separate paths.
 	tweak := func(_ int, _ string, schema *config.DeviceSchema) *config.DeviceSchema {
-		schema.Location = strings.ReplaceAll(schema.Location, "testdev_test1", "testrecv_test1")
-		schema.Location = strings.ReplaceAll(schema.Location, "testdev_test2", "testrecv_test2")
+		schema.Location = fmt.Sprintf(schema.Location, ".recv")
+		// Tweak overlay if there is one as well...
+		if schema.ROSource != nil {
+			schema.ROSource.Location = fmt.Sprintf(schema.ROSource.Location, ".recv")
+			schema.ROSource.Name = fmt.Sprintf(schema.ROSource.Name, ".recv")
+		}
 		return schema
 	}
 
@@ -319,4 +336,10 @@ func TestDeviceGroupMigrate(t *testing.T) {
 	w1.Close()
 	r2.Close()
 	w2.Close()
+
+	// Show some metrics...
+	pMetrics := prSource.GetMetrics()
+	fmt.Printf("Protocol SENT (packets %d data %d urgentPackets %d urgentData %d) RECV (packets %d data %d)\n",
+		pMetrics.PacketsSent, pMetrics.DataSent, pMetrics.UrgentPacketsSent, pMetrics.UrgentDataSent,
+		pMetrics.PacketsRecv, pMetrics.DataRecv)
 }
