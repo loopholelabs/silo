@@ -110,7 +110,6 @@ type Migrator struct {
 	dedupeWrites           bool
 	recentWriteAge         time.Duration
 	migrationStarted       bool
-	migrationDirtyStarted  bool
 	migrationStartTime     time.Time
 }
 

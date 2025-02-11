@@ -394,8 +394,8 @@ func (fp *FromProtocol) HandleWriteAt() error {
 			return err
 		}
 
+		// WriteAtHash command...
 		if len(data) > 1 && data[1] == packets.WriteAtHash {
-			// It could be a WriteAtHash command...
 			_, length, _, _, err := packets.DecodeWriteAtHash(data)
 			if err != nil {
 				return err
@@ -411,8 +411,11 @@ func (fp *FromProtocol) HandleWriteAt() error {
 			if err != nil {
 				return err
 			}
-		} else if len(data) > 1 && data[1] == packets.WriteAtYouAlreadyHave {
-			// It could be a WriteAtYouAlreadyHave command...
+			continue
+		}
+
+		// WriteAtYouAlreadyHave command...
+		if len(data) > 1 && data[1] == packets.WriteAtYouAlreadyHave {
 			blockSize, blocks, err := packets.DecodeYouAlreadyHave(data)
 			if err != nil {
 				return err
@@ -436,42 +439,43 @@ func (fp *FromProtocol) HandleWriteAt() error {
 				// Is provP2P the right thing here? Or should it be prov... or does it matter...
 				storage.SendSiloEvent(fp.provP2P, storage.EventTypeAvailable, storage.EventData([]int64{offset, length}))
 			}
-
-		} else {
-
-			var offset int64
-			var writeData []byte
-
-			if len(data) > 1 && data[1] == packets.WriteAtCompRLE {
-				offset, writeData, err = packets.DecodeWriteAtComp(data)
-				if err == nil {
-					atomic.AddUint64(&fp.metricRecvWriteAtComp, 1)
-				}
-			} else {
-				offset, writeData, err = packets.DecodeWriteAt(data)
-				if err == nil {
-					atomic.AddUint64(&fp.metricRecvWriteAt, 1)
-				}
-			}
-			if err != nil {
-				return err
-			}
-
-			// Handle in a goroutine
-			go func(goffset int64, gdata []byte, gid uint32) {
-				n, err := fp.provP2P.WriteAt(gdata, goffset)
-				war := &packets.WriteAtResponse{
-					Bytes: n,
-					Error: err,
-				}
-				_, err = fp.protocol.SendPacket(fp.dev, gid, packets.EncodeWriteAtResponse(war), UrgencyNormal)
-				if err != nil {
-					errLock.Lock()
-					errValue = err
-					errLock.Unlock()
-				}
-			}(offset, writeData, id)
+			continue
 		}
+
+		// Standard WriteAt commands
+		var offset int64
+		var writeData []byte
+
+		if len(data) > 1 && data[1] == packets.WriteAtCompRLE {
+			offset, writeData, err = packets.DecodeWriteAtComp(data)
+			if err == nil {
+				atomic.AddUint64(&fp.metricRecvWriteAtComp, 1)
+			}
+		} else {
+			offset, writeData, err = packets.DecodeWriteAt(data)
+			if err == nil {
+				atomic.AddUint64(&fp.metricRecvWriteAt, 1)
+			}
+		}
+		if err != nil {
+			return err
+		}
+
+		// Handle in a goroutine
+		go func(goffset int64, gdata []byte, gid uint32) {
+			n, err := fp.provP2P.WriteAt(gdata, goffset)
+			war := &packets.WriteAtResponse{
+				Bytes: n,
+				Error: err,
+			}
+			_, err = fp.protocol.SendPacket(fp.dev, gid, packets.EncodeWriteAtResponse(war), UrgencyNormal)
+			if err != nil {
+				errLock.Lock()
+				errValue = err
+				errLock.Unlock()
+			}
+		}(offset, writeData, id)
+
 	}
 }
 

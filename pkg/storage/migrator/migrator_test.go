@@ -791,14 +791,14 @@ func TestMigratorSimpleCowSparse(t *testing.T) {
 	numBlocks := (size + blockSize - 1) / blockSize
 
 	sourceStorageMem := sources.NewMemoryStorage(size)
-	overlay, err := sources.NewFileStorageSparseCreate("test_migrate_cow", uint64(size), blockSize)
+	overlay, err := sources.NewFileStorageSparseCreate("test_simple_migrate_cow", uint64(size), blockSize)
 	assert.NoError(t, err)
 	cow := modules.NewCopyOnWrite(sourceStorageMem, overlay, blockSize)
 	sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(cow, blockSize)
 	sourceStorage := modules.NewLockable(sourceDirtyLocal)
 
 	t.Cleanup(func() {
-		os.Remove("test_migrate_cow")
+		os.Remove("test_simple_migrate_cow")
 	})
 
 	// Set up some data here.

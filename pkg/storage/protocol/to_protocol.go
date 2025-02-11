@@ -33,6 +33,8 @@ type ToProtocol struct {
 	metricSentWriteAtBytes         uint64
 	metricSentWriteAtWithMap       uint64
 	metricSentRemoveFromMap        uint64
+	metricSentYouAlreadyHave       uint64
+	metricSentYouAlreadyHaveBytes  uint64
 	metricRecvNeedAt               uint64
 	metricRecvDontNeedAt           uint64
 }
@@ -62,6 +64,8 @@ type ToProtocolMetrics struct {
 	SentWriteAtBytes         uint64
 	SentWriteAtWithMap       uint64
 	SentRemoveFromMap        uint64
+	SentYouAlreadyHave       uint64
+	SentYouAlreadyHaveBytes  uint64
 	RecvNeedAt               uint64
 	RecvDontNeedAt           uint64
 }
@@ -84,6 +88,8 @@ func (i *ToProtocol) GetMetrics() *ToProtocolMetrics {
 		SentWriteAtBytes:         atomic.LoadUint64(&i.metricSentWriteAtBytes),
 		SentWriteAtWithMap:       atomic.LoadUint64(&i.metricSentWriteAtWithMap),
 		SentRemoveFromMap:        atomic.LoadUint64(&i.metricSentRemoveFromMap),
+		SentYouAlreadyHave:       atomic.LoadUint64(&i.metricSentYouAlreadyHave),
+		SentYouAlreadyHaveBytes:  atomic.LoadUint64(&i.metricSentYouAlreadyHaveBytes),
 		RecvNeedAt:               atomic.LoadUint64(&i.metricRecvNeedAt),
 		RecvDontNeedAt:           atomic.LoadUint64(&i.metricRecvDontNeedAt),
 	}
@@ -108,6 +114,11 @@ func (i *ToProtocol) SendYouAlreadyHave(blockSize uint64, alreadyBlocks []uint32
 	}
 	// Wait for ACK
 	_, err = i.protocol.WaitForPacket(i.dev, id)
+	if err == nil {
+		atomic.AddUint64(&i.metricSentYouAlreadyHave, 1)
+		atomic.AddUint64(&i.metricSentYouAlreadyHaveBytes, uint64(len(alreadyBlocks))*blockSize)
+
+	}
 	return err
 }
 

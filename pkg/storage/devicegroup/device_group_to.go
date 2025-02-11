@@ -289,7 +289,7 @@ func (dg *DeviceGroup) MigrateAll(maxConcurrency int, progressHandler func(p map
 				alreadyBlocks = append(alreadyBlocks, uint32(b))
 			}
 
-			err := d.To.SendYouAlreadyHave(uint64(d.BlockSize), alreadyBlocks)
+			err := d.To.SendYouAlreadyHave(d.BlockSize, alreadyBlocks)
 			if err != nil {
 				errs <- err
 			} else {
