@@ -224,18 +224,6 @@ func (m *Migrator) startMigration() {
 				Msg("Migrator alternate sources sent to destination")
 		}
 	}
-
-	// Find any base image from the source, and send it to the destination.
-	baseSrc := storage.SendSiloEvent(m.sourceTracker, storage.EventTypeBaseGet, nil)
-	if len(baseSrc) == 1 {
-		storage.SendSiloEvent(m.dest, storage.EventTypeBaseSet, baseSrc[0])
-		if m.logger != nil {
-			m.logger.Debug().
-				Str("uuid", m.uuid.String()).
-				Uint64("size", m.sourceTracker.Size()).
-				Msg("Migrator base image sent to destination")
-		}
-	}
 }
 
 /**
@@ -330,6 +318,7 @@ func (m *Migrator) MigrateDirty(blocks []uint) error {
  * You can give a tracking ID which will turn up at block_fn on success
  */
 func (m *Migrator) MigrateDirtyWithID(blocks []uint, tid uint64) error {
+
 	if m.logger != nil {
 		m.logger.Debug().
 			Str("uuid", m.uuid.String()).
@@ -430,11 +419,6 @@ func (m *Migrator) reportProgress(forced bool) {
 	completed := m.cleanBlocks.Count(0, uint(m.numBlocks))
 	percComplete := float64(completed*100) / float64(m.numBlocks)
 
-	if completed == m.progressLastStatus.ReadyBlocks &&
-		migrated == m.progressLastStatus.MigratedBlocks {
-		return // Nothing has really changed
-	}
-
 	m.progressLast = time.Now()
 	m.progressLastStatus = &MigrationProgress{
 		BlockSize:             m.blockSize,
@@ -509,9 +493,10 @@ func (m *Migrator) migrateBlock(block int) ([]byte, error) {
 	m.movingBlocks.SetBit(block)
 	defer m.movingBlocks.ClearBit(block)
 
-	// TODO: Pool these somewhere...
 	buff := make([]byte, m.blockSize)
 	offset := block * m.blockSize
+
+	var idmap map[uint64]uint64
 	// Read from source
 	n, err := m.sourceTracker.ReadAt(buff, int64(offset))
 	if err != nil {
@@ -525,7 +510,6 @@ func (m *Migrator) migrateBlock(block int) ([]byte, error) {
 		return nil, err
 	}
 
-	var idmap map[uint64]uint64
 	if m.sourceMapped != nil {
 		idmap = m.sourceMapped.GetMapForSourceRange(int64(offset), m.blockSize)
 	}

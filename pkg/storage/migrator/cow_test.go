@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"testing"
+	"time"
 
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/blocks"
@@ -25,7 +26,7 @@ import (
 
 const testCowDir = "test_migrate_cow"
 
-func setupCowDevice(t *testing.T) (storage.Provider, int, []byte) {
+func setupCowDevice(t *testing.T, sharedBase bool) (storage.Provider, int, []byte) {
 	err := os.Mkdir(testCowDir, 0777)
 	assert.NoError(t, err)
 
@@ -36,15 +37,15 @@ func setupCowDevice(t *testing.T) (storage.Provider, int, []byte) {
 
 	ds := &config.DeviceSchema{
 		Name:           "test",
-		Size:           "10m",
+		Size:           "50m",
 		System:         "sparsefile",
 		BlockSize:      "64k",
 		Expose:         false,
 		Location:       path.Join(testCowDir, "test_overlay"),
-		ROSourceShared: true,
+		ROSourceShared: sharedBase,
 		ROSource: &config.DeviceSchema{
 			Name:      path.Join(testCowDir, "test_state"),
-			Size:      "10m",
+			Size:      "50m",
 			System:    "file",
 			BlockSize: "64k",
 			Expose:    false,
@@ -70,11 +71,10 @@ func setupCowDevice(t *testing.T) (storage.Provider, int, []byte) {
 	})
 
 	// Write some changes to the device...
-	for _, offset := range []int64{0, 10 * 1024, 100 * 1024} {
+	for _, offset := range []int64{0, 10 * 1024, 400000, 701902} {
 		chgData := make([]byte, 4*1024)
 		_, err = crand.Read(chgData)
 		assert.NoError(t, err)
-		fmt.Printf("Write data %d\n", offset)
 		_, err = prov.WriteAt(chgData, offset)
 		assert.NoError(t, err)
 	}
@@ -82,140 +82,178 @@ func setupCowDevice(t *testing.T) (storage.Provider, int, []byte) {
 	return prov, blockSize, baseData
 }
 
-func TestCowGetBase(t *testing.T) {
-	prov, _, baseData := setupCowDevice(t)
+func TestCowGetBlocks(t *testing.T) {
+	prov, _, _ := setupCowDevice(t, true)
 
-	erd := storage.SendSiloEvent(prov, storage.EventTypeBaseGet, nil)
-	// Check it returns the base provider...
-	assert.Equal(t, 1, len(erd))
+	// Setup a dirty tracker
+	_, trackRemote := dirtytracker.NewDirtyTracker(prov, 65536)
 
-	baseprov := erd[0].(storage.Provider)
+	blocks := trackRemote.GetUnrequiredBlocks()
 
-	provBuffer := make([]byte, prov.Size())
-	_, err := prov.ReadAt(provBuffer, 0)
-	assert.NoError(t, err)
+	// Check they're being tracked now
+	tracking := trackRemote.GetTrackedBlocks()
 
-	// The base data and provider data shouldn't be the same...
-	assert.NotEqual(t, baseData, provBuffer)
-
-	baseBuffer := make([]byte, baseprov.Size())
-	_, err = baseprov.ReadAt(baseBuffer, 0)
-	assert.NoError(t, err)
-
-	// The base data should be as we expect
-	assert.Equal(t, baseData, baseBuffer)
-
-}
-
-func TestMigratorCow(t *testing.T) {
-	prov, blockSize, _ := setupCowDevice(t)
-
-	_, sourceDirtyRemote := dirtytracker.NewDirtyTracker(prov, blockSize)
-
-	numBlocks := (int(prov.Size()) + blockSize - 1) / blockSize
-
-	orderer := blocks.NewAnyBlockOrder(numBlocks, nil)
-	orderer.AddAll()
-
-	// START moving data from sourceStorage to destStorage
-
-	var destStorage storage.Provider
-	var destOverlay storage.Provider
-	var destFrom *protocol.FromProtocol
-	var waitingCacheLocal *waitingcache.Local
-	var waitingCacheRemote *waitingcache.Remote
-
-	// Create a simple pipe
-	r1, w1 := io.Pipe()
-	r2, w2 := io.Pipe()
-
-	// Open the base image
-	baseProvider, err := sources.NewFileStorage(path.Join(testCowDir, "test_rosource"), int64(prov.Size()))
-	assert.NoError(t, err)
-
-	initDev := func(ctx context.Context, p protocol.Protocol, dev uint32) {
-		destStorageFactory := func(di *packets.DevInfo) storage.Provider {
-			var err error
-			destOverlay, err = sources.NewFileStorageCreate(path.Join(testCowDir, "test_overlay_dest"), int64(di.Size))
-			assert.NoError(t, err)
-
-			destStorage = modules.NewCopyOnWrite(baseProvider, destOverlay, blockSize)
-
-			waitingCacheLocal, waitingCacheRemote = waitingcache.NewWaitingCache(destStorage, blockSize)
-			return waitingCacheRemote
+	expected := make([]uint, 0)
+	for v := 0; v < 800; v++ {
+		if v != 0 && v != 6 && v != 10 {
+			expected = append(expected, uint(v))
 		}
-
-		// Pipe from the protocol to destWaiting
-		destFrom = protocol.NewFromProtocol(ctx, dev, destStorageFactory, p)
-		go func() {
-			_ = destFrom.HandleReadAt()
-		}()
-		go func() {
-			_ = destFrom.HandleWriteAt()
-		}()
-		go func() {
-			_ = destFrom.HandleDevInfo()
-		}()
 	}
 
-	prSource := protocol.NewRW(context.TODO(), []io.Reader{r1}, []io.Writer{w2}, nil)
-	prDest := protocol.NewRW(context.TODO(), []io.Reader{r2}, []io.Writer{w1}, initDev)
+	assert.Equal(t, expected, blocks)
+	assert.Equal(t, expected, tracking)
+}
 
-	go func() {
-		_ = prSource.Handle()
-	}()
-	go func() {
-		_ = prDest.Handle()
-	}()
+type migratorCowTest struct {
+	name       string
+	sharedBase bool
+}
 
-	// Pipe a destination to the protocol
-	//	destination := protocol.NewToProtocol(sourceDirtyRemote.Size(), 17, prSource)
+func TestMigratorCow(tt *testing.T) {
 
-	destination := protocol.NewToProtocol(sourceDirtyRemote.Size(), 17, prSource)
+	for _, v := range []migratorCowTest{
+		{name: "standard", sharedBase: false},
+		{name: "better", sharedBase: true},
+	} {
+		tt.Run(v.name, func(t *testing.T) {
+			prov, blockSize, _ := setupCowDevice(t, v.sharedBase)
 
-	err = destination.SendDevInfo("test", uint32(blockSize), "")
-	assert.NoError(t, err)
+			// Add some metrics
+			provMetrics := modules.NewMetrics(prov)
 
-	conf := migrator.NewConfig().WithBlockSize(blockSize)
+			_, sourceDirtyRemote := dirtytracker.NewDirtyTracker(provMetrics, blockSize)
 
-	mig, err := migrator.NewMigrator(sourceDirtyRemote,
-		destination,
-		orderer,
-		conf)
+			numBlocks := (int(provMetrics.Size()) + blockSize - 1) / blockSize
 
-	assert.NoError(t, err)
+			orderer := blocks.NewAnyBlockOrder(numBlocks, nil)
 
-	err = mig.Migrate(numBlocks)
-	assert.NoError(t, err)
+			// START moving data from sourceStorage to destStorage
 
-	err = mig.WaitForCompletion()
-	assert.NoError(t, err)
+			var destStorage storage.Provider
+			var destOverlay storage.Provider
+			var destFrom *protocol.FromProtocol
+			var waitingCacheLocal *waitingcache.Local
+			var waitingCacheRemote *waitingcache.Remote
 
-	assert.NotNil(t, destStorage)
+			// Create a simple pipe
+			r1, w1 := io.Pipe()
+			r2, w2 := io.Pipe()
 
-	// This will end with migration completed.
-	eq, err := storage.Equals(prov, destStorage, blockSize)
-	assert.NoError(t, err)
-	assert.True(t, eq)
+			// Open the base image
+			baseProvider, err := sources.NewFileStorage(path.Join(testCowDir, "test_rosource"), int64(provMetrics.Size()))
+			assert.NoError(t, err)
 
-	srcDataSent := prSource.GetMetrics().DataSent
-	srcDataRecv := prSource.GetMetrics().DataRecv
+			initDev := func(ctx context.Context, p protocol.Protocol, dev uint32) {
+				destStorageFactory := func(di *packets.DevInfo) storage.Provider {
+					var err error
+					destOverlay, err = sources.NewFileStorageCreate(path.Join(testCowDir, "test_overlay_dest"), int64(di.Size))
+					assert.NoError(t, err)
 
-	fmt.Printf("Transfer [device size %d] transfer bytes: %d sent, %d recv\n", prov.Size(), srcDataSent, srcDataRecv)
+					destStorage = modules.NewCopyOnWrite(baseProvider, destOverlay, blockSize)
 
-	assert.Less(t, srcDataSent, prov.Size())
+					waitingCacheLocal, waitingCacheRemote = waitingcache.NewWaitingCache(destStorage, blockSize)
+					return waitingCacheRemote
+				}
 
-	destMetrics := destination.GetMetrics()
+				// Pipe from the protocol to destWaiting
+				destFrom = protocol.NewFromProtocol(ctx, dev, destStorageFactory, p)
+				go func() {
+					_ = destFrom.HandleReadAt()
+				}()
+				go func() {
+					_ = destFrom.HandleWriteAt()
+				}()
+				go func() {
+					_ = destFrom.HandleDevInfo()
+				}()
+			}
 
-	fmt.Printf("Sent %d WriteAt     %d bytes\n", destMetrics.SentWriteAt, destMetrics.SentWriteAtBytes)
-	fmt.Printf("Sent %d WriteAtComp %d bytes\n", destMetrics.SentWriteAtComp, destMetrics.SentWriteAtCompBytes)
-	fmt.Printf("Sent %d WriteAtHash %d bytes\n", destMetrics.SentWriteAtHash, destMetrics.SentWriteAtHashBytes)
+			prSource := protocol.NewRW(context.TODO(), []io.Reader{r1}, []io.Writer{w2}, nil)
+			prDest := protocol.NewRW(context.TODO(), []io.Reader{r2}, []io.Writer{w1}, initDev)
 
-	waitMetrics := waitingCacheLocal.GetMetrics()
+			go func() {
+				_ = prSource.Handle()
+			}()
+			go func() {
+				_ = prDest.Handle()
+			}()
 
-	fmt.Printf("Available.local %d\n", waitMetrics.AvailableLocal)
-	fmt.Printf("Available.remote %d\n", waitMetrics.AvailableRemote)
+			orderer.AddAll()
 
-	// The waiting cache should consider ALL blocks present and correct.
-	assert.Equal(t, numBlocks, int(waitMetrics.AvailableRemote))
+			// Pipe a destination to the protocol
+			destination := protocol.NewToProtocol(sourceDirtyRemote.Size(), 17, prSource)
+
+			err = destination.SendDevInfo("test", uint32(blockSize), "")
+			assert.NoError(t, err)
+
+			migrateBlocks := numBlocks
+
+			if v.sharedBase {
+				// With this, ONLY migrate the blocks we need... For the others, we'll send cmds manually...
+				unrequired := sourceDirtyRemote.GetUnrequiredBlocks()
+				alreadyBlocks := make([]uint32, 0)
+				for _, b := range unrequired {
+					orderer.Remove(int(b))
+					migrateBlocks--
+					alreadyBlocks = append(alreadyBlocks, uint32(b))
+				}
+
+				err = destination.SendYouAlreadyHave(uint64(blockSize), alreadyBlocks)
+				assert.NoError(t, err)
+			}
+
+			conf := migrator.NewConfig().WithBlockSize(blockSize)
+
+			mig, err := migrator.NewMigrator(sourceDirtyRemote,
+				destination,
+				orderer,
+				conf)
+
+			assert.NoError(t, err)
+
+			err = mig.Migrate(migrateBlocks)
+			assert.NoError(t, err)
+
+			err = mig.WaitForCompletion()
+			assert.NoError(t, err)
+
+			assert.NotNil(t, destStorage)
+
+			// Check how much of the base we had to read
+			metrics := provMetrics.GetMetrics()
+
+			fmt.Printf("Provider reads %d (%d bytes) in %dms\n", metrics.ReadOps, metrics.ReadBytes, time.Duration(metrics.ReadTime).Milliseconds())
+
+			// This will end with migration completed. (Go direct to prov here instead of provMetrics)
+			eq, err := storage.Equals(prov, destStorage, blockSize)
+			assert.NoError(t, err)
+			assert.True(t, eq)
+
+			srcDataSent := prSource.GetMetrics().DataSent
+			srcDataRecv := prSource.GetMetrics().DataRecv
+
+			fmt.Printf("Transfer [device size %d] transfer bytes: %d sent, %d recv\n", prov.Size(), srcDataSent, srcDataRecv)
+
+			destMetrics := destination.GetMetrics()
+
+			rMetrics := destFrom.GetMetrics()
+
+			fmt.Printf("Recv WriteAt %d | WriteAtComp %d | WriteAtHash %d | WriteAtYouAlreadyHave %d\n",
+				rMetrics.RecvWriteAt,
+				rMetrics.RecvWriteAtComp,
+				rMetrics.RecvWriteAtHash,
+				rMetrics.RecvWriteAtYouAlreadyHave)
+
+			fmt.Printf("Sent WriteAt %d (%d bytes) | WriteAtComp %d (%d bytes) | WriteAtHash %d (%d bytes)\n",
+				destMetrics.SentWriteAt, destMetrics.SentWriteAtBytes,
+				destMetrics.SentWriteAtComp, destMetrics.SentWriteAtCompBytes,
+				destMetrics.SentWriteAtHash, destMetrics.SentWriteAtHashBytes,
+			)
+
+			waitMetrics := waitingCacheLocal.GetMetrics()
+
+			// The waiting cache should consider ALL blocks present and correct.
+			assert.Equal(t, numBlocks, int(waitMetrics.AvailableRemote))
+		})
+	}
 }

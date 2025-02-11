@@ -128,6 +128,8 @@ type Metrics struct {
 	toProtocolSentWriteAtBytes         *prometheus.GaugeVec
 	toProtocolSentWriteAtWithMap       *prometheus.GaugeVec
 	toProtocolSentRemoveFromMap        *prometheus.GaugeVec
+	toProtocolSentYouAlreadyHave       *prometheus.GaugeVec
+	toProtocolSentYouAlreadyHaveBytes  *prometheus.GaugeVec
 	toProtocolRecvNeedAt               *prometheus.GaugeVec
 	toProtocolRecvDontNeedAt           *prometheus.GaugeVec
 
@@ -281,6 +283,10 @@ func New(reg prometheus.Registerer, config *MetricsConfig) *Metrics {
 			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_write_at_with_map", Help: "sentWriteAtWithMap"}, []string{"device"}),
 		toProtocolSentRemoveFromMap: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_remove_from_map", Help: "sentRemoveFromMap"}, []string{"device"}),
+		toProtocolSentYouAlreadyHave: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_you_already_have", Help: "sentYouAlreadyHave"}, []string{"device"}),
+		toProtocolSentYouAlreadyHaveBytes: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_you_already_have_bytes", Help: "sentYouAlreadyHaveBytes"}, []string{"device"}),
 		toProtocolRecvNeedAt: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "recv_need_at", Help: "recvNeedAt"}, []string{"device"}),
 		toProtocolRecvDontNeedAt: prometheus.NewGaugeVec(prometheus.GaugeOpts{
@@ -434,7 +440,8 @@ func New(reg prometheus.Registerer, config *MetricsConfig) *Metrics {
 		met.toProtocolSentDirtyList, met.toProtocolSentReadAt, met.toProtocolSentWriteAtHash, met.toProtocolSentWriteAtHashBytes,
 		met.toProtocolSentWriteAtComp, met.toProtocolSentWriteAtCompBytes, met.toProtocolSentWriteAtCompDataBytes,
 		met.toProtocolSentWriteAt, met.toProtocolSentWriteAtBytes, met.toProtocolSentWriteAtWithMap,
-		met.toProtocolSentRemoveFromMap, met.toProtocolRecvNeedAt, met.toProtocolRecvDontNeedAt,
+		met.toProtocolSentRemoveFromMap, met.toProtocolSentYouAlreadyHave, met.toProtocolSentYouAlreadyHaveBytes,
+		met.toProtocolRecvNeedAt, met.toProtocolRecvDontNeedAt,
 	)
 
 	reg.MustRegister(met.fromProtocolRecvEvents, met.fromProtocolRecvHashes, met.fromProtocolRecvDevInfo,
@@ -591,6 +598,8 @@ func (m *Metrics) AddToProtocol(name string, proto *protocol.ToProtocol) {
 		m.toProtocolSentWriteAtBytes.WithLabelValues(name).Set(float64(met.SentWriteAtBytes))
 		m.toProtocolSentWriteAtWithMap.WithLabelValues(name).Set(float64(met.SentWriteAtWithMap))
 		m.toProtocolSentRemoveFromMap.WithLabelValues(name).Set(float64(met.SentRemoveFromMap))
+		m.toProtocolSentYouAlreadyHave.WithLabelValues(name).Set(float64(met.SentYouAlreadyHave))
+		m.toProtocolSentYouAlreadyHaveBytes.WithLabelValues(name).Set(float64(met.SentYouAlreadyHaveBytes))
 		m.toProtocolRecvNeedAt.WithLabelValues(name).Set(float64(met.RecvNeedAt))
 		m.toProtocolRecvDontNeedAt.WithLabelValues(name).Set(float64(met.RecvDontNeedAt))
 	})

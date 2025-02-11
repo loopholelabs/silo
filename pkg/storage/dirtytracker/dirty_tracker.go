@@ -147,11 +147,45 @@ func (dt *DirtyTracker) trackArea(length int64, offset int64) {
 }
 
 /**
+ * Ask downstream if there are blocks that aren't required for a migration.
+ * Typically these would be a base overlay, but could be something else.
+ * As well as returning the blocks, this call will update the dirty tracker as if the blocks had been read (To start tracking dirty changes)
+ */
+func (dtr *Remote) GetUnrequiredBlocks() []uint {
+	// Make sure no writes get through...
+	dtr.dt.writeLock.Lock()
+	defer dtr.dt.writeLock.Unlock()
+
+	// Snapshot blocks from any CoW, and update the tracking
+	cowBlocks := storage.SendSiloEvent(dtr.dt.prov, storage.EventTypeCowGetBlocks, dtr)
+	if len(cowBlocks) == 1 {
+		blocks := cowBlocks[0].([]uint)
+		for _, b := range blocks {
+			offset := b * uint(dtr.dt.blockSize)
+			length := uint(dtr.dt.blockSize)
+
+			// NB overflow here shouldn't matter. TrackArea will cope and truncate it.
+			dtr.dt.trackArea(int64(length), int64(offset))
+		}
+		return blocks
+	}
+	return nil
+}
+
+/**
  * Start tracking at the given offset and length
  *
  */
-func (dtr *Remote) TrackAt(offset int64, length int64) {
+func (dtr *Remote) TrackAt(length int64, offset int64) {
 	dtr.dt.trackArea(length, offset)
+}
+
+/**
+ * Check which blocks are being tracked
+ *
+ */
+func (dtr *Remote) GetTrackedBlocks() []uint {
+	return dtr.dt.tracking.Collect(0, dtr.dt.tracking.Length())
 }
 
 /**

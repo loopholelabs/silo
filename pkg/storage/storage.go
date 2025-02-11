@@ -26,6 +26,8 @@ type LockableProvider interface {
 
 type TrackingProvider interface {
 	Provider
+	GetUnrequiredBlocks() []uint
+	TrackAt(length int64, offset int64)
 	Sync() *util.Bitfield
 }
 
