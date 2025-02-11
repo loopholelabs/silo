@@ -13,7 +13,6 @@ import (
 
 type ToProtocol struct {
 	storage.ProviderWithEvents
-	baseImage                      storage.Provider
 	baseBlocks                     map[uint]uint
 	baseImageLock                  sync.Mutex
 	size                           uint64
@@ -100,11 +99,6 @@ func (i *ToProtocol) SendSiloEvent(eventType storage.EventType, eventData storag
 		// Send the list of alternate sources here...
 		i.SendAltSources(i.alternateSources)
 		// For now, we do not check the error. If there was a protocol / io error, we should see it on the next send
-	} else if eventType == storage.EventTypeBaseSet {
-		// We have been told a base image that we can use when migrating CoW or similar.
-		i.baseImageLock.Lock()
-		i.baseImage = eventData.(storage.Provider)
-		i.baseImageLock.Unlock()
 	} else if eventType == storage.EventTypeCowSetBlocks {
 		// We have been told which blocks are in the CoW overlay
 		i.baseImageLock.Lock()
@@ -250,31 +244,12 @@ func (i *ToProtocol) WriteAt(buffer []byte, offset int64) (int, error) {
 	dontSendData := false
 
 	// Check if the data is in a base image. If so, send a WriteAtHash command instead of the data.
-	var baseProv storage.Provider
 	var baseBlocks map[uint]uint
 	i.baseImageLock.Lock()
-	baseProv = i.baseImage
 	baseBlocks = i.baseBlocks
 	i.baseImageLock.Unlock()
 
-	if baseProv != nil {
-		hash := sha256.Sum256(buffer)
-		baseBuffer := make([]byte, len(buffer))
-		n, err := baseProv.ReadAt(baseBuffer, offset)
-		if err == nil && n == len(baseBuffer) {
-			baseHash := sha256.Sum256(baseBuffer)
-			if bytes.Equal(hash[:], baseHash[:]) {
-				// The data is exactly the same as our "base" image. Send it as WriteAtHash commands.
-				data := packets.EncodeWriteAtHash(offset, int64(len(buffer)), hash[:], packets.DataLocationBaseImage)
-				id, err = i.protocol.SendPacket(i.dev, IDPickAny, data, UrgencyNormal)
-				if err == nil {
-					atomic.AddUint64(&i.metricSentWriteAtHash, 1)
-					atomic.AddUint64(&i.metricSentWriteAtHashBytes, uint64(len(buffer)))
-				}
-				dontSendData = true
-			}
-		}
-	} else if len(baseBlocks) > 0 {
+	if len(baseBlocks) > 0 {
 		if baseBlocks[uint(offset)] == uint(len(buffer)) {
 			// The data is exactly the same as our "base" image. Send it as WriteAtHash commands.
 			hash := make([]byte, sha256.Size) // Empty for now

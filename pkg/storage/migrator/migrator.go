@@ -114,9 +114,8 @@ type Migrator struct {
 	migrationStartTime     time.Time
 
 	// For now
-	NoCowMigration       bool
-	ImprovedCowMigration bool
-	baseBlocks           map[uint]uint
+	NoCowMigration bool
+	baseBlocks     map[uint]uint
 }
 
 func NewMigrator(source storage.TrackingProvider,
@@ -155,8 +154,6 @@ func NewMigrator(source storage.TrackingProvider,
 		recentWriteAge:         config.RecentWriteAge,
 		cancelWrites:           config.CancelWrites,
 		dedupeWrites:           config.DedupeWrites,
-
-		ImprovedCowMigration: true,
 	}
 
 	if m.dest.Size() != m.sourceTracker.Size() {
@@ -213,17 +210,15 @@ func (m *Migrator) startMigrationDirty() {
 	m.migrationDirtyStarted = true
 
 	// Tell the to_protocol to not interfere
-	if m.ImprovedCowMigration {
 
-		storage.SendSiloEvent(m.dest, storage.EventTypeCowSetBlocks, nil)
-		if m.logger != nil {
-			m.logger.Debug().
-				Str("uuid", m.uuid.String()).
-				Uint64("size", m.sourceTracker.Size()).
-				Msg("Migrator cow blocks cleared")
-		}
-		m.baseBlocks = nil
+	storage.SendSiloEvent(m.dest, storage.EventTypeCowSetBlocks, nil)
+	if m.logger != nil {
+		m.logger.Debug().
+			Str("uuid", m.uuid.String()).
+			Uint64("size", m.sourceTracker.Size()).
+			Msg("Migrator cow blocks cleared")
 	}
+	m.baseBlocks = nil
 }
 
 func (m *Migrator) startMigration() {
@@ -254,39 +249,24 @@ func (m *Migrator) startMigration() {
 	}
 
 	if !m.NoCowMigration {
-		if m.ImprovedCowMigration {
-			blocks := m.sourceTracker.GetUnrequiredBlocks()
-			if blocks != nil {
-				bmap := make(map[uint]uint, 0) // TODO struct or something better
-				// We need to translate these into offsets
-				for _, b := range blocks {
-					bmap[b*uint(m.blockSize)] = uint(m.blockSize)
-				}
-
-				m.baseBlocks = bmap
-
-				// Tell the to_protocol
-				storage.SendSiloEvent(m.dest, storage.EventTypeCowSetBlocks, bmap)
-				if m.logger != nil {
-					m.logger.Debug().
-						Str("uuid", m.uuid.String()).
-						Uint64("size", m.sourceTracker.Size()).
-						Int("cow_size", len(blocks)*m.blockSize).
-						Msg("Migrator cow blocks sent to destination")
-				}
+		blocks := m.sourceTracker.GetUnrequiredBlocks()
+		if blocks != nil {
+			bmap := make(map[uint]uint, 0) // TODO struct or something better
+			// We need to translate these into offsets
+			for _, b := range blocks {
+				bmap[b*uint(m.blockSize)] = uint(m.blockSize)
 			}
-		} else {
-			// Find any base image from the source, and send it to the destination.
-			baseSrc := storage.SendSiloEvent(m.sourceTracker, storage.EventTypeBaseGet, nil)
-			if len(baseSrc) == 1 {
 
-				storage.SendSiloEvent(m.dest, storage.EventTypeBaseSet, baseSrc[0])
-				if m.logger != nil {
-					m.logger.Debug().
-						Str("uuid", m.uuid.String()).
-						Uint64("size", m.sourceTracker.Size()).
-						Msg("Migrator base image sent to destination")
-				}
+			m.baseBlocks = bmap
+
+			// Tell the to_protocol
+			storage.SendSiloEvent(m.dest, storage.EventTypeCowSetBlocks, bmap)
+			if m.logger != nil {
+				m.logger.Debug().
+					Str("uuid", m.uuid.String()).
+					Uint64("size", m.sourceTracker.Size()).
+					Int("cow_size", len(blocks)*m.blockSize).
+					Msg("Migrator cow blocks sent to destination")
 			}
 		}
 	}

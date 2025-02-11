@@ -82,46 +82,13 @@ func setupCowDevice(t *testing.T, sharedBase bool) (storage.Provider, int, []byt
 	return prov, blockSize, baseData
 }
 
-func TestCowGetBase(t *testing.T) {
-	prov, _, baseData := setupCowDevice(t, true)
-
-	erd := storage.SendSiloEvent(prov, storage.EventTypeBaseGet, nil)
-	// Check it returns the base provider...
-	assert.Equal(t, 1, len(erd))
-
-	baseprov := erd[0].(storage.Provider)
-
-	provBuffer := make([]byte, prov.Size())
-	_, err := prov.ReadAt(provBuffer, 0)
-	assert.NoError(t, err)
-
-	// The base data and provider data shouldn't be the same...
-	assert.NotEqual(t, baseData, provBuffer)
-
-	baseBuffer := make([]byte, baseprov.Size())
-	_, err = baseprov.ReadAt(baseBuffer, 0)
-	assert.NoError(t, err)
-
-	// The base data should be as we expect
-	assert.Equal(t, baseData, baseBuffer)
-
-}
-
 func TestCowGetBlocks(t *testing.T) {
 	prov, _, _ := setupCowDevice(t, true)
 
 	// Setup a dirty tracker
 	_, trackRemote := dirtytracker.NewDirtyTracker(prov, 65536)
 
-	erd := storage.SendSiloEvent(prov, storage.EventTypeCowGetBlocks, trackRemote)
-	// Check it returns a list of blocks
-	assert.Equal(t, 1, len(erd))
-
-	// A list of blocks
-	blocks, ok := erd[0].([]uint)
-	assert.True(t, ok)
-
-	assert.Equal(t, []uint{0, 6, 10}, blocks)
+	blocks := trackRemote.GetUnrequiredBlocks()
 
 	// Check they're being tracked now
 	tracking := trackRemote.GetTrackedBlocks()
@@ -133,23 +100,22 @@ func TestCowGetBlocks(t *testing.T) {
 		}
 	}
 
+	assert.Equal(t, expected, blocks)
 	assert.Equal(t, expected, tracking)
 }
 
 type migratorCowTest struct {
 	name           string
 	sharedBase     bool
-	useNew         bool
 	noCowMigration bool
 }
 
 func TestMigratorCow(tt *testing.T) {
 
 	for _, v := range []migratorCowTest{
-		{name: "standard", sharedBase: false, useNew: false, noCowMigration: false},
-		{name: "basic", sharedBase: true, useNew: false, noCowMigration: false},
-		{name: "improved", sharedBase: true, useNew: true, noCowMigration: false},
-		{name: "better", sharedBase: true, useNew: false, noCowMigration: true}, // We do things outside the migrator...
+		{name: "standard", sharedBase: false, noCowMigration: false},
+		{name: "improved", sharedBase: true, noCowMigration: false},
+		{name: "better", sharedBase: true, noCowMigration: true}, // We do things outside the migrator...
 	} {
 		tt.Run(v.name, func(t *testing.T) {
 			prov, blockSize, _ := setupCowDevice(t, v.sharedBase)
@@ -225,23 +191,12 @@ func TestMigratorCow(tt *testing.T) {
 			migrateBlocks := numBlocks
 
 			if v.noCowMigration {
-				// hash := make([]byte, sha256.Size) // Empty for now
 				// With this, ONLY migrate the blocks we need... For the others, we'll send cmds manually...
 				unrequired := sourceDirtyRemote.GetUnrequiredBlocks()
 				alreadyBlocks := make([]uint32, 0)
 				for _, b := range unrequired {
 					orderer.Remove(int(b))
 					// Send the data here...
-					/*
-						// FIXME: Combine these into a single packet
-						offset := b * uint(blockSize)
-						data := packets.EncodeWriteAtHash(int64(offset), int64(blockSize), hash, packets.DataLocationBaseImage)
-						id, err := prSource.SendPacket(17, protocol.IDPickAny, data, protocol.UrgencyNormal)
-						assert.NoError(t, err)
-						// Wait for ACK
-						_, err = prSource.WaitForPacket(17, id)
-						assert.NoError(t, err)
-					*/
 					// We need less blocks here...
 					migrateBlocks--
 					alreadyBlocks = append(alreadyBlocks, uint32(b))
@@ -253,7 +208,6 @@ func TestMigratorCow(tt *testing.T) {
 				// Wait for ACK
 				_, err = prSource.WaitForPacket(17, id)
 				assert.NoError(t, err)
-
 			}
 
 			conf := migrator.NewConfig().WithBlockSize(blockSize)
@@ -265,7 +219,6 @@ func TestMigratorCow(tt *testing.T) {
 
 			assert.NoError(t, err)
 
-			mig.ImprovedCowMigration = v.useNew
 			mig.NoCowMigration = v.noCowMigration
 
 			err = mig.Migrate(migrateBlocks)

@@ -837,9 +837,20 @@ func TestMigratorSimpleCowSparse(t *testing.T) {
 	orderer := blocks.NewAnyBlockOrder(numBlocks, nil)
 	orderer.AddAll()
 
+	migrateBlocks := numBlocks
+	// Find unrequired blocks, and remove from the migration
+	unrequired := sourceDirtyRemote.GetUnrequiredBlocks()
+	for _, b := range unrequired {
+		orderer.Remove(int(b))
+		// Send the data here...
+		// We need less blocks here...
+		migrateBlocks--
+	}
+
 	// START moving data from sourceStorage to destStorage
 
 	destStorage := sources.NewMemoryStorage(size)
+	destCow := modules.NewCopyOnWrite(sourceStorageMem, destStorage, blockSize)
 
 	conf := NewConfig().WithBlockSize(blockSize)
 	conf.LockerHandler = sourceStorage.Lock
@@ -849,20 +860,22 @@ func TestMigratorSimpleCowSparse(t *testing.T) {
 	}
 
 	mig, err := NewMigrator(sourceDirtyRemote,
-		destStorage,
+		destCow,
 		orderer,
 		conf)
 
+	mig.NoCowMigration = true
+
 	assert.NoError(t, err)
 
-	err = mig.Migrate(numBlocks)
+	err = mig.Migrate(migrateBlocks)
 	assert.NoError(t, err)
 
 	err = mig.WaitForCompletion()
 	assert.NoError(t, err)
 
 	// This will end with migration completed, and consumer Locked.
-	eq, err := storage.Equals(sourceStorage, destStorage, blockSize)
+	eq, err := storage.Equals(sourceStorage, destCow, blockSize)
 	assert.NoError(t, err)
 	assert.True(t, eq)
 }

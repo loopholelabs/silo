@@ -3,8 +3,6 @@ package storage
 import "sync"
 
 const EventTypeSources = EventType("sources")
-const EventTypeBaseSet = EventType("base.set")
-const EventTypeBaseGet = EventType("base.get")
 const EventTypeAvailable = EventType("available")
 
 const EventTypeCowGetBlocks = EventType("cow.get.blocks")
