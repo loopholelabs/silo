@@ -3,10 +3,8 @@ package storage
 import "sync"
 
 const EventTypeSources = EventType("sources")
-const EventTypeAvailable = EventType("available")
-
 const EventTypeCowGetBlocks = EventType("cow.get.blocks")
-const EventTypeCowSetBlocks = EventType("cow.set.blocks")
+const EventTypeAvailable = EventType("available")
 
 const EventSyncStop = EventType("sync.stop")
 const EventSyncStart = EventType("sync.start")
