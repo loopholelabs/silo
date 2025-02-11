@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
-	"sync"
 	"sync/atomic"
 
 	"github.com/loopholelabs/silo/pkg/storage"
@@ -13,8 +12,6 @@ import (
 
 type ToProtocol struct {
 	storage.ProviderWithEvents
-	baseBlocks                     map[uint]uint
-	baseImageLock                  sync.Mutex
 	size                           uint64
 	dev                            uint32
 	protocol                       Protocol
@@ -99,16 +96,6 @@ func (i *ToProtocol) SendSiloEvent(eventType storage.EventType, eventData storag
 		// Send the list of alternate sources here...
 		i.SendAltSources(i.alternateSources)
 		// For now, we do not check the error. If there was a protocol / io error, we should see it on the next send
-	} else if eventType == storage.EventTypeCowSetBlocks {
-		// We have been told which blocks are in the CoW overlay
-		i.baseImageLock.Lock()
-		blocks, ok := eventData.(map[uint]uint)
-		if ok {
-			i.baseBlocks = blocks
-		} else {
-			i.baseBlocks = nil
-		}
-		i.baseImageLock.Unlock()
 	}
 	return nil
 }
@@ -254,44 +241,22 @@ func (i *ToProtocol) WriteAt(buffer []byte, offset int64) (int, error) {
 
 	dontSendData := false
 
-	// Check if the data is in a base image. If so, send a WriteAtHash command instead of the data.
-	var baseBlocks map[uint]uint
-	i.baseImageLock.Lock()
-	baseBlocks = i.baseBlocks
-	i.baseImageLock.Unlock()
-
-	if len(baseBlocks) > 0 {
-		if baseBlocks[uint(offset)] == uint(len(buffer)) {
-			// The data is exactly the same as our "base" image. Send it as WriteAtHash commands.
-			hash := make([]byte, sha256.Size) // Empty for now
-			data := packets.EncodeWriteAtHash(offset, int64(len(buffer)), hash, packets.DataLocationBaseImage)
-			id, err = i.protocol.SendPacket(i.dev, IDPickAny, data, UrgencyNormal)
-			if err == nil {
-				atomic.AddUint64(&i.metricSentWriteAtHash, 1)
-				atomic.AddUint64(&i.metricSentWriteAtHashBytes, uint64(len(buffer)))
-			}
-			dontSendData = true
-		}
-	}
-
 	// If it's in the alternateSources list, we only need to send a WriteAtHash command.
 	// For now, we only match exact block ranges here.
-	if !dontSendData {
-		for _, as := range i.alternateSources {
-			if as.Offset == offset && as.Length == int64(len(buffer)) {
-				// Only allow this if the hash is still correct/current for the data.
-				hash := sha256.Sum256(buffer)
-				if bytes.Equal(hash[:], as.Hash[:]) {
-					data := packets.EncodeWriteAtHash(as.Offset, as.Length, as.Hash[:], packets.DataLocationS3)
-					id, err = i.protocol.SendPacket(i.dev, IDPickAny, data, UrgencyNormal)
-					if err == nil {
-						atomic.AddUint64(&i.metricSentWriteAtHash, 1)
-						atomic.AddUint64(&i.metricSentWriteAtHashBytes, uint64(as.Length))
-					}
-					dontSendData = true
+	for _, as := range i.alternateSources {
+		if as.Offset == offset && as.Length == int64(len(buffer)) {
+			// Only allow this if the hash is still correct/current for the data.
+			hash := sha256.Sum256(buffer)
+			if bytes.Equal(hash[:], as.Hash[:]) {
+				data := packets.EncodeWriteAtHash(as.Offset, as.Length, as.Hash[:], packets.DataLocationS3)
+				id, err = i.protocol.SendPacket(i.dev, IDPickAny, data, UrgencyNormal)
+				if err == nil {
+					atomic.AddUint64(&i.metricSentWriteAtHash, 1)
+					atomic.AddUint64(&i.metricSentWriteAtHashBytes, uint64(as.Length))
 				}
-				break
+				dontSendData = true
 			}
+			break
 		}
 	}
 

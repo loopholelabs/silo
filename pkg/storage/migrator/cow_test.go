@@ -105,17 +105,15 @@ func TestCowGetBlocks(t *testing.T) {
 }
 
 type migratorCowTest struct {
-	name           string
-	sharedBase     bool
-	noCowMigration bool
+	name       string
+	sharedBase bool
 }
 
 func TestMigratorCow(tt *testing.T) {
 
 	for _, v := range []migratorCowTest{
-		{name: "standard", sharedBase: false, noCowMigration: false},
-		{name: "improved", sharedBase: true, noCowMigration: false},
-		{name: "better", sharedBase: true, noCowMigration: true}, // We do things outside the migrator...
+		{name: "standard", sharedBase: false},
+		{name: "better", sharedBase: true},
 	} {
 		tt.Run(v.name, func(t *testing.T) {
 			prov, blockSize, _ := setupCowDevice(t, v.sharedBase)
@@ -190,7 +188,7 @@ func TestMigratorCow(tt *testing.T) {
 
 			migrateBlocks := numBlocks
 
-			if v.noCowMigration {
+			if v.sharedBase {
 				// With this, ONLY migrate the blocks we need... For the others, we'll send cmds manually...
 				unrequired := sourceDirtyRemote.GetUnrequiredBlocks()
 				alreadyBlocks := make([]uint32, 0)
@@ -212,8 +210,6 @@ func TestMigratorCow(tt *testing.T) {
 				conf)
 
 			assert.NoError(t, err)
-
-			mig.NoCowMigration = v.noCowMigration
 
 			err = mig.Migrate(migrateBlocks)
 			assert.NoError(t, err)

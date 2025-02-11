@@ -112,10 +112,6 @@ type Migrator struct {
 	migrationStarted       bool
 	migrationDirtyStarted  bool
 	migrationStartTime     time.Time
-
-	// For now
-	NoCowMigration bool
-	baseBlocks     map[uint]uint
 }
 
 func NewMigrator(source storage.TrackingProvider,
@@ -203,24 +199,6 @@ func (m *Migrator) SetMigratedBlock(block int) {
 	m.reportProgress(false)
 }
 
-func (m *Migrator) startMigrationDirty() {
-	if m.migrationDirtyStarted {
-		return
-	}
-	m.migrationDirtyStarted = true
-
-	// Tell the to_protocol to not interfere
-
-	storage.SendSiloEvent(m.dest, storage.EventTypeCowSetBlocks, nil)
-	if m.logger != nil {
-		m.logger.Debug().
-			Str("uuid", m.uuid.String()).
-			Uint64("size", m.sourceTracker.Size()).
-			Msg("Migrator cow blocks cleared")
-	}
-	m.baseBlocks = nil
-}
-
 func (m *Migrator) startMigration() {
 	if m.migrationStarted {
 		return
@@ -245,29 +223,6 @@ func (m *Migrator) startMigration() {
 				Uint64("size", m.sourceTracker.Size()).
 				Int("sources", len(as[0].([]packets.AlternateSource))).
 				Msg("Migrator alternate sources sent to destination")
-		}
-	}
-
-	if !m.NoCowMigration {
-		blocks := m.sourceTracker.GetUnrequiredBlocks()
-		if blocks != nil {
-			bmap := make(map[uint]uint, 0) // TODO struct or something better
-			// We need to translate these into offsets
-			for _, b := range blocks {
-				bmap[b*uint(m.blockSize)] = uint(m.blockSize)
-			}
-
-			m.baseBlocks = bmap
-
-			// Tell the to_protocol
-			storage.SendSiloEvent(m.dest, storage.EventTypeCowSetBlocks, bmap)
-			if m.logger != nil {
-				m.logger.Debug().
-					Str("uuid", m.uuid.String()).
-					Uint64("size", m.sourceTracker.Size()).
-					Int("cow_size", len(blocks)*m.blockSize).
-					Msg("Migrator cow blocks sent to destination")
-			}
 		}
 	}
 }
@@ -364,7 +319,6 @@ func (m *Migrator) MigrateDirty(blocks []uint) error {
  * You can give a tracking ID which will turn up at block_fn on success
  */
 func (m *Migrator) MigrateDirtyWithID(blocks []uint, tid uint64) error {
-	m.startMigrationDirty()
 
 	if m.logger != nil {
 		m.logger.Debug().
@@ -543,40 +497,27 @@ func (m *Migrator) migrateBlock(block int) ([]byte, error) {
 	buff := make([]byte, m.blockSize)
 	offset := block * m.blockSize
 
-	// Check if it's something we don't actually need to read.
-	doRead := true
-	if m.baseBlocks != nil {
-		if m.baseBlocks[uint(offset)] == uint(m.blockSize) {
-			// We don't need to read it.
-			doRead = false
-		}
-	}
-
 	var idmap map[uint64]uint64
-	if doRead {
-		// Read from source
-		n, err := m.sourceTracker.ReadAt(buff, int64(offset))
-		if err != nil {
-			if m.logger != nil {
-				m.logger.Error().
-					Str("uuid", m.uuid.String()).
-					Uint64("size", m.sourceTracker.Size()).
-					Err(err).
-					Msg("Migration error reading from source")
-			}
-			return nil, err
+	// Read from source
+	n, err := m.sourceTracker.ReadAt(buff, int64(offset))
+	if err != nil {
+		if m.logger != nil {
+			m.logger.Error().
+				Str("uuid", m.uuid.String()).
+				Uint64("size", m.sourceTracker.Size()).
+				Err(err).
+				Msg("Migration error reading from source")
 		}
-
-		if m.sourceMapped != nil {
-			idmap = m.sourceMapped.GetMapForSourceRange(int64(offset), m.blockSize)
-		}
-
-		// If it was a partial read, truncate
-		buff = buff[:n]
+		return nil, err
 	}
 
-	var n int
-	var err error
+	if m.sourceMapped != nil {
+		idmap = m.sourceMapped.GetMapForSourceRange(int64(offset), m.blockSize)
+	}
+
+	// If it was a partial read, truncate
+	buff = buff[:n]
+
 	if m.sourceMapped != nil {
 		n, err = m.destWriteWithMap(buff, int64(offset), idmap)
 	} else {

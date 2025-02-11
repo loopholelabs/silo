@@ -864,8 +864,6 @@ func TestMigratorSimpleCowSparse(t *testing.T) {
 		orderer,
 		conf)
 
-	mig.NoCowMigration = true
-
 	assert.NoError(t, err)
 
 	err = mig.Migrate(migrateBlocks)
