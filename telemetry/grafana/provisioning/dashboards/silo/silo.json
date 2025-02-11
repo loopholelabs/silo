@@ -41,6 +41,194 @@
       },
       "fieldConfig": {
         "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "id": 30,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.3.0",
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "drafter_peer_flush_data_ops",
+          "interval": "100ms",
+          "legendFormat": "{{instance}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Flush Data (msync) ops",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ds_prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 19,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "bool"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "id": 29,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.3.0",
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "drafter_peer_vm_running",
+          "interval": "100ms",
+          "legendFormat": "{{instance}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "VM Running",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ds_prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
           "custom": {
             "hideFrom": {
               "legend": false,
@@ -58,7 +246,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 0
+        "y": 8
       },
       "id": 28,
       "options": {
@@ -118,7 +306,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 8
+        "y": 16
       },
       "id": 24,
       "panels": [],
@@ -149,7 +337,7 @@
         "h": 7,
         "w": 12,
         "x": 0,
-        "y": 9
+        "y": 17
       },
       "id": 22,
       "options": {
@@ -199,7 +387,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "rate(silo_volatilityMonitor_heatmap_bucket{instance=\"localhost:2112\", device=\"disk\"}[1s])",
+          "expr": "rate(silo_volatilityMonitor_heatmap{instance=\"localhost:2112\", device=\"disk\"}[10s])",
           "format": "heatmap",
           "interval": "1s",
           "legendFormat": "__auto",
@@ -234,7 +422,7 @@
         "h": 7,
         "w": 12,
         "x": 12,
-        "y": 9
+        "y": 17
       },
       "id": 25,
       "options": {
@@ -284,9 +472,9 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "rate(silo_volatilityMonitor_heatmap_bucket{instance=\"localhost:2112\", device=\"memory\"}[1s])",
+          "expr": "rate(silo_volatilityMonitor_heatmap{instance=\"localhost:2112\", device=\"memory\"}[10s])",
           "format": "heatmap",
-          "interval": "1s",
+          "interval": "10s",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
@@ -319,7 +507,7 @@
         "h": 7,
         "w": 12,
         "x": 0,
-        "y": 16
+        "y": 24
       },
       "id": 26,
       "options": {
@@ -369,7 +557,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "rate(silo_volatilityMonitor_heatmap_bucket{instance=\"localhost:2113\", device=\"disk\"}[10s])",
+          "expr": "rate(silo_volatilityMonitor_heatmap{instance=\"localhost:2113\", device=\"disk\"}[10s])",
           "format": "heatmap",
           "interval": "10s",
           "legendFormat": "__auto",
@@ -404,7 +592,7 @@
         "h": 7,
         "w": 12,
         "x": 12,
-        "y": 16
+        "y": 24
       },
       "id": 23,
       "options": {
@@ -454,7 +642,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "rate(silo_volatilityMonitor_heatmap_bucket{instance=\"localhost:2113\", device=\"memory\"}[10s])",
+          "expr": "rate(silo_volatilityMonitor_heatmap{instance=\"localhost:2113\", device=\"memory\"}[10s])",
           "format": "heatmap",
           "interval": "10s",
           "legendFormat": "__auto",
@@ -471,7 +659,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 23
+        "y": 31
       },
       "id": 21,
       "panels": [],
@@ -542,7 +730,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 24
+        "y": 32
       },
       "id": 19,
       "options": {
@@ -650,7 +838,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 24
+        "y": 32
       },
       "id": 20,
       "options": {
@@ -698,7 +886,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 32
+        "y": 40
       },
       "id": 13,
       "panels": [],
@@ -770,7 +958,7 @@
         "h": 6,
         "w": 12,
         "x": 0,
-        "y": 33
+        "y": 41
       },
       "id": 2,
       "options": {
@@ -870,7 +1058,7 @@
         "h": 6,
         "w": 12,
         "x": 12,
-        "y": 33
+        "y": 41
       },
       "id": 5,
       "options": {
@@ -905,7 +1093,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 39
+        "y": 47
       },
       "id": 12,
       "panels": [],
@@ -977,7 +1165,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 40
+        "y": 48
       },
       "id": 15,
       "options": {
@@ -1085,7 +1273,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 40
+        "y": 48
       },
       "id": 7,
       "options": {
@@ -1134,7 +1322,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 49
+        "y": 57
       },
       "id": 11,
       "panels": [],
@@ -1206,7 +1394,7 @@
         "h": 5,
         "w": 12,
         "x": 0,
-        "y": 50
+        "y": 58
       },
       "id": 3,
       "options": {
@@ -1301,7 +1489,7 @@
         "h": 5,
         "w": 12,
         "x": 12,
-        "y": 50
+        "y": 58
       },
       "id": 1,
       "options": {
@@ -1398,7 +1586,7 @@
         "h": 5,
         "w": 12,
         "x": 0,
-        "y": 55
+        "y": 63
       },
       "id": 9,
       "options": {
@@ -1491,7 +1679,7 @@
         "h": 5,
         "w": 12,
         "x": 12,
-        "y": 55
+        "y": 63
       },
       "id": 4,
       "options": {
@@ -1584,7 +1772,7 @@
         "h": 6,
         "w": 12,
         "x": 0,
-        "y": 60
+        "y": 68
       },
       "id": 6,
       "options": {
@@ -1683,7 +1871,7 @@
         "h": 6,
         "w": 12,
         "x": 12,
-        "y": 60
+        "y": 68
       },
       "id": 8,
       "options": {

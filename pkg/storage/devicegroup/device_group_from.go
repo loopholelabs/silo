@@ -109,6 +109,10 @@ func NewFromProtocol(ctx context.Context,
 
 		from := protocol.NewFromProtocol(ctx, uint32(index), destStorageFactory, pro)
 
+		if dg.met != nil {
+			dg.met.AddFromProtocol(di.Name, from)
+		}
+
 		// Set something up to tell us when sync started
 		from.SetCompleteFunc(func() {
 			dg.readyDevicesCh <- true
