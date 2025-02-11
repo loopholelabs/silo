@@ -3,7 +3,6 @@ package migrator_test
 import (
 	"context"
 	crand "crypto/rand"
-	"crypto/sha256"
 	"fmt"
 	"io"
 	"os"
@@ -226,25 +225,35 @@ func TestMigratorCow(tt *testing.T) {
 			migrateBlocks := numBlocks
 
 			if v.noCowMigration {
-				hash := make([]byte, sha256.Size) // Empty for now
+				// hash := make([]byte, sha256.Size) // Empty for now
 				// With this, ONLY migrate the blocks we need... For the others, we'll send cmds manually...
 				unrequired := sourceDirtyRemote.GetUnrequiredBlocks()
+				alreadyBlocks := make([]uint32, 0)
 				for _, b := range unrequired {
 					orderer.Remove(int(b))
 					// Send the data here...
-
-					// FIXME: Combine these into a single packet
-					offset := b * uint(blockSize)
-					data := packets.EncodeWriteAtHash(int64(offset), int64(blockSize), hash, packets.DataLocationBaseImage)
-					id, err := prSource.SendPacket(17, protocol.IDPickAny, data, protocol.UrgencyNormal)
-					assert.NoError(t, err)
-					// Wait for ACK
-					_, err = prSource.WaitForPacket(17, id)
-					assert.NoError(t, err)
-
+					/*
+						// FIXME: Combine these into a single packet
+						offset := b * uint(blockSize)
+						data := packets.EncodeWriteAtHash(int64(offset), int64(blockSize), hash, packets.DataLocationBaseImage)
+						id, err := prSource.SendPacket(17, protocol.IDPickAny, data, protocol.UrgencyNormal)
+						assert.NoError(t, err)
+						// Wait for ACK
+						_, err = prSource.WaitForPacket(17, id)
+						assert.NoError(t, err)
+					*/
 					// We need less blocks here...
 					migrateBlocks--
+					alreadyBlocks = append(alreadyBlocks, uint32(b))
 				}
+
+				data := packets.EncodeYouAlreadyHave(uint64(blockSize), alreadyBlocks)
+				id, err := prSource.SendPacket(17, protocol.IDPickAny, data, protocol.UrgencyNormal)
+				assert.NoError(t, err)
+				// Wait for ACK
+				_, err = prSource.WaitForPacket(17, id)
+				assert.NoError(t, err)
+
 			}
 
 			conf := migrator.NewConfig().WithBlockSize(blockSize)
