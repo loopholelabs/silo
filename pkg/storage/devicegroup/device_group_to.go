@@ -148,6 +148,22 @@ func (dg *DeviceGroup) MigrateAll(maxConcurrency int, progressHandler func(p map
 		}
 	}
 
+	// Check if the devices are actually all here?
+	for _, d := range dg.devices {
+		if d.WaitingCacheLocal != nil {
+			wcMetrics := d.WaitingCacheLocal.GetMetrics()
+			if wcMetrics.AvailableRemote < uint64(d.NumBlocks) {
+				if dg.log != nil {
+					dg.log.Warn().
+						Str("name", d.Schema.Name).
+						Uint64("availableRemoteBlocks", wcMetrics.AvailableRemote).
+						Uint64("numBlocks", uint64(d.NumBlocks)).
+						Msg("migrating away a possibly incomplete source")
+				}
+			}
+		}
+	}
+
 	ctime := time.Now()
 
 	if dg.log != nil {

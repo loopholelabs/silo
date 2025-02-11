@@ -104,13 +104,6 @@ func NewFromProtocol(ctx context.Context,
 		d.EventHandler = eventHandler
 
 		destStorageFactory := func(_ *packets.DevInfo) storage.Provider {
-			/*
-				d.WaitingCacheLocal, d.WaitingCacheRemote = waitingcache.NewWaitingCacheWithLogger(d.Prov, int(di.BlockSize), dg.log)
-
-				if d.Exp != nil {
-					d.Exp.SetProvider(d.WaitingCacheLocal)
-				}
-			*/
 			return d.WaitingCacheRemote
 		}
 
