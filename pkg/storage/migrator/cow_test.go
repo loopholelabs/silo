@@ -196,17 +196,11 @@ func TestMigratorCow(tt *testing.T) {
 				alreadyBlocks := make([]uint32, 0)
 				for _, b := range unrequired {
 					orderer.Remove(int(b))
-					// Send the data here...
-					// We need less blocks here...
 					migrateBlocks--
 					alreadyBlocks = append(alreadyBlocks, uint32(b))
 				}
 
-				data := packets.EncodeYouAlreadyHave(uint64(blockSize), alreadyBlocks)
-				id, err := prSource.SendPacket(17, protocol.IDPickAny, data, protocol.UrgencyNormal)
-				assert.NoError(t, err)
-				// Wait for ACK
-				_, err = prSource.WaitForPacket(17, id)
+				err = destination.SendYouAlreadyHave(uint64(blockSize), alreadyBlocks)
 				assert.NoError(t, err)
 			}
 
