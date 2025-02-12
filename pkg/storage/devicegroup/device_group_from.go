@@ -13,6 +13,7 @@ import (
 )
 
 func NewFromProtocol(ctx context.Context,
+	instanceID string,
 	pro protocol.Protocol,
 	tweakDeviceSchema func(index int, name string, schema *config.DeviceSchema) *config.DeviceSchema,
 	eventHandler func(e *packets.Event),
@@ -86,7 +87,7 @@ func NewFromProtocol(ctx context.Context,
 		devices[index-1] = ds
 	}
 
-	dg, err := NewFromSchema(devices, true, log, met)
+	dg, err := NewFromSchema(instanceID, devices, true, log, met)
 	if err != nil {
 		return nil, err
 	}
@@ -110,7 +111,7 @@ func NewFromProtocol(ctx context.Context,
 		from := protocol.NewFromProtocol(ctx, uint32(index), destStorageFactory, pro)
 
 		if dg.met != nil {
-			dg.met.AddFromProtocol(di.Name, from)
+			dg.met.AddFromProtocol(dg.instanceID, di.Name, from)
 		}
 
 		// Set something up to tell us when sync started

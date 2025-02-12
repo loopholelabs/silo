@@ -18,7 +18,6 @@ import (
 )
 
 type MetricsConfig struct {
-	InstanceID            string
 	HeatmapResolution     uint64
 	Namespace             string
 	SubSyncer             string
@@ -48,7 +47,6 @@ type MetricsConfig struct {
 func DefaultConfig() *MetricsConfig {
 	return &MetricsConfig{
 		HeatmapResolution:     64,
-		InstanceID:            "default",
 		Namespace:             "silo",
 		SubSyncer:             "syncer",
 		SubMigrator:           "migrator",
@@ -205,7 +203,7 @@ type Metrics struct {
 
 func New(reg prometheus.Registerer, config *MetricsConfig) *Metrics {
 
-	labels := []string{"device", "instance_id"}
+	labels := []string{"instance_id", "device"}
 
 	met := &Metrics{
 		config: config,
@@ -492,20 +490,20 @@ func New(reg prometheus.Registerer, config *MetricsConfig) *Metrics {
 	return met
 }
 
-func (m *Metrics) remove(subsystem string, name string) {
+func (m *Metrics) remove(subsystem string, id string, name string) {
 	m.lock.Lock()
-	cancelfn, ok := m.cancelfns[fmt.Sprintf("%s_%s", subsystem, name)]
+	cancelfn, ok := m.cancelfns[fmt.Sprintf("%s_%s_%s", subsystem, id, name)]
 	if ok {
 		cancelfn()
-		delete(m.cancelfns, fmt.Sprintf("%s_%s", subsystem, name))
+		delete(m.cancelfns, fmt.Sprintf("%s_%s_%s", subsystem, id, name))
 	}
 	m.lock.Unlock()
 }
 
-func (m *Metrics) add(subsystem string, name string, interval time.Duration, tickfn func()) {
+func (m *Metrics) add(subsystem string, id string, name string, interval time.Duration, tickfn func()) {
 	ctx, cancelfn := context.WithCancel(context.TODO())
 	m.lock.Lock()
-	m.cancelfns[fmt.Sprintf("%s_%s", subsystem, name)] = cancelfn
+	m.cancelfns[fmt.Sprintf("%s_%s_%s", subsystem, id, name)] = cancelfn
 	m.lock.Unlock()
 
 	ticker := time.NewTicker(interval)
@@ -531,115 +529,115 @@ func (m *Metrics) Shutdown() {
 	m.lock.Unlock()
 }
 
-func (m *Metrics) AddSyncer(name string, syncer *migrator.Syncer) {
-	m.add(m.config.SubSyncer, name, m.config.TickSyncer, func() {
+func (m *Metrics) AddSyncer(id string, name string, syncer *migrator.Syncer) {
+	m.add(m.config.SubSyncer, id, name, m.config.TickSyncer, func() {
 		met := syncer.GetMetrics()
 		if met != nil {
-			m.migratorBlockSize.WithLabelValues(name, m.config.InstanceID).Set(float64(met.BlockSize))
-			m.migratorTotalBlocks.WithLabelValues(name, m.config.InstanceID).Set(float64(met.TotalBlocks))
-			m.migratorMigratedBlocks.WithLabelValues(name, m.config.InstanceID).Set(float64(met.MigratedBlocks))
-			m.migratorReadyBlocks.WithLabelValues(name, m.config.InstanceID).Set(float64(met.ReadyBlocks))
-			m.migratorActiveBlocks.WithLabelValues(name, m.config.InstanceID).Set(float64(met.ActiveBlocks))
-			m.migratorTotalMigratedBlocks.WithLabelValues(name, m.config.InstanceID).Set(float64(met.TotalMigratedBlocks))
+			m.migratorBlockSize.WithLabelValues(id, name).Set(float64(met.BlockSize))
+			m.migratorTotalBlocks.WithLabelValues(id, name).Set(float64(met.TotalBlocks))
+			m.migratorMigratedBlocks.WithLabelValues(id, name).Set(float64(met.MigratedBlocks))
+			m.migratorReadyBlocks.WithLabelValues(id, name).Set(float64(met.ReadyBlocks))
+			m.migratorActiveBlocks.WithLabelValues(id, name).Set(float64(met.ActiveBlocks))
+			m.migratorTotalMigratedBlocks.WithLabelValues(id, name).Set(float64(met.TotalMigratedBlocks))
 		}
 	})
 }
 
-func (m *Metrics) RemoveSyncer(name string) {
-	m.remove(m.config.SubSyncer, name)
+func (m *Metrics) RemoveSyncer(id string, name string) {
+	m.remove(m.config.SubSyncer, id, name)
 }
 
-func (m *Metrics) AddMigrator(name string, mig *migrator.Migrator) {
-	m.add(m.config.SubMigrator, name, m.config.TickMigrator, func() {
+func (m *Metrics) AddMigrator(id string, name string, mig *migrator.Migrator) {
+	m.add(m.config.SubMigrator, id, name, m.config.TickMigrator, func() {
 		met := mig.GetMetrics()
-		m.migratorBlockSize.WithLabelValues(name, m.config.InstanceID).Set(float64(met.BlockSize))
-		m.migratorTotalBlocks.WithLabelValues(name, m.config.InstanceID).Set(float64(met.TotalBlocks))
-		m.migratorMigratedBlocks.WithLabelValues(name, m.config.InstanceID).Set(float64(met.MigratedBlocks))
-		m.migratorReadyBlocks.WithLabelValues(name, m.config.InstanceID).Set(float64(met.ReadyBlocks))
-		m.migratorActiveBlocks.WithLabelValues(name, m.config.InstanceID).Set(float64(met.ActiveBlocks))
-		m.migratorTotalMigratedBlocks.WithLabelValues(name, m.config.InstanceID).Set(float64(met.TotalMigratedBlocks))
+		m.migratorBlockSize.WithLabelValues(id, name).Set(float64(met.BlockSize))
+		m.migratorTotalBlocks.WithLabelValues(id, name).Set(float64(met.TotalBlocks))
+		m.migratorMigratedBlocks.WithLabelValues(id, name).Set(float64(met.MigratedBlocks))
+		m.migratorReadyBlocks.WithLabelValues(id, name).Set(float64(met.ReadyBlocks))
+		m.migratorActiveBlocks.WithLabelValues(id, name).Set(float64(met.ActiveBlocks))
+		m.migratorTotalMigratedBlocks.WithLabelValues(id, name).Set(float64(met.TotalMigratedBlocks))
 	})
 }
 
-func (m *Metrics) RemoveMigrator(name string) {
-	m.remove(m.config.SubMigrator, name)
+func (m *Metrics) RemoveMigrator(id string, name string) {
+	m.remove(m.config.SubMigrator, id, name)
 }
 
-func (m *Metrics) AddProtocol(name string, proto *protocol.RW) {
-	m.add(m.config.SubProtocol, name, m.config.TickProtocol, func() {
+func (m *Metrics) AddProtocol(id string, name string, proto *protocol.RW) {
+	m.add(m.config.SubProtocol, id, name, m.config.TickProtocol, func() {
 		met := proto.GetMetrics()
-		m.protocolActivePacketsSending.WithLabelValues(name, m.config.InstanceID).Set(float64(met.ActivePacketsSending))
-		m.protocolPacketsSent.WithLabelValues(name, m.config.InstanceID).Set(float64(met.PacketsSent))
-		m.protocolDataSent.WithLabelValues(name, m.config.InstanceID).Set(float64(met.DataSent))
-		m.protocolPacketsRecv.WithLabelValues(name, m.config.InstanceID).Set(float64(met.PacketsRecv))
-		m.protocolDataRecv.WithLabelValues(name, m.config.InstanceID).Set(float64(met.DataRecv))
-		m.protocolWrites.WithLabelValues(name, m.config.InstanceID).Set(float64(met.Writes))
-		m.protocolWriteErrors.WithLabelValues(name, m.config.InstanceID).Set(float64(met.WriteErrors))
-		m.protocolWaitingForID.WithLabelValues(name, m.config.InstanceID).Set(float64(met.WaitingForID))
+		m.protocolActivePacketsSending.WithLabelValues(id, name).Set(float64(met.ActivePacketsSending))
+		m.protocolPacketsSent.WithLabelValues(id, name).Set(float64(met.PacketsSent))
+		m.protocolDataSent.WithLabelValues(id, name).Set(float64(met.DataSent))
+		m.protocolPacketsRecv.WithLabelValues(id, name).Set(float64(met.PacketsRecv))
+		m.protocolDataRecv.WithLabelValues(id, name).Set(float64(met.DataRecv))
+		m.protocolWrites.WithLabelValues(id, name).Set(float64(met.Writes))
+		m.protocolWriteErrors.WithLabelValues(id, name).Set(float64(met.WriteErrors))
+		m.protocolWaitingForID.WithLabelValues(id, name).Set(float64(met.WaitingForID))
 	})
 }
 
-func (m *Metrics) RemoveProtocol(name string) {
-	m.remove(m.config.SubProtocol, name)
+func (m *Metrics) RemoveProtocol(id string, name string) {
+	m.remove(m.config.SubProtocol, id, name)
 }
 
-func (m *Metrics) AddToProtocol(name string, proto *protocol.ToProtocol) {
-	m.add(m.config.SubToProtocol, name, m.config.TickToProtocol, func() {
+func (m *Metrics) AddToProtocol(id string, name string, proto *protocol.ToProtocol) {
+	m.add(m.config.SubToProtocol, id, name, m.config.TickToProtocol, func() {
 		met := proto.GetMetrics()
 
-		m.toProtocolSentEvents.WithLabelValues(name, m.config.InstanceID).Set(float64(met.SentEvents))
-		m.toProtocolSentAltSources.WithLabelValues(name, m.config.InstanceID).Set(float64(met.SentAltSources))
-		m.toProtocolSentHashes.WithLabelValues(name, m.config.InstanceID).Set(float64(met.SentHashes))
-		m.toProtocolSentDevInfo.WithLabelValues(name, m.config.InstanceID).Set(float64(met.SentDevInfo))
-		m.toProtocolSentDirtyList.WithLabelValues(name, m.config.InstanceID).Set(float64(met.SentDirtyList))
-		m.toProtocolSentReadAt.WithLabelValues(name, m.config.InstanceID).Set(float64(met.SentReadAt))
-		m.toProtocolSentWriteAtHash.WithLabelValues(name, m.config.InstanceID).Set(float64(met.SentWriteAtHash))
-		m.toProtocolSentWriteAtHashBytes.WithLabelValues(name, m.config.InstanceID).Set(float64(met.SentWriteAtHashBytes))
-		m.toProtocolSentWriteAtComp.WithLabelValues(name, m.config.InstanceID).Set(float64(met.SentWriteAtComp))
-		m.toProtocolSentWriteAtCompBytes.WithLabelValues(name, m.config.InstanceID).Set(float64(met.SentWriteAtCompBytes))
-		m.toProtocolSentWriteAtCompDataBytes.WithLabelValues(name, m.config.InstanceID).Set(float64(met.SentWriteAtCompDataBytes))
-		m.toProtocolSentWriteAt.WithLabelValues(name, m.config.InstanceID).Set(float64(met.SentWriteAt))
-		m.toProtocolSentWriteAtBytes.WithLabelValues(name, m.config.InstanceID).Set(float64(met.SentWriteAtBytes))
-		m.toProtocolSentWriteAtWithMap.WithLabelValues(name, m.config.InstanceID).Set(float64(met.SentWriteAtWithMap))
-		m.toProtocolSentRemoveFromMap.WithLabelValues(name, m.config.InstanceID).Set(float64(met.SentRemoveFromMap))
-		m.toProtocolSentYouAlreadyHave.WithLabelValues(name, m.config.InstanceID).Set(float64(met.SentYouAlreadyHave))
-		m.toProtocolSentYouAlreadyHaveBytes.WithLabelValues(name, m.config.InstanceID).Set(float64(met.SentYouAlreadyHaveBytes))
-		m.toProtocolRecvNeedAt.WithLabelValues(name, m.config.InstanceID).Set(float64(met.RecvNeedAt))
-		m.toProtocolRecvDontNeedAt.WithLabelValues(name, m.config.InstanceID).Set(float64(met.RecvDontNeedAt))
+		m.toProtocolSentEvents.WithLabelValues(id, name).Set(float64(met.SentEvents))
+		m.toProtocolSentAltSources.WithLabelValues(id, name).Set(float64(met.SentAltSources))
+		m.toProtocolSentHashes.WithLabelValues(id, name).Set(float64(met.SentHashes))
+		m.toProtocolSentDevInfo.WithLabelValues(id, name).Set(float64(met.SentDevInfo))
+		m.toProtocolSentDirtyList.WithLabelValues(id, name).Set(float64(met.SentDirtyList))
+		m.toProtocolSentReadAt.WithLabelValues(id, name).Set(float64(met.SentReadAt))
+		m.toProtocolSentWriteAtHash.WithLabelValues(id, name).Set(float64(met.SentWriteAtHash))
+		m.toProtocolSentWriteAtHashBytes.WithLabelValues(id, name).Set(float64(met.SentWriteAtHashBytes))
+		m.toProtocolSentWriteAtComp.WithLabelValues(id, name).Set(float64(met.SentWriteAtComp))
+		m.toProtocolSentWriteAtCompBytes.WithLabelValues(id, name).Set(float64(met.SentWriteAtCompBytes))
+		m.toProtocolSentWriteAtCompDataBytes.WithLabelValues(id, name).Set(float64(met.SentWriteAtCompDataBytes))
+		m.toProtocolSentWriteAt.WithLabelValues(id, name).Set(float64(met.SentWriteAt))
+		m.toProtocolSentWriteAtBytes.WithLabelValues(id, name).Set(float64(met.SentWriteAtBytes))
+		m.toProtocolSentWriteAtWithMap.WithLabelValues(id, name).Set(float64(met.SentWriteAtWithMap))
+		m.toProtocolSentRemoveFromMap.WithLabelValues(id, name).Set(float64(met.SentRemoveFromMap))
+		m.toProtocolSentYouAlreadyHave.WithLabelValues(id, name).Set(float64(met.SentYouAlreadyHave))
+		m.toProtocolSentYouAlreadyHaveBytes.WithLabelValues(id, name).Set(float64(met.SentYouAlreadyHaveBytes))
+		m.toProtocolRecvNeedAt.WithLabelValues(id, name).Set(float64(met.RecvNeedAt))
+		m.toProtocolRecvDontNeedAt.WithLabelValues(id, name).Set(float64(met.RecvDontNeedAt))
 	})
 }
 
-func (m *Metrics) RemoveToProtocol(name string) {
-	m.remove(m.config.SubToProtocol, name)
+func (m *Metrics) RemoveToProtocol(id string, name string) {
+	m.remove(m.config.SubToProtocol, id, name)
 }
 
-func (m *Metrics) AddFromProtocol(name string, proto *protocol.FromProtocol) {
-	m.add(m.config.SubFromProtocol, name, m.config.TickFromProtocol, func() {
+func (m *Metrics) AddFromProtocol(id string, name string, proto *protocol.FromProtocol) {
+	m.add(m.config.SubFromProtocol, id, name, m.config.TickFromProtocol, func() {
 		met := proto.GetMetrics()
 
 		if met.DeviceName != "" {
 			name = met.DeviceName
 		}
 
-		m.fromProtocolRecvEvents.WithLabelValues(name, m.config.InstanceID).Set(float64(met.RecvEvents))
-		m.fromProtocolRecvHashes.WithLabelValues(name, m.config.InstanceID).Set(float64(met.RecvHashes))
-		m.fromProtocolRecvDevInfo.WithLabelValues(name, m.config.InstanceID).Set(float64(met.RecvDevInfo))
-		m.fromProtocolRecvAltSources.WithLabelValues(name, m.config.InstanceID).Set(float64(met.RecvAltSources))
-		m.fromProtocolRecvReadAt.WithLabelValues(name, m.config.InstanceID).Set(float64(met.RecvReadAt))
-		m.fromProtocolRecvWriteAtHash.WithLabelValues(name, m.config.InstanceID).Set(float64(met.RecvWriteAtHash))
-		m.fromProtocolRecvWriteAtComp.WithLabelValues(name, m.config.InstanceID).Set(float64(met.RecvWriteAtComp))
-		m.fromProtocolRecvWriteAt.WithLabelValues(name, m.config.InstanceID).Set(float64(met.RecvWriteAt))
-		m.fromProtocolRecvWriteAtWithMap.WithLabelValues(name, m.config.InstanceID).Set(float64(met.RecvWriteAtWithMap))
-		m.fromProtocolRecvRemoveFromMap.WithLabelValues(name, m.config.InstanceID).Set(float64(met.RecvRemoveFromMap))
-		m.fromProtocolRecvRemoveDev.WithLabelValues(name, m.config.InstanceID).Set(float64(met.RecvRemoveDev))
-		m.fromProtocolRecvDirtyList.WithLabelValues(name, m.config.InstanceID).Set(float64(met.RecvDirtyList))
-		m.fromProtocolSentNeedAt.WithLabelValues(name, m.config.InstanceID).Set(float64(met.SentNeedAt))
-		m.fromProtocolSentDontNeedAt.WithLabelValues(name, m.config.InstanceID).Set(float64(met.SentDontNeedAt))
+		m.fromProtocolRecvEvents.WithLabelValues(id, name).Set(float64(met.RecvEvents))
+		m.fromProtocolRecvHashes.WithLabelValues(id, name).Set(float64(met.RecvHashes))
+		m.fromProtocolRecvDevInfo.WithLabelValues(id, name).Set(float64(met.RecvDevInfo))
+		m.fromProtocolRecvAltSources.WithLabelValues(id, name).Set(float64(met.RecvAltSources))
+		m.fromProtocolRecvReadAt.WithLabelValues(id, name).Set(float64(met.RecvReadAt))
+		m.fromProtocolRecvWriteAtHash.WithLabelValues(id, name).Set(float64(met.RecvWriteAtHash))
+		m.fromProtocolRecvWriteAtComp.WithLabelValues(id, name).Set(float64(met.RecvWriteAtComp))
+		m.fromProtocolRecvWriteAt.WithLabelValues(id, name).Set(float64(met.RecvWriteAt))
+		m.fromProtocolRecvWriteAtWithMap.WithLabelValues(id, name).Set(float64(met.RecvWriteAtWithMap))
+		m.fromProtocolRecvRemoveFromMap.WithLabelValues(id, name).Set(float64(met.RecvRemoveFromMap))
+		m.fromProtocolRecvRemoveDev.WithLabelValues(id, name).Set(float64(met.RecvRemoveDev))
+		m.fromProtocolRecvDirtyList.WithLabelValues(id, name).Set(float64(met.RecvDirtyList))
+		m.fromProtocolSentNeedAt.WithLabelValues(id, name).Set(float64(met.SentNeedAt))
+		m.fromProtocolSentDontNeedAt.WithLabelValues(id, name).Set(float64(met.SentDontNeedAt))
 
-		m.fromProtocolWritesAllowedP2P.WithLabelValues(name, m.config.InstanceID).Set(float64(met.WritesAllowedP2P))
-		m.fromProtocolWritesBlockedP2P.WithLabelValues(name, m.config.InstanceID).Set(float64(met.WritesBlockedP2P))
-		m.fromProtocolWritesAllowedAltSources.WithLabelValues(name, m.config.InstanceID).Set(float64(met.WritesAllowedAltSources))
-		m.fromProtocolWritesBlockedAltSources.WithLabelValues(name, m.config.InstanceID).Set(float64(met.WritesBlockedAltSources))
+		m.fromProtocolWritesAllowedP2P.WithLabelValues(id, name).Set(float64(met.WritesAllowedP2P))
+		m.fromProtocolWritesBlockedP2P.WithLabelValues(id, name).Set(float64(met.WritesBlockedP2P))
+		m.fromProtocolWritesAllowedAltSources.WithLabelValues(id, name).Set(float64(met.WritesAllowedAltSources))
+		m.fromProtocolWritesBlockedAltSources.WithLabelValues(id, name).Set(float64(met.WritesBlockedAltSources))
 
 		totalHeatmapP2P := make([]uint64, m.config.HeatmapResolution)
 		for _, block := range met.AvailableP2P {
@@ -663,65 +661,65 @@ func (m *Metrics) AddFromProtocol(name string, proto *protocol.FromProtocol) {
 
 		//
 		for part, blocks := range totalHeatmapP2P {
-			m.fromProtocolHeatmap.WithLabelValues(name, m.config.InstanceID, fmt.Sprintf("%d", part)).Set(float64(blocks))
+			m.fromProtocolHeatmap.WithLabelValues(id, name, fmt.Sprintf("%d", part)).Set(float64(blocks))
 		}
 
 		for part, blocks := range totalHeatmapAltSources {
 			if blocks > 0 {
-				m.fromProtocolHeatmap.WithLabelValues(name, m.config.InstanceID, fmt.Sprintf("%d", part)).Set(float64(blocksPerPart*2 + blocks))
+				m.fromProtocolHeatmap.WithLabelValues(id, name, fmt.Sprintf("%d", part)).Set(float64(blocksPerPart*2 + blocks))
 			}
 		}
 
 		for part, blocks := range totalHeatmapP2PDupe {
 			if blocks > 0 {
-				m.fromProtocolHeatmap.WithLabelValues(name, m.config.InstanceID, fmt.Sprintf("%d", part)).Set(float64(blocksPerPart + blocks))
+				m.fromProtocolHeatmap.WithLabelValues(id, name, fmt.Sprintf("%d", part)).Set(float64(blocksPerPart + blocks))
 			}
 		}
 
 	})
 }
 
-func (m *Metrics) RemoveFromProtocol(name string) {
-	m.remove(m.config.SubFromProtocol, name)
+func (m *Metrics) RemoveFromProtocol(id string, name string) {
+	m.remove(m.config.SubFromProtocol, id, name)
 }
 
-func (m *Metrics) AddS3Storage(name string, s3 *sources.S3Storage) {
-	m.add(m.config.SubS3, name, m.config.TickS3, func() {
+func (m *Metrics) AddS3Storage(id string, name string, s3 *sources.S3Storage) {
+	m.add(m.config.SubS3, id, name, m.config.TickS3, func() {
 		met := s3.Metrics()
-		m.s3BlocksW.WithLabelValues(name, m.config.InstanceID).Set(float64(met.BlocksWCount))
-		m.s3BlocksWBytes.WithLabelValues(name, m.config.InstanceID).Set(float64(met.BlocksWBytes))
-		m.s3BlocksR.WithLabelValues(name, m.config.InstanceID).Set(float64(met.BlocksRCount))
-		m.s3BlocksRBytes.WithLabelValues(name, m.config.InstanceID).Set(float64(met.BlocksRBytes))
-		m.s3ActiveReads.WithLabelValues(name, m.config.InstanceID).Set(float64(met.ActiveReads))
-		m.s3ActiveWrites.WithLabelValues(name, m.config.InstanceID).Set(float64(met.ActiveWrites))
+		m.s3BlocksW.WithLabelValues(id, name).Set(float64(met.BlocksWCount))
+		m.s3BlocksWBytes.WithLabelValues(id, name).Set(float64(met.BlocksWBytes))
+		m.s3BlocksR.WithLabelValues(id, name).Set(float64(met.BlocksRCount))
+		m.s3BlocksRBytes.WithLabelValues(id, name).Set(float64(met.BlocksRBytes))
+		m.s3ActiveReads.WithLabelValues(id, name).Set(float64(met.ActiveReads))
+		m.s3ActiveWrites.WithLabelValues(id, name).Set(float64(met.ActiveWrites))
 	})
 
 }
 
-func (m *Metrics) RemoveS3Storage(name string) {
-	m.remove(m.config.SubS3, name)
+func (m *Metrics) RemoveS3Storage(id string, name string) {
+	m.remove(m.config.SubS3, id, name)
 }
 
-func (m *Metrics) AddDirtyTracker(name string, dt *dirtytracker.Remote) {
-	m.add(m.config.SubDirtyTracker, name, m.config.TickDirtyTracker, func() {
+func (m *Metrics) AddDirtyTracker(id string, name string, dt *dirtytracker.Remote) {
+	m.add(m.config.SubDirtyTracker, id, name, m.config.TickDirtyTracker, func() {
 		met := dt.GetMetrics()
-		m.dirtyTrackerBlockSize.WithLabelValues(name, m.config.InstanceID).Set(float64(met.BlockSize))
-		m.dirtyTrackerTrackingBlocks.WithLabelValues(name, m.config.InstanceID).Set(float64(met.TrackingBlocks))
-		m.dirtyTrackerDirtyBlocks.WithLabelValues(name, m.config.InstanceID).Set(float64(met.DirtyBlocks))
-		m.dirtyTrackerMaxAgeDirtyMS.WithLabelValues(name, m.config.InstanceID).Set(float64(met.MaxAgeDirty))
+		m.dirtyTrackerBlockSize.WithLabelValues(id, name).Set(float64(met.BlockSize))
+		m.dirtyTrackerTrackingBlocks.WithLabelValues(id, name).Set(float64(met.TrackingBlocks))
+		m.dirtyTrackerDirtyBlocks.WithLabelValues(id, name).Set(float64(met.DirtyBlocks))
+		m.dirtyTrackerMaxAgeDirtyMS.WithLabelValues(id, name).Set(float64(met.MaxAgeDirty))
 	})
 }
 
-func (m *Metrics) RemoveDirtyTracker(name string) {
-	m.remove(m.config.SubDirtyTracker, name)
+func (m *Metrics) RemoveDirtyTracker(id string, name string) {
+	m.remove(m.config.SubDirtyTracker, id, name)
 }
 
-func (m *Metrics) AddVolatilityMonitor(name string, vm *volatilitymonitor.VolatilityMonitor) {
-	m.add(m.config.SubVolatilityMonitor, name, m.config.TickVolatilityMonitor, func() {
+func (m *Metrics) AddVolatilityMonitor(id string, name string, vm *volatilitymonitor.VolatilityMonitor) {
+	m.add(m.config.SubVolatilityMonitor, id, name, m.config.TickVolatilityMonitor, func() {
 		met := vm.GetMetrics()
-		m.volatilityMonitorBlockSize.WithLabelValues(name, m.config.InstanceID).Set(float64(met.BlockSize))
-		m.volatilityMonitorAvailable.WithLabelValues(name, m.config.InstanceID).Set(float64(met.Available))
-		m.volatilityMonitorVolatility.WithLabelValues(name, m.config.InstanceID).Set(float64(met.Volatility))
+		m.volatilityMonitorBlockSize.WithLabelValues(id, name).Set(float64(met.BlockSize))
+		m.volatilityMonitorAvailable.WithLabelValues(id, name).Set(float64(met.Available))
+		m.volatilityMonitorVolatility.WithLabelValues(id, name).Set(float64(met.Volatility))
 
 		totalVolatility := make([]uint64, m.config.HeatmapResolution)
 		for block, volatility := range met.VolatilityMap {
@@ -730,67 +728,67 @@ func (m *Metrics) AddVolatilityMonitor(name string, vm *volatilitymonitor.Volati
 		}
 
 		for part, volatility := range totalVolatility {
-			m.volatilityMonitorHeatmap.WithLabelValues(name, m.config.InstanceID, fmt.Sprintf("%d", part)).Set(float64(volatility))
+			m.volatilityMonitorHeatmap.WithLabelValues(id, name, fmt.Sprintf("%d", part)).Set(float64(volatility))
 		}
 	})
 }
 
-func (m *Metrics) RemoveVolatilityMonitor(name string) {
-	m.remove(m.config.SubVolatilityMonitor, name)
+func (m *Metrics) RemoveVolatilityMonitor(id string, name string) {
+	m.remove(m.config.SubVolatilityMonitor, id, name)
 }
 
-func (m *Metrics) AddMetrics(name string, mm *modules.Metrics) {
-	m.add(m.config.SubMetrics, name, m.config.TickMetrics, func() {
+func (m *Metrics) AddMetrics(id string, name string, mm *modules.Metrics) {
+	m.add(m.config.SubMetrics, id, name, m.config.TickMetrics, func() {
 		met := mm.GetMetrics()
-		m.metricsReadOps.WithLabelValues(name, m.config.InstanceID).Set(float64(met.ReadOps))
-		m.metricsReadBytes.WithLabelValues(name, m.config.InstanceID).Set(float64(met.ReadBytes))
-		m.metricsReadErrors.WithLabelValues(name, m.config.InstanceID).Set(float64(met.ReadErrors))
-		m.metricsReadTime.WithLabelValues(name, m.config.InstanceID).Set(float64(met.ReadTime))
-		m.metricsWriteOps.WithLabelValues(name, m.config.InstanceID).Set(float64(met.WriteOps))
-		m.metricsWriteBytes.WithLabelValues(name, m.config.InstanceID).Set(float64(met.WriteBytes))
-		m.metricsWriteErrors.WithLabelValues(name, m.config.InstanceID).Set(float64(met.WriteErrors))
-		m.metricsWriteTime.WithLabelValues(name, m.config.InstanceID).Set(float64(met.WriteTime))
-		m.metricsFlushOps.WithLabelValues(name, m.config.InstanceID).Set(float64(met.FlushOps))
-		m.metricsFlushErrors.WithLabelValues(name, m.config.InstanceID).Set(float64(met.FlushErrors))
-		m.metricsFlushTime.WithLabelValues(name, m.config.InstanceID).Set(float64(met.FlushTime))
+		m.metricsReadOps.WithLabelValues(id, name).Set(float64(met.ReadOps))
+		m.metricsReadBytes.WithLabelValues(id, name).Set(float64(met.ReadBytes))
+		m.metricsReadErrors.WithLabelValues(id, name).Set(float64(met.ReadErrors))
+		m.metricsReadTime.WithLabelValues(id, name).Set(float64(met.ReadTime))
+		m.metricsWriteOps.WithLabelValues(id, name).Set(float64(met.WriteOps))
+		m.metricsWriteBytes.WithLabelValues(id, name).Set(float64(met.WriteBytes))
+		m.metricsWriteErrors.WithLabelValues(id, name).Set(float64(met.WriteErrors))
+		m.metricsWriteTime.WithLabelValues(id, name).Set(float64(met.WriteTime))
+		m.metricsFlushOps.WithLabelValues(id, name).Set(float64(met.FlushOps))
+		m.metricsFlushErrors.WithLabelValues(id, name).Set(float64(met.FlushErrors))
+		m.metricsFlushTime.WithLabelValues(id, name).Set(float64(met.FlushTime))
 	})
 }
 
-func (m *Metrics) RemoveMetrics(name string) {
-	m.remove(m.config.SubMetrics, name)
+func (m *Metrics) RemoveMetrics(id string, name string) {
+	m.remove(m.config.SubMetrics, id, name)
 }
 
-func (m *Metrics) AddNBD(name string, mm *expose.ExposedStorageNBDNL) {
-	m.add(m.config.SubNBD, name, m.config.TickNBD, func() {
+func (m *Metrics) AddNBD(id string, name string, mm *expose.ExposedStorageNBDNL) {
+	m.add(m.config.SubNBD, id, name, m.config.TickNBD, func() {
 		met := mm.GetMetrics()
-		m.nbdPacketsIn.WithLabelValues(name, m.config.InstanceID).Set(float64(met.PacketsIn))
-		m.nbdPacketsOut.WithLabelValues(name, m.config.InstanceID).Set(float64(met.PacketsOut))
-		m.nbdReadAt.WithLabelValues(name, m.config.InstanceID).Set(float64(met.ReadAt))
-		m.nbdReadAtBytes.WithLabelValues(name, m.config.InstanceID).Set(float64(met.ReadAtBytes))
-		m.nbdWriteAt.WithLabelValues(name, m.config.InstanceID).Set(float64(met.WriteAt))
-		m.nbdWriteAtBytes.WithLabelValues(name, m.config.InstanceID).Set(float64(met.WriteAtBytes))
+		m.nbdPacketsIn.WithLabelValues(id, name).Set(float64(met.PacketsIn))
+		m.nbdPacketsOut.WithLabelValues(id, name).Set(float64(met.PacketsOut))
+		m.nbdReadAt.WithLabelValues(id, name).Set(float64(met.ReadAt))
+		m.nbdReadAtBytes.WithLabelValues(id, name).Set(float64(met.ReadAtBytes))
+		m.nbdWriteAt.WithLabelValues(id, name).Set(float64(met.WriteAt))
+		m.nbdWriteAtBytes.WithLabelValues(id, name).Set(float64(met.WriteAtBytes))
 	})
 }
 
-func (m *Metrics) RemoveNBD(name string) {
-	m.remove(m.config.SubNBD, name)
+func (m *Metrics) RemoveNBD(id string, name string) {
+	m.remove(m.config.SubNBD, id, name)
 }
 
-func (m *Metrics) AddWaitingCache(name string, wc *waitingcache.Remote) {
-	m.add(m.config.SubWaitingCache, name, m.config.TickWaitingCache, func() {
+func (m *Metrics) AddWaitingCache(id string, name string, wc *waitingcache.Remote) {
+	m.add(m.config.SubWaitingCache, id, name, m.config.TickWaitingCache, func() {
 		met := wc.GetMetrics()
-		m.waitingCacheWaitForBlock.WithLabelValues(name, m.config.InstanceID).Set(float64(met.WaitForBlock))
-		m.waitingCacheWaitForBlockHadRemote.WithLabelValues(name, m.config.InstanceID).Set(float64(met.WaitForBlockHadRemote))
-		m.waitingCacheWaitForBlockHadLocal.WithLabelValues(name, m.config.InstanceID).Set(float64(met.WaitForBlockHadLocal))
-		m.waitingCacheWaitForBlockLock.WithLabelValues(name, m.config.InstanceID).Set(float64(met.WaitForBlockLock))
-		m.waitingCacheWaitForBlockLockDone.WithLabelValues(name, m.config.InstanceID).Set(float64(met.WaitForBlockLockDone))
-		m.waitingCacheMarkAvailableLocalBlock.WithLabelValues(name, m.config.InstanceID).Set(float64(met.MarkAvailableLocalBlock))
-		m.waitingCacheMarkAvailableRemoteBlock.WithLabelValues(name, m.config.InstanceID).Set(float64(met.MarkAvailableRemoteBlock))
-		m.waitingCacheAvailableLocal.WithLabelValues(name, m.config.InstanceID).Set(float64(met.AvailableLocal))
-		m.waitingCacheAvailableRemote.WithLabelValues(name, m.config.InstanceID).Set(float64(met.AvailableRemote))
+		m.waitingCacheWaitForBlock.WithLabelValues(id, name).Set(float64(met.WaitForBlock))
+		m.waitingCacheWaitForBlockHadRemote.WithLabelValues(id, name).Set(float64(met.WaitForBlockHadRemote))
+		m.waitingCacheWaitForBlockHadLocal.WithLabelValues(id, name).Set(float64(met.WaitForBlockHadLocal))
+		m.waitingCacheWaitForBlockLock.WithLabelValues(id, name).Set(float64(met.WaitForBlockLock))
+		m.waitingCacheWaitForBlockLockDone.WithLabelValues(id, name).Set(float64(met.WaitForBlockLockDone))
+		m.waitingCacheMarkAvailableLocalBlock.WithLabelValues(id, name).Set(float64(met.MarkAvailableLocalBlock))
+		m.waitingCacheMarkAvailableRemoteBlock.WithLabelValues(id, name).Set(float64(met.MarkAvailableRemoteBlock))
+		m.waitingCacheAvailableLocal.WithLabelValues(id, name).Set(float64(met.AvailableLocal))
+		m.waitingCacheAvailableRemote.WithLabelValues(id, name).Set(float64(met.AvailableRemote))
 	})
 }
 
-func (m *Metrics) RemoveWaitingCache(name string) {
-	m.remove(m.config.SubWaitingCache, name)
+func (m *Metrics) RemoveWaitingCache(id string, name string) {
+	m.remove(m.config.SubWaitingCache, id, name)
 }

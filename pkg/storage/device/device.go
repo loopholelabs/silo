@@ -71,10 +71,10 @@ func NewDevice(ds *config.DeviceSchema) (storage.Provider, storage.ExposedStorag
 }
 
 func NewDeviceWithLogging(ds *config.DeviceSchema, log types.Logger) (storage.Provider, storage.ExposedStorage, error) {
-	return NewDeviceWithLoggingMetrics(ds, log, nil)
+	return NewDeviceWithLoggingMetrics(ds, log, nil, "")
 }
 
-func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met metrics.SiloMetrics) (storage.Provider, storage.ExposedStorage, error) {
+func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met metrics.SiloMetrics, instanceID string) (storage.Provider, storage.ExposedStorage, error) {
 
 	if log != nil {
 		log.Debug().Str("name", ds.Name).Msg("creating new device")
@@ -261,7 +261,7 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 	if met != nil {
 		// Expose some basic metrics for the devices storage.
 		metrics := modules.NewMetrics(prov)
-		met.AddMetrics(fmt.Sprintf("device_%s", ds.Name), metrics)
+		met.AddMetrics(instanceID, fmt.Sprintf("device_%s", ds.Name), metrics)
 		prov = metrics
 	}
 
@@ -282,7 +282,7 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 		}
 
 		if met != nil {
-			met.AddNBD(ds.Name, nbdex)
+			met.AddNBD(instanceID, ds.Name, nbdex)
 		}
 	}
 
@@ -307,7 +307,7 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 		}
 
 		if met != nil {
-			met.AddS3Storage(fmt.Sprintf("s3sync_%s", ds.Name), s3dest)
+			met.AddS3Storage(instanceID, fmt.Sprintf("s3sync_%s", ds.Name), s3dest)
 		}
 
 		dirtyBlockSize := bs >> ds.Sync.Config.BlockShift
@@ -320,7 +320,7 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 		sourceStorage := modules.NewLockable(sourceDirtyLocal)
 
 		if met != nil {
-			met.AddDirtyTracker(fmt.Sprintf("s3sync_%s", ds.Name), sourceDirtyRemote)
+			met.AddDirtyTracker(instanceID, fmt.Sprintf("s3sync_%s", ds.Name), sourceDirtyRemote)
 		}
 
 		// Setup a block order
@@ -365,7 +365,7 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 		})
 
 		if met != nil {
-			met.AddSyncer(fmt.Sprintf("s3sync_%s", ds.Name), syncer)
+			met.AddSyncer(instanceID, fmt.Sprintf("s3sync_%s", ds.Name), syncer)
 		}
 
 		// The provider we return should feed into our sync here...

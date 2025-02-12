@@ -25,6 +25,7 @@ const defaultBlockSize = 1024 * 1024
 var errNotSetup = errors.New("toProtocol not setup")
 
 type DeviceGroup struct {
+	instanceID        string
 	log               types.Logger
 	met               metrics.SiloMetrics
 	ctx               context.Context

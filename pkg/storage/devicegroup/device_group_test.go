@@ -63,7 +63,7 @@ func setupDeviceGroup(t *testing.T) *DeviceGroup {
 			return nil
 		}
 	*/
-	dg, err := NewFromSchema(testDeviceSchema, false, nil, nil)
+	dg, err := NewFromSchema("test-instance", testDeviceSchema, false, nil, nil)
 	assert.NoError(t, err)
 
 	t.Cleanup(func() {
@@ -283,7 +283,7 @@ func TestDeviceGroupMigrate(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		var err error
-		dg2, err = NewFromProtocol(ctx, prDest, tweak, nil, cdh, nil, nil)
+		dg2, err = NewFromProtocol(ctx, "test_instance", prDest, tweak, nil, cdh, nil, nil)
 		assert.NoError(t, err)
 		wg.Done()
 	}()

@@ -93,7 +93,7 @@ func runServe(_ *cobra.Command, _ []string) {
 		panic(err)
 	}
 
-	dg, err := devicegroup.NewFromSchema(siloConf.Device, false, log, siloMetrics)
+	dg, err := devicegroup.NewFromSchema("serve_cli", siloConf.Device, false, log, siloMetrics)
 	if err != nil {
 		panic(err)
 	}
@@ -134,7 +134,7 @@ func runServe(_ *cobra.Command, _ []string) {
 		}()
 
 		if siloMetrics != nil {
-			siloMetrics.AddProtocol("serve", pro)
+			siloMetrics.AddProtocol("serve_cli", "serve", pro)
 		}
 
 		ctime := time.Now()
