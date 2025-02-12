@@ -20,16 +20,17 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/waitingcache"
 )
 
-func NewFromSchema(ds []*config.DeviceSchema, createWC bool, log types.Logger, met metrics.SiloMetrics) (*DeviceGroup, error) {
+func NewFromSchema(instanceID string, ds []*config.DeviceSchema, createWC bool, log types.Logger, met metrics.SiloMetrics) (*DeviceGroup, error) {
 	dg := &DeviceGroup{
-		log:      log,
-		met:      met,
-		devices:  make([]*DeviceInformation, 0),
-		progress: make(map[string]*migrator.MigrationProgress),
+		log:        log,
+		met:        met,
+		instanceID: instanceID,
+		devices:    make([]*DeviceInformation, 0),
+		progress:   make(map[string]*migrator.MigrationProgress),
 	}
 
 	for _, s := range ds {
-		prov, exp, err := device.NewDeviceWithLoggingMetrics(s, log, met)
+		prov, exp, err := device.NewDeviceWithLoggingMetrics(s, log, met, instanceID)
 		if err != nil {
 			if log != nil {
 				log.Error().Err(err).Str("schema", string(s.Encode())).Msg("could not create device")
@@ -67,12 +68,12 @@ func NewFromSchema(ds []*config.DeviceSchema, createWC bool, log types.Logger, m
 
 		// Add to metrics if given.
 		if met != nil {
-			met.AddMetrics(s.Name, mlocal)
+			met.AddMetrics(dg.instanceID, s.Name, mlocal)
 			if exp != nil {
-				met.AddNBD(s.Name, exp.(*expose.ExposedStorageNBDNL))
+				met.AddNBD(dg.instanceID, s.Name, exp.(*expose.ExposedStorageNBDNL))
 			}
-			met.AddDirtyTracker(s.Name, dirtyRemote)
-			met.AddVolatilityMonitor(s.Name, vmonitor)
+			met.AddDirtyTracker(dg.instanceID, s.Name, dirtyRemote)
+			met.AddVolatilityMonitor(dg.instanceID, s.Name, vmonitor)
 		}
 
 		dg.devices = append(dg.devices, &DeviceInformation{
@@ -114,7 +115,7 @@ func (dg *DeviceGroup) StartMigrationTo(pro protocol.Protocol, compression bool)
 		d.To.SetCompression(compression)
 
 		if dg.met != nil {
-			dg.met.AddToProtocol(d.Schema.Name, d.To)
+			dg.met.AddToProtocol(dg.instanceID, d.Schema.Name, d.To)
 		}
 	}
 
@@ -280,7 +281,7 @@ func (dg *DeviceGroup) MigrateAll(maxConcurrency int, progressHandler func(p map
 		}
 		d.Migrator = mig
 		if dg.met != nil {
-			dg.met.AddMigrator(d.Schema.Name, mig)
+			dg.met.AddMigrator(dg.instanceID, d.Schema.Name, mig)
 		}
 		if dg.log != nil {
 			dg.log.Debug().

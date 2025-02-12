@@ -16,7 +16,7 @@ func EncodeRemoveFromMap(ids []uint64) []byte {
 }
 
 func DecodeRemoveFromMap(buff []byte) ([]uint64, error) {
-	if buff == nil || len(buff) < 5 || buff[0] != CommandRemoveFromMap {
+	if len(buff) < 5 || buff[0] != CommandRemoveFromMap {
 		return nil, ErrInvalidPacket
 	}
 	length := binary.LittleEndian.Uint32(buff[1:])

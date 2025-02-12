@@ -26,7 +26,7 @@ func EncodeWriteAtHash(offset int64, length int64, hash []byte, dataLocation Dat
 }
 
 func DecodeWriteAtHash(buff []byte) (offset int64, length int64, hash []byte, loc DataLocation, err error) {
-	if buff == nil || len(buff) < 19 || buff[0] != CommandWriteAt || buff[1] != WriteAtHash {
+	if len(buff) < 19 || buff[0] != CommandWriteAt || buff[1] != WriteAtHash {
 		return 0, 0, nil, 0, ErrInvalidPacket
 	}
 	location := DataLocation(buff[2])

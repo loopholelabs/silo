@@ -20,7 +20,7 @@ func EncodeHashes(hashes map[uint][sha256.Size]byte) []byte {
 }
 
 func DecodeHashes(buff []byte) (map[uint][sha256.Size]byte, error) {
-	if buff == nil || len(buff) < 1 || buff[0] != CommandHashes {
+	if len(buff) < 1 || buff[0] != CommandHashes {
 		return nil, ErrInvalidPacket
 	}
 	hashes := make(map[uint][sha256.Size]byte)
