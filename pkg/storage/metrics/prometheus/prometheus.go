@@ -18,6 +18,7 @@ import (
 )
 
 type MetricsConfig struct {
+	InstanceID            string
 	HeatmapResolution     uint64
 	Namespace             string
 	SubSyncer             string
@@ -47,6 +48,7 @@ type MetricsConfig struct {
 func DefaultConfig() *MetricsConfig {
 	return &MetricsConfig{
 		HeatmapResolution:     64,
+		InstanceID:            "default",
 		Namespace:             "silo",
 		SubSyncer:             "syncer",
 		SubMigrator:           "migrator",
@@ -203,226 +205,228 @@ type Metrics struct {
 
 func New(reg prometheus.Registerer, config *MetricsConfig) *Metrics {
 
+	labels := []string{"device", "instance_id"}
+
 	met := &Metrics{
 		config: config,
 		reg:    reg,
 		// Syncer
 		syncerBlockSize: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubSyncer, Name: "block_size", Help: "Block size"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubSyncer, Name: "block_size", Help: "Block size"}, labels),
 		syncerTotalBlocks: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubSyncer, Name: "total_blocks", Help: "Total blocks"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubSyncer, Name: "total_blocks", Help: "Total blocks"}, labels),
 		syncerActiveBlocks: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubSyncer, Name: "active_blocks", Help: "Active blocks"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubSyncer, Name: "active_blocks", Help: "Active blocks"}, labels),
 		syncerMigratedBlocks: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubSyncer, Name: "migrated_blocks", Help: "Migrated blocks"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubSyncer, Name: "migrated_blocks", Help: "Migrated blocks"}, labels),
 		syncerReadyBlocks: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubSyncer, Name: "ready_blocks", Help: "Ready blocks"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubSyncer, Name: "ready_blocks", Help: "Ready blocks"}, labels),
 		syncerTotalMigratedBlocks: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubSyncer, Name: "total_migrated_blocks", Help: "Total migrated blocks"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubSyncer, Name: "total_migrated_blocks", Help: "Total migrated blocks"}, labels),
 
 		// Migrator
 		migratorBlockSize: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubMigrator, Name: "block_size", Help: "Block size"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubMigrator, Name: "block_size", Help: "Block size"}, labels),
 		migratorTotalBlocks: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubMigrator, Name: "total_blocks", Help: "Total blocks"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubMigrator, Name: "total_blocks", Help: "Total blocks"}, labels),
 		migratorActiveBlocks: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubMigrator, Name: "active_blocks", Help: "Active blocks"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubMigrator, Name: "active_blocks", Help: "Active blocks"}, labels),
 		migratorMigratedBlocks: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubMigrator, Name: "migrated_blocks", Help: "Migrated blocks"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubMigrator, Name: "migrated_blocks", Help: "Migrated blocks"}, labels),
 		migratorReadyBlocks: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubMigrator, Name: "ready_blocks", Help: "Ready blocks"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubMigrator, Name: "ready_blocks", Help: "Ready blocks"}, labels),
 		migratorTotalMigratedBlocks: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubMigrator, Name: "total_migrated_blocks", Help: "Total migrated blocks"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubMigrator, Name: "total_migrated_blocks", Help: "Total migrated blocks"}, labels),
 
 		// Protocol
 		protocolActivePacketsSending: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubProtocol, Name: "active_packets_sending", Help: "Packets sending"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubProtocol, Name: "active_packets_sending", Help: "Packets sending"}, labels),
 		protocolPacketsSent: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubProtocol, Name: "packets_sent", Help: "Packets sent"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubProtocol, Name: "packets_sent", Help: "Packets sent"}, labels),
 		protocolDataSent: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubProtocol, Name: "data_sent", Help: "Data sent"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubProtocol, Name: "data_sent", Help: "Data sent"}, labels),
 		protocolPacketsRecv: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubProtocol, Name: "packets_recv", Help: "Packets recv"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubProtocol, Name: "packets_recv", Help: "Packets recv"}, labels),
 		protocolDataRecv: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubProtocol, Name: "data_recv", Help: "Data recv"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubProtocol, Name: "data_recv", Help: "Data recv"}, labels),
 		protocolWrites: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubProtocol, Name: "writes", Help: "Writes"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubProtocol, Name: "writes", Help: "Writes"}, labels),
 		protocolWriteErrors: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubProtocol, Name: "write_errors", Help: "Write errors"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubProtocol, Name: "write_errors", Help: "Write errors"}, labels),
 		protocolWaitingForID: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubProtocol, Name: "waiting_for_id", Help: "Waiting for ID"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubProtocol, Name: "waiting_for_id", Help: "Waiting for ID"}, labels),
 
 		// ToProtocol
 		toProtocolSentEvents: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_events", Help: "sentEvents"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_events", Help: "sentEvents"}, labels),
 		toProtocolSentAltSources: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_alt_sources", Help: "sentAltSources"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_alt_sources", Help: "sentAltSources"}, labels),
 		toProtocolSentHashes: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_hashes", Help: "sentHashes"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_hashes", Help: "sentHashes"}, labels),
 		toProtocolSentDevInfo: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_dev_info", Help: "sentDevInfo"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_dev_info", Help: "sentDevInfo"}, labels),
 		toProtocolSentDirtyList: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_dirty_list", Help: "sentDirtyList"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_dirty_list", Help: "sentDirtyList"}, labels),
 		toProtocolSentReadAt: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_read_at", Help: "sentReadAt"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_read_at", Help: "sentReadAt"}, labels),
 		toProtocolSentWriteAtHash: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_write_at_hash", Help: "sentWriteAtHash"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_write_at_hash", Help: "sentWriteAtHash"}, labels),
 		toProtocolSentWriteAtHashBytes: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_write_at_hash_bytes", Help: "sentWriteAtHashBytes"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_write_at_hash_bytes", Help: "sentWriteAtHashBytes"}, labels),
 		toProtocolSentWriteAtComp: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_write_at_comp", Help: "sentWriteAtComp"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_write_at_comp", Help: "sentWriteAtComp"}, labels),
 		toProtocolSentWriteAtCompBytes: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_write_at_comp_bytes", Help: "sentWriteAtCompBytes"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_write_at_comp_bytes", Help: "sentWriteAtCompBytes"}, labels),
 		toProtocolSentWriteAtCompDataBytes: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_write_at_comp_data_bytes", Help: "sentWriteAtCompDataBytes"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_write_at_comp_data_bytes", Help: "sentWriteAtCompDataBytes"}, labels),
 		toProtocolSentWriteAt: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_write_at", Help: "sentWriteAt"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_write_at", Help: "sentWriteAt"}, labels),
 		toProtocolSentWriteAtBytes: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_write_at_bytes", Help: "sentWriteAtBytes"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_write_at_bytes", Help: "sentWriteAtBytes"}, labels),
 		toProtocolSentWriteAtWithMap: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_write_at_with_map", Help: "sentWriteAtWithMap"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_write_at_with_map", Help: "sentWriteAtWithMap"}, labels),
 		toProtocolSentRemoveFromMap: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_remove_from_map", Help: "sentRemoveFromMap"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_remove_from_map", Help: "sentRemoveFromMap"}, labels),
 		toProtocolSentYouAlreadyHave: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_you_already_have", Help: "sentYouAlreadyHave"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_you_already_have", Help: "sentYouAlreadyHave"}, labels),
 		toProtocolSentYouAlreadyHaveBytes: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_you_already_have_bytes", Help: "sentYouAlreadyHaveBytes"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "sent_you_already_have_bytes", Help: "sentYouAlreadyHaveBytes"}, labels),
 		toProtocolRecvNeedAt: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "recv_need_at", Help: "recvNeedAt"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "recv_need_at", Help: "recvNeedAt"}, labels),
 		toProtocolRecvDontNeedAt: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "recv_dont_need_at", Help: "recvDontNeedAt"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubToProtocol, Name: "recv_dont_need_at", Help: "recvDontNeedAt"}, labels),
 
 		// fromProtocol
 		fromProtocolRecvEvents: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "recv_events", Help: "recvEvents"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "recv_events", Help: "recvEvents"}, labels),
 		fromProtocolRecvHashes: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "recv_hashes", Help: "recvHashes"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "recv_hashes", Help: "recvHashes"}, labels),
 		fromProtocolRecvDevInfo: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "recv_dev_info", Help: "recvDevInfo"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "recv_dev_info", Help: "recvDevInfo"}, labels),
 		fromProtocolRecvAltSources: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "recv_alt_sources", Help: "recvAltSources"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "recv_alt_sources", Help: "recvAltSources"}, labels),
 		fromProtocolRecvReadAt: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "recv_read_at", Help: "recvReadAt"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "recv_read_at", Help: "recvReadAt"}, labels),
 		fromProtocolRecvWriteAtHash: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "recv_write_at_hash", Help: "recvWriteAtHash"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "recv_write_at_hash", Help: "recvWriteAtHash"}, labels),
 		fromProtocolRecvWriteAtComp: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "recv_write_at_comp", Help: "recvWriteAtComp"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "recv_write_at_comp", Help: "recvWriteAtComp"}, labels),
 		fromProtocolRecvWriteAt: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "recv_write_at", Help: "recvWriteAt"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "recv_write_at", Help: "recvWriteAt"}, labels),
 		fromProtocolRecvWriteAtWithMap: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "recv_write_at_with_map", Help: "recvWriteAtWithMap"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "recv_write_at_with_map", Help: "recvWriteAtWithMap"}, labels),
 		fromProtocolRecvRemoveFromMap: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "recv_remove_from_map", Help: "recvRemoveFromMap"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "recv_remove_from_map", Help: "recvRemoveFromMap"}, labels),
 		fromProtocolRecvRemoveDev: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "recv_remove_dev", Help: "recvRemoveDev"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "recv_remove_dev", Help: "recvRemoveDev"}, labels),
 		fromProtocolRecvDirtyList: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "recv_dirty_list", Help: "recvDirtyList"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "recv_dirty_list", Help: "recvDirtyList"}, labels),
 		fromProtocolSentNeedAt: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "sent_need_at", Help: "sentNeedAt"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "sent_need_at", Help: "sentNeedAt"}, labels),
 		fromProtocolSentDontNeedAt: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "sent_dont_need_at", Help: "sentDontNeedAt"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "sent_dont_need_at", Help: "sentDontNeedAt"}, labels),
 		fromProtocolWritesAllowedP2P: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "writes_allowed_p2p", Help: "writesAllowedP2P"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "writes_allowed_p2p", Help: "writesAllowedP2P"}, labels),
 		fromProtocolWritesBlockedP2P: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "writes_blocked_p2p", Help: "writesBlockedP2P"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "writes_blocked_p2p", Help: "writesBlockedP2P"}, labels),
 		fromProtocolWritesAllowedAltSources: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "writes_allowed_alt_sources", Help: "writesAllowedAltSources"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "writes_allowed_alt_sources", Help: "writesAllowedAltSources"}, labels),
 		fromProtocolWritesBlockedAltSources: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "writes_blocked_alt_sources", Help: "writesBlockedAltSources"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "writes_blocked_alt_sources", Help: "writesBlockedAltSources"}, labels),
 		fromProtocolHeatmap: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "heatmap", Help: "Heatmap"}, []string{"device", "le"}),
+			Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "heatmap", Help: "Heatmap"}, append(labels, "le")),
 
 		// S3Storage
 		s3BlocksW: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubS3, Name: "blocks_w", Help: "Blocks w"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubS3, Name: "blocks_w", Help: "Blocks w"}, labels),
 		s3BlocksWBytes: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubS3, Name: "blocks_w_bytes", Help: "Blocks w bytes"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubS3, Name: "blocks_w_bytes", Help: "Blocks w bytes"}, labels),
 		s3BlocksR: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubS3, Name: "blocks_r", Help: "Blocks r"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubS3, Name: "blocks_r", Help: "Blocks r"}, labels),
 		s3BlocksRBytes: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubS3, Name: "blocks_r_bytes", Help: "Blocks r bytes"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubS3, Name: "blocks_r_bytes", Help: "Blocks r bytes"}, labels),
 		s3ActiveReads: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubS3, Name: "active_reads", Help: "Active reads"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubS3, Name: "active_reads", Help: "Active reads"}, labels),
 		s3ActiveWrites: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubS3, Name: "active_writes", Help: "Active writes"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubS3, Name: "active_writes", Help: "Active writes"}, labels),
 
 		// DirtyTracker
 		dirtyTrackerBlockSize: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubDirtyTracker, Name: "block_size", Help: "Block size"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubDirtyTracker, Name: "block_size", Help: "Block size"}, labels),
 		dirtyTrackerTrackingBlocks: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubDirtyTracker, Name: "tracking_blocks", Help: "Blocks being tracked"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubDirtyTracker, Name: "tracking_blocks", Help: "Blocks being tracked"}, labels),
 		dirtyTrackerDirtyBlocks: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubDirtyTracker, Name: "dirty_blocks", Help: "Blocks dirty"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubDirtyTracker, Name: "dirty_blocks", Help: "Blocks dirty"}, labels),
 		dirtyTrackerMaxAgeDirtyMS: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubDirtyTracker, Name: "block_max_age", Help: "Block dirty max age"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubDirtyTracker, Name: "block_max_age", Help: "Block dirty max age"}, labels),
 
 		// VolatilityMonitor
 		volatilityMonitorBlockSize: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubVolatilityMonitor, Name: "block_size", Help: "Block size"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubVolatilityMonitor, Name: "block_size", Help: "Block size"}, labels),
 		volatilityMonitorAvailable: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubVolatilityMonitor, Name: "available", Help: "Blocks available"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubVolatilityMonitor, Name: "available", Help: "Blocks available"}, labels),
 		volatilityMonitorVolatility: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubVolatilityMonitor, Name: "volatility", Help: "Volatility"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubVolatilityMonitor, Name: "volatility", Help: "Volatility"}, labels),
 		volatilityMonitorHeatmap: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubVolatilityMonitor, Name: "heatmap", Help: "Heatmap"}, []string{"device", "le"}),
+			Namespace: config.Namespace, Subsystem: config.SubVolatilityMonitor, Name: "heatmap", Help: "Heatmap"}, append(labels, "le")),
 
 		// Metrics
 		metricsReadOps: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubMetrics, Name: "read_ops", Help: "ReadOps"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubMetrics, Name: "read_ops", Help: "ReadOps"}, labels),
 		metricsReadBytes: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubMetrics, Name: "read_bytes", Help: "ReadBytes"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubMetrics, Name: "read_bytes", Help: "ReadBytes"}, labels),
 		metricsReadErrors: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubMetrics, Name: "read_errors", Help: "ReadErrors"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubMetrics, Name: "read_errors", Help: "ReadErrors"}, labels),
 		metricsReadTime: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubMetrics, Name: "read_time", Help: "ReadTime"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubMetrics, Name: "read_time", Help: "ReadTime"}, labels),
 		metricsWriteOps: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubMetrics, Name: "write_ops", Help: "WriteOps"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubMetrics, Name: "write_ops", Help: "WriteOps"}, labels),
 		metricsWriteBytes: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubMetrics, Name: "write_bytes", Help: "WriteBytes"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubMetrics, Name: "write_bytes", Help: "WriteBytes"}, labels),
 		metricsWriteErrors: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubMetrics, Name: "write_errors", Help: "WriteErrors"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubMetrics, Name: "write_errors", Help: "WriteErrors"}, labels),
 		metricsWriteTime: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubMetrics, Name: "write_time", Help: "WriteTime"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubMetrics, Name: "write_time", Help: "WriteTime"}, labels),
 		metricsFlushOps: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubMetrics, Name: "flush_ops", Help: "FlushOps"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubMetrics, Name: "flush_ops", Help: "FlushOps"}, labels),
 		metricsFlushErrors: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubMetrics, Name: "flush_errors", Help: "FlushErrors"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubMetrics, Name: "flush_errors", Help: "FlushErrors"}, labels),
 		metricsFlushTime: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubMetrics, Name: "flush_time", Help: "FlushTime"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubMetrics, Name: "flush_time", Help: "FlushTime"}, labels),
 
 		// nbd
 		nbdPacketsIn: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubNBD, Name: "packets_in", Help: "PacketsIn"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubNBD, Name: "packets_in", Help: "PacketsIn"}, labels),
 		nbdPacketsOut: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubNBD, Name: "packets_out", Help: "PacketsOut"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubNBD, Name: "packets_out", Help: "PacketsOut"}, labels),
 		nbdReadAt: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubNBD, Name: "read_at", Help: "ReadAt"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubNBD, Name: "read_at", Help: "ReadAt"}, labels),
 		nbdReadAtBytes: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubNBD, Name: "read_at_bytes", Help: "ReadAtBytes"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubNBD, Name: "read_at_bytes", Help: "ReadAtBytes"}, labels),
 		nbdWriteAt: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubNBD, Name: "write_at", Help: "WriteAt"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubNBD, Name: "write_at", Help: "WriteAt"}, labels),
 		nbdWriteAtBytes: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubNBD, Name: "write_at_bytes", Help: "WriteAtBytes"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubNBD, Name: "write_at_bytes", Help: "WriteAtBytes"}, labels),
 
 		// waitingCache
 		waitingCacheWaitForBlock: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubWaitingCache, Name: "waiting_for_block", Help: "WaitingForBlock"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubWaitingCache, Name: "waiting_for_block", Help: "WaitingForBlock"}, labels),
 		waitingCacheWaitForBlockHadRemote: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubWaitingCache, Name: "waiting_for_block_had_remote", Help: "WaitingForBlockHadRemote"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubWaitingCache, Name: "waiting_for_block_had_remote", Help: "WaitingForBlockHadRemote"}, labels),
 		waitingCacheWaitForBlockHadLocal: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubWaitingCache, Name: "waiting_for_block_had_local", Help: "WaitingForBlockHadLocal"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubWaitingCache, Name: "waiting_for_block_had_local", Help: "WaitingForBlockHadLocal"}, labels),
 		waitingCacheWaitForBlockLock: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubWaitingCache, Name: "waiting_for_block_lock", Help: "WaitingForBlockLock"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubWaitingCache, Name: "waiting_for_block_lock", Help: "WaitingForBlockLock"}, labels),
 		waitingCacheWaitForBlockLockDone: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubWaitingCache, Name: "waiting_for_block_lock_done", Help: "WaitingForBlockLockDone"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubWaitingCache, Name: "waiting_for_block_lock_done", Help: "WaitingForBlockLockDone"}, labels),
 		waitingCacheMarkAvailableLocalBlock: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubWaitingCache, Name: "mark_available_local_block", Help: "MarkAvailableLocalBlock"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubWaitingCache, Name: "mark_available_local_block", Help: "MarkAvailableLocalBlock"}, labels),
 		waitingCacheMarkAvailableRemoteBlock: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubWaitingCache, Name: "mark_available_remote_block", Help: "MarkAvailableRemoteBlock"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubWaitingCache, Name: "mark_available_remote_block", Help: "MarkAvailableRemoteBlock"}, labels),
 		waitingCacheAvailableLocal: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubWaitingCache, Name: "available_local", Help: "AvailableLocal"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubWaitingCache, Name: "available_local", Help: "AvailableLocal"}, labels),
 		waitingCacheAvailableRemote: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.Namespace, Subsystem: config.SubWaitingCache, Name: "available_remote", Help: "AvailableRemote"}, []string{"device"}),
+			Namespace: config.Namespace, Subsystem: config.SubWaitingCache, Name: "available_remote", Help: "AvailableRemote"}, labels),
 
 		cancelfns: make(map[string]context.CancelFunc),
 	}
@@ -531,12 +535,12 @@ func (m *Metrics) AddSyncer(name string, syncer *migrator.Syncer) {
 	m.add(m.config.SubSyncer, name, m.config.TickSyncer, func() {
 		met := syncer.GetMetrics()
 		if met != nil {
-			m.migratorBlockSize.WithLabelValues(name).Set(float64(met.BlockSize))
-			m.migratorTotalBlocks.WithLabelValues(name).Set(float64(met.TotalBlocks))
-			m.migratorMigratedBlocks.WithLabelValues(name).Set(float64(met.MigratedBlocks))
-			m.migratorReadyBlocks.WithLabelValues(name).Set(float64(met.ReadyBlocks))
-			m.migratorActiveBlocks.WithLabelValues(name).Set(float64(met.ActiveBlocks))
-			m.migratorTotalMigratedBlocks.WithLabelValues(name).Set(float64(met.TotalMigratedBlocks))
+			m.migratorBlockSize.WithLabelValues(name, m.config.InstanceID).Set(float64(met.BlockSize))
+			m.migratorTotalBlocks.WithLabelValues(name, m.config.InstanceID).Set(float64(met.TotalBlocks))
+			m.migratorMigratedBlocks.WithLabelValues(name, m.config.InstanceID).Set(float64(met.MigratedBlocks))
+			m.migratorReadyBlocks.WithLabelValues(name, m.config.InstanceID).Set(float64(met.ReadyBlocks))
+			m.migratorActiveBlocks.WithLabelValues(name, m.config.InstanceID).Set(float64(met.ActiveBlocks))
+			m.migratorTotalMigratedBlocks.WithLabelValues(name, m.config.InstanceID).Set(float64(met.TotalMigratedBlocks))
 		}
 	})
 }
@@ -548,12 +552,12 @@ func (m *Metrics) RemoveSyncer(name string) {
 func (m *Metrics) AddMigrator(name string, mig *migrator.Migrator) {
 	m.add(m.config.SubMigrator, name, m.config.TickMigrator, func() {
 		met := mig.GetMetrics()
-		m.migratorBlockSize.WithLabelValues(name).Set(float64(met.BlockSize))
-		m.migratorTotalBlocks.WithLabelValues(name).Set(float64(met.TotalBlocks))
-		m.migratorMigratedBlocks.WithLabelValues(name).Set(float64(met.MigratedBlocks))
-		m.migratorReadyBlocks.WithLabelValues(name).Set(float64(met.ReadyBlocks))
-		m.migratorActiveBlocks.WithLabelValues(name).Set(float64(met.ActiveBlocks))
-		m.migratorTotalMigratedBlocks.WithLabelValues(name).Set(float64(met.TotalMigratedBlocks))
+		m.migratorBlockSize.WithLabelValues(name, m.config.InstanceID).Set(float64(met.BlockSize))
+		m.migratorTotalBlocks.WithLabelValues(name, m.config.InstanceID).Set(float64(met.TotalBlocks))
+		m.migratorMigratedBlocks.WithLabelValues(name, m.config.InstanceID).Set(float64(met.MigratedBlocks))
+		m.migratorReadyBlocks.WithLabelValues(name, m.config.InstanceID).Set(float64(met.ReadyBlocks))
+		m.migratorActiveBlocks.WithLabelValues(name, m.config.InstanceID).Set(float64(met.ActiveBlocks))
+		m.migratorTotalMigratedBlocks.WithLabelValues(name, m.config.InstanceID).Set(float64(met.TotalMigratedBlocks))
 	})
 }
 
@@ -564,14 +568,14 @@ func (m *Metrics) RemoveMigrator(name string) {
 func (m *Metrics) AddProtocol(name string, proto *protocol.RW) {
 	m.add(m.config.SubProtocol, name, m.config.TickProtocol, func() {
 		met := proto.GetMetrics()
-		m.protocolActivePacketsSending.WithLabelValues(name).Set(float64(met.ActivePacketsSending))
-		m.protocolPacketsSent.WithLabelValues(name).Set(float64(met.PacketsSent))
-		m.protocolDataSent.WithLabelValues(name).Set(float64(met.DataSent))
-		m.protocolPacketsRecv.WithLabelValues(name).Set(float64(met.PacketsRecv))
-		m.protocolDataRecv.WithLabelValues(name).Set(float64(met.DataRecv))
-		m.protocolWrites.WithLabelValues(name).Set(float64(met.Writes))
-		m.protocolWriteErrors.WithLabelValues(name).Set(float64(met.WriteErrors))
-		m.protocolWaitingForID.WithLabelValues(name).Set(float64(met.WaitingForID))
+		m.protocolActivePacketsSending.WithLabelValues(name, m.config.InstanceID).Set(float64(met.ActivePacketsSending))
+		m.protocolPacketsSent.WithLabelValues(name, m.config.InstanceID).Set(float64(met.PacketsSent))
+		m.protocolDataSent.WithLabelValues(name, m.config.InstanceID).Set(float64(met.DataSent))
+		m.protocolPacketsRecv.WithLabelValues(name, m.config.InstanceID).Set(float64(met.PacketsRecv))
+		m.protocolDataRecv.WithLabelValues(name, m.config.InstanceID).Set(float64(met.DataRecv))
+		m.protocolWrites.WithLabelValues(name, m.config.InstanceID).Set(float64(met.Writes))
+		m.protocolWriteErrors.WithLabelValues(name, m.config.InstanceID).Set(float64(met.WriteErrors))
+		m.protocolWaitingForID.WithLabelValues(name, m.config.InstanceID).Set(float64(met.WaitingForID))
 	})
 }
 
@@ -583,25 +587,25 @@ func (m *Metrics) AddToProtocol(name string, proto *protocol.ToProtocol) {
 	m.add(m.config.SubToProtocol, name, m.config.TickToProtocol, func() {
 		met := proto.GetMetrics()
 
-		m.toProtocolSentEvents.WithLabelValues(name).Set(float64(met.SentEvents))
-		m.toProtocolSentAltSources.WithLabelValues(name).Set(float64(met.SentAltSources))
-		m.toProtocolSentHashes.WithLabelValues(name).Set(float64(met.SentHashes))
-		m.toProtocolSentDevInfo.WithLabelValues(name).Set(float64(met.SentDevInfo))
-		m.toProtocolSentDirtyList.WithLabelValues(name).Set(float64(met.SentDirtyList))
-		m.toProtocolSentReadAt.WithLabelValues(name).Set(float64(met.SentReadAt))
-		m.toProtocolSentWriteAtHash.WithLabelValues(name).Set(float64(met.SentWriteAtHash))
-		m.toProtocolSentWriteAtHashBytes.WithLabelValues(name).Set(float64(met.SentWriteAtHashBytes))
-		m.toProtocolSentWriteAtComp.WithLabelValues(name).Set(float64(met.SentWriteAtComp))
-		m.toProtocolSentWriteAtCompBytes.WithLabelValues(name).Set(float64(met.SentWriteAtCompBytes))
-		m.toProtocolSentWriteAtCompDataBytes.WithLabelValues(name).Set(float64(met.SentWriteAtCompDataBytes))
-		m.toProtocolSentWriteAt.WithLabelValues(name).Set(float64(met.SentWriteAt))
-		m.toProtocolSentWriteAtBytes.WithLabelValues(name).Set(float64(met.SentWriteAtBytes))
-		m.toProtocolSentWriteAtWithMap.WithLabelValues(name).Set(float64(met.SentWriteAtWithMap))
-		m.toProtocolSentRemoveFromMap.WithLabelValues(name).Set(float64(met.SentRemoveFromMap))
-		m.toProtocolSentYouAlreadyHave.WithLabelValues(name).Set(float64(met.SentYouAlreadyHave))
-		m.toProtocolSentYouAlreadyHaveBytes.WithLabelValues(name).Set(float64(met.SentYouAlreadyHaveBytes))
-		m.toProtocolRecvNeedAt.WithLabelValues(name).Set(float64(met.RecvNeedAt))
-		m.toProtocolRecvDontNeedAt.WithLabelValues(name).Set(float64(met.RecvDontNeedAt))
+		m.toProtocolSentEvents.WithLabelValues(name, m.config.InstanceID).Set(float64(met.SentEvents))
+		m.toProtocolSentAltSources.WithLabelValues(name, m.config.InstanceID).Set(float64(met.SentAltSources))
+		m.toProtocolSentHashes.WithLabelValues(name, m.config.InstanceID).Set(float64(met.SentHashes))
+		m.toProtocolSentDevInfo.WithLabelValues(name, m.config.InstanceID).Set(float64(met.SentDevInfo))
+		m.toProtocolSentDirtyList.WithLabelValues(name, m.config.InstanceID).Set(float64(met.SentDirtyList))
+		m.toProtocolSentReadAt.WithLabelValues(name, m.config.InstanceID).Set(float64(met.SentReadAt))
+		m.toProtocolSentWriteAtHash.WithLabelValues(name, m.config.InstanceID).Set(float64(met.SentWriteAtHash))
+		m.toProtocolSentWriteAtHashBytes.WithLabelValues(name, m.config.InstanceID).Set(float64(met.SentWriteAtHashBytes))
+		m.toProtocolSentWriteAtComp.WithLabelValues(name, m.config.InstanceID).Set(float64(met.SentWriteAtComp))
+		m.toProtocolSentWriteAtCompBytes.WithLabelValues(name, m.config.InstanceID).Set(float64(met.SentWriteAtCompBytes))
+		m.toProtocolSentWriteAtCompDataBytes.WithLabelValues(name, m.config.InstanceID).Set(float64(met.SentWriteAtCompDataBytes))
+		m.toProtocolSentWriteAt.WithLabelValues(name, m.config.InstanceID).Set(float64(met.SentWriteAt))
+		m.toProtocolSentWriteAtBytes.WithLabelValues(name, m.config.InstanceID).Set(float64(met.SentWriteAtBytes))
+		m.toProtocolSentWriteAtWithMap.WithLabelValues(name, m.config.InstanceID).Set(float64(met.SentWriteAtWithMap))
+		m.toProtocolSentRemoveFromMap.WithLabelValues(name, m.config.InstanceID).Set(float64(met.SentRemoveFromMap))
+		m.toProtocolSentYouAlreadyHave.WithLabelValues(name, m.config.InstanceID).Set(float64(met.SentYouAlreadyHave))
+		m.toProtocolSentYouAlreadyHaveBytes.WithLabelValues(name, m.config.InstanceID).Set(float64(met.SentYouAlreadyHaveBytes))
+		m.toProtocolRecvNeedAt.WithLabelValues(name, m.config.InstanceID).Set(float64(met.RecvNeedAt))
+		m.toProtocolRecvDontNeedAt.WithLabelValues(name, m.config.InstanceID).Set(float64(met.RecvDontNeedAt))
 	})
 }
 
@@ -617,25 +621,25 @@ func (m *Metrics) AddFromProtocol(name string, proto *protocol.FromProtocol) {
 			name = met.DeviceName
 		}
 
-		m.fromProtocolRecvEvents.WithLabelValues(name).Set(float64(met.RecvEvents))
-		m.fromProtocolRecvHashes.WithLabelValues(name).Set(float64(met.RecvHashes))
-		m.fromProtocolRecvDevInfo.WithLabelValues(name).Set(float64(met.RecvDevInfo))
-		m.fromProtocolRecvAltSources.WithLabelValues(name).Set(float64(met.RecvAltSources))
-		m.fromProtocolRecvReadAt.WithLabelValues(name).Set(float64(met.RecvReadAt))
-		m.fromProtocolRecvWriteAtHash.WithLabelValues(name).Set(float64(met.RecvWriteAtHash))
-		m.fromProtocolRecvWriteAtComp.WithLabelValues(name).Set(float64(met.RecvWriteAtComp))
-		m.fromProtocolRecvWriteAt.WithLabelValues(name).Set(float64(met.RecvWriteAt))
-		m.fromProtocolRecvWriteAtWithMap.WithLabelValues(name).Set(float64(met.RecvWriteAtWithMap))
-		m.fromProtocolRecvRemoveFromMap.WithLabelValues(name).Set(float64(met.RecvRemoveFromMap))
-		m.fromProtocolRecvRemoveDev.WithLabelValues(name).Set(float64(met.RecvRemoveDev))
-		m.fromProtocolRecvDirtyList.WithLabelValues(name).Set(float64(met.RecvDirtyList))
-		m.fromProtocolSentNeedAt.WithLabelValues(name).Set(float64(met.SentNeedAt))
-		m.fromProtocolSentDontNeedAt.WithLabelValues(name).Set(float64(met.SentDontNeedAt))
+		m.fromProtocolRecvEvents.WithLabelValues(name, m.config.InstanceID).Set(float64(met.RecvEvents))
+		m.fromProtocolRecvHashes.WithLabelValues(name, m.config.InstanceID).Set(float64(met.RecvHashes))
+		m.fromProtocolRecvDevInfo.WithLabelValues(name, m.config.InstanceID).Set(float64(met.RecvDevInfo))
+		m.fromProtocolRecvAltSources.WithLabelValues(name, m.config.InstanceID).Set(float64(met.RecvAltSources))
+		m.fromProtocolRecvReadAt.WithLabelValues(name, m.config.InstanceID).Set(float64(met.RecvReadAt))
+		m.fromProtocolRecvWriteAtHash.WithLabelValues(name, m.config.InstanceID).Set(float64(met.RecvWriteAtHash))
+		m.fromProtocolRecvWriteAtComp.WithLabelValues(name, m.config.InstanceID).Set(float64(met.RecvWriteAtComp))
+		m.fromProtocolRecvWriteAt.WithLabelValues(name, m.config.InstanceID).Set(float64(met.RecvWriteAt))
+		m.fromProtocolRecvWriteAtWithMap.WithLabelValues(name, m.config.InstanceID).Set(float64(met.RecvWriteAtWithMap))
+		m.fromProtocolRecvRemoveFromMap.WithLabelValues(name, m.config.InstanceID).Set(float64(met.RecvRemoveFromMap))
+		m.fromProtocolRecvRemoveDev.WithLabelValues(name, m.config.InstanceID).Set(float64(met.RecvRemoveDev))
+		m.fromProtocolRecvDirtyList.WithLabelValues(name, m.config.InstanceID).Set(float64(met.RecvDirtyList))
+		m.fromProtocolSentNeedAt.WithLabelValues(name, m.config.InstanceID).Set(float64(met.SentNeedAt))
+		m.fromProtocolSentDontNeedAt.WithLabelValues(name, m.config.InstanceID).Set(float64(met.SentDontNeedAt))
 
-		m.fromProtocolWritesAllowedP2P.WithLabelValues(name).Set(float64(met.WritesAllowedP2P))
-		m.fromProtocolWritesBlockedP2P.WithLabelValues(name).Set(float64(met.WritesBlockedP2P))
-		m.fromProtocolWritesAllowedAltSources.WithLabelValues(name).Set(float64(met.WritesAllowedAltSources))
-		m.fromProtocolWritesBlockedAltSources.WithLabelValues(name).Set(float64(met.WritesBlockedAltSources))
+		m.fromProtocolWritesAllowedP2P.WithLabelValues(name, m.config.InstanceID).Set(float64(met.WritesAllowedP2P))
+		m.fromProtocolWritesBlockedP2P.WithLabelValues(name, m.config.InstanceID).Set(float64(met.WritesBlockedP2P))
+		m.fromProtocolWritesAllowedAltSources.WithLabelValues(name, m.config.InstanceID).Set(float64(met.WritesAllowedAltSources))
+		m.fromProtocolWritesBlockedAltSources.WithLabelValues(name, m.config.InstanceID).Set(float64(met.WritesBlockedAltSources))
 
 		totalHeatmapP2P := make([]uint64, m.config.HeatmapResolution)
 		for _, block := range met.AvailableP2P {
@@ -659,18 +663,18 @@ func (m *Metrics) AddFromProtocol(name string, proto *protocol.FromProtocol) {
 
 		//
 		for part, blocks := range totalHeatmapP2P {
-			m.fromProtocolHeatmap.WithLabelValues(name, fmt.Sprintf("%d", part)).Set(float64(blocks))
+			m.fromProtocolHeatmap.WithLabelValues(name, m.config.InstanceID, fmt.Sprintf("%d", part)).Set(float64(blocks))
 		}
 
 		for part, blocks := range totalHeatmapAltSources {
 			if blocks > 0 {
-				m.fromProtocolHeatmap.WithLabelValues(name, fmt.Sprintf("%d", part)).Set(float64(blocksPerPart*2 + blocks))
+				m.fromProtocolHeatmap.WithLabelValues(name, m.config.InstanceID, fmt.Sprintf("%d", part)).Set(float64(blocksPerPart*2 + blocks))
 			}
 		}
 
 		for part, blocks := range totalHeatmapP2PDupe {
 			if blocks > 0 {
-				m.fromProtocolHeatmap.WithLabelValues(name, fmt.Sprintf("%d", part)).Set(float64(blocksPerPart + blocks))
+				m.fromProtocolHeatmap.WithLabelValues(name, m.config.InstanceID, fmt.Sprintf("%d", part)).Set(float64(blocksPerPart + blocks))
 			}
 		}
 
@@ -684,12 +688,12 @@ func (m *Metrics) RemoveFromProtocol(name string) {
 func (m *Metrics) AddS3Storage(name string, s3 *sources.S3Storage) {
 	m.add(m.config.SubS3, name, m.config.TickS3, func() {
 		met := s3.Metrics()
-		m.s3BlocksW.WithLabelValues(name).Set(float64(met.BlocksWCount))
-		m.s3BlocksWBytes.WithLabelValues(name).Set(float64(met.BlocksWBytes))
-		m.s3BlocksR.WithLabelValues(name).Set(float64(met.BlocksRCount))
-		m.s3BlocksRBytes.WithLabelValues(name).Set(float64(met.BlocksRBytes))
-		m.s3ActiveReads.WithLabelValues(name).Set(float64(met.ActiveReads))
-		m.s3ActiveWrites.WithLabelValues(name).Set(float64(met.ActiveWrites))
+		m.s3BlocksW.WithLabelValues(name, m.config.InstanceID).Set(float64(met.BlocksWCount))
+		m.s3BlocksWBytes.WithLabelValues(name, m.config.InstanceID).Set(float64(met.BlocksWBytes))
+		m.s3BlocksR.WithLabelValues(name, m.config.InstanceID).Set(float64(met.BlocksRCount))
+		m.s3BlocksRBytes.WithLabelValues(name, m.config.InstanceID).Set(float64(met.BlocksRBytes))
+		m.s3ActiveReads.WithLabelValues(name, m.config.InstanceID).Set(float64(met.ActiveReads))
+		m.s3ActiveWrites.WithLabelValues(name, m.config.InstanceID).Set(float64(met.ActiveWrites))
 	})
 
 }
@@ -701,10 +705,10 @@ func (m *Metrics) RemoveS3Storage(name string) {
 func (m *Metrics) AddDirtyTracker(name string, dt *dirtytracker.Remote) {
 	m.add(m.config.SubDirtyTracker, name, m.config.TickDirtyTracker, func() {
 		met := dt.GetMetrics()
-		m.dirtyTrackerBlockSize.WithLabelValues(name).Set(float64(met.BlockSize))
-		m.dirtyTrackerTrackingBlocks.WithLabelValues(name).Set(float64(met.TrackingBlocks))
-		m.dirtyTrackerDirtyBlocks.WithLabelValues(name).Set(float64(met.DirtyBlocks))
-		m.dirtyTrackerMaxAgeDirtyMS.WithLabelValues(name).Set(float64(met.MaxAgeDirty))
+		m.dirtyTrackerBlockSize.WithLabelValues(name, m.config.InstanceID).Set(float64(met.BlockSize))
+		m.dirtyTrackerTrackingBlocks.WithLabelValues(name, m.config.InstanceID).Set(float64(met.TrackingBlocks))
+		m.dirtyTrackerDirtyBlocks.WithLabelValues(name, m.config.InstanceID).Set(float64(met.DirtyBlocks))
+		m.dirtyTrackerMaxAgeDirtyMS.WithLabelValues(name, m.config.InstanceID).Set(float64(met.MaxAgeDirty))
 	})
 }
 
@@ -715,9 +719,9 @@ func (m *Metrics) RemoveDirtyTracker(name string) {
 func (m *Metrics) AddVolatilityMonitor(name string, vm *volatilitymonitor.VolatilityMonitor) {
 	m.add(m.config.SubVolatilityMonitor, name, m.config.TickVolatilityMonitor, func() {
 		met := vm.GetMetrics()
-		m.volatilityMonitorBlockSize.WithLabelValues(name).Set(float64(met.BlockSize))
-		m.volatilityMonitorAvailable.WithLabelValues(name).Set(float64(met.Available))
-		m.volatilityMonitorVolatility.WithLabelValues(name).Set(float64(met.Volatility))
+		m.volatilityMonitorBlockSize.WithLabelValues(name, m.config.InstanceID).Set(float64(met.BlockSize))
+		m.volatilityMonitorAvailable.WithLabelValues(name, m.config.InstanceID).Set(float64(met.Available))
+		m.volatilityMonitorVolatility.WithLabelValues(name, m.config.InstanceID).Set(float64(met.Volatility))
 
 		totalVolatility := make([]uint64, m.config.HeatmapResolution)
 		for block, volatility := range met.VolatilityMap {
@@ -726,7 +730,7 @@ func (m *Metrics) AddVolatilityMonitor(name string, vm *volatilitymonitor.Volati
 		}
 
 		for part, volatility := range totalVolatility {
-			m.volatilityMonitorHeatmap.WithLabelValues(name, fmt.Sprintf("%d", part)).Set(float64(volatility))
+			m.volatilityMonitorHeatmap.WithLabelValues(name, m.config.InstanceID, fmt.Sprintf("%d", part)).Set(float64(volatility))
 		}
 	})
 }
@@ -738,17 +742,17 @@ func (m *Metrics) RemoveVolatilityMonitor(name string) {
 func (m *Metrics) AddMetrics(name string, mm *modules.Metrics) {
 	m.add(m.config.SubMetrics, name, m.config.TickMetrics, func() {
 		met := mm.GetMetrics()
-		m.metricsReadOps.WithLabelValues(name).Set(float64(met.ReadOps))
-		m.metricsReadBytes.WithLabelValues(name).Set(float64(met.ReadBytes))
-		m.metricsReadErrors.WithLabelValues(name).Set(float64(met.ReadErrors))
-		m.metricsReadTime.WithLabelValues(name).Set(float64(met.ReadTime))
-		m.metricsWriteOps.WithLabelValues(name).Set(float64(met.WriteOps))
-		m.metricsWriteBytes.WithLabelValues(name).Set(float64(met.WriteBytes))
-		m.metricsWriteErrors.WithLabelValues(name).Set(float64(met.WriteErrors))
-		m.metricsWriteTime.WithLabelValues(name).Set(float64(met.WriteTime))
-		m.metricsFlushOps.WithLabelValues(name).Set(float64(met.FlushOps))
-		m.metricsFlushErrors.WithLabelValues(name).Set(float64(met.FlushErrors))
-		m.metricsFlushTime.WithLabelValues(name).Set(float64(met.FlushTime))
+		m.metricsReadOps.WithLabelValues(name, m.config.InstanceID).Set(float64(met.ReadOps))
+		m.metricsReadBytes.WithLabelValues(name, m.config.InstanceID).Set(float64(met.ReadBytes))
+		m.metricsReadErrors.WithLabelValues(name, m.config.InstanceID).Set(float64(met.ReadErrors))
+		m.metricsReadTime.WithLabelValues(name, m.config.InstanceID).Set(float64(met.ReadTime))
+		m.metricsWriteOps.WithLabelValues(name, m.config.InstanceID).Set(float64(met.WriteOps))
+		m.metricsWriteBytes.WithLabelValues(name, m.config.InstanceID).Set(float64(met.WriteBytes))
+		m.metricsWriteErrors.WithLabelValues(name, m.config.InstanceID).Set(float64(met.WriteErrors))
+		m.metricsWriteTime.WithLabelValues(name, m.config.InstanceID).Set(float64(met.WriteTime))
+		m.metricsFlushOps.WithLabelValues(name, m.config.InstanceID).Set(float64(met.FlushOps))
+		m.metricsFlushErrors.WithLabelValues(name, m.config.InstanceID).Set(float64(met.FlushErrors))
+		m.metricsFlushTime.WithLabelValues(name, m.config.InstanceID).Set(float64(met.FlushTime))
 	})
 }
 
@@ -759,12 +763,12 @@ func (m *Metrics) RemoveMetrics(name string) {
 func (m *Metrics) AddNBD(name string, mm *expose.ExposedStorageNBDNL) {
 	m.add(m.config.SubNBD, name, m.config.TickNBD, func() {
 		met := mm.GetMetrics()
-		m.nbdPacketsIn.WithLabelValues(name).Set(float64(met.PacketsIn))
-		m.nbdPacketsOut.WithLabelValues(name).Set(float64(met.PacketsOut))
-		m.nbdReadAt.WithLabelValues(name).Set(float64(met.ReadAt))
-		m.nbdReadAtBytes.WithLabelValues(name).Set(float64(met.ReadAtBytes))
-		m.nbdWriteAt.WithLabelValues(name).Set(float64(met.WriteAt))
-		m.nbdWriteAtBytes.WithLabelValues(name).Set(float64(met.WriteAtBytes))
+		m.nbdPacketsIn.WithLabelValues(name, m.config.InstanceID).Set(float64(met.PacketsIn))
+		m.nbdPacketsOut.WithLabelValues(name, m.config.InstanceID).Set(float64(met.PacketsOut))
+		m.nbdReadAt.WithLabelValues(name, m.config.InstanceID).Set(float64(met.ReadAt))
+		m.nbdReadAtBytes.WithLabelValues(name, m.config.InstanceID).Set(float64(met.ReadAtBytes))
+		m.nbdWriteAt.WithLabelValues(name, m.config.InstanceID).Set(float64(met.WriteAt))
+		m.nbdWriteAtBytes.WithLabelValues(name, m.config.InstanceID).Set(float64(met.WriteAtBytes))
 	})
 }
 
@@ -775,15 +779,15 @@ func (m *Metrics) RemoveNBD(name string) {
 func (m *Metrics) AddWaitingCache(name string, wc *waitingcache.Remote) {
 	m.add(m.config.SubWaitingCache, name, m.config.TickWaitingCache, func() {
 		met := wc.GetMetrics()
-		m.waitingCacheWaitForBlock.WithLabelValues(name).Set(float64(met.WaitForBlock))
-		m.waitingCacheWaitForBlockHadRemote.WithLabelValues(name).Set(float64(met.WaitForBlockHadRemote))
-		m.waitingCacheWaitForBlockHadLocal.WithLabelValues(name).Set(float64(met.WaitForBlockHadLocal))
-		m.waitingCacheWaitForBlockLock.WithLabelValues(name).Set(float64(met.WaitForBlockLock))
-		m.waitingCacheWaitForBlockLockDone.WithLabelValues(name).Set(float64(met.WaitForBlockLockDone))
-		m.waitingCacheMarkAvailableLocalBlock.WithLabelValues(name).Set(float64(met.MarkAvailableLocalBlock))
-		m.waitingCacheMarkAvailableRemoteBlock.WithLabelValues(name).Set(float64(met.MarkAvailableRemoteBlock))
-		m.waitingCacheAvailableLocal.WithLabelValues(name).Set(float64(met.AvailableLocal))
-		m.waitingCacheAvailableRemote.WithLabelValues(name).Set(float64(met.AvailableRemote))
+		m.waitingCacheWaitForBlock.WithLabelValues(name, m.config.InstanceID).Set(float64(met.WaitForBlock))
+		m.waitingCacheWaitForBlockHadRemote.WithLabelValues(name, m.config.InstanceID).Set(float64(met.WaitForBlockHadRemote))
+		m.waitingCacheWaitForBlockHadLocal.WithLabelValues(name, m.config.InstanceID).Set(float64(met.WaitForBlockHadLocal))
+		m.waitingCacheWaitForBlockLock.WithLabelValues(name, m.config.InstanceID).Set(float64(met.WaitForBlockLock))
+		m.waitingCacheWaitForBlockLockDone.WithLabelValues(name, m.config.InstanceID).Set(float64(met.WaitForBlockLockDone))
+		m.waitingCacheMarkAvailableLocalBlock.WithLabelValues(name, m.config.InstanceID).Set(float64(met.MarkAvailableLocalBlock))
+		m.waitingCacheMarkAvailableRemoteBlock.WithLabelValues(name, m.config.InstanceID).Set(float64(met.MarkAvailableRemoteBlock))
+		m.waitingCacheAvailableLocal.WithLabelValues(name, m.config.InstanceID).Set(float64(met.AvailableLocal))
+		m.waitingCacheAvailableRemote.WithLabelValues(name, m.config.InstanceID).Set(float64(met.AvailableRemote))
 	})
 }
 
