@@ -25,7 +25,7 @@ func EncodeDevInfo(di *DevInfo) []byte {
 }
 
 func DecodeDevInfo(buff []byte) (*DevInfo, error) {
-	if buff == nil || len(buff) < 19 || buff[0] != CommandDevInfo {
+	if len(buff) < 19 || buff[0] != CommandDevInfo {
 		return nil, ErrInvalidPacket
 	}
 	size := binary.LittleEndian.Uint64(buff[1:])

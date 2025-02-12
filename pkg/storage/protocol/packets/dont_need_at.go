@@ -13,7 +13,7 @@ func EncodeDontNeedAt(offset int64, length int32) []byte {
 }
 
 func DecodeDontNeedAt(buff []byte) (int64, int32, error) {
-	if buff == nil || len(buff) < 13 || buff[0] != CommandDontNeedAt {
+	if len(buff) < 13 || buff[0] != CommandDontNeedAt {
 		return 0, 0, ErrInvalidPacket
 	}
 	off := int64(binary.LittleEndian.Uint64(buff[1:]))
