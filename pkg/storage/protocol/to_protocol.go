@@ -299,7 +299,7 @@ func (i *ToProtocol) WriteAt(buffer []byte, offset int64) (int, error) {
 	}
 
 	// Decode the response...
-	if r == nil || len(r) < 1 {
+	if len(r) < 1 {
 		return 0, packets.ErrInvalidPacket
 	}
 	if r[0] == packets.CommandWriteAtResponseErr {
@@ -331,7 +331,7 @@ func (i *ToProtocol) WriteAtWithMap(buffer []byte, offset int64, idMap map[uint6
 	}
 
 	// Decode the response...
-	if r == nil || len(r) < 1 {
+	if len(r) < 1 {
 		return 0, packets.ErrInvalidPacket
 	}
 	if r[0] == packets.CommandWriteAtResponseErr {
