@@ -16,39 +16,66 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/config"
 	"github.com/loopholelabs/silo/pkg/storage/migrator"
 	"github.com/loopholelabs/silo/pkg/storage/protocol"
+	"github.com/loopholelabs/silo/pkg/testutils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-var testCowS3DeviceSchema = []*config.DeviceSchema{
-	{
-		Name:      "test1",
-		Size:      "8m",
-		System:    "file",
-		BlockSize: "1m",
-		//	Expose:    true,
-		Location: "test_data/test1",
-	},
+func setupDeviceGroupCowS3(t *testing.T) *DeviceGroup {
+	MinioPort := testutils.SetupMinio(t.Cleanup)
 
-	{
-		Name:      "test2",
-		Size:      "16m",
-		System:    "file",
-		BlockSize: "1m",
-		//		Expose:    true,
-		Location: "test_data/test2",
-		ROSource: &config.DeviceSchema{
-			Name:      "test_data/test2state",
+	var testCowS3DeviceSchema = []*config.DeviceSchema{
+		{
+			Name:      "test1",
+			Size:      "8m",
+			System:    "file",
+			BlockSize: "1m",
+			//	Expose:    true,
+			Location: "test_data/test1",
+		},
+
+		{
+			Name:      "test2",
 			Size:      "16m",
 			System:    "file",
 			BlockSize: "1m",
-			Location:  "test_data/test2base",
+			//		Expose:    true,
+			Location: "test_data/test2",
+			ROSource: &config.DeviceSchema{
+				Name:      "test_data/test2state",
+				Size:      "16m",
+				System:    "file",
+				BlockSize: "1m",
+				Location:  "test_data/test2base",
+			},
+			ROSourceShared: true,
 		},
-		ROSourceShared: true,
-	},
-}
+	}
 
-func setupDeviceGroupCowS3(t *testing.T) *DeviceGroup {
+	// Not ready yet
+	doSync := false
+
+	if doSync {
+		testCowS3DeviceSchema[1].Sync = &config.SyncS3Schema{
+			Secure:          false,
+			AutoStart:       true,
+			AccessKey:       "silosilo",
+			SecretKey:       "silosilo",
+			Endpoint:        fmt.Sprintf("localhost:%s", MinioPort),
+			Bucket:          "silosilo",
+			GrabConcurrency: 10,
+			Config: &config.SyncConfigSchema{
+				OnlyDirty:   true,
+				BlockShift:  2,
+				MaxAge:      "100ms",
+				MinChanged:  4,
+				Limit:       256,
+				CheckPeriod: "100ms",
+				Concurrency: 10,
+			},
+		}
+	}
+
 	err := os.Mkdir("test_data", 0777)
 	assert.NoError(t, err)
 	/*
