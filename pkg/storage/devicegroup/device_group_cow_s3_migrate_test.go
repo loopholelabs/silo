@@ -211,12 +211,6 @@ func TestDeviceGroupCowS3Migrate(t *testing.T) {
 	// Make sure authority has been transferred as expected.
 	tawg.Wait()
 
-	err = dg.Completed()
-	assert.NoError(t, err)
-
-	// Make sure all incoming devices are complete
-	dg2.WaitForCompletion()
-
 	// Make sure we are tracking everything...
 	dit := dg.GetDeviceInformationByName("test2")
 	tMetrics := dit.DirtyRemote.GetMetrics()
@@ -247,9 +241,16 @@ func TestDeviceGroupCowS3Migrate(t *testing.T) {
 		},
 	}
 
-	// Migrate the dirty data. This will go p2p.
+	// Migrate the dirty data. This should go p2p.
 	err = dg.MigrateDirty(hooks)
 	assert.NoError(t, err)
+
+	// Send completion signal
+	err = dg.Completed()
+	assert.NoError(t, err)
+
+	// Make sure all incoming devices are complete. NB This waits until after the S3 grab
+	dg2.WaitForCompletion()
 
 	// Check the data all got migrated correctly from dg to dg2.
 	for _, s := range testDeviceSchema {
