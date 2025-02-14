@@ -16,12 +16,13 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/config"
 	"github.com/loopholelabs/silo/pkg/storage/migrator"
 	"github.com/loopholelabs/silo/pkg/storage/protocol"
+	"github.com/loopholelabs/silo/pkg/storage/sources"
 	"github.com/loopholelabs/silo/pkg/testutils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func setupDeviceGroupCowS3(t *testing.T) *DeviceGroup {
+func setupDeviceGroupCowS3(t *testing.T, log types.Logger) *DeviceGroup {
 	MinioPort := testutils.SetupMinio(t.Cleanup)
 
 	var testCowS3DeviceSchema = []*config.DeviceSchema{
@@ -29,7 +30,7 @@ func setupDeviceGroupCowS3(t *testing.T) *DeviceGroup {
 			Name:      "test1",
 			Size:      "8m",
 			System:    "file",
-			BlockSize: "1m",
+			BlockSize: "64k",
 			//	Expose:    true,
 			Location: "test_data/test1",
 		},
@@ -38,7 +39,7 @@ func setupDeviceGroupCowS3(t *testing.T) *DeviceGroup {
 			Name:      "test2",
 			Size:      "16m",
 			System:    "file",
-			BlockSize: "1m",
+			BlockSize: "64k",
 			//		Expose:    true,
 			Location: "test_data/test2",
 			ROSource: &config.DeviceSchema{
@@ -53,10 +54,10 @@ func setupDeviceGroupCowS3(t *testing.T) *DeviceGroup {
 	}
 
 	// Not ready yet
-	doSync := false
+	doSync := true
 
 	if doSync {
-		testCowS3DeviceSchema[1].Sync = &config.SyncS3Schema{
+		sync := &config.SyncS3Schema{
 			Secure:          false,
 			AutoStart:       true,
 			AccessKey:       "silosilo",
@@ -74,6 +75,10 @@ func setupDeviceGroupCowS3(t *testing.T) *DeviceGroup {
 				Concurrency: 10,
 			},
 		}
+		testCowS3DeviceSchema[1].Sync = sync
+
+		err := sources.CreateBucket(sync.Secure, sync.Endpoint, sync.AccessKey, sync.SecretKey, sync.Bucket)
+		assert.NoError(t, err)
 	}
 
 	err := os.Mkdir("test_data", 0777)
@@ -88,7 +93,7 @@ func setupDeviceGroupCowS3(t *testing.T) *DeviceGroup {
 			return nil
 		}
 	*/
-	dg, err := NewFromSchema("test-instance", testCowS3DeviceSchema, false, nil, nil)
+	dg, err := NewFromSchema("test-instance", testCowS3DeviceSchema, false, log, nil)
 	assert.NoError(t, err)
 
 	t.Cleanup(func() {
@@ -102,13 +107,13 @@ func setupDeviceGroupCowS3(t *testing.T) *DeviceGroup {
 }
 
 func TestDeviceGroupCowS3Migrate(t *testing.T) {
-	dg := setupDeviceGroupCowS3(t)
+	log := logging.New(logging.Zerolog, "silo", os.Stdout)
+	//	log.SetLevel(types.TraceLevel)
+
+	dg := setupDeviceGroupCowS3(t, log)
 	if dg == nil {
 		return
 	}
-
-	log := logging.New(logging.Zerolog, "silo", os.Stdout)
-	log.SetLevel(types.TraceLevel)
 
 	// Create a simple pipe
 	r1, w1 := io.Pipe()
@@ -179,7 +184,7 @@ func TestDeviceGroupCowS3Migrate(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		var err error
-		dg2, err = NewFromProtocol(ctx, "test_instance", prDest, tweak, nil, cdh, nil, nil)
+		dg2, err = NewFromProtocol(ctx, "test_instance", prDest, tweak, nil, cdh, log, nil)
 		assert.NoError(t, err)
 		wg.Done()
 	}()
@@ -212,7 +217,39 @@ func TestDeviceGroupCowS3Migrate(t *testing.T) {
 	// Make sure all incoming devices are complete
 	dg2.WaitForCompletion()
 
-	// TODO: We should also do a dirty loop here.
+	// Make sure we are tracking everything...
+	dit := dg.GetDeviceInformationByName("test2")
+	tMetrics := dit.DirtyRemote.GetMetrics()
+
+	assert.Equal(t, int(tMetrics.TrackingBlocks), dit.NumBlocks)
+
+	// Do a new write to test2, and then dirtyloop. It can't go to S3, since s3.sync will be stopped here.
+	// Lets write some data, which will get written to both S3, and to the CoW overlay.
+	test2prov := dit.Volatility
+	for _, offset := range []int64{10000, 400000} {
+		_, err := rand.Read(buff)
+		assert.NoError(t, err)
+		_, err = test2prov.WriteAt(buff, offset)
+		assert.NoError(t, err)
+	}
+
+	hooks := &MigrateDirtyHooks{
+		PreGetDirty: func(name string) error {
+			return nil
+		},
+		PostGetDirty: func(name string, blocks []uint) (bool, error) {
+			return len(blocks) > 0, nil
+		},
+		PostMigrateDirty: func(name string, blocks []uint) (bool, error) {
+			return true, nil
+		},
+		Completed: func(name string) {
+		},
+	}
+
+	// Migrate the dirty data. This will go p2p.
+	err = dg.MigrateDirty(hooks)
+	assert.NoError(t, err)
 
 	// Check the data all got migrated correctly from dg to dg2.
 	for _, s := range testDeviceSchema {
@@ -240,4 +277,14 @@ func TestDeviceGroupCowS3Migrate(t *testing.T) {
 	fmt.Printf("Protocol SENT (packets %d data %d urgentPackets %d urgentData %d) RECV (packets %d data %d)\n",
 		pMetrics.PacketsSent, pMetrics.DataSent, pMetrics.UrgentPacketsSent, pMetrics.UrgentDataSent,
 		pMetrics.PacketsRecv, pMetrics.DataRecv)
+
+	// Check metrics
+	di := dg2.GetDeviceInformationByName("test2")
+	metrics := di.From.GetMetrics()
+	fmt.Printf("From metrics 'test2' - AvailableP2P:%v AvailableAltSources:%v\n", metrics.AvailableP2P, metrics.AvailableAltSources)
+
+	// It should have got some of the data from S3, and some from P2P.
+	assert.Greater(t, len(metrics.AvailableP2P), 0)
+	assert.Greater(t, len(metrics.AvailableAltSources), 0)
+
 }

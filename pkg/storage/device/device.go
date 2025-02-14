@@ -384,6 +384,9 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 
 			if data != nil {
 				startConfig := data.(storage.SyncStartConfig)
+				if log != nil {
+					log.Info().Str("name", ds.Name).Int("blocks", len(startConfig.AlternateSources)).Msg("s3 pull started")
+				}
 
 				var wg sync.WaitGroup
 
@@ -415,6 +418,10 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 					}(as)
 				}
 				wg.Wait() // Wait for all S3 requests to complete
+
+				if log != nil {
+					log.Info().Str("name", ds.Name).Int("blocks", len(startConfig.AlternateSources)).Msg("s3 pull complete")
+				}
 			}
 
 			syncLock.Lock()
