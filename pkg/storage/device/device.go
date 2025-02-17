@@ -390,6 +390,8 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 
 				var wg sync.WaitGroup
 
+				pullStartTime := time.Now()
+
 				concurrency := make(chan bool, ds.Sync.GrabConcurrency)
 
 				// Pull these blocks in parallel
@@ -420,7 +422,12 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 				wg.Wait() // Wait for all S3 requests to complete
 
 				if log != nil {
-					log.Info().Str("name", ds.Name).Int("blocks", len(startConfig.AlternateSources)).Msg("s3 pull complete")
+					log.Info().
+						Str("name", ds.Name).
+						Int("blocks", len(startConfig.AlternateSources)).
+						Int("bytes", len(startConfig.AlternateSources)*int(ds.ByteBlockSize())).
+						Int64("time_ms", time.Since(pullStartTime).Milliseconds()).
+						Msg("s3 pull complete")
 				}
 			}
 
