@@ -226,20 +226,24 @@ func TestMigratorS3Assisted(t *testing.T) {
 	// Get some statistics from the source
 	srcStats := storage.SendSiloEvent(provSrc, storage.EventSyncStatus, nil)
 	require.Equal(t, 1, len(srcStats))
-	srcMetrics := srcStats[0].(*sources.S3Metrics)
+	sMetrics := srcStats[0].([]*sources.S3Metrics)
+	// sSrcMetrics := sMetrics[0]
+	sDestMetrics := sMetrics[1]
 
 	// Get some statistics from the destination puller
 	destStats := storage.SendSiloEvent(provDest, storage.EventSyncStatus, nil)
 	require.Equal(t, 1, len(destStats))
-	destMetrics := destStats[0].(*sources.S3Metrics)
+	dMetrics := destStats[0].([]*sources.S3Metrics)
+	dSrcMetrics := dMetrics[0]
+	// dDestMetrics := dMetrics[1]
 
 	// The source should have pushed some blocks to S3 but not all.
-	assert.Greater(t, int(srcMetrics.BlocksWCount), 0)
-	assert.Less(t, int(srcMetrics.BlocksWCount), numBlocks)
+	assert.Greater(t, int(sDestMetrics.BlocksWCount), 0)
+	assert.Less(t, int(sDestMetrics.BlocksWCount), numBlocks)
 
 	// Do some asserts on the S3Metrics... It should have pulled some from S3, but not all
-	assert.Greater(t, int(destMetrics.BlocksRCount), 0)
-	assert.Less(t, int(destMetrics.BlocksRCount), numBlocks)
+	assert.Greater(t, int(dSrcMetrics.BlocksRCount), 0)
+	assert.Less(t, int(dSrcMetrics.BlocksRCount), numBlocks)
 
 	// Sync should be running on the dest and NOT on src
 	assert.Equal(t, false, storage.SendSiloEvent(provSrc, storage.EventSyncRunning, nil)[0].(bool))
@@ -377,20 +381,24 @@ func TestMigratorS3AssistedChangeSource(t *testing.T) {
 	// Get some statistics from the source
 	srcStats := storage.SendSiloEvent(provSrc, storage.EventSyncStatus, nil)
 	require.Equal(t, 1, len(srcStats))
-	srcMetrics := srcStats[0].(*sources.S3Metrics)
+	sMetrics := srcStats[0].([]*sources.S3Metrics)
+	// sSrcMetrics := sMetrics[0]
+	sDestMetrics := sMetrics[1]
 
 	// Get some statistics from the destination puller
 	destStats := storage.SendSiloEvent(provDest, storage.EventSyncStatus, nil)
 	require.Equal(t, 1, len(destStats))
-	destMetrics := destStats[0].(*sources.S3Metrics)
+	dMetrics := destStats[0].([]*sources.S3Metrics)
+	dSrcMetrics := dMetrics[0]
+	// dDestMetrics := dMetrics[1]
 
 	// The source should have pushed some blocks to S3 but not all.
-	assert.Greater(t, int(srcMetrics.BlocksWCount), 0)
-	assert.Less(t, int(srcMetrics.BlocksWCount), numBlocks)
+	assert.Greater(t, int(sDestMetrics.BlocksWCount), 0)
+	assert.Less(t, int(sDestMetrics.BlocksWCount), numBlocks)
 
 	// Do some asserts on the S3Metrics... It should have pulled some from S3, but not all
-	assert.Greater(t, int(destMetrics.BlocksRCount), 0)
-	assert.Less(t, int(destMetrics.BlocksRCount), numBlocks)
+	assert.Greater(t, int(dSrcMetrics.BlocksRCount), 0)
+	assert.Less(t, int(dSrcMetrics.BlocksRCount), numBlocks)
 
 	// Sync should be running on the dest and NOT on src
 	assert.Equal(t, false, storage.SendSiloEvent(provSrc, storage.EventSyncRunning, nil)[0].(bool))

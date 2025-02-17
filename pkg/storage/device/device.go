@@ -297,7 +297,21 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 			ds.Sync.AccessKey,
 			ds.Sync.SecretKey,
 			ds.Sync.Bucket,
-			ds.Name,
+			fmt.Sprintf("%s%s", ds.Sync.Prefix, ds.Name),
+			prov.Size(),
+			bs)
+
+		if err != nil {
+			prov.Close()
+			return nil, nil, err
+		}
+
+		s3source, err := sources.NewS3StorageCreateNoBucketCheck(ds.Sync.Secure,
+			ds.Sync.Endpoint,
+			ds.Sync.AccessKey,
+			ds.Sync.SecretKey,
+			ds.Sync.Bucket,
+			fmt.Sprintf("%s%s", ds.Sync.GrabPrefix, ds.Name),
 			prov.Size(),
 			bs)
 
@@ -307,6 +321,7 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 		}
 
 		if met != nil {
+			met.AddS3Storage(instanceID, fmt.Sprintf("s3grab_%s", ds.Name), s3source)
 			met.AddS3Storage(instanceID, fmt.Sprintf("s3sync_%s", ds.Name), s3dest)
 		}
 
@@ -400,7 +415,7 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 					concurrency <- true
 					go func(a packets.AlternateSource) {
 						buffer := make([]byte, a.Length)
-						n, err := s3dest.ReadAt(buffer, a.Offset)
+						n, err := s3source.ReadAt(buffer, a.Offset)
 						if err != nil || n != int(a.Length) {
 							panic(fmt.Sprintf("sync.start unable to read from S3. %v", err))
 						}
@@ -512,7 +527,7 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 
 		// If the storage gets a "sync.status", get some status on the S3Storage
 		storage.AddSiloEventNotification(prov, storage.EventSyncStatus, func(_ storage.EventType, _ storage.EventData) storage.EventReturnData {
-			return s3dest.Metrics()
+			return []*sources.S3Metrics{s3source.Metrics(), s3dest.Metrics()}
 		})
 
 		// If the storage gets a "sync.running", return

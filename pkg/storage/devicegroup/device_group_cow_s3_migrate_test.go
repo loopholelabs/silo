@@ -288,4 +288,7 @@ func TestDeviceGroupCowS3Migrate(t *testing.T) {
 	assert.Greater(t, len(metrics.AvailableP2P), 0)
 	assert.Greater(t, len(metrics.AvailableAltSources), 0)
 
+	err = dg2.CloseAll()
+	assert.NoError(t, err)
+
 }
