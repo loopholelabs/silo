@@ -223,7 +223,7 @@ func (s *Syncer) Sync(syncAllFirst bool, continuous bool) (*MigrationProgress, e
 			mig.SetMigratedBlock(b)
 		}
 		// Track changes for everything.
-		s.config.Tracker.TrackAt(0, int64(s.config.Tracker.Size()))
+		s.config.Tracker.TrackAt(int64(s.config.Tracker.Size()), 0)
 	}
 
 	// Now enter a loop looking for more dirty blocks to migrate...

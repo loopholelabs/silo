@@ -13,6 +13,7 @@ import (
 )
 
 func NewFromProtocol(ctx context.Context,
+	instanceID string,
 	pro protocol.Protocol,
 	tweakDeviceSchema func(index int, name string, schema *config.DeviceSchema) *config.DeviceSchema,
 	eventHandler func(e *packets.Event),
@@ -86,7 +87,7 @@ func NewFromProtocol(ctx context.Context,
 		devices[index-1] = ds
 	}
 
-	dg, err := NewFromSchema(devices, true, log, met)
+	dg, err := NewFromSchema(instanceID, devices, true, log, met)
 	if err != nil {
 		return nil, err
 	}
@@ -104,29 +105,26 @@ func NewFromProtocol(ctx context.Context,
 		d.EventHandler = eventHandler
 
 		destStorageFactory := func(_ *packets.DevInfo) storage.Provider {
-			/*
-				d.WaitingCacheLocal, d.WaitingCacheRemote = waitingcache.NewWaitingCacheWithLogger(d.Prov, int(di.BlockSize), dg.log)
-
-				if d.Exp != nil {
-					d.Exp.SetProvider(d.WaitingCacheLocal)
-				}
-			*/
 			return d.WaitingCacheRemote
 		}
 
-		from := protocol.NewFromProtocol(ctx, uint32(index), destStorageFactory, pro)
+		d.From = protocol.NewFromProtocol(ctx, uint32(index), destStorageFactory, pro)
+
+		if dg.met != nil {
+			dg.met.AddFromProtocol(dg.instanceID, di.Name, d.From)
+		}
 
 		// Set something up to tell us when sync started
-		from.SetCompleteFunc(func() {
+		d.From.SetCompleteFunc(func() {
 			dg.readyDevicesCh <- true
 		})
 
-		err = from.SetDevInfo(di)
+		err = d.From.SetDevInfo(di)
 		if err != nil {
 			return nil, err
 		}
 		go func() {
-			err := from.HandleReadAt()
+			err := d.From.HandleReadAt()
 			if err != nil && !errors.Is(err, context.Canceled) {
 				if log != nil {
 					log.Debug().Err(err).Msg("HandleReadAt returned")
@@ -134,7 +132,7 @@ func NewFromProtocol(ctx context.Context,
 			}
 		}()
 		go func() {
-			err := from.HandleWriteAt()
+			err := d.From.HandleWriteAt()
 			if err != nil && !errors.Is(err, context.Canceled) {
 				if log != nil {
 					log.Debug().Err(err).Msg("HandleWriteAt returned")
@@ -142,7 +140,7 @@ func NewFromProtocol(ctx context.Context,
 			}
 		}()
 		go func() {
-			err := from.HandleDirtyList(func(dirtyBlocks []uint) {
+			err := d.From.HandleDirtyList(func(dirtyBlocks []uint) {
 				// Tell the waitingCache about it
 				d.WaitingCacheLocal.DirtyBlocks(dirtyBlocks)
 			})
@@ -153,7 +151,7 @@ func NewFromProtocol(ctx context.Context,
 			}
 		}()
 		go func() {
-			err := from.HandleEvent(func(p *packets.Event) {
+			err := d.From.HandleEvent(func(p *packets.Event) {
 				if p.Type == packets.EventCompleted {
 					dg.incomingDevicesCh <- true
 				}

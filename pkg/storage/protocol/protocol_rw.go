@@ -251,7 +251,7 @@ func (p *RW) Handle() error {
 func (p *RW) handlePacket(dev uint32, id uint32, data []byte) error {
 	p.InitDev(dev)
 
-	if data == nil || len(data) < 1 {
+	if len(data) < 1 {
 		return packets.ErrInvalidPacket
 	}
 

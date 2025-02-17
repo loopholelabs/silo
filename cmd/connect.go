@@ -124,7 +124,7 @@ func runConnect(_ *cobra.Command, _ []string) {
 	}()
 
 	if siloMetrics != nil {
-		siloMetrics.AddProtocol("protocol", pro)
+		siloMetrics.AddProtocol("connect_cli", "protocol", pro)
 	}
 
 	// TODO: Modify schemas a bit here...
@@ -132,7 +132,11 @@ func runConnect(_ *cobra.Command, _ []string) {
 		return schema
 	}
 
-	dg, err = devicegroup.NewFromProtocol(protoCtx, pro, tweak, nil, nil, log, siloMetrics)
+	dg, err = devicegroup.NewFromProtocol(protoCtx, "connect_cli", pro, tweak, nil, nil, log, siloMetrics)
+
+	if err != nil {
+		panic(err)
+	}
 
 	for _, d := range dg.GetDeviceSchema() {
 		expName := dg.GetExposedDeviceByName(d.Name)

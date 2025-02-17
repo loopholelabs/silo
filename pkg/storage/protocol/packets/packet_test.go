@@ -397,3 +397,18 @@ func TestDeviceGroupInfo(t *testing.T) {
 		assert.Equal(t, di.Schema, di2.Schema)
 	}
 }
+
+func TestYouAlreadyHave(t *testing.T) {
+
+	blocks := []uint32{0, 66, 180, 3}
+	blockSize := uint64(500000)
+
+	b := EncodeYouAlreadyHave(blockSize, blocks)
+
+	blockSize2, blocks2, err := DecodeYouAlreadyHave(b)
+	assert.NoError(t, err)
+	assert.Equal(t, len(blocks), len(blocks2))
+	assert.Equal(t, blockSize, blockSize2)
+	assert.Equal(t, blocks, blocks2)
+
+}

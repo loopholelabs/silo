@@ -47,6 +47,8 @@ type SyncS3Schema struct {
 	SecretKey       string            `hcl:"secretkey,attr"`
 	Endpoint        string            `hcl:"endpoint,attr"`
 	Bucket          string            `hcl:"bucket,attr"`
+	Prefix          string            `hcl:"prefix,optional"`
+	GrabPrefix      string            `hcl:"grabprefix,optional"`
 	Config          *SyncConfigSchema `hcl:"config,block"`
 	AutoStart       bool              `hcl:"autostart,attr"`
 	GrabConcurrency int               `hcl:"grabconcurrency,attr"`
