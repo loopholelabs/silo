@@ -49,6 +49,7 @@ type DeviceInformation struct {
 	DirtyLocal         *dirtytracker.Local
 	DirtyRemote        *dirtytracker.Remote
 	To                 *protocol.ToProtocol
+	From               *protocol.FromProtocol
 	Orderer            *blocks.PriorityBlockOrder
 	Migrator           *migrator.Migrator
 	migrationError     chan error
