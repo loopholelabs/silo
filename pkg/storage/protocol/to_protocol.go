@@ -106,6 +106,10 @@ func (i *ToProtocol) SendSiloEvent(eventType storage.EventType, eventData storag
 	return nil
 }
 
+func (i *ToProtocol) ClearAltSources() {
+	i.alternateSources = nil
+}
+
 func (i *ToProtocol) SendYouAlreadyHave(blockSize uint64, alreadyBlocks []uint32) error {
 	data := packets.EncodeYouAlreadyHave(blockSize, alreadyBlocks)
 	id, err := i.protocol.SendPacket(i.dev, IDPickAny, data, UrgencyUrgent)

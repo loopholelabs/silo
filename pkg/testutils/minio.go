@@ -10,6 +10,10 @@ import (
 )
 
 func SetupMinio(cleanup func(func())) string {
+	return SetupMinioWithExpiry(cleanup, 180*time.Second)
+}
+
+func SetupMinioWithExpiry(cleanup func(func()), expiry time.Duration) string {
 
 	pool, err := dockertest.NewPool("")
 	if err != nil {
@@ -48,7 +52,7 @@ func SetupMinio(cleanup func(func())) string {
 		}
 	})
 
-	err = resource.Expire(180)
+	err = resource.Expire(uint(expiry.Seconds()))
 	if err != nil {
 		panic(err)
 	}
