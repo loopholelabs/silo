@@ -436,8 +436,7 @@ func (fp *FromProtocol) HandleWriteAt() error {
 			for _, b := range blocks {
 				offset := int64(uint64(b) * blockSize)
 				length := int64(blockSize)
-				// Is provP2P the right thing here? Or should it be prov... or does it matter...
-				storage.SendSiloEvent(fp.provP2P, storage.EventTypeAvailable, storage.EventData([]int64{offset, length}))
+				storage.SendSiloEvent(fp.prov, storage.EventTypeAvailable, storage.EventData([]int64{offset, length}))
 			}
 			continue
 		}
@@ -587,9 +586,9 @@ func (fp *FromProtocol) HandleDirtyList(cb func(blocks []uint)) error {
 			fp.getAltSourcesStartSync()
 		}
 
-		atomic.AddUint64(&fp.metricRecvDirtyList, 1)
-
 		cb(blocks)
+
+		atomic.AddUint64(&fp.metricRecvDirtyList, 1)
 
 		// Send a response / ack, to signify that the DirtyList has been actioned.
 		_, err = fp.protocol.SendPacket(fp.dev, gid, packets.EncodeDirtyListResponse(), UrgencyUrgent)

@@ -375,6 +375,8 @@ func (dg *DeviceGroup) MigrateDirty(hooks *MigrateDirtyHooks) error {
 		// First unlock the storage if it is locked due to a previous MigrateDirty call
 		d.Storage.Unlock()
 
+		d.To.ClearAltSources()
+
 		go func() {
 			for {
 				if hooks != nil && hooks.PreGetDirty != nil {
