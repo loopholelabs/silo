@@ -19,6 +19,8 @@ type CopyOnWrite struct {
 	writeLock  sync.Mutex // TODO: Do this at the block level to increase throughput
 	sharedBase bool
 
+	readBeforeWrites bool
+
 	wg        sync.WaitGroup
 	closing   bool
 	closeLock sync.Mutex
@@ -44,31 +46,23 @@ func (i *CopyOnWrite) SendSiloEvent(eventType storage.EventType, eventData stora
 	return append(data, storage.SendSiloEvent(i.source, eventType, eventData)...)
 }
 
-func NewCopyOnWrite(source storage.Provider, cache storage.Provider, blockSize int) *CopyOnWrite {
-	numBlocks := (source.Size() + uint64(blockSize) - 1) / uint64(blockSize)
-	return &CopyOnWrite{
-		source:     source,
-		cache:      cache,
-		exists:     util.NewBitfield(int(numBlocks)),
-		size:       source.Size(),
-		blockSize:  blockSize,
-		CloseFn:    func() {},
-		sharedBase: true,
-		closing:    false,
-	}
+type CopyOnWriteConfig struct {
+	SharedBase      bool
+	ReadBeforeWrite bool
 }
 
-func NewCopyOnWriteHiddenBase(source storage.Provider, cache storage.Provider, blockSize int) *CopyOnWrite {
+func NewCopyOnWrite(source storage.Provider, cache storage.Provider, blockSize int, conf *CopyOnWriteConfig) *CopyOnWrite {
 	numBlocks := (source.Size() + uint64(blockSize) - 1) / uint64(blockSize)
 	return &CopyOnWrite{
-		source:     source,
-		cache:      cache,
-		exists:     util.NewBitfield(int(numBlocks)),
-		size:       source.Size(),
-		blockSize:  blockSize,
-		CloseFn:    func() {},
-		sharedBase: false,
-		closing:    false,
+		source:           source,
+		cache:            cache,
+		exists:           util.NewBitfield(int(numBlocks)),
+		size:             source.Size(),
+		blockSize:        blockSize,
+		CloseFn:          func() {},
+		sharedBase:       conf.SharedBase,
+		readBeforeWrites: conf.ReadBeforeWrite,
+		closing:          false,
 	}
 }
 
@@ -235,11 +229,25 @@ func (i *CopyOnWrite) WriteAt(buffer []byte, offset int64) (int, error) {
 					// Read existing data
 					_, err = i.source.ReadAt(blockBuffer, blockOffset)
 					if err == nil {
-						// Merge in data
-						count = copy(blockBuffer, buffer[blockOffset-offset:bufferEnd])
-						// Write back to cache
-						_, err = i.cache.WriteAt(blockBuffer, blockOffset)
-						i.exists.SetBit(int(b))
+						if i.readBeforeWrites {
+							for o := int64(0); o < (bufferEnd - (blockOffset - offset)); o++ {
+								if blockBuffer[o] != buffer[blockOffset-offset+o] {
+									// Data has changed. Write it
+									// Merge in data
+									count = copy(blockBuffer, buffer[blockOffset-offset:bufferEnd])
+									// Write back to cache
+									_, err = i.cache.WriteAt(blockBuffer, blockOffset)
+									i.exists.SetBit(int(b))
+									break
+								}
+							}
+						} else {
+							// Merge in data
+							count = copy(blockBuffer, buffer[blockOffset-offset:bufferEnd])
+							// Write back to cache
+							_, err = i.cache.WriteAt(blockBuffer, blockOffset)
+							i.exists.SetBit(int(b))
+						}
 					}
 				}
 			} else {
@@ -249,9 +257,11 @@ func (i *CopyOnWrite) WriteAt(buffer []byte, offset int64) (int, error) {
 				if e > int64(len(buffer)) {
 					e = int64(len(buffer))
 				}
-				_, err = i.cache.WriteAt(buffer[s:e], blockOffset)
-				i.exists.SetBit(int(b))
-				count = i.blockSize
+
+				err = i.writeBlock(b, buffer[s:e])
+				if err == nil {
+					count = i.blockSize
+				}
 			}
 		} else {
 			// Partial write at the start
@@ -266,10 +276,22 @@ func (i *CopyOnWrite) WriteAt(buffer []byte, offset int64) (int, error) {
 				blockBuffer := make([]byte, i.blockSize)
 				_, err = i.source.ReadAt(blockBuffer, blockOffset)
 				if err == nil {
-					// Merge in data
-					count = copy(blockBuffer[offset-blockOffset:], buffer[:bufferEnd])
-					_, err = i.cache.WriteAt(blockBuffer, blockOffset)
-					i.exists.SetBit(int(b))
+					if i.readBeforeWrites {
+						for o := offset - blockOffset; o < int64(i.blockSize); o++ {
+							if blockBuffer[o] != buffer[o-(offset-blockOffset)] {
+
+								count = copy(blockBuffer[offset-blockOffset:], buffer[:bufferEnd])
+								_, err = i.cache.WriteAt(blockBuffer, blockOffset)
+								i.exists.SetBit(int(b))
+								break
+							}
+						}
+					} else {
+						// Merge in data
+						count = copy(blockBuffer[offset-blockOffset:], buffer[:bufferEnd])
+						_, err = i.cache.WriteAt(blockBuffer, blockOffset)
+						i.exists.SetBit(int(b))
+					}
 				}
 			}
 		}
@@ -289,6 +311,31 @@ func (i *CopyOnWrite) WriteAt(buffer []byte, offset int64) (int, error) {
 	}
 
 	return count, nil
+}
+
+func (i *CopyOnWrite) writeBlock(b uint, data []byte) error {
+	blockOffset := int64(b) * int64(i.blockSize)
+
+	var err error
+	if i.readBeforeWrites {
+		baseData := make([]byte, i.blockSize)
+		_, err = i.source.ReadAt(baseData, blockOffset)
+		if err == nil {
+			// Check if the data changed
+			for f := 0; f < i.blockSize; f++ {
+				if baseData[f] != data[f] {
+					// Data has changed, write it.
+					_, err = i.cache.WriteAt(data, blockOffset)
+					i.exists.SetBit(int(b))
+					break
+				}
+			}
+		}
+	} else {
+		_, err = i.cache.WriteAt(data, blockOffset)
+		i.exists.SetBit(int(b))
+	}
+	return err
 }
 
 func (i *CopyOnWrite) Flush() error {

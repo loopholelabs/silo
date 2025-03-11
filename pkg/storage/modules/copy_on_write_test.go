@@ -25,7 +25,7 @@ func TestCopyOnWriteReads(t *testing.T) {
 	_, err = mem.WriteAt(data, 0)
 	assert.NoError(t, err)
 
-	cow := NewCopyOnWrite(mem, cache, 10)
+	cow := NewCopyOnWrite(mem, cache, 10, &CopyOnWriteConfig{SharedBase: true})
 
 	// Now try doing some reads...
 
@@ -68,7 +68,7 @@ func TestCopyOnWriteWrites(t *testing.T) {
 	_, err = srcMem.WriteAt(data, 0)
 	assert.NoError(t, err)
 
-	cow := NewCopyOnWrite(mem, cache, 10)
+	cow := NewCopyOnWrite(mem, cache, 10, &CopyOnWriteConfig{SharedBase: true})
 
 	// Now try doing some writes...
 
@@ -112,7 +112,7 @@ func TestCopyOnWriteReadOverrun(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, size, n)
 
-	cow := NewCopyOnWrite(mem, cache, 1024)
+	cow := NewCopyOnWrite(mem, cache, 1024, &CopyOnWriteConfig{SharedBase: true})
 
 	buff2 := make([]byte, 100)
 	n, err = cow.ReadAt(buff2, int64(size-50))
@@ -138,7 +138,7 @@ func TestCopyOnWriteReadOverrunNonMultiple(t *testing.T) {
 	assert.NoError(t, err)
 	onlydata := data[:size]
 
-	cow := NewCopyOnWrite(mem, cache, 1000) // NB 1024*1024 isn't multiple of 1000 blocksize
+	cow := NewCopyOnWrite(mem, cache, 1000, &CopyOnWriteConfig{SharedBase: true}) // NB 1024*1024 isn't multiple of 1000 blocksize
 
 	n, err := cow.WriteAt(data, 0)
 	assert.NoError(t, err)
@@ -168,7 +168,7 @@ func TestCopyOnWriteCRCIssue(t *testing.T) {
 
 	rosource := sources.NewMemoryStorage(size)
 
-	cow := NewCopyOnWrite(rosource, fstore, blockSize)
+	cow := NewCopyOnWrite(rosource, fstore, blockSize, &CopyOnWriteConfig{SharedBase: true})
 
 	reference := sources.NewMemoryStorage(size)
 
@@ -234,7 +234,7 @@ func TestCopyOnWriteClose(t *testing.T) {
 		return true, 0, nil
 	}
 
-	cow := NewCopyOnWrite(memHooks, cache, 10)
+	cow := NewCopyOnWrite(memHooks, cache, 10, &CopyOnWriteConfig{SharedBase: true})
 
 	// ReadAt1
 	go func() {
@@ -257,4 +257,49 @@ func TestCopyOnWriteClose(t *testing.T) {
 	// The ReadAt2 should happen during this close, which will cause a panic.
 	err := cow.Close()
 	assert.NoError(t, err)
+}
+
+func TestCopyOnWriteReadBeforeWrite(t *testing.T) {
+
+	// Create a new block storage, backed by memory storage
+	size := 1024 * 1024
+	mem := sources.NewMemoryStorage(size)
+	cache1 := sources.NewMemoryStorage(size)
+	cache2 := sources.NewMemoryStorage(size)
+
+	baseBuffer := make([]byte, size)
+	rand.Read(baseBuffer)
+	_, err := mem.WriteAt(baseBuffer, 0)
+	assert.NoError(t, err)
+
+	cow1 := NewCopyOnWrite(mem, cache1, 10, &CopyOnWriteConfig{SharedBase: true})
+	cow2 := NewCopyOnWrite(mem, cache2, 10, &CopyOnWriteConfig{SharedBase: true, ReadBeforeWrite: true})
+
+	// Now do some writes through cow1 and cow2 and compare
+
+	changedData := make([]byte, 100)
+	rand.Read(changedData)
+
+	_, err = cow1.WriteAt(changedData, 7)
+	assert.NoError(t, err)
+	_, err = cow2.WriteAt(changedData, 7)
+	assert.NoError(t, err)
+
+	// Now write some unchanged data to both...
+
+	_, err = cow1.WriteAt(baseBuffer[722:993], 722)
+	assert.NoError(t, err)
+	_, err = cow2.WriteAt(baseBuffer[722:993], 722)
+	assert.NoError(t, err)
+
+	// Make sure they agree
+	eq, err := storage.Equals(cow1, cow2, 10)
+	assert.NoError(t, err)
+	assert.True(t, eq)
+
+	exists1 := cow1.GetBlockExists()
+	exists2 := cow2.GetBlockExists()
+
+	assert.Equal(t, 39, len(exists1))
+	assert.Equal(t, 11, len(exists2))
 }

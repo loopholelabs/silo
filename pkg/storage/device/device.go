@@ -206,12 +206,8 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 		}
 
 		// Now hook it in as the read only source for this device...
-		var cow *modules.CopyOnWrite
-		if ds.ROSourceShared {
-			cow = modules.NewCopyOnWrite(rodev, prov, bs)
-		} else {
-			cow = modules.NewCopyOnWriteHiddenBase(rodev, prov, bs)
-		}
+		cow := modules.NewCopyOnWrite(rodev, prov, bs, &modules.CopyOnWriteConfig{SharedBase: ds.ROSourceShared})
+
 		prov = cow
 		// If we can find a cow file, load it up...
 		data, err := os.ReadFile(ds.ROSource.Name)
