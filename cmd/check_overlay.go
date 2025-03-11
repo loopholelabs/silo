@@ -45,9 +45,9 @@ func runCheckOverlay(_ *cobra.Command, _ []string) {
 		panic(err)
 	}
 
-	total_overlay := 0
-	total_overlay_equal := 0
-	total_blocks := 0
+	totalOverlay := 0
+	totalOverlayEqual := 0
+	totalBlocks := 0
 
 	for offset := 0; offset < int(sizeBase); offset += checkOverlayBlockSize {
 		block := offset / checkOverlayBlockSize
@@ -78,16 +78,16 @@ func runCheckOverlay(_ *cobra.Command, _ []string) {
 			}
 			if dataEqual {
 				fmt.Printf("Block %d overlay_equal\n", block)
-				total_overlay_equal++
+				totalOverlayEqual++
 			} else {
 				fmt.Printf("Block %d overlay\n", block)
-				total_overlay++
+				totalOverlay++
 			}
 		} else {
 			fmt.Printf("Block %d no_overlay\n ", block)
 		}
-		total_blocks++
+		totalBlocks++
 	}
 
-	fmt.Printf("TOTALS %d blocks, %d overlay, %d overlay_equal\n", total_blocks, total_overlay, total_overlay_equal)
+	fmt.Printf("TOTALS %d blocks, %d overlay, %d overlay_equal\n", totalBlocks, totalOverlay, totalOverlayEqual)
 }
