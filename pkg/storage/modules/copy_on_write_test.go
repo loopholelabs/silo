@@ -287,10 +287,12 @@ func TestCopyOnWriteReadBeforeWrite(t *testing.T) {
 
 	// Now write some unchanged data to both...
 
-	_, err = cow1.WriteAt(baseBuffer[722:993], 722)
+	n, err := cow1.WriteAt(baseBuffer[722:993], 722)
 	assert.NoError(t, err)
-	_, err = cow2.WriteAt(baseBuffer[722:993], 722)
+	assert.Equal(t, 993-722, n)
+	n, err = cow2.WriteAt(baseBuffer[722:993], 722)
 	assert.NoError(t, err)
+	assert.Equal(t, 993-722, n)
 
 	// Make sure they agree
 	eq, err := storage.Equals(cow1, cow2, 10)
