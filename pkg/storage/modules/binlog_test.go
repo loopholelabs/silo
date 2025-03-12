@@ -2,7 +2,6 @@ package modules
 
 import (
 	"crypto/rand"
-	"io"
 	"os"
 	"testing"
 
@@ -53,16 +52,9 @@ func TestBinlog(t *testing.T) {
 	binReplay, err := NewBinLogReplay(testBinlogOut, nextDevice)
 	assert.NoError(t, err)
 
-	for {
-		provErr, err := binReplay.Next(0, true)
-		assert.NoError(t, provErr)
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			assert.NoError(t, err) // Shouldn't be any other error
-		}
-	}
+	provErr, err := binReplay.ExecuteAll()
+	assert.NoError(t, provErr)
+	assert.NoError(t, err)
 
 	// Now check these two devices are equal
 	eq, err = storage.Equals(source, nextDevice, 1024)
