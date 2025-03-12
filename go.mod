@@ -11,7 +11,7 @@ require (
 	github.com/loopholelabs/logging v0.3.2
 	github.com/minio/minio-go/v7 v7.0.88
 	github.com/ory/dockertest/v3 v3.11.0
-	github.com/prometheus/client_golang v1.21.0
+	github.com/prometheus/client_golang v1.21.1
 	github.com/spf13/cobra v1.9.1
 	github.com/stretchr/testify v1.10.0
 	golang.org/x/sys v0.30.0
