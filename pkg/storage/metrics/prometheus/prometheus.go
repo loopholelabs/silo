@@ -512,6 +512,7 @@ func (m *Metrics) add(subsystem string, id string, name string, interval time.Du
 	cancelfns, ok := m.cancelfns[id]
 	if !ok {
 		cancelfns = make(map[string]context.CancelFunc)
+		m.cancelfns[id] = cancelfns
 	}
 	cancelfns[fmt.Sprintf("%s_%s", subsystem, name)] = cancelfn
 	m.lock.Unlock()
