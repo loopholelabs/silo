@@ -1,6 +1,7 @@
 package modules
 
 import (
+	"bytes"
 	"errors"
 	"sync"
 
@@ -20,6 +21,7 @@ type CopyOnWrite struct {
 	sharedBase bool
 
 	readBeforeWrites bool
+	verifyRequired   bool
 
 	wg        sync.WaitGroup
 	closing   bool
@@ -34,6 +36,26 @@ func (i *CopyOnWrite) SendSiloEvent(eventType storage.EventType, eventData stora
 		if eventType == storage.EventTypeCowGetBlocks {
 			i.writeLock.Lock() // Just makes sure that no writes are in progress while we snapshot.
 			unrequired := i.exists.CollectZeroes(0, i.exists.Length())
+
+			// Optionally check if the overlay data is different from the base.
+			// If it's equal, then we need not transfer it, and it can be added to the list of unrequired blocks.
+			if i.verifyRequired {
+				required := i.exists.Collect(0, i.exists.Length())
+				bufferSource := make([]byte, i.blockSize)
+				bufferCache := make([]byte, i.blockSize)
+				for _, b := range required {
+					// Read the block and check if it's really required
+					nSource, errSource := i.source.ReadAt(bufferSource, int64(int(b)*i.blockSize))
+					nCache, errCache := i.cache.ReadAt(bufferCache, int64(int(b)*i.blockSize))
+
+					if errSource == nil && errCache == nil && nSource == nCache {
+						// If the data is equal, we can add it to unrequired.
+						if bytes.Equal(bufferSource[:nSource], bufferCache[:nSource]) {
+							unrequired = append(unrequired, b)
+						}
+					}
+				}
+			}
 			i.writeLock.Unlock()
 			return []storage.EventReturnData{
 				unrequired,
@@ -49,6 +71,7 @@ func (i *CopyOnWrite) SendSiloEvent(eventType storage.EventType, eventData stora
 type CopyOnWriteConfig struct {
 	SharedBase      bool
 	ReadBeforeWrite bool
+	VerifyRequired  bool
 }
 
 func NewCopyOnWrite(source storage.Provider, cache storage.Provider, blockSize int, conf *CopyOnWriteConfig) *CopyOnWrite {
@@ -62,6 +85,7 @@ func NewCopyOnWrite(source storage.Provider, cache storage.Provider, blockSize i
 		CloseFn:          func() {},
 		sharedBase:       conf.SharedBase,
 		readBeforeWrites: conf.ReadBeforeWrite,
+		verifyRequired:   conf.VerifyRequired,
 		closing:          false,
 	}
 }
