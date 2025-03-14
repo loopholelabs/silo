@@ -18,7 +18,9 @@ const testFileLoc = "test_device"
 
 func TestDeviceBinlogReplay(t *testing.T) {
 	t.Cleanup(func() {
-		err := os.Remove(testBinlogOut)
+		err := os.Remove(testFileLoc)
+		assert.NoError(t, err)
+		err = os.Remove(testBinlogOut)
 		assert.NoError(t, err)
 	})
 
