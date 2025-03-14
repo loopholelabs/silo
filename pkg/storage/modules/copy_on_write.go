@@ -278,7 +278,7 @@ func (i *CopyOnWrite) WriteAt(buffer []byte, offset int64) (int, error) {
 				_, err = i.source.ReadAt(blockBuffer, blockOffset)
 				if err == nil {
 					if i.readBeforeWrites {
-						count = int(i.blockSize - int(offset-blockOffset))
+						count = i.blockSize - int(offset-blockOffset)
 						for o := offset - blockOffset; o < int64(i.blockSize); o++ {
 							if blockBuffer[o] != buffer[o-(offset-blockOffset)] {
 
