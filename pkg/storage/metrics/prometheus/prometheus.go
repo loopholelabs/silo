@@ -68,7 +68,7 @@ func DefaultConfig() *MetricsConfig {
 		TickDirtyTracker:      100 * time.Millisecond,
 		TickVolatilityMonitor: 100 * time.Millisecond,
 		TickMetrics:           100 * time.Millisecond,
-		TickNBD:               500 * time.Millisecond,
+		TickNBD:               100 * time.Millisecond,
 		TickWaitingCache:      100 * time.Millisecond,
 	}
 }
