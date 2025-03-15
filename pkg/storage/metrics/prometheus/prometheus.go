@@ -68,7 +68,7 @@ func DefaultConfig() *MetricsConfig {
 		TickDirtyTracker:      100 * time.Millisecond,
 		TickVolatilityMonitor: 100 * time.Millisecond,
 		TickMetrics:           100 * time.Millisecond,
-		TickNBD:               100 * time.Millisecond,
+		TickNBD:               500 * time.Millisecond,
 		TickWaitingCache:      100 * time.Millisecond,
 	}
 }
@@ -507,14 +507,22 @@ func (m *Metrics) remove(subsystem string, id string, name string) {
 }
 
 func (m *Metrics) add(subsystem string, id string, name string, interval time.Duration, tickfn func()) {
-	ctx, cancelfn := context.WithCancel(context.TODO())
 	m.lock.Lock()
 	cancelfns, ok := m.cancelfns[id]
 	if !ok {
 		cancelfns = make(map[string]context.CancelFunc)
 		m.cancelfns[id] = cancelfns
 	}
+	_, existing := cancelfns[fmt.Sprintf("%s_%s", subsystem, name)]
+	if existing {
+		// The metric is already being tracked.
+		m.lock.Unlock()
+		return
+	}
+
+	ctx, cancelfn := context.WithCancel(context.TODO())
 	cancelfns[fmt.Sprintf("%s_%s", subsystem, name)] = cancelfn
+
 	m.lock.Unlock()
 
 	ticker := time.NewTicker(interval)
