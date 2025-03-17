@@ -7,6 +7,7 @@ import (
 const WriteAtData = 0
 const WriteAtHash = 1
 const WriteAtCompRLE = 2
+const WriteAtYouAlreadyHave = 3
 
 func EncodeWriteAt(offset int64, data []byte) []byte {
 	buff := make([]byte, 2+8+len(data))
@@ -18,7 +19,7 @@ func EncodeWriteAt(offset int64, data []byte) []byte {
 }
 
 func DecodeWriteAt(buff []byte) (offset int64, data []byte, err error) {
-	if buff == nil || len(buff) < 10 || buff[0] != CommandWriteAt || buff[1] != WriteAtData {
+	if len(buff) < 10 || buff[0] != CommandWriteAt || buff[1] != WriteAtData {
 		return 0, nil, ErrInvalidPacket
 	}
 	off := int64(binary.LittleEndian.Uint64(buff[2:]))

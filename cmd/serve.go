@@ -40,6 +40,7 @@ var serveContinuous bool
 
 var serveMetrics string
 var serveDebug bool
+var serveConcurrency int
 
 func init() {
 	rootCmd.AddCommand(cmdServe)
@@ -48,6 +49,7 @@ func init() {
 	cmdServe.Flags().BoolVarP(&serveDebug, "debug", "d", false, "Debug logging (trace)")
 	cmdServe.Flags().StringVarP(&serveMetrics, "metrics", "m", "", "Prom metrics address")
 	cmdServe.Flags().BoolVarP(&serveContinuous, "continuous", "C", false, "Continuous sync")
+	cmdServe.Flags().IntVarP(&serveConcurrency, "concurrency", "x", 100, "Max total concurrency")
 }
 
 func runServe(_ *cobra.Command, _ []string) {
@@ -91,7 +93,7 @@ func runServe(_ *cobra.Command, _ []string) {
 		panic(err)
 	}
 
-	dg, err := devicegroup.NewFromSchema(siloConf.Device, false, log, siloMetrics)
+	dg, err := devicegroup.NewFromSchema("serve_cli", siloConf.Device, false, log, siloMetrics)
 	if err != nil {
 		panic(err)
 	}
@@ -132,7 +134,7 @@ func runServe(_ *cobra.Command, _ []string) {
 		}()
 
 		if siloMetrics != nil {
-			siloMetrics.AddProtocol("serve", pro)
+			siloMetrics.AddProtocol("serve_cli", "serve", pro)
 		}
 
 		ctime := time.Now()
@@ -144,7 +146,7 @@ func runServe(_ *cobra.Command, _ []string) {
 			panic(err)
 		}
 
-		err = dg.MigrateAll(1000, func(ps map[string]*migrator.MigrationProgress) {
+		err = dg.MigrateAll(serveConcurrency, func(ps map[string]*migrator.MigrationProgress) {
 			for name, p := range ps {
 				fmt.Printf("[%s] Progress Moved: %d/%d %.2f%% Clean: %d/%d %.2f%% InProgress: %d\n",
 					name, p.MigratedBlocks, p.TotalBlocks, p.MigratedBlocksPerc,

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
-	"sync"
 	"sync/atomic"
 
 	"github.com/loopholelabs/silo/pkg/storage"
@@ -13,8 +12,6 @@ import (
 
 type ToProtocol struct {
 	storage.ProviderWithEvents
-	baseImage                      storage.Provider
-	baseImageLock                  sync.Mutex
 	size                           uint64
 	dev                            uint32
 	protocol                       Protocol
@@ -36,6 +33,8 @@ type ToProtocol struct {
 	metricSentWriteAtBytes         uint64
 	metricSentWriteAtWithMap       uint64
 	metricSentRemoveFromMap        uint64
+	metricSentYouAlreadyHave       uint64
+	metricSentYouAlreadyHaveBytes  uint64
 	metricRecvNeedAt               uint64
 	metricRecvDontNeedAt           uint64
 }
@@ -45,15 +44,6 @@ func NewToProtocol(size uint64, deviceID uint32, p Protocol) *ToProtocol {
 		size:     size,
 		dev:      deviceID,
 		protocol: p,
-	}
-}
-
-func NewToProtocolWithBase(size uint64, deviceID uint32, p Protocol, base storage.Provider) *ToProtocol {
-	return &ToProtocol{
-		size:      size,
-		dev:       deviceID,
-		protocol:  p,
-		baseImage: base,
 	}
 }
 
@@ -74,6 +64,8 @@ type ToProtocolMetrics struct {
 	SentWriteAtBytes         uint64
 	SentWriteAtWithMap       uint64
 	SentRemoveFromMap        uint64
+	SentYouAlreadyHave       uint64
+	SentYouAlreadyHaveBytes  uint64
 	RecvNeedAt               uint64
 	RecvDontNeedAt           uint64
 }
@@ -96,6 +88,8 @@ func (i *ToProtocol) GetMetrics() *ToProtocolMetrics {
 		SentWriteAtBytes:         atomic.LoadUint64(&i.metricSentWriteAtBytes),
 		SentWriteAtWithMap:       atomic.LoadUint64(&i.metricSentWriteAtWithMap),
 		SentRemoveFromMap:        atomic.LoadUint64(&i.metricSentRemoveFromMap),
+		SentYouAlreadyHave:       atomic.LoadUint64(&i.metricSentYouAlreadyHave),
+		SentYouAlreadyHaveBytes:  atomic.LoadUint64(&i.metricSentYouAlreadyHaveBytes),
 		RecvNeedAt:               atomic.LoadUint64(&i.metricRecvNeedAt),
 		RecvDontNeedAt:           atomic.LoadUint64(&i.metricRecvDontNeedAt),
 	}
@@ -108,13 +102,28 @@ func (i *ToProtocol) SendSiloEvent(eventType storage.EventType, eventData storag
 		// Send the list of alternate sources here...
 		i.SendAltSources(i.alternateSources)
 		// For now, we do not check the error. If there was a protocol / io error, we should see it on the next send
-	} else if eventType == storage.EventTypeBaseSet {
-		// We have been told a base image that we can use when migrating CoW or similar.
-		i.baseImageLock.Lock()
-		i.baseImage = eventData.(storage.Provider)
-		i.baseImageLock.Unlock()
 	}
 	return nil
+}
+
+func (i *ToProtocol) ClearAltSources() {
+	i.alternateSources = nil
+}
+
+func (i *ToProtocol) SendYouAlreadyHave(blockSize uint64, alreadyBlocks []uint32) error {
+	data := packets.EncodeYouAlreadyHave(blockSize, alreadyBlocks)
+	id, err := i.protocol.SendPacket(i.dev, IDPickAny, data, UrgencyUrgent)
+	if err != nil {
+		return err
+	}
+	// Wait for ACK
+	_, err = i.protocol.WaitForPacket(i.dev, id)
+	if err == nil {
+		atomic.AddUint64(&i.metricSentYouAlreadyHave, 1)
+		atomic.AddUint64(&i.metricSentYouAlreadyHaveBytes, uint64(len(alreadyBlocks))*blockSize)
+
+	}
+	return err
 }
 
 func (i *ToProtocol) SetCompression(compressed bool) {
@@ -247,49 +256,22 @@ func (i *ToProtocol) WriteAt(buffer []byte, offset int64) (int, error) {
 
 	dontSendData := false
 
-	// Check if the data is in a base image. If so, send a WriteAtHash command instead of the data.
-	var baseProv storage.Provider
-	i.baseImageLock.Lock()
-	baseProv = i.baseImage
-	i.baseImageLock.Unlock()
-
-	if baseProv != nil {
-		hash := sha256.Sum256(buffer)
-		baseBuffer := make([]byte, len(buffer))
-		n, err := baseProv.ReadAt(baseBuffer, offset)
-		if err == nil && n == len(baseBuffer) {
-			baseHash := sha256.Sum256(baseBuffer)
-			if bytes.Equal(hash[:], baseHash[:]) {
-				// The data is exactly the same as our "base" image. Send it as WriteAtHash commands.
-				data := packets.EncodeWriteAtHash(offset, int64(len(buffer)), hash[:], packets.DataLocationBaseImage)
+	// If it's in the alternateSources list, we only need to send a WriteAtHash command.
+	// For now, we only match exact block ranges here.
+	for _, as := range i.alternateSources {
+		if as.Offset == offset && as.Length == int64(len(buffer)) {
+			// Only allow this if the hash is still correct/current for the data.
+			hash := sha256.Sum256(buffer)
+			if bytes.Equal(hash[:], as.Hash[:]) {
+				data := packets.EncodeWriteAtHash(as.Offset, as.Length, as.Hash[:], packets.DataLocationS3)
 				id, err = i.protocol.SendPacket(i.dev, IDPickAny, data, UrgencyNormal)
 				if err == nil {
 					atomic.AddUint64(&i.metricSentWriteAtHash, 1)
-					atomic.AddUint64(&i.metricSentWriteAtHashBytes, uint64(len(buffer)))
+					atomic.AddUint64(&i.metricSentWriteAtHashBytes, uint64(as.Length))
 				}
 				dontSendData = true
 			}
-		}
-	}
-
-	// If it's in the alternateSources list, we only need to send a WriteAtHash command.
-	// For now, we only match exact block ranges here.
-	if !dontSendData {
-		for _, as := range i.alternateSources {
-			if as.Offset == offset && as.Length == int64(len(buffer)) {
-				// Only allow this if the hash is still correct/current for the data.
-				hash := sha256.Sum256(buffer)
-				if bytes.Equal(hash[:], as.Hash[:]) {
-					data := packets.EncodeWriteAtHash(as.Offset, as.Length, as.Hash[:], packets.DataLocationS3)
-					id, err = i.protocol.SendPacket(i.dev, IDPickAny, data, UrgencyNormal)
-					if err == nil {
-						atomic.AddUint64(&i.metricSentWriteAtHash, 1)
-						atomic.AddUint64(&i.metricSentWriteAtHashBytes, uint64(as.Length))
-					}
-					dontSendData = true
-				}
-				break
-			}
+			break
 		}
 	}
 
@@ -321,7 +303,7 @@ func (i *ToProtocol) WriteAt(buffer []byte, offset int64) (int, error) {
 	}
 
 	// Decode the response...
-	if r == nil || len(r) < 1 {
+	if len(r) < 1 {
 		return 0, packets.ErrInvalidPacket
 	}
 	if r[0] == packets.CommandWriteAtResponseErr {
@@ -353,7 +335,7 @@ func (i *ToProtocol) WriteAtWithMap(buffer []byte, offset int64, idMap map[uint6
 	}
 
 	// Decode the response...
-	if r == nil || len(r) < 1 {
+	if len(r) < 1 {
 		return 0, packets.ErrInvalidPacket
 	}
 	if r[0] == packets.CommandWriteAtResponseErr {

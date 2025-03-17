@@ -165,6 +165,18 @@ func TestBitfieldCollect(t *testing.T) {
 	assert.Equal(t, []uint{100, 101, 102, 103, 200}, c)
 }
 
+func TestBitfieldCollectZeroes(t *testing.T) {
+	bf := NewBitfield(1000)
+
+	bf.SetBits(0, 1000)
+	bf.ClearBits(100, 104)
+	bf.ClearBit(200)
+
+	c := bf.CollectZeroes(0, bf.Length())
+
+	assert.Equal(t, []uint{100, 101, 102, 103, 200}, c)
+}
+
 func TestBitfieldSetBitIfClear(t *testing.T) {
 	bf := NewBitfield(1000)
 

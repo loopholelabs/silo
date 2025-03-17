@@ -383,6 +383,39 @@ func (bf *Bitfield) Collect(start uint, end uint) []uint {
 }
 
 /**
+ * Collect the positions of all 0 bits
+ *
+ */
+func (bf *Bitfield) CollectZeroes(start uint, end uint) []uint {
+	positions := make([]uint, 0)
+	p := start >> 6
+	i := uint64(1 << (start & 63))
+	n := start
+	if n < end {
+		val := atomic.LoadUint64(&bf.data[p])
+		for {
+			// Check the bit
+			if (val & i) == 0 {
+				positions = append(positions, n)
+			}
+
+			// Move along one...
+			n++
+			if n == end {
+				break
+			}
+			i <<= 1
+			if i == 0 {
+				i = 1
+				p++
+				val = atomic.LoadUint64(&bf.data[p])
+			}
+		}
+	}
+	return positions
+}
+
+/**
  * Collect the first set bit, and clear it
  *
  */

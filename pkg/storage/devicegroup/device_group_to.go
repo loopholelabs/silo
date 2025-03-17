@@ -10,7 +10,6 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/config"
 	"github.com/loopholelabs/silo/pkg/storage/device"
 	"github.com/loopholelabs/silo/pkg/storage/dirtytracker"
-	"github.com/loopholelabs/silo/pkg/storage/expose"
 	"github.com/loopholelabs/silo/pkg/storage/metrics"
 	"github.com/loopholelabs/silo/pkg/storage/migrator"
 	"github.com/loopholelabs/silo/pkg/storage/modules"
@@ -20,16 +19,17 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/waitingcache"
 )
 
-func NewFromSchema(ds []*config.DeviceSchema, createWC bool, log types.Logger, met metrics.SiloMetrics) (*DeviceGroup, error) {
+func NewFromSchema(instanceID string, ds []*config.DeviceSchema, createWC bool, log types.Logger, met metrics.SiloMetrics) (*DeviceGroup, error) {
 	dg := &DeviceGroup{
-		log:      log,
-		met:      met,
-		devices:  make([]*DeviceInformation, 0),
-		progress: make(map[string]*migrator.MigrationProgress),
+		log:        log,
+		met:        met,
+		instanceID: instanceID,
+		devices:    make([]*DeviceInformation, 0),
+		progress:   make(map[string]*migrator.MigrationProgress),
 	}
 
 	for _, s := range ds {
-		prov, exp, err := device.NewDeviceWithLoggingMetrics(s, log, met)
+		prov, exp, err := device.NewDeviceWithLoggingMetrics(s, log, met, instanceID)
 		if err != nil {
 			if log != nil {
 				log.Error().Err(err).Str("schema", string(s.Encode())).Msg("could not create device")
@@ -67,12 +67,9 @@ func NewFromSchema(ds []*config.DeviceSchema, createWC bool, log types.Logger, m
 
 		// Add to metrics if given.
 		if met != nil {
-			met.AddMetrics(s.Name, mlocal)
-			if exp != nil {
-				met.AddNBD(s.Name, exp.(*expose.ExposedStorageNBDNL))
-			}
-			met.AddDirtyTracker(s.Name, dirtyRemote)
-			met.AddVolatilityMonitor(s.Name, vmonitor)
+			met.AddMetrics(dg.instanceID, s.Name, mlocal)
+			met.AddDirtyTracker(dg.instanceID, s.Name, dirtyRemote)
+			met.AddVolatilityMonitor(dg.instanceID, s.Name, vmonitor)
 		}
 
 		dg.devices = append(dg.devices, &DeviceInformation{
@@ -114,7 +111,7 @@ func (dg *DeviceGroup) StartMigrationTo(pro protocol.Protocol, compression bool)
 		d.To.SetCompression(compression)
 
 		if dg.met != nil {
-			dg.met.AddToProtocol(d.Schema.Name, d.To)
+			dg.met.AddToProtocol(dg.instanceID, d.Schema.Name, d.To)
 		}
 	}
 
@@ -145,6 +142,22 @@ func (dg *DeviceGroup) MigrateAll(maxConcurrency int, progressHandler func(p map
 	for _, d := range dg.devices {
 		if d.To == nil {
 			return errNotSetup
+		}
+	}
+
+	// Check if the devices are actually all here?
+	for _, d := range dg.devices {
+		if d.WaitingCacheLocal != nil {
+			wcMetrics := d.WaitingCacheLocal.GetMetrics()
+			if wcMetrics.AvailableRemote < uint64(d.NumBlocks) {
+				if dg.log != nil {
+					dg.log.Warn().
+						Str("name", d.Schema.Name).
+						Uint64("availableRemoteBlocks", wcMetrics.AvailableRemote).
+						Uint64("numBlocks", uint64(d.NumBlocks)).
+						Msg("migrating away a possibly incomplete source")
+				}
+			}
 		}
 	}
 
@@ -264,7 +277,7 @@ func (dg *DeviceGroup) MigrateAll(maxConcurrency int, progressHandler func(p map
 		}
 		d.Migrator = mig
 		if dg.met != nil {
-			dg.met.AddMigrator(d.Schema.Name, mig)
+			dg.met.AddMigrator(dg.instanceID, d.Schema.Name, mig)
 		}
 		if dg.log != nil {
 			dg.log.Debug().
@@ -280,8 +293,22 @@ func (dg *DeviceGroup) MigrateAll(maxConcurrency int, progressHandler func(p map
 	// Now start them all migrating, and collect err
 	for _, d := range dg.devices {
 		go func() {
-			err := d.Migrator.Migrate(d.NumBlocks)
-			errs <- err
+			migrateBlocks := d.NumBlocks
+			unrequired := d.DirtyRemote.GetUnrequiredBlocks()
+			alreadyBlocks := make([]uint32, 0)
+			for _, b := range unrequired {
+				d.Orderer.Remove(int(b))
+				migrateBlocks--
+				alreadyBlocks = append(alreadyBlocks, uint32(b))
+			}
+
+			err := d.To.SendYouAlreadyHave(d.BlockSize, alreadyBlocks)
+			if err != nil {
+				errs <- err
+			} else {
+				err = d.Migrator.Migrate(migrateBlocks)
+				errs <- err
+			}
 		}()
 	}
 
@@ -344,6 +371,8 @@ func (dg *DeviceGroup) MigrateDirty(hooks *MigrateDirtyHooks) error {
 		// First unlock the storage if it is locked due to a previous MigrateDirty call
 		d.Storage.Unlock()
 
+		d.To.ClearAltSources()
+
 		go func() {
 			for {
 				if hooks != nil && hooks.PreGetDirty != nil {
@@ -363,6 +392,7 @@ func (dg *DeviceGroup) MigrateDirty(hooks *MigrateDirtyHooks) error {
 					cont, err := hooks.PostGetDirty(d.Schema.Name, blocks)
 					if err != nil {
 						errs <- err
+						return
 					}
 					if !cont {
 						break

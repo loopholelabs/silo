@@ -40,7 +40,7 @@ func EncodeEvent(e *Event) []byte {
 }
 
 func DecodeEvent(buff []byte) (*Event, error) {
-	if buff == nil || len(buff) < 2 || buff[0] != CommandEvent {
+	if len(buff) < 2 || buff[0] != CommandEvent {
 		return nil, ErrInvalidPacket
 	}
 	e := &Event{Type: EventType(buff[1])}
@@ -62,7 +62,7 @@ func EncodeEventResponse() []byte {
 }
 
 func DecodeEventResponse(buff []byte) error {
-	if buff == nil || len(buff) < 1 || buff[0] != CommandEventResponse {
+	if len(buff) < 1 || buff[0] != CommandEventResponse {
 		return ErrInvalidPacket
 	}
 	return nil

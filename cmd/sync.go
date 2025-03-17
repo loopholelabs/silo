@@ -286,10 +286,14 @@ func syncMigrateS3(_ uint32, name string,
 					break
 				default:
 				}
-				err := blr.ExecuteNext(1)
+				provErr, err := blr.Next(1, true)
 				if errors.Is(err, io.EOF) {
 					break
-				} else if err != nil {
+				}
+				if err != nil {
+					cancelFn()
+					panic(err)
+				} else if provErr != nil {
 					cancelFn()
 					panic(err)
 				}
@@ -307,7 +311,7 @@ func syncMigrateS3(_ uint32, name string,
 			mig.SetMigratedBlock(b)
 		}
 
-		sinfo.tracker.TrackAt(0, int64(sinfo.tracker.Size()))
+		sinfo.tracker.TrackAt(int64(sinfo.tracker.Size()), 0)
 	} else {
 		fmt.Printf("Doing migration...\n")
 

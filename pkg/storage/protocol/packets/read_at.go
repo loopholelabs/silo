@@ -13,7 +13,7 @@ func EncodeReadAt(offset int64, length int32) []byte {
 }
 
 func DecodeReadAt(buff []byte) (int64, int32, error) {
-	if buff == nil || len(buff) < 13 || buff[0] != CommandReadAt {
+	if len(buff) < 13 || buff[0] != CommandReadAt {
 		return 0, 0, ErrInvalidPacket
 	}
 	off := int64(binary.LittleEndian.Uint64(buff[1:]))

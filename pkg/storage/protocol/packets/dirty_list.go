@@ -17,7 +17,7 @@ func EncodeDirtyList(blockSize int, blocks []uint) []byte {
 }
 
 func DecodeDirtyList(buff []byte) (int, []uint, error) {
-	if buff == nil || len(buff) < 9 || buff[0] != CommandDirtyList {
+	if len(buff) < 9 || buff[0] != CommandDirtyList {
 		return 0, nil, ErrInvalidPacket
 	}
 	blockSize := binary.LittleEndian.Uint32(buff[1:])
@@ -38,7 +38,7 @@ func EncodeDirtyListResponse() []byte {
 }
 
 func DecodeDirtyListResponse(buff []byte) error {
-	if buff == nil || len(buff) < 1 || buff[0] != CommandDirtyListResponse {
+	if len(buff) < 1 || buff[0] != CommandDirtyListResponse {
 		return ErrInvalidPacket
 	}
 	return nil

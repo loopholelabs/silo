@@ -71,10 +71,10 @@ func NewDevice(ds *config.DeviceSchema) (storage.Provider, storage.ExposedStorag
 }
 
 func NewDeviceWithLogging(ds *config.DeviceSchema, log types.Logger) (storage.Provider, storage.ExposedStorage, error) {
-	return NewDeviceWithLoggingMetrics(ds, log, nil)
+	return NewDeviceWithLoggingMetrics(ds, log, nil, "")
 }
 
-func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met metrics.SiloMetrics) (storage.Provider, storage.ExposedStorage, error) {
+func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met metrics.SiloMetrics, instanceID string) (storage.Provider, storage.ExposedStorage, error) {
 
 	if log != nil {
 		log.Debug().Str("name", ds.Name).Msg("creating new device")
@@ -261,7 +261,7 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 	if met != nil {
 		// Expose some basic metrics for the devices storage.
 		metrics := modules.NewMetrics(prov)
-		met.AddMetrics(fmt.Sprintf("device_%s", ds.Name), metrics)
+		met.AddMetrics(instanceID, fmt.Sprintf("device_%s", ds.Name), metrics)
 		prov = metrics
 	}
 
@@ -282,7 +282,7 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 		}
 
 		if met != nil {
-			met.AddNBD(ds.Name, nbdex)
+			met.AddNBD(instanceID, ds.Name, nbdex)
 		}
 	}
 
@@ -297,7 +297,21 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 			ds.Sync.AccessKey,
 			ds.Sync.SecretKey,
 			ds.Sync.Bucket,
-			ds.Name,
+			fmt.Sprintf("%s%s", ds.Sync.Prefix, ds.Name),
+			prov.Size(),
+			bs)
+
+		if err != nil {
+			prov.Close()
+			return nil, nil, err
+		}
+
+		s3source, err := sources.NewS3StorageCreateNoBucketCheck(ds.Sync.Secure,
+			ds.Sync.Endpoint,
+			ds.Sync.AccessKey,
+			ds.Sync.SecretKey,
+			ds.Sync.Bucket,
+			fmt.Sprintf("%s%s", ds.Sync.GrabPrefix, ds.Name),
 			prov.Size(),
 			bs)
 
@@ -307,7 +321,8 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 		}
 
 		if met != nil {
-			met.AddS3Storage(fmt.Sprintf("s3sync_%s", ds.Name), s3dest)
+			met.AddS3Storage(instanceID, fmt.Sprintf("s3grab_%s", ds.Name), s3source)
+			met.AddS3Storage(instanceID, fmt.Sprintf("s3sync_%s", ds.Name), s3dest)
 		}
 
 		dirtyBlockSize := bs >> ds.Sync.Config.BlockShift
@@ -320,7 +335,7 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 		sourceStorage := modules.NewLockable(sourceDirtyLocal)
 
 		if met != nil {
-			met.AddDirtyTracker(fmt.Sprintf("s3sync_%s", ds.Name), sourceDirtyRemote)
+			met.AddDirtyTracker(instanceID, fmt.Sprintf("s3sync_%s", ds.Name), sourceDirtyRemote)
 		}
 
 		// Setup a block order
@@ -365,7 +380,7 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 		})
 
 		if met != nil {
-			met.AddSyncer(fmt.Sprintf("s3sync_%s", ds.Name), syncer)
+			met.AddSyncer(instanceID, fmt.Sprintf("s3sync_%s", ds.Name), syncer)
 		}
 
 		// The provider we return should feed into our sync here...
@@ -384,8 +399,13 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 
 			if data != nil {
 				startConfig := data.(storage.SyncStartConfig)
+				if log != nil {
+					log.Info().Str("name", ds.Name).Int("blocks", len(startConfig.AlternateSources)).Msg("s3 pull started")
+				}
 
 				var wg sync.WaitGroup
+
+				pullStartTime := time.Now()
 
 				concurrency := make(chan bool, ds.Sync.GrabConcurrency)
 
@@ -395,7 +415,7 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 					concurrency <- true
 					go func(a packets.AlternateSource) {
 						buffer := make([]byte, a.Length)
-						n, err := s3dest.ReadAt(buffer, a.Offset)
+						n, err := s3source.ReadAt(buffer, a.Offset)
 						if err != nil || n != int(a.Length) {
 							panic(fmt.Sprintf("sync.start unable to read from S3. %v", err))
 						}
@@ -415,6 +435,15 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 					}(as)
 				}
 				wg.Wait() // Wait for all S3 requests to complete
+
+				if log != nil {
+					log.Info().
+						Str("name", ds.Name).
+						Int("blocks", len(startConfig.AlternateSources)).
+						Int("bytes", len(startConfig.AlternateSources)*int(ds.ByteBlockSize())).
+						Int64("time_ms", time.Since(pullStartTime).Milliseconds()).
+						Msg("s3 pull complete")
+				}
 			}
 
 			syncLock.Lock()
@@ -498,7 +527,7 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 
 		// If the storage gets a "sync.status", get some status on the S3Storage
 		storage.AddSiloEventNotification(prov, storage.EventSyncStatus, func(_ storage.EventType, _ storage.EventData) storage.EventReturnData {
-			return s3dest.Metrics()
+			return []*sources.S3Metrics{s3source.Metrics(), s3dest.Metrics()}
 		})
 
 		// If the storage gets a "sync.running", return
