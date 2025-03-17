@@ -149,7 +149,7 @@ func BenchmarkFile(mb *testing.B) {
 
 func BenchmarkDevice(mb *testing.B) {
 	log := logging.New(logging.Zerolog, "test", os.Stderr)
-	log.SetLevel(ltypes.InfoLevel)
+	log.SetLevel(ltypes.TraceLevel)
 
 	for _, conf := range []TestConfig{
 		{readOp: true, name: "randread", concurrency: 1, blockSize: 1024 * 1024},
@@ -204,17 +204,91 @@ func BenchmarkDevice(mb *testing.B) {
 			di := dg.GetDeviceInformationByName("disk")
 			assert.NotNil(b, di)
 
-			fi, err := os.OpenFile(fmt.Sprintf("/dev/%s", di.Exp.Device()), os.O_RDWR, 0777)
+			// Now run the test
+			f, err := os.OpenFile(fmt.Sprintf("/dev/%s", di.Exp.Device()), os.O_RDWR, 0777)
 			assert.NoError(b, err)
 
-			// Do some writes so we have data in the overlay
-			err = PerformRandomOp(uint64(size), 100, 64*1024, 64*1024, func(buffer []byte, offset int64) error {
-				_, err := fi.WriteAt(buffer, offset)
-				return err
+			b.ResetTimer()
+			err = PerformRandomOp(uint64(size), conf.concurrency, conf.blockSize, b.N, func(buffer []byte, offset int64) error {
+
+				if conf.readOp {
+					_, err := f.ReadAt(buffer, offset)
+					return err
+				} else {
+					_, err := f.WriteAt(buffer, offset)
+					return err
+				}
 			})
 			assert.NoError(b, err)
+			err = f.Close() // Make sure the data is written
+			assert.NoError(b, err)
 
-			fi.Close() // Flush any data here...
+			b.SetBytes(int64(conf.blockSize))
+
+			// Maybe show some stats here...
+
+		})
+	}
+}
+
+const existingEbsFile = "/root/.local/state/architect/packages/gha-runner/oci.ext4"
+
+func BenchmarkEBSDevice(mb *testing.B) {
+	log := logging.New(logging.Zerolog, "test", os.Stderr)
+	// log.SetLevel(ltypes.TraceLevel)
+
+	for _, conf := range []TestConfig{
+		{readOp: true, name: "randread", concurrency: 1, blockSize: 1024 * 1024},
+		{readOp: true, name: "randread", concurrency: 100, blockSize: 4 * 1024},
+		{readOp: true, name: "randreadSF", concurrency: 100, blockSize: 4 * 1024, sparsefile: true},
+		{readOp: true, name: "randread", concurrency: 100, blockSize: 1024 * 1024},
+		{readOp: true, name: "randreadSF", concurrency: 100, blockSize: 1024 * 1024, sparsefile: true},
+		{readOp: false, name: "randwrite", concurrency: 1, blockSize: 1024 * 1024},
+		{readOp: false, name: "randwrite", concurrency: 100, blockSize: 4 * 1024},
+		{readOp: false, name: "randwriteSF", concurrency: 100, blockSize: 4 * 1024, sparsefile: true},
+		{readOp: false, name: "randwrite", concurrency: 100, blockSize: 1024 * 1024},
+		{readOp: false, name: "randwriteSF", concurrency: 100, blockSize: 1024 * 1024, sparsefile: true},
+	} {
+		mb.Run(fmt.Sprintf("%s-%d-%d", conf.name, conf.concurrency, conf.blockSize), func(b *testing.B) {
+
+			size := 58595098624
+
+			deviceSchemas := []*config.DeviceSchema{
+				{
+					Name:      "disk",
+					BlockSize: "1m",
+					Size:      fmt.Sprintf("%d", size),
+					Expose:    true,
+					System:    "file",
+					Location:  existingEbsFile,
+					ROSource: &config.DeviceSchema{
+						Name:      testFileNameState,
+						System:    "file",
+						Size:      fmt.Sprintf("%d", size),
+						BlockSize: "1m",
+						Location:  testFileNameCache,
+					},
+				},
+			}
+
+			if conf.sparsefile {
+				deviceSchemas[0].System = "sparsefile"
+			}
+
+			dg, err := devicegroup.NewFromSchema("test", deviceSchemas, false, log, nil)
+			assert.NoError(b, err)
+
+			b.Cleanup(func() {
+				err := dg.CloseAll()
+				assert.NoError(b, err)
+				os.Remove(testFileName)
+				os.Remove(testFileNameCache)
+				os.Remove(testFileNameState)
+			})
+
+			// Now do some r/w benchmarking on the device...
+			di := dg.GetDeviceInformationByName("disk")
+			assert.NotNil(b, di)
 
 			// Now run the test
 			f, err := os.OpenFile(fmt.Sprintf("/dev/%s", di.Exp.Device()), os.O_RDWR, 0777)
