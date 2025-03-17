@@ -3,6 +3,7 @@ package modules
 import (
 	"errors"
 	"sync"
+	"sync/atomic"
 
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/util"
@@ -10,15 +11,15 @@ import (
 
 type CopyOnWrite struct {
 	storage.ProviderWithEvents
-	source      storage.Provider
-	cache       storage.Provider
-	exists      *util.Bitfield
-	size        uint64
-	blockSize   int
-	CloseFn     func()
-	writeLocks  []*sync.Mutex
-	sharedBase  bool
-	AsyncWrites bool // Allow async writes
+	source     storage.Provider
+	cache      storage.Provider
+	exists     *util.Bitfield
+	size       uint64
+	blockSize  int
+	CloseFn    func()
+	writeLocks []*sync.Mutex
+	fullLock   atomic.Bool
+	sharedBase bool
 
 	wg        sync.WaitGroup
 	closing   bool
@@ -37,6 +38,10 @@ func (i *CopyOnWrite) unlockAll() {
 	for _, l := range i.writeLocks {
 		l.Unlock()
 	}
+}
+
+func (i *CopyOnWrite) SetFullLocking(v bool) {
+	i.fullLock.Store(v)
 }
 
 // Relay events to embedded StorageProvider
@@ -64,16 +69,16 @@ func NewCopyOnWrite(source storage.Provider, cache storage.Provider, blockSize i
 		locks[t] = &sync.Mutex{}
 	}
 	return &CopyOnWrite{
-		source:      source,
-		cache:       cache,
-		exists:      util.NewBitfield(int(numBlocks)),
-		writeLocks:  locks,
-		AsyncWrites: false,
-		size:        source.Size(),
-		blockSize:   blockSize,
-		CloseFn:     func() {},
-		sharedBase:  true,
-		closing:     false,
+		source:     source,
+		cache:      cache,
+		exists:     util.NewBitfield(int(numBlocks)),
+		writeLocks: locks,
+		fullLock:   atomic.Bool{},
+		size:       source.Size(),
+		blockSize:  blockSize,
+		CloseFn:    func() {},
+		sharedBase: true,
+		closing:    false,
 	}
 }
 
@@ -84,16 +89,16 @@ func NewCopyOnWriteHiddenBase(source storage.Provider, cache storage.Provider, b
 		locks[t] = &sync.Mutex{}
 	}
 	return &CopyOnWrite{
-		source:      source,
-		cache:       cache,
-		exists:      util.NewBitfield(int(numBlocks)),
-		writeLocks:  locks,
-		AsyncWrites: false,
-		size:        source.Size(),
-		blockSize:   blockSize,
-		CloseFn:     func() {},
-		sharedBase:  false,
-		closing:     false,
+		source:     source,
+		cache:      cache,
+		exists:     util.NewBitfield(int(numBlocks)),
+		writeLocks: locks,
+		fullLock:   atomic.Bool{},
+		size:       source.Size(),
+		blockSize:  blockSize,
+		CloseFn:    func() {},
+		sharedBase: false,
+		closing:    false,
 	}
 }
 
@@ -217,7 +222,7 @@ func (i *CopyOnWrite) WriteAt(buffer []byte, offset int64) (int, error) {
 
 	defer i.wg.Done()
 
-	if !i.AsyncWrites {
+	if i.fullLock.Load() {
 		i.lockAll()
 		defer i.unlockAll()
 	}
@@ -249,7 +254,7 @@ func (i *CopyOnWrite) WriteAt(buffer []byte, offset int64) (int, error) {
 	// Now we have a series of non-overlapping writes. Do them concurrently
 	for bb := bStart; bb < bEnd; bb++ {
 		go func(b uint) {
-			if i.AsyncWrites {
+			if !i.fullLock.Load() {
 				i.writeLocks[b].Lock()
 				defer i.writeLocks[b].Unlock()
 			}

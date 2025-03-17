@@ -30,7 +30,7 @@ type TestConfig struct {
 	nbd            bool
 	nbdConnections int
 	cow            bool
-	cowAsync       bool
+	cowFullLock    bool
 	sparsefile     bool
 }
 
@@ -44,7 +44,7 @@ func BenchmarkFile(mb *testing.B) {
 		{readOp: true, name: "randreadNBD", concurrency: 100, blockSize: 1024 * 1024, nbd: true, nbdConnections: 8},
 		{readOp: true, name: "CowRandreadNBD", concurrency: 100, blockSize: 4 * 1024, nbd: true, nbdConnections: 8, cow: true},
 		{readOp: true, name: "CowRandreadNBD", concurrency: 100, blockSize: 1024 * 1024, nbd: true, nbdConnections: 8, cow: true},
-		{readOp: true, name: "ACowRandreadNBD", concurrency: 100, blockSize: 1024 * 1024, nbd: true, nbdConnections: 8, cow: true, cowAsync: true},
+		{readOp: true, name: "ACowRandreadNBD", concurrency: 100, blockSize: 1024 * 1024, nbd: true, nbdConnections: 8, cow: true, cowFullLock: true},
 
 		{readOp: false, name: "randwrite", concurrency: 1, blockSize: 1024 * 1024},
 		{readOp: false, name: "randwrite", concurrency: 100, blockSize: 1024 * 1024},
@@ -53,12 +53,12 @@ func BenchmarkFile(mb *testing.B) {
 		{readOp: false, name: "randwriteNBD", concurrency: 100, blockSize: 1024 * 1024, nbd: true, nbdConnections: 8},
 		{readOp: false, name: "CowRandwriteNBD", concurrency: 100, blockSize: 4 * 1024, nbd: true, nbdConnections: 8, cow: true},
 
-		{readOp: false, name: "CowRandwriteNBD", concurrency: 10, blockSize: 1024 * 1024, nbd: true, nbdConnections: 8, cow: true},
-		{readOp: false, name: "ACowRandwriteNBD", concurrency: 10, blockSize: 1024 * 1024, nbd: true, nbdConnections: 8, cow: true, cowAsync: true},
-		{readOp: false, name: "CowRandwriteNBD", concurrency: 100, blockSize: 1024 * 1024, nbd: true, nbdConnections: 8, cow: true},
-		{readOp: false, name: "ACowRandwriteNBD", concurrency: 100, blockSize: 1024 * 1024, nbd: true, nbdConnections: 8, cow: true, cowAsync: true},
-		{readOp: false, name: "CowRandwriteNBD", concurrency: 400, blockSize: 1024 * 1024, nbd: true, nbdConnections: 8, cow: true},
-		{readOp: false, name: "ACowRandwriteNBD", concurrency: 400, blockSize: 1024 * 1024, nbd: true, nbdConnections: 8, cow: true, cowAsync: true},
+		{readOp: false, name: "CowRandwriteNBD", concurrency: 10, blockSize: 1024 * 1024, nbd: true, nbdConnections: 8, cow: true, cowFullLock: true},
+		{readOp: false, name: "ACowRandwriteNBD", concurrency: 10, blockSize: 1024 * 1024, nbd: true, nbdConnections: 8, cow: true},
+		{readOp: false, name: "CowRandwriteNBD", concurrency: 100, blockSize: 1024 * 1024, nbd: true, nbdConnections: 8, cow: true, cowFullLock: true},
+		{readOp: false, name: "ACowRandwriteNBD", concurrency: 100, blockSize: 1024 * 1024, nbd: true, nbdConnections: 8, cow: true},
+		{readOp: false, name: "CowRandwriteNBD", concurrency: 400, blockSize: 1024 * 1024, nbd: true, nbdConnections: 8, cow: true, cowFullLock: true},
+		{readOp: false, name: "ACowRandwriteNBD", concurrency: 400, blockSize: 1024 * 1024, nbd: true, nbdConnections: 8, cow: true},
 	} {
 		mb.Run(fmt.Sprintf("%s-%d-%d", conf.name, conf.concurrency, conf.blockSize), func(b *testing.B) {
 			b.Cleanup(func() {
@@ -76,9 +76,7 @@ func BenchmarkFile(mb *testing.B) {
 			source = fileBaseMetrics
 			if conf.cow {
 				cow := modules.NewCopyOnWrite(fileBaseMetrics, cacheMetrics, conf.blockSize)
-				if conf.cowAsync {
-					cow.AsyncWrites = true
-				}
+				cow.SetFullLocking(conf.cowFullLock)
 				source = cow
 			}
 
