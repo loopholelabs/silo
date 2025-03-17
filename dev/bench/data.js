@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1738933894344,
+  "lastUpdate": 1742216797546,
   "repoUrl": "https://github.com/loopholelabs/silo",
   "entries": {
     "Silo Go Benchmark": [
@@ -340,6 +340,120 @@ window.BENCHMARK_DATA = {
           {
             "name": "BenchmarkMigrationPipe/compress",
             "value": 37193764,
+            "unit": "ns/op",
+            "extra": "30 times\n4 procs"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "jamesmoore@loopholelabs.io",
+            "name": "Jimmy Moore",
+            "username": "jimmyaxod"
+          },
+          "committer": {
+            "email": "jamesmoore@loopholelabs.io",
+            "name": "Jimmy Moore",
+            "username": "jimmyaxod"
+          },
+          "distinct": true,
+          "id": "5011220a8430114d339dbd880f4e33aa0eefe760",
+          "message": "Merge branch 'main' into jamesmoore/arch-256-silo-benchmarks",
+          "timestamp": "2025-03-17T13:05:05Z",
+          "tree_id": "599d4472b85bd5f0f601d4385f8c705c19ef8799",
+          "url": "https://github.com/loopholelabs/silo/commit/5011220a8430114d339dbd880f4e33aa0eefe760"
+        },
+        "date": 1742216796168,
+        "tool": "go",
+        "benches": [
+          {
+            "name": "BenchmarkMigrationPipe/32-concurrency",
+            "value": 3999073,
+            "unit": "ns/op",
+            "extra": "303 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMigrationPipe/128-concurrency",
+            "value": 4614438,
+            "unit": "ns/op",
+            "extra": "273 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMigrationPipe/max-concurrency",
+            "value": 4939969,
+            "unit": "ns/op",
+            "extra": "248 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMigrationPipe/1-pipe",
+            "value": 5071715,
+            "unit": "ns/op",
+            "extra": "244 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMigrationPipe/4-pipes",
+            "value": 2949431,
+            "unit": "ns/op",
+            "extra": "386 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMigrationPipe/32-pipes",
+            "value": 2868694,
+            "unit": "ns/op",
+            "extra": "400 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMigrationPipe/4k-blocks",
+            "value": 16250194,
+            "unit": "ns/op",
+            "extra": "70 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMigrationPipe/64k-blocks",
+            "value": 2993777,
+            "unit": "ns/op",
+            "extra": "400 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMigrationPipe/256k-blocks",
+            "value": 2426928,
+            "unit": "ns/op",
+            "extra": "472 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMigrationPipe/no-sharding",
+            "value": 2442571,
+            "unit": "ns/op",
+            "extra": "465 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMigrationPipe/4k-shards",
+            "value": 2853018,
+            "unit": "ns/op",
+            "extra": "412 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMigrationPipe/64k-shards",
+            "value": 2501628,
+            "unit": "ns/op",
+            "extra": "438 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMigrationPipe/256k-shards",
+            "value": 2496354,
+            "unit": "ns/op",
+            "extra": "460 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMigrationPipe/no-compress",
+            "value": 2539369,
+            "unit": "ns/op",
+            "extra": "458 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkMigrationPipe/compress",
+            "value": 38979588,
             "unit": "ns/op",
             "extra": "30 times\n4 procs"
           }
