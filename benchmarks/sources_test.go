@@ -28,14 +28,6 @@ type TestConfig struct {
 }
 
 func BenchmarkFile(mb *testing.B) {
-	mb.Cleanup(func() {
-		os.Remove(testFileName)
-		os.Remove(testFileNameCache)
-	})
-	fileBase, err := sources.NewFileStorageCreate(testFileName, testFileSize)
-	assert.NoError(mb, err)
-	cache, err := sources.NewFileStorageCreate(testFileNameCache, testFileSize)
-	assert.NoError(mb, err)
 
 	for _, conf := range []TestConfig{
 		{readOp: true, name: "randread", concurrency: 1, blockSize: 1024 * 1024},
@@ -55,14 +47,28 @@ func BenchmarkFile(mb *testing.B) {
 		{readOp: false, name: "CowRandwriteNBD", concurrency: 100, blockSize: 4 * 1024, nbd: true, nbdConnections: 8, cow: true},
 	} {
 		mb.Run(fmt.Sprintf("%s-%d-%d", conf.name, conf.concurrency, conf.blockSize), func(b *testing.B) {
+			b.Cleanup(func() {
+				os.Remove(testFileName)
+				os.Remove(testFileNameCache)
+			})
+			fileBase, err := sources.NewFileStorageCreate(testFileName, testFileSize)
+			assert.NoError(b, err)
+			fileBaseMetrics := modules.NewMetrics(fileBase)
+			cache, err := sources.NewFileStorageCreate(testFileNameCache, testFileSize)
+			cacheMetrics := modules.NewMetrics(cache)
+			assert.NoError(b, err)
+
 			var source storage.Provider
-			source = fileBase
+			source = fileBaseMetrics
 			if conf.cow {
-				source = modules.NewCopyOnWrite(fileBase, cache, conf.blockSize)
+				source = modules.NewCopyOnWrite(fileBaseMetrics, cacheMetrics, conf.blockSize)
 			}
 
+			// General metrics from this side...
+			smetrics := modules.NewMetrics(source)
+
 			if conf.nbd {
-				exp := expose.NewExposedStorageNBDNL(source, &expose.Config{
+				exp := expose.NewExposedStorageNBDNL(smetrics, &expose.Config{
 					Logger:         nil,
 					NumConnections: conf.nbdConnections,
 					Timeout:        30 * time.Second,
@@ -96,17 +102,40 @@ func BenchmarkFile(mb *testing.B) {
 				assert.NoError(b, err)
 
 			} else {
+				b.ResetTimer()
 				PerformRandomOp(source.Size(), conf.concurrency, conf.blockSize, b.N, func(buffer []byte, offset int64) error {
 					if conf.readOp {
-						_, err := source.ReadAt(buffer, offset)
+						_, err := smetrics.ReadAt(buffer, offset)
 						return err
 					} else {
-						_, err := source.WriteAt(buffer, offset)
+						_, err := smetrics.WriteAt(buffer, offset)
 						return err
 					}
 				})
 			}
 			b.SetBytes(int64(conf.blockSize))
+
+			// Show some stats....
+			smet := smetrics.GetMetrics()
+			if conf.readOp {
+				fmt.Printf("reads %d ops %d bytes %dms time\n", smet.ReadOps, smet.ReadBytes, time.Duration(smet.ReadTime).Milliseconds())
+			} else {
+				fmt.Printf("writes %d ops %d bytes %dms time\n", smet.WriteOps, smet.WriteBytes, time.Duration(smet.WriteTime).Milliseconds())
+			}
+			if conf.cow {
+				bmet := fileBaseMetrics.GetMetrics()
+				omet := cacheMetrics.GetMetrics()
+				if conf.readOp {
+					fmt.Printf(" BaseReads %d ops %d bytes %dms time\n", bmet.ReadOps, bmet.ReadBytes, time.Duration(bmet.ReadTime).Milliseconds())
+					fmt.Printf(" OverlayReads %d ops %d bytes %dms time\n", omet.ReadOps, omet.ReadBytes, time.Duration(omet.ReadTime).Milliseconds())
+				} else {
+					fmt.Printf(" BaseReads %d ops %d bytes %dms time\n", bmet.ReadOps, bmet.ReadBytes, time.Duration(bmet.ReadTime).Milliseconds())
+					fmt.Printf(" OverlayReads %d ops %d bytes %dms time\n", omet.ReadOps, omet.ReadBytes, time.Duration(omet.ReadTime).Milliseconds())
+					fmt.Printf(" BaseWrites %d ops %d bytes %dms time\n", bmet.WriteOps, bmet.WriteBytes, time.Duration(bmet.WriteTime).Milliseconds())
+					fmt.Printf(" OverlayWrites %d ops %d bytes %dms time\n", omet.WriteOps, omet.WriteBytes, time.Duration(omet.WriteTime).Milliseconds())
+				}
+
+			}
 		})
 	}
 }
