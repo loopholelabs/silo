@@ -30,6 +30,7 @@ type TestConfig struct {
 	nbd            bool
 	nbdConnections int
 	cow            bool
+	cowAsync       bool
 	sparsefile     bool
 }
 
@@ -43,14 +44,21 @@ func BenchmarkFile(mb *testing.B) {
 		{readOp: true, name: "randreadNBD", concurrency: 100, blockSize: 1024 * 1024, nbd: true, nbdConnections: 8},
 		{readOp: true, name: "CowRandreadNBD", concurrency: 100, blockSize: 4 * 1024, nbd: true, nbdConnections: 8, cow: true},
 		{readOp: true, name: "CowRandreadNBD", concurrency: 100, blockSize: 1024 * 1024, nbd: true, nbdConnections: 8, cow: true},
+		{readOp: true, name: "ACowRandreadNBD", concurrency: 100, blockSize: 1024 * 1024, nbd: true, nbdConnections: 8, cow: true, cowAsync: true},
 
 		{readOp: false, name: "randwrite", concurrency: 1, blockSize: 1024 * 1024},
 		{readOp: false, name: "randwrite", concurrency: 100, blockSize: 1024 * 1024},
 		{readOp: false, name: "CowRandwrite", concurrency: 100, blockSize: 1024 * 1024, cow: true},
 		{readOp: false, name: "randwriteNBD", concurrency: 1, blockSize: 1024 * 1024, nbd: true, nbdConnections: 8},
 		{readOp: false, name: "randwriteNBD", concurrency: 100, blockSize: 1024 * 1024, nbd: true, nbdConnections: 8},
-		{readOp: false, name: "CowRandwriteNBD", concurrency: 100, blockSize: 1024 * 1024, nbd: true, nbdConnections: 8, cow: true},
 		{readOp: false, name: "CowRandwriteNBD", concurrency: 100, blockSize: 4 * 1024, nbd: true, nbdConnections: 8, cow: true},
+
+		{readOp: false, name: "CowRandwriteNBD", concurrency: 10, blockSize: 1024 * 1024, nbd: true, nbdConnections: 8, cow: true},
+		{readOp: false, name: "ACowRandwriteNBD", concurrency: 10, blockSize: 1024 * 1024, nbd: true, nbdConnections: 8, cow: true, cowAsync: true},
+		{readOp: false, name: "CowRandwriteNBD", concurrency: 100, blockSize: 1024 * 1024, nbd: true, nbdConnections: 8, cow: true},
+		{readOp: false, name: "ACowRandwriteNBD", concurrency: 100, blockSize: 1024 * 1024, nbd: true, nbdConnections: 8, cow: true, cowAsync: true},
+		{readOp: false, name: "CowRandwriteNBD", concurrency: 400, blockSize: 1024 * 1024, nbd: true, nbdConnections: 8, cow: true},
+		{readOp: false, name: "ACowRandwriteNBD", concurrency: 400, blockSize: 1024 * 1024, nbd: true, nbdConnections: 8, cow: true, cowAsync: true},
 	} {
 		mb.Run(fmt.Sprintf("%s-%d-%d", conf.name, conf.concurrency, conf.blockSize), func(b *testing.B) {
 			b.Cleanup(func() {
@@ -67,7 +75,11 @@ func BenchmarkFile(mb *testing.B) {
 			var source storage.Provider
 			source = fileBaseMetrics
 			if conf.cow {
-				source = modules.NewCopyOnWrite(fileBaseMetrics, cacheMetrics, conf.blockSize)
+				cow := modules.NewCopyOnWrite(fileBaseMetrics, cacheMetrics, conf.blockSize)
+				if conf.cowAsync {
+					cow.AsyncWrites = true
+				}
+				source = cow
 			}
 
 			// General metrics from this side...
@@ -122,27 +134,28 @@ func BenchmarkFile(mb *testing.B) {
 				assert.NoError(b, err)
 			}
 			b.SetBytes(int64(conf.blockSize))
-
-			// Show some stats....
-			smet := smetrics.GetMetrics()
-			if conf.readOp {
-				fmt.Printf("reads %d ops %d bytes %dms time\n", smet.ReadOps, smet.ReadBytes, time.Duration(smet.ReadTime).Milliseconds())
-			} else {
-				fmt.Printf("writes %d ops %d bytes %dms time\n", smet.WriteOps, smet.WriteBytes, time.Duration(smet.WriteTime).Milliseconds())
-			}
-			if conf.cow {
-				bmet := fileBaseMetrics.GetMetrics()
-				omet := cacheMetrics.GetMetrics()
+			/*
+				// Show some stats....
+				smet := smetrics.GetMetrics()
 				if conf.readOp {
-					fmt.Printf(" BaseReads %d ops %d bytes %dms time\n", bmet.ReadOps, bmet.ReadBytes, time.Duration(bmet.ReadTime).Milliseconds())
-					fmt.Printf(" OverlayReads %d ops %d bytes %dms time\n", omet.ReadOps, omet.ReadBytes, time.Duration(omet.ReadTime).Milliseconds())
+					fmt.Printf("reads %d ops %d bytes %dms time\n", smet.ReadOps, smet.ReadBytes, time.Duration(smet.ReadTime).Milliseconds())
 				} else {
-					fmt.Printf(" BaseReads %d ops %d bytes %dms time\n", bmet.ReadOps, bmet.ReadBytes, time.Duration(bmet.ReadTime).Milliseconds())
-					fmt.Printf(" OverlayReads %d ops %d bytes %dms time\n", omet.ReadOps, omet.ReadBytes, time.Duration(omet.ReadTime).Milliseconds())
-					fmt.Printf(" BaseWrites %d ops %d bytes %dms time\n", bmet.WriteOps, bmet.WriteBytes, time.Duration(bmet.WriteTime).Milliseconds())
-					fmt.Printf(" OverlayWrites %d ops %d bytes %dms time\n", omet.WriteOps, omet.WriteBytes, time.Duration(omet.WriteTime).Milliseconds())
+					fmt.Printf("writes %d ops %d bytes %dms time\n", smet.WriteOps, smet.WriteBytes, time.Duration(smet.WriteTime).Milliseconds())
 				}
-			}
+				if conf.cow {
+					bmet := fileBaseMetrics.GetMetrics()
+					omet := cacheMetrics.GetMetrics()
+					if conf.readOp {
+						fmt.Printf(" BaseReads %d ops %d bytes %dms time\n", bmet.ReadOps, bmet.ReadBytes, time.Duration(bmet.ReadTime).Milliseconds())
+						fmt.Printf(" OverlayReads %d ops %d bytes %dms time\n", omet.ReadOps, omet.ReadBytes, time.Duration(omet.ReadTime).Milliseconds())
+					} else {
+						fmt.Printf(" BaseReads %d ops %d bytes %dms time\n", bmet.ReadOps, bmet.ReadBytes, time.Duration(bmet.ReadTime).Milliseconds())
+						fmt.Printf(" OverlayReads %d ops %d bytes %dms time\n", omet.ReadOps, omet.ReadBytes, time.Duration(omet.ReadTime).Milliseconds())
+						fmt.Printf(" BaseWrites %d ops %d bytes %dms time\n", bmet.WriteOps, bmet.WriteBytes, time.Duration(bmet.WriteTime).Milliseconds())
+						fmt.Printf(" OverlayWrites %d ops %d bytes %dms time\n", omet.WriteOps, omet.WriteBytes, time.Duration(omet.WriteTime).Milliseconds())
+					}
+				}
+			*/
 		})
 	}
 }
