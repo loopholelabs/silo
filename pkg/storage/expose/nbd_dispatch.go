@@ -353,6 +353,12 @@ func (d *Dispatch) cmdRead(cmdHandle uint64, cmdFrom uint64, cmdLength uint32) e
 		}
 
 		if e != nil {
+			if d.logger != nil {
+				d.logger.Trace().
+					Str("device", d.dev).
+					Err(e).
+					Msg("read error from provider")
+			}
 			return d.writeResponse(1, handle, []byte{})
 		}
 		return d.writeResponse(0, handle, data)
@@ -428,6 +434,12 @@ func (d *Dispatch) cmdWrite(cmdHandle uint64, cmdFrom uint64, cmdLength uint32, 
 
 		errorValue := uint32(0)
 		if e != nil {
+			if d.logger != nil {
+				d.logger.Trace().
+					Str("device", d.dev).
+					Err(e).
+					Msg("write error from provider")
+			}
 			errorValue = 1
 		}
 		return d.writeResponse(errorValue, handle, []byte{})
