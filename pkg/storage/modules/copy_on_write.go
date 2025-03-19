@@ -146,55 +146,57 @@ func (i *CopyOnWrite) ReadAt(buffer []byte, offset int64) (int, error) {
 	errs := make(chan error, blocks)
 	counts := make(chan int, blocks)
 
-	for b := bStart; b < bEnd; b++ {
-		count := 0
-		blockOffset := int64(b) * int64(i.blockSize)
-		var err error
-		if blockOffset >= offset {
-			// Partial read at the end
-			if len(buffer[blockOffset-offset:bufferEnd]) < i.blockSize {
+	for bb := bStart; bb < bEnd; bb++ {
+		go func(b uint) {
+			count := 0
+			blockOffset := int64(b) * int64(i.blockSize)
+			var err error
+			if blockOffset >= offset {
+				// Partial read at the end
+				if len(buffer[blockOffset-offset:bufferEnd]) < i.blockSize {
+					if i.exists.BitSet(int(b)) {
+						count, err = i.cache.ReadAt(buffer[blockOffset-offset:bufferEnd], blockOffset)
+					} else {
+						blockBuffer := make([]byte, i.blockSize)
+						// Read existing data
+						_, err = i.source.ReadAt(blockBuffer, blockOffset)
+						if err == nil {
+							count = copy(buffer[blockOffset-offset:bufferEnd], blockBuffer)
+						}
+					}
+				} else {
+					// Complete block reads in the middle
+					s := blockOffset - offset
+					e := s + int64(i.blockSize)
+					if e > int64(len(buffer)) {
+						e = int64(len(buffer))
+					}
+					if i.exists.BitSet(int(b)) {
+						_, err = i.cache.ReadAt(buffer[s:e], blockOffset)
+					} else {
+						_, err = i.source.ReadAt(buffer[s:e], blockOffset)
+					}
+					count = i.blockSize
+				}
+			} else {
+				// Partial read at the start
 				if i.exists.BitSet(int(b)) {
-					count, err = i.cache.ReadAt(buffer[blockOffset-offset:bufferEnd], blockOffset)
+					plen := i.blockSize - int(offset-blockOffset)
+					if plen > int(bufferEnd) {
+						plen = int(bufferEnd)
+					}
+					count, err = i.cache.ReadAt(buffer[:plen], offset)
 				} else {
 					blockBuffer := make([]byte, i.blockSize)
-					// Read existing data
 					_, err = i.source.ReadAt(blockBuffer, blockOffset)
 					if err == nil {
-						count = copy(buffer[blockOffset-offset:bufferEnd], blockBuffer)
+						count = copy(buffer[:bufferEnd], blockBuffer[offset-blockOffset:])
 					}
 				}
-			} else {
-				// Complete block reads in the middle
-				s := blockOffset - offset
-				e := s + int64(i.blockSize)
-				if e > int64(len(buffer)) {
-					e = int64(len(buffer))
-				}
-				if i.exists.BitSet(int(b)) {
-					_, err = i.cache.ReadAt(buffer[s:e], blockOffset)
-				} else {
-					_, err = i.source.ReadAt(buffer[s:e], blockOffset)
-				}
-				count = i.blockSize
 			}
-		} else {
-			// Partial read at the start
-			if i.exists.BitSet(int(b)) {
-				plen := i.blockSize - int(offset-blockOffset)
-				if plen > int(bufferEnd) {
-					plen = int(bufferEnd)
-				}
-				count, err = i.cache.ReadAt(buffer[:plen], offset)
-			} else {
-				blockBuffer := make([]byte, i.blockSize)
-				_, err = i.source.ReadAt(blockBuffer, blockOffset)
-				if err == nil {
-					count = copy(buffer[:bufferEnd], blockBuffer[offset-blockOffset:])
-				}
-			}
-		}
-		errs <- err
-		counts <- count
+			errs <- err
+			counts <- count
+		}(bb)
 	}
 
 	// Wait for completion, Check for errors and return...

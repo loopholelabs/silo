@@ -23,15 +23,17 @@ const testFileNameState = "test_file_state"
 const testFileSize = 1024 * 1024 * 1024
 
 type TestConfig struct {
-	readOp         bool
-	concurrency    int
-	blockSize      int
-	name           string
-	nbd            bool
-	nbdConnections int
-	cow            bool
-	cowFullLock    bool
-	sparsefile     bool
+	readOp                bool
+	concurrency           int
+	blockSize             int
+	name                  string
+	nbd                   bool
+	nbdConnections        int
+	cow                   bool
+	cowFullLock           bool
+	sparsefile            bool
+	memCacheBlocksBase    int
+	memCacheBlocksOverlay int
 }
 
 func BenchmarkFile(mb *testing.B) {
@@ -198,6 +200,13 @@ func BenchmarkDevice(mb *testing.B) {
 
 			if conf.sparsefile {
 				deviceSchemas[0].System = "sparsefile"
+			}
+
+			if conf.memCacheBlocksBase > 0 {
+				deviceSchemas[0].ROSource.MemoryCacheBlocks = conf.memCacheBlocksBase
+			}
+			if conf.memCacheBlocksOverlay > 0 {
+				deviceSchemas[0].MemoryCacheBlocks = conf.memCacheBlocksOverlay
 			}
 
 			dg, err := devicegroup.NewFromSchema("test", deviceSchemas, false, log, nil)

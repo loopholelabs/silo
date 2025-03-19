@@ -71,13 +71,13 @@ func NewDevice(ds *config.DeviceSchema) (storage.Provider, storage.ExposedStorag
 }
 
 func NewDeviceWithLogging(ds *config.DeviceSchema, log types.Logger) (storage.Provider, storage.ExposedStorage, error) {
-	return NewDeviceWithLoggingMetrics(ds, log, nil, "")
+	return NewDeviceWithLoggingMetrics(ds, log, nil, "", ds.Name)
 }
 
-func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met metrics.SiloMetrics, instanceID string) (storage.Provider, storage.ExposedStorage, error) {
+func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met metrics.SiloMetrics, instanceID string, deviceName string) (storage.Provider, storage.ExposedStorage, error) {
 
 	if log != nil {
-		log.Debug().Str("name", ds.Name).Msg("creating new device")
+		log.Debug().Str("name", deviceName).Msg("creating new device")
 	}
 
 	var prov storage.Provider
@@ -193,14 +193,27 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 
 	}
 
+	if met != nil {
+		// Expose some basic metrics for the devices storage.
+		metrics := modules.NewMetrics(prov)
+		met.AddMetrics(instanceID, fmt.Sprintf("device_%s", deviceName), metrics)
+		prov = metrics
+	}
+
+	if ds.MemoryCacheBlocks > 0 {
+		// Provide some memory block caching
+		cache := modules.NewBlockCache(prov, int(ds.ByteBlockSize()), ds.MemoryCacheBlocks)
+		prov = cache
+	}
+
 	// Optionally use a copy on write RO source...
 	if ds.ROSource != nil {
 		if log != nil {
-			log.Debug().Str("name", ds.Name).Msg("setting up CopyOnWrite")
+			log.Debug().Str("name", deviceName).Msg("setting up CopyOnWrite")
 		}
 
 		// Create the ROSource...
-		rodev, _, err := NewDevice(ds.ROSource)
+		rodev, _, err := NewDeviceWithLoggingMetrics(ds.ROSource, log, met, instanceID, fmt.Sprintf("%s_base", ds.Name))
 		if err != nil {
 			return nil, nil, err
 		}
@@ -230,7 +243,7 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 		// Make sure the cow data gets dumped on close...
 		cow.CloseFn = func() {
 			if log != nil {
-				log.Debug().Str("name", ds.Name).Msg("Writing CopyOnWrite state")
+				log.Debug().Str("name", deviceName).Msg("Writing CopyOnWrite state")
 			}
 
 			blocks := cow.GetBlockExists()
@@ -249,20 +262,13 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 	// Optionally binlog this dev to a file
 	if ds.Binlog != "" {
 		if log != nil {
-			log.Debug().Str("name", ds.Name).Msg("logging to binlog")
+			log.Debug().Str("name", deviceName).Msg("logging to binlog")
 		}
 
 		prov, err = modules.NewBinLog(prov, ds.Binlog)
 		if err != nil {
 			return nil, nil, err
 		}
-	}
-
-	if met != nil {
-		// Expose some basic metrics for the devices storage.
-		metrics := modules.NewMetrics(prov)
-		met.AddMetrics(instanceID, fmt.Sprintf("device_%s", ds.Name), metrics)
-		prov = metrics
 	}
 
 	// Now optionaly expose the device
@@ -278,18 +284,18 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 			return nil, nil, err
 		}
 		if log != nil {
-			log.Debug().Str("name", ds.Name).Str("device", ex.Device()).Msg("device exposed as nbd device")
+			log.Debug().Str("name", deviceName).Str("device", ex.Device()).Msg("device exposed as nbd device")
 		}
 
 		if met != nil {
-			met.AddNBD(instanceID, ds.Name, nbdex)
+			met.AddNBD(instanceID, deviceName, nbdex)
 		}
 	}
 
 	// Optionally sync the device to S3
 	if ds.Sync != nil {
 		if log != nil {
-			log.Debug().Str("name", ds.Name).Msg("setting up S3 sync")
+			log.Debug().Str("name", deviceName).Msg("setting up S3 sync")
 		}
 
 		s3dest, err := sources.NewS3StorageCreateNoBucketCheck(ds.Sync.Secure,
@@ -297,7 +303,7 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 			ds.Sync.AccessKey,
 			ds.Sync.SecretKey,
 			ds.Sync.Bucket,
-			fmt.Sprintf("%s%s", ds.Sync.Prefix, ds.Name),
+			fmt.Sprintf("%s%s", ds.Sync.Prefix, deviceName),
 			prov.Size(),
 			bs)
 
@@ -311,7 +317,7 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 			ds.Sync.AccessKey,
 			ds.Sync.SecretKey,
 			ds.Sync.Bucket,
-			fmt.Sprintf("%s%s", ds.Sync.GrabPrefix, ds.Name),
+			fmt.Sprintf("%s%s", ds.Sync.GrabPrefix, deviceName),
 			prov.Size(),
 			bs)
 
@@ -321,8 +327,8 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 		}
 
 		if met != nil {
-			met.AddS3Storage(instanceID, fmt.Sprintf("s3grab_%s", ds.Name), s3source)
-			met.AddS3Storage(instanceID, fmt.Sprintf("s3sync_%s", ds.Name), s3dest)
+			met.AddS3Storage(instanceID, fmt.Sprintf("s3grab_%s", deviceName), s3source)
+			met.AddS3Storage(instanceID, fmt.Sprintf("s3sync_%s", deviceName), s3dest)
 		}
 
 		dirtyBlockSize := bs >> ds.Sync.Config.BlockShift
@@ -335,7 +341,7 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 		sourceStorage := modules.NewLockable(sourceDirtyLocal)
 
 		if met != nil {
-			met.AddDirtyTracker(instanceID, fmt.Sprintf("s3sync_%s", ds.Name), sourceDirtyRemote)
+			met.AddDirtyTracker(instanceID, fmt.Sprintf("s3sync_%s", deviceName), sourceDirtyRemote)
 		}
 
 		// Setup a block order
@@ -361,7 +367,7 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 		syncer := migrator.NewSyncer(ctx, &migrator.SyncConfig{
 			Concurrency:      map[int]int{storage.BlockTypeAny: ds.Sync.Config.Concurrency},
 			Logger:           log,
-			Name:             ds.Name,
+			Name:             deviceName,
 			Integrity:        false,
 			CancelWrites:     true,
 			DedupeWrites:     true,
@@ -380,7 +386,7 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 		})
 
 		if met != nil {
-			met.AddSyncer(instanceID, fmt.Sprintf("s3sync_%s", ds.Name), syncer)
+			met.AddSyncer(instanceID, fmt.Sprintf("s3sync_%s", deviceName), syncer)
 		}
 
 		// The provider we return should feed into our sync here...
@@ -392,7 +398,7 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 
 		startSync := func(_ storage.EventType, data storage.EventData) storage.EventReturnData {
 			if log != nil {
-				log.Debug().Str("name", ds.Name).Msg("sync.start called")
+				log.Debug().Str("name", deviceName).Msg("sync.start called")
 			}
 			// Make sure we can read/write to S3
 			s3dest.SetReadWriteEnabled(false, false)
@@ -400,7 +406,7 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 			if data != nil {
 				startConfig := data.(storage.SyncStartConfig)
 				if log != nil {
-					log.Info().Str("name", ds.Name).Int("blocks", len(startConfig.AlternateSources)).Msg("s3 pull started")
+					log.Info().Str("name", deviceName).Int("blocks", len(startConfig.AlternateSources)).Msg("s3 pull started")
 				}
 
 				var wg sync.WaitGroup
@@ -438,7 +444,7 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 
 				if log != nil {
 					log.Info().
-						Str("name", ds.Name).
+						Str("name", deviceName).
 						Int("blocks", len(startConfig.AlternateSources)).
 						Int("bytes", len(startConfig.AlternateSources)*int(ds.ByteBlockSize())).
 						Int64("time_ms", time.Since(pullStartTime).Milliseconds()).
@@ -466,7 +472,7 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 
 		stopSyncing := func(cancelWrites bool, wait bool) {
 			if log != nil {
-				log.Debug().Str("name", ds.Name).Msg("sync.stop called")
+				log.Debug().Str("name", deviceName).Msg("sync.stop called")
 			}
 			syncLock.Lock()
 			if !syncRunning {
@@ -507,13 +513,13 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 					Offset:   o,
 					Length:   l,
 					Hash:     hash,
-					Location: fmt.Sprintf("%s %s %s", ds.Sync.Endpoint, ds.Sync.Bucket, ds.Name),
+					Location: fmt.Sprintf("%s %s %s", ds.Sync.Endpoint, ds.Sync.Bucket, deviceName),
 				}
 				altSources = append(altSources, as)
 			}
 
 			if log != nil {
-				log.Debug().Str("name", ds.Name).Int("sources", len(altSources)).Msg("sync.stop returning altSources")
+				log.Debug().Str("name", deviceName).Int("sources", len(altSources)).Msg("sync.stop returning altSources")
 			}
 
 			return altSources

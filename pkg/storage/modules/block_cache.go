@@ -2,10 +2,12 @@ package modules
 
 import (
 	"errors"
-	"fmt"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/loopholelabs/silo/pkg/storage"
+	"github.com/loopholelabs/silo/pkg/storage/util"
 )
 
 type BlockCache struct {
@@ -18,10 +20,18 @@ type BlockCache struct {
 	blockSize  int
 	numBlocks  int
 	maxBlocks  int
+	exists     *util.Bitfield
+
+	metricReadHits    uint64
+	metricReadMisses  uint64
+	metricWriteHits   uint64
+	metricWriteMisses uint64
+	metricFlushBlocks uint64
 }
 
 type blockInfo struct {
-	data []byte
+	data       []byte
+	lastAccess time.Time
 }
 
 // Relay events to embedded StorageProvider
@@ -45,6 +55,7 @@ func NewBlockCache(prov storage.Provider, blockSize int, maxBlocks int) *BlockCa
 		blockSize:  blockSize,
 		blockLocks: locks,
 		numBlocks:  numBlocks,
+		exists:     util.NewBitfield(numBlocks),
 	}
 }
 
@@ -56,6 +67,7 @@ func (i *BlockCache) tryCache(b uint, buffer []byte) bool {
 	d, ok := i.blocks[b]
 	if ok {
 		d.data = buffer
+		d.lastAccess = time.Now()
 		return true
 	}
 
@@ -63,10 +75,26 @@ func (i *BlockCache) tryCache(b uint, buffer []byte) bool {
 	if len(i.blocks) < i.maxBlocks {
 		// Add the cached block
 		i.blocks[b] = &blockInfo{
-			data: buffer,
+			lastAccess: time.Now(),
+			data:       buffer,
 		}
+		i.exists.SetBit(int(b))
 		return true
 	}
+
+	/*
+		allBlocks := make([]uint, 0)
+		for v := range i.blocks {
+			allBlocks = append(allBlocks, v)
+		}
+		sort.SliceStable(allBlocks, func(index1 int, index2 int) bool {
+			b1 := allBlocks[index1]
+			b2 := allBlocks[index2]
+			return i.blocks[b1].lastAccess.Before(i.blocks[b2].lastAccess)
+		})
+	*/
+	// Now we have a sorted list, we can get rid of some number of blocks from the cache...
+
 	// For now, when the cache gets full, that's it. It'll of course still speed up the blocks in the cache,
 	// but none of the blocks outside of it.
 	return false
@@ -77,12 +105,15 @@ func (i *BlockCache) readBlock(b uint) ([]byte, error) {
 	i.blocksLock.Lock()
 	binfo, ok := i.blocks[b]
 	if ok {
+		binfo.lastAccess = time.Now()
 		i.blocksLock.Unlock()
+		atomic.AddUint64(&i.metricReadHits, 1)
 		return binfo.data, nil
 	}
 	i.blocksLock.Unlock()
 
 	// Read it from source
+	atomic.AddUint64(&i.metricReadMisses, 1)
 	buffer := make([]byte, i.blockSize)
 	_, err := i.prov.ReadAt(buffer, int64(b*uint(i.blockSize)))
 	i.tryCache(b, buffer) // Try to add it to our cache
@@ -91,16 +122,17 @@ func (i *BlockCache) readBlock(b uint) ([]byte, error) {
 
 func (i *BlockCache) writeBlock(b uint, buffer []byte) error {
 	if i.tryCache(b, buffer) { // Try to add it to our cache
+		atomic.AddUint64(&i.metricWriteHits, 1)
 		return nil
 	}
+
+	atomic.AddUint64(&i.metricWriteMisses, 1)
 	_, err := i.prov.WriteAt(buffer, int64(b*uint(i.blockSize)))
 	return err
 }
 
 func (i *BlockCache) flushBlocks() error {
 	var errs error
-
-	num := 0
 
 	// Lock all blocks
 	for b := 0; b < i.numBlocks; b++ {
@@ -118,7 +150,7 @@ func (i *BlockCache) flushBlocks() error {
 				if e != nil {
 					errs = errors.Join(errs, e)
 				} else {
-					num++
+					atomic.AddUint64(&i.metricFlushBlocks, 1)
 				}
 				currentData = make([]byte, 0)
 			}
@@ -137,7 +169,7 @@ func (i *BlockCache) flushBlocks() error {
 		if e != nil {
 			errs = errors.Join(errs, e)
 		} else {
-			num++
+			atomic.AddUint64(&i.metricFlushBlocks, 1)
 		}
 	}
 
@@ -145,8 +177,6 @@ func (i *BlockCache) flushBlocks() error {
 	for b := 0; b < i.numBlocks; b++ {
 		i.blockLocks[b].Unlock()
 	}
-
-	fmt.Printf("Flushed %d writes\n", num)
 
 	return errs
 }
@@ -165,6 +195,30 @@ func (i *BlockCache) ReadAt(buffer []byte, offset int64) (int, error) {
 
 	bStart := uint(offset / int64(i.blockSize))
 	bEnd := uint((end-1)/uint64(i.blockSize)) + 1
+
+	// If we don't have it all in the cache, do a single read, and then update the cache...
+	if !i.exists.BitsSet(bStart, bEnd) {
+		n, err := i.prov.ReadAt(buffer, offset)
+		for bb := bStart; bb < bEnd; bb++ {
+			blockOffset := int64(bb) * int64(i.blockSize)
+			if blockOffset >= offset {
+				// Partial read at the end
+				if len(buffer[blockOffset-offset:bufferEnd]) < i.blockSize {
+				} else {
+					// Complete block reads in the middle
+					s := blockOffset - offset
+					e := s + int64(i.blockSize)
+					if e > int64(len(buffer)) {
+						e = int64(len(buffer))
+					}
+					i.tryCache(bb, buffer[s:e])
+				}
+			} else {
+				// Partial read at the start
+			}
+		}
+		return n, err
+	}
 
 	blocks := bEnd - bStart
 	errs := make(chan error, blocks)
@@ -230,6 +284,30 @@ func (i *BlockCache) WriteAt(buffer []byte, offset int64) (int, error) {
 	bStart := uint(offset / int64(i.blockSize))
 	bEnd := uint((end-1)/uint64(i.blockSize)) + 1
 
+	// If we don't have it all in the cache, do a single write, and then update the cache...
+	if !i.exists.BitsSet(bStart, bEnd) {
+		n, err := i.prov.WriteAt(buffer, offset)
+		for bb := bStart; bb < bEnd; bb++ {
+			blockOffset := int64(bb) * int64(i.blockSize)
+			if blockOffset >= offset {
+				// Partial read at the end
+				if len(buffer[blockOffset-offset:bufferEnd]) < i.blockSize {
+				} else {
+					// Complete block reads in the middle
+					s := blockOffset - offset
+					e := s + int64(i.blockSize)
+					if e > int64(len(buffer)) {
+						e = int64(len(buffer))
+					}
+					i.tryCache(bb, buffer[s:e])
+				}
+			} else {
+				// Partial read at the start
+			}
+		}
+		return n, err
+	}
+
 	blocks := bEnd - bStart
 	errs := make(chan error, blocks)
 	counts := make(chan int, blocks)
@@ -294,8 +372,7 @@ func (i *BlockCache) WriteAt(buffer []byte, offset int64) (int, error) {
 
 func (i *BlockCache) Flush() error {
 	err := i.flushBlocks()
-	// TODO: Write our cache out
-	return errors.Join(i.prov.Flush(), err)
+	return errors.Join(err, i.prov.Flush())
 }
 
 func (i *BlockCache) Size() uint64 {
@@ -303,7 +380,8 @@ func (i *BlockCache) Size() uint64 {
 }
 
 func (i *BlockCache) Close() error {
-	return i.prov.Close()
+	err := i.flushBlocks()
+	return errors.Join(err, i.prov.Close())
 }
 
 func (i *BlockCache) CancelWrites(offset int64, length int64) {
