@@ -86,9 +86,11 @@ type Dispatch struct {
 	metricReadAt       uint64
 	metricReadAtBytes  uint64
 	metricReadAtTime   uint64
+	metricActiveReads  int64
 	metricWriteAt      uint64
 	metricWriteAtBytes uint64
 	metricWriteAtTime  uint64
+	metricActiveWrites int64
 }
 
 type DispatchMetrics struct {
@@ -97,9 +99,11 @@ type DispatchMetrics struct {
 	ReadAt       uint64
 	ReadAtBytes  uint64
 	ReadAtTime   time.Duration
+	ActiveReads  uint64
 	WriteAt      uint64
 	WriteAtBytes uint64
 	WriteAtTime  time.Duration
+	ActiveWrites uint64
 }
 
 func (dm *DispatchMetrics) Add(delta *DispatchMetrics) {
@@ -108,9 +112,11 @@ func (dm *DispatchMetrics) Add(delta *DispatchMetrics) {
 	dm.ReadAt += delta.ReadAt
 	dm.ReadAtBytes += delta.ReadAtBytes
 	dm.ReadAtTime += delta.ReadAtTime
+	dm.ActiveReads += delta.ActiveReads
 	dm.WriteAt += delta.WriteAt
 	dm.WriteAtBytes += delta.WriteAtBytes
 	dm.WriteAtTime += delta.WriteAtTime
+	dm.ActiveWrites += delta.ActiveWrites
 }
 
 func NewDispatch(ctx context.Context, name string, logger types.Logger, fp io.ReadWriteCloser, prov storage.Provider) *Dispatch {
@@ -138,9 +144,11 @@ func (d *Dispatch) GetMetrics() *DispatchMetrics {
 		ReadAt:       atomic.LoadUint64(&d.metricReadAt),
 		ReadAtBytes:  atomic.LoadUint64(&d.metricReadAtBytes),
 		ReadAtTime:   time.Duration(atomic.LoadUint64(&d.metricReadAtTime)),
+		ActiveReads:  uint64(atomic.LoadInt64(&d.metricActiveReads)),
 		WriteAt:      atomic.LoadUint64(&d.metricWriteAt),
 		WriteAtBytes: atomic.LoadUint64(&d.metricWriteAtBytes),
 		WriteAtTime:  time.Duration(atomic.LoadUint64(&d.metricWriteAtTime)),
+		ActiveWrites: uint64(atomic.LoadInt64(&d.metricActiveWrites)),
 	}
 }
 
@@ -367,10 +375,12 @@ func (d *Dispatch) cmdRead(cmdHandle uint64, cmdFrom uint64, cmdLength uint32) e
 	}
 	d.shuttingDownLock.Unlock()
 
+	atomic.AddInt64(&d.metricActiveReads, 1)
 	if d.asyncReads {
 		go func() {
 			ctime := time.Now()
 			err := performRead(cmdHandle, cmdFrom, cmdLength)
+			atomic.AddInt64(&d.metricActiveReads, -1)
 			if err == nil {
 				atomic.AddUint64(&d.metricReadAt, 1)
 				atomic.AddUint64(&d.metricReadAtBytes, uint64(cmdLength))
@@ -386,6 +396,7 @@ func (d *Dispatch) cmdRead(cmdHandle uint64, cmdFrom uint64, cmdLength uint32) e
 	} else {
 		ctime := time.Now()
 		err := performRead(cmdHandle, cmdFrom, cmdLength)
+		atomic.AddInt64(&d.metricActiveReads, -1)
 		if err == nil {
 			atomic.AddUint64(&d.metricReadAt, 1)
 			atomic.AddUint64(&d.metricReadAtBytes, uint64(cmdLength))
@@ -442,10 +453,13 @@ func (d *Dispatch) cmdWrite(cmdHandle uint64, cmdFrom uint64, cmdLength uint32, 
 	}
 	d.shuttingDownLock.Unlock()
 
+	atomic.AddInt64(&d.metricActiveWrites, 1)
+
 	if d.asyncWrites {
 		go func() {
 			ctime := time.Now()
 			err := performWrite(cmdHandle, cmdFrom, cmdLength, cmdData)
+			atomic.AddInt64(&d.metricActiveWrites, -1)
 			if err == nil {
 				atomic.AddUint64(&d.metricWriteAt, 1)
 				atomic.AddUint64(&d.metricWriteAtBytes, uint64(cmdLength))
@@ -461,6 +475,7 @@ func (d *Dispatch) cmdWrite(cmdHandle uint64, cmdFrom uint64, cmdLength uint32, 
 	} else {
 		ctime := time.Now()
 		err := performWrite(cmdHandle, cmdFrom, cmdLength, cmdData)
+		atomic.AddInt64(&d.metricActiveWrites, -1)
 		if err == nil {
 			atomic.AddUint64(&d.metricWriteAt, 1)
 			atomic.AddUint64(&d.metricWriteAtBytes, uint64(cmdLength))

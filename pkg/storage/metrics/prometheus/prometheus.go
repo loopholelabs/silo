@@ -186,8 +186,12 @@ type Metrics struct {
 	nbdPacketsOut   *prometheus.GaugeVec
 	nbdReadAt       *prometheus.GaugeVec
 	nbdReadAtBytes  *prometheus.GaugeVec
+	nbdReadAtTime   *prometheus.GaugeVec
+	nbdActiveReads  *prometheus.GaugeVec
 	nbdWriteAt      *prometheus.GaugeVec
 	nbdWriteAtBytes *prometheus.GaugeVec
+	nbdWriteAtTime  *prometheus.GaugeVec
+	nbdActiveWrites *prometheus.GaugeVec
 
 	// waitingCache
 	waitingCacheWaitForBlock             *prometheus.GaugeVec
@@ -407,10 +411,18 @@ func New(reg prometheus.Registerer, config *MetricsConfig) *Metrics {
 			Namespace: config.Namespace, Subsystem: config.SubNBD, Name: "read_at", Help: "ReadAt"}, labels),
 		nbdReadAtBytes: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: config.Namespace, Subsystem: config.SubNBD, Name: "read_at_bytes", Help: "ReadAtBytes"}, labels),
+		nbdReadAtTime: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: config.Namespace, Subsystem: config.SubNBD, Name: "read_at_time", Help: "ReadAtTime"}, labels),
+		nbdActiveReads: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: config.Namespace, Subsystem: config.SubNBD, Name: "active_reads", Help: "ActiveReads"}, labels),
 		nbdWriteAt: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: config.Namespace, Subsystem: config.SubNBD, Name: "write_at", Help: "WriteAt"}, labels),
 		nbdWriteAtBytes: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: config.Namespace, Subsystem: config.SubNBD, Name: "write_at_bytes", Help: "WriteAtBytes"}, labels),
+		nbdWriteAtTime: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: config.Namespace, Subsystem: config.SubNBD, Name: "write_at_time", Help: "WriteAtTime"}, labels),
+		nbdActiveWrites: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: config.Namespace, Subsystem: config.SubNBD, Name: "active_writes", Help: "ActiveWrites"}, labels),
 
 		// waitingCache
 		waitingCacheWaitForBlock: prometheus.NewGaugeVec(prometheus.GaugeOpts{
@@ -481,7 +493,9 @@ func New(reg prometheus.Registerer, config *MetricsConfig) *Metrics {
 		met.metricsWriteOpsSize)
 
 	reg.MustRegister(
-		met.nbdPacketsIn, met.nbdPacketsOut, met.nbdReadAt, met.nbdReadAtBytes, met.nbdWriteAt, met.nbdWriteAtBytes)
+		met.nbdPacketsIn, met.nbdPacketsOut,
+		met.nbdReadAt, met.nbdReadAtBytes, met.nbdReadAtTime, met.nbdActiveReads,
+		met.nbdWriteAt, met.nbdWriteAtBytes, met.nbdWriteAtTime, met.nbdActiveWrites)
 
 	reg.MustRegister(
 		met.waitingCacheWaitForBlock,
@@ -815,8 +829,12 @@ func (m *Metrics) AddNBD(id string, name string, mm *expose.ExposedStorageNBDNL)
 		m.nbdPacketsOut.WithLabelValues(id, name).Set(float64(met.PacketsOut))
 		m.nbdReadAt.WithLabelValues(id, name).Set(float64(met.ReadAt))
 		m.nbdReadAtBytes.WithLabelValues(id, name).Set(float64(met.ReadAtBytes))
+		m.nbdReadAtTime.WithLabelValues(id, name).Set(float64(met.ReadAtTime))
+		m.nbdActiveReads.WithLabelValues(id, name).Set(float64(met.ActiveReads))
 		m.nbdWriteAt.WithLabelValues(id, name).Set(float64(met.WriteAt))
 		m.nbdWriteAtBytes.WithLabelValues(id, name).Set(float64(met.WriteAtBytes))
+		m.nbdWriteAtTime.WithLabelValues(id, name).Set(float64(met.WriteAtTime))
+		m.nbdActiveWrites.WithLabelValues(id, name).Set(float64(met.ActiveWrites))
 	})
 }
 
