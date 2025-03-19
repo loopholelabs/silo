@@ -167,17 +167,19 @@ type Metrics struct {
 	volatilityMonitorHeatmap    *prometheus.GaugeVec
 
 	// metrics
-	metricsReadOps     *prometheus.GaugeVec
-	metricsReadBytes   *prometheus.GaugeVec
-	metricsReadTime    *prometheus.GaugeVec
-	metricsReadErrors  *prometheus.GaugeVec
-	metricsWriteOps    *prometheus.GaugeVec
-	metricsWriteBytes  *prometheus.GaugeVec
-	metricsWriteTime   *prometheus.GaugeVec
-	metricsWriteErrors *prometheus.GaugeVec
-	metricsFlushOps    *prometheus.GaugeVec
-	metricsFlushTime   *prometheus.GaugeVec
-	metricsFlushErrors *prometheus.GaugeVec
+	metricsReadOps      *prometheus.GaugeVec
+	metricsReadBytes    *prometheus.GaugeVec
+	metricsReadTime     *prometheus.GaugeVec
+	metricsReadErrors   *prometheus.GaugeVec
+	metricsWriteOps     *prometheus.GaugeVec
+	metricsWriteBytes   *prometheus.GaugeVec
+	metricsWriteTime    *prometheus.GaugeVec
+	metricsWriteErrors  *prometheus.GaugeVec
+	metricsFlushOps     *prometheus.GaugeVec
+	metricsFlushTime    *prometheus.GaugeVec
+	metricsFlushErrors  *prometheus.GaugeVec
+	metricsReadOpsSize  *prometheus.GaugeVec
+	metricsWriteOpsSize *prometheus.GaugeVec
 
 	// nbd
 	nbdPacketsIn    *prometheus.GaugeVec
@@ -391,6 +393,10 @@ func New(reg prometheus.Registerer, config *MetricsConfig) *Metrics {
 			Namespace: config.Namespace, Subsystem: config.SubMetrics, Name: "flush_errors", Help: "FlushErrors"}, labels),
 		metricsFlushTime: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: config.Namespace, Subsystem: config.SubMetrics, Name: "flush_time", Help: "FlushTime"}, labels),
+		metricsReadOpsSize: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: config.Namespace, Subsystem: config.SubMetrics, Name: "read_ops_size", Help: "ReadOpsSize"}, append(labels, "le")),
+		metricsWriteOpsSize: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: config.Namespace, Subsystem: config.SubMetrics, Name: "write_ops_size", Help: "WriteOpsSize"}, append(labels, "le")),
 
 		// nbd
 		nbdPacketsIn: prometheus.NewGaugeVec(prometheus.GaugeOpts{
@@ -470,7 +476,9 @@ func New(reg prometheus.Registerer, config *MetricsConfig) *Metrics {
 		met.metricsWriteErrors,
 		met.metricsFlushOps,
 		met.metricsFlushTime,
-		met.metricsFlushErrors)
+		met.metricsFlushErrors,
+		met.metricsReadOpsSize,
+		met.metricsWriteOpsSize)
 
 	reg.MustRegister(
 		met.nbdPacketsIn, met.nbdPacketsOut, met.nbdReadAt, met.nbdReadAtBytes, met.nbdWriteAt, met.nbdWriteAtBytes)
@@ -785,6 +793,14 @@ func (m *Metrics) AddMetrics(id string, name string, mm *modules.Metrics) {
 		m.metricsFlushOps.WithLabelValues(id, name).Set(float64(met.FlushOps))
 		m.metricsFlushErrors.WithLabelValues(id, name).Set(float64(met.FlushErrors))
 		m.metricsFlushTime.WithLabelValues(id, name).Set(float64(met.FlushTime))
+
+		// Add the size metrics here...
+		for _, v := range modules.OpSizeBuckets {
+			le := fmt.Sprintf("%d", v)
+			m.metricsReadOpsSize.WithLabelValues(id, name, le).Set(float64(met.ReadOpsSize[v]))
+			m.metricsWriteOpsSize.WithLabelValues(id, name, le).Set(float64(met.WriteOpsSize[v]))
+		}
+
 	})
 }
 
