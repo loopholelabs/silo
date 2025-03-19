@@ -122,12 +122,12 @@ func TestNBDNLDeviceSmall(t *testing.T) {
 	size := 900
 	prov := sources.NewMemoryStorage(size)
 
-	b := make([]byte, 900)
+	b := make([]byte, size)
 	_, err = rand.Read(b)
 	assert.NoError(t, err)
 	n, err := prov.WriteAt(b, 0)
 	assert.NoError(t, err)
-	assert.Equal(t, 900, n)
+	assert.Equal(t, size, n)
 
 	ndev = NewExposedStorageNBDNL(prov, DefaultConfig.WithNumConnections(1))
 
@@ -138,10 +138,10 @@ func TestNBDNLDeviceSmall(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Try doing a read...
-	buffer := make([]byte, 900)
+	buffer := make([]byte, size)
 	num, err := devfile.ReadAt(buffer, 0)
 	assert.NoError(t, err)
-	assert.Equal(t, 900, num)
+	assert.Equal(t, size, num)
 	devfile.Close()
 
 	// Make sure the data is equal
@@ -219,7 +219,7 @@ func TestNBDNLDeviceUnalignedPartialWrite(t *testing.T) {
 	devfile, err := os.OpenFile(fmt.Sprintf("/dev/nbd%d", ndev.deviceIndex), os.O_RDWR, 0666)
 	assert.NoError(t, err)
 
-	// Try doing a read...
+	// Try doing a WriteAt...
 	buffer := make([]byte, 800)
 	_, err = rand.Read(buffer)
 	assert.NoError(t, err)
