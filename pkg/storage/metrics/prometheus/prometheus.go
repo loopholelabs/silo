@@ -31,6 +31,7 @@ type MetricsConfig struct {
 	SubMetrics            string
 	SubNBD                string
 	SubWaitingCache       string
+	SubCopyOnWrite        string
 	TickMigrator          time.Duration
 	TickSyncer            time.Duration
 	TickProtocol          time.Duration
@@ -42,6 +43,7 @@ type MetricsConfig struct {
 	TickMetrics           time.Duration
 	TickNBD               time.Duration
 	TickWaitingCache      time.Duration
+	TickCopyOnWrite       time.Duration
 }
 
 func DefaultConfig() *MetricsConfig {
@@ -59,6 +61,7 @@ func DefaultConfig() *MetricsConfig {
 		SubMetrics:            "metrics",
 		SubNBD:                "nbd",
 		SubWaitingCache:       "waitingCache",
+		SubCopyOnWrite:        "cow",
 		TickMigrator:          100 * time.Millisecond,
 		TickSyncer:            100 * time.Millisecond,
 		TickProtocol:          100 * time.Millisecond,
@@ -70,6 +73,7 @@ func DefaultConfig() *MetricsConfig {
 		TickMetrics:           100 * time.Millisecond,
 		TickNBD:               100 * time.Millisecond,
 		TickWaitingCache:      100 * time.Millisecond,
+		TickCopyOnWrite:       100 * time.Millisecond,
 	}
 }
 
@@ -203,6 +207,10 @@ type Metrics struct {
 	waitingCacheMarkAvailableRemoteBlock *prometheus.GaugeVec
 	waitingCacheAvailableLocal           *prometheus.GaugeVec
 	waitingCacheAvailableRemote          *prometheus.GaugeVec
+
+	// copyOnWrite
+	copyOnWriteSize        *prometheus.GaugeVec
+	copyOnWriteOverlaySize *prometheus.GaugeVec
 
 	cancelfns map[string]map[string]context.CancelFunc
 }
@@ -444,6 +452,12 @@ func New(reg prometheus.Registerer, config *MetricsConfig) *Metrics {
 		waitingCacheAvailableRemote: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: config.Namespace, Subsystem: config.SubWaitingCache, Name: "available_remote", Help: "AvailableRemote"}, labels),
 
+		// copyOnWrite
+		copyOnWriteSize: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: config.Namespace, Subsystem: config.SubCopyOnWrite, Name: "size", Help: "Size"}, labels),
+		copyOnWriteOverlaySize: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: config.Namespace, Subsystem: config.SubCopyOnWrite, Name: "overlay_size", Help: "OverlaySize"}, labels),
+
 		cancelfns: make(map[string]map[string]context.CancelFunc),
 	}
 
@@ -507,6 +521,11 @@ func New(reg prometheus.Registerer, config *MetricsConfig) *Metrics {
 		met.waitingCacheMarkAvailableRemoteBlock,
 		met.waitingCacheAvailableLocal,
 		met.waitingCacheAvailableRemote,
+	)
+
+	reg.MustRegister(
+		met.copyOnWriteSize,
+		met.copyOnWriteOverlaySize,
 	)
 
 	return met
@@ -859,4 +878,16 @@ func (m *Metrics) AddWaitingCache(id string, name string, wc *waitingcache.Remot
 
 func (m *Metrics) RemoveWaitingCache(id string, name string) {
 	m.remove(m.config.SubWaitingCache, id, name)
+}
+
+func (m *Metrics) AddCopyOnWrite(id string, name string, cow *modules.CopyOnWrite) {
+	m.add(m.config.SubCopyOnWrite, id, name, m.config.TickCopyOnWrite, func() {
+		met := cow.GetMetrics()
+		m.copyOnWriteSize.WithLabelValues(id, name).Set(float64(met.MetricSize))
+		m.copyOnWriteOverlaySize.WithLabelValues(id, name).Set(float64(met.MetricOverlaySize))
+	})
+}
+
+func (m *Metrics) RemoveCopyOnWrite(id string, name string) {
+	m.remove(m.config.SubCopyOnWrite, id, name)
 }

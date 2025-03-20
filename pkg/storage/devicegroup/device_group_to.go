@@ -29,7 +29,7 @@ func NewFromSchema(instanceID string, ds []*config.DeviceSchema, createWC bool, 
 	}
 
 	for _, s := range ds {
-		prov, exp, err := device.NewDeviceWithLoggingMetrics(s, log, met, instanceID)
+		prov, exp, err := device.NewDeviceWithLoggingMetrics(s, log, met, instanceID, s.Name)
 		if err != nil {
 			if log != nil {
 				log.Error().Err(err).Str("schema", string(s.Encode())).Msg("could not create device")

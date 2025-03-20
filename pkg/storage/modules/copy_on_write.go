@@ -24,6 +24,19 @@ type CopyOnWrite struct {
 	closeLock sync.Mutex
 }
 
+type CopyOnWriteMetrics struct {
+	MetricSize        uint64
+	MetricOverlaySize uint64
+}
+
+func (i *CopyOnWrite) GetMetrics() *CopyOnWriteMetrics {
+	overlaySize := uint64(i.exists.Count(0, i.exists.Length())) * uint64(i.blockSize)
+	return &CopyOnWriteMetrics{
+		MetricSize:        i.size,
+		MetricOverlaySize: overlaySize,
+	}
+}
+
 var ErrClosed = errors.New("device is closing or already closed")
 
 func (i *CopyOnWrite) lockAll() {
