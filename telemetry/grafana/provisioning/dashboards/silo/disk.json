@@ -99,7 +99,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "silo_metrics_read_ops_size{device=\"$Device\"}",
+          "expr": "silo_metrics_read_ops_size{device=\"device_$Device\"}",
           "interval": "100ms",
           "legendFormat": "{{le}}",
           "range": true,
@@ -174,7 +174,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "silo_metrics_write_ops_size{device=\"$Device\"}",
+          "expr": "silo_metrics_write_ops_size{device=\"device_$Device\"}",
           "interval": "100ms",
           "legendFormat": "{{le}}",
           "range": true,
@@ -272,7 +272,7 @@
             "uid": "ds_prometheus"
           },
           "editorMode": "code",
-          "expr": "rate(silo_metrics_read_ops{device=\"$Device\"}[1s])",
+          "expr": "rate(silo_metrics_read_ops{device=\"device_$Device\"}[1s])",
           "hide": false,
           "instant": false,
           "interval": "100ms",
@@ -286,7 +286,7 @@
             "uid": "ds_prometheus"
           },
           "editorMode": "code",
-          "expr": "rate(silo_metrics_write_ops{device=\"$Device\"}[1s])",
+          "expr": "rate(silo_metrics_write_ops{device=\"device_$Device\"}[1s])",
           "hide": false,
           "instant": false,
           "interval": "100ms",
@@ -386,7 +386,7 @@
             "uid": "ds_prometheus"
           },
           "editorMode": "code",
-          "expr": "rate(silo_metrics_read_bytes{device=\"$Device\"}[1s])",
+          "expr": "rate(silo_metrics_read_bytes{device=\"device_$Device\"}[1s])",
           "hide": false,
           "instant": false,
           "interval": "100ms",
@@ -400,7 +400,7 @@
             "uid": "ds_prometheus"
           },
           "editorMode": "code",
-          "expr": "rate(silo_metrics_write_bytes{device=\"$Device\"}[1s])",
+          "expr": "rate(silo_metrics_write_bytes{device=\"device_$Device\"}[1s])",
           "hide": false,
           "instant": false,
           "interval": "100ms",
@@ -410,6 +410,384 @@
         }
       ],
       "title": "Disk Throughput",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ds_prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "scaleDistribution": {
+              "type": "linear"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 14
+      },
+      "id": 47,
+      "options": {
+        "calculate": false,
+        "cellGap": 1,
+        "color": {
+          "exponent": 0.5,
+          "fill": "dark-orange",
+          "mode": "scheme",
+          "reverse": false,
+          "scale": "exponential",
+          "scheme": "Oranges",
+          "steps": 64
+        },
+        "exemplars": {
+          "color": "rgba(255,0,255,0.7)"
+        },
+        "filterValues": {
+          "le": 1e-9
+        },
+        "legend": {
+          "show": true
+        },
+        "rowsFrame": {
+          "layout": "auto"
+        },
+        "tooltip": {
+          "mode": "single",
+          "showColorScale": false,
+          "yHistogram": false
+        },
+        "yAxis": {
+          "axisPlacement": "left",
+          "reverse": false
+        }
+      },
+      "pluginVersion": "11.3.0",
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "silo_metrics_read_ops_size{device=\"device_rodev_$Device\"}",
+          "interval": "100ms",
+          "legendFormat": "{{le}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "ROSOURCE Disk ReadOp size",
+      "type": "heatmap"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ds_prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "scaleDistribution": {
+              "type": "linear"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 14
+      },
+      "id": 48,
+      "options": {
+        "calculate": false,
+        "cellGap": 1,
+        "color": {
+          "exponent": 0.5,
+          "fill": "dark-orange",
+          "mode": "scheme",
+          "reverse": false,
+          "scale": "exponential",
+          "scheme": "Oranges",
+          "steps": 64
+        },
+        "exemplars": {
+          "color": "rgba(255,0,255,0.7)"
+        },
+        "filterValues": {
+          "le": 1e-9
+        },
+        "legend": {
+          "show": true
+        },
+        "rowsFrame": {
+          "layout": "auto"
+        },
+        "tooltip": {
+          "mode": "single",
+          "showColorScale": false,
+          "yHistogram": false
+        },
+        "yAxis": {
+          "axisPlacement": "left",
+          "reverse": false
+        }
+      },
+      "pluginVersion": "11.3.0",
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "silo_metrics_write_ops_size{device=\"device_rodev_$Device\"}",
+          "interval": "100ms",
+          "legendFormat": "{{le}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "ROSOURCE Disk WriteOp size",
+      "type": "heatmap"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ds_prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 100,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "iops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 21
+      },
+      "id": 45,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.3.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ds_prometheus"
+          },
+          "editorMode": "code",
+          "expr": "rate(silo_metrics_read_ops{device=\"device_rodev_$Device\"}[1s])",
+          "hide": false,
+          "instant": false,
+          "interval": "100ms",
+          "legendFormat": "Read",
+          "range": true,
+          "refId": "I"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ds_prometheus"
+          },
+          "editorMode": "code",
+          "expr": "rate(silo_metrics_write_ops{device=\"device_rodev_$Device\"}[1s])",
+          "hide": false,
+          "instant": false,
+          "interval": "100ms",
+          "legendFormat": "Write",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "ROSOURCE Disk IOPS",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ds_prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 100,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "Bps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 21
+      },
+      "id": 46,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.3.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ds_prometheus"
+          },
+          "editorMode": "code",
+          "expr": "rate(silo_metrics_read_bytes{device=\"device_rodev_$Device\"}[1s])",
+          "hide": false,
+          "instant": false,
+          "interval": "100ms",
+          "legendFormat": "Read",
+          "range": true,
+          "refId": "I"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ds_prometheus"
+          },
+          "editorMode": "code",
+          "expr": "rate(silo_metrics_write_bytes{device=\"device_rodev_$Device\"}[1s])",
+          "hide": false,
+          "instant": false,
+          "interval": "100ms",
+          "legendFormat": "Write",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "ROSOURCE Disk Throughput",
       "type": "timeseries"
     },
     {
@@ -477,7 +855,7 @@
         "h": 7,
         "w": 12,
         "x": 0,
-        "y": 14
+        "y": 28
       },
       "id": 15,
       "options": {
@@ -584,7 +962,7 @@
         "h": 7,
         "w": 12,
         "x": 12,
-        "y": 14
+        "y": 28
       },
       "id": 42,
       "options": {
@@ -690,7 +1068,7 @@
         "h": 7,
         "w": 12,
         "x": 0,
-        "y": 21
+        "y": 35
       },
       "id": 43,
       "options": {
@@ -797,7 +1175,7 @@
         "h": 7,
         "w": 12,
         "x": 12,
-        "y": 21
+        "y": 35
       },
       "id": 44,
       "options": {
@@ -859,7 +1237,7 @@
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 1,
-        "regex": "device_(.*)",
+        "regex": "device_rodev_(.*)",
         "type": "query"
       }
     ]
@@ -872,6 +1250,6 @@
   "timezone": "browser",
   "title": "Disks",
   "uid": "ae324d16sary81",
-  "version": 2,
+  "version": 3,
   "weekStart": ""
 }
