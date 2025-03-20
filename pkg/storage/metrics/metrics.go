@@ -47,4 +47,7 @@ type SiloMetrics interface {
 
 	AddWaitingCache(id string, name string, wc *waitingcache.Remote)
 	RemoveWaitingCache(id string, name string)
+
+	AddCopyOnWrite(id string, name string, cow *modules.CopyOnWrite)
+	RemoveCopyOnWrite(id string, name string)
 }

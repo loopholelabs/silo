@@ -18,7 +18,7 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "id": 3,
+  "id": 2,
   "links": [
     {
       "asDropdown": false,
@@ -99,7 +99,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "silo_metrics_read_ops_size{device=\"device_$Device\"}",
+          "expr": "rate(silo_metrics_read_ops_size{device=\"device_$Device\"}[1s])",
           "interval": "100ms",
           "legendFormat": "{{le}}",
           "range": true,
@@ -174,7 +174,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "silo_metrics_write_ops_size{device=\"device_$Device\"}",
+          "expr": "rate(silo_metrics_write_ops_size{device=\"device_$Device\"}[1s])",
           "interval": "100ms",
           "legendFormat": "{{le}}",
           "range": true,
@@ -477,7 +477,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "silo_metrics_read_ops_size{device=\"device_rodev_$Device\"}",
+          "expr": "rate(silo_metrics_read_ops_size{device=\"device_rodev_$Device\"}[1s])",
           "interval": "100ms",
           "legendFormat": "{{le}}",
           "range": true,
@@ -494,16 +494,57 @@
       },
       "fieldConfig": {
         "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 29,
+            "gradientMode": "none",
             "hideFrom": {
               "legend": false,
               "tooltip": false,
               "viz": false
             },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
             "scaleDistribution": {
               "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
             }
-          }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "decbytes"
         },
         "overrides": []
       },
@@ -513,54 +554,45 @@
         "x": 12,
         "y": 14
       },
-      "id": 48,
+      "id": 49,
       "options": {
-        "calculate": false,
-        "cellGap": 1,
-        "color": {
-          "exponent": 0.5,
-          "fill": "dark-orange",
-          "mode": "scheme",
-          "reverse": false,
-          "scale": "exponential",
-          "scheme": "Oranges",
-          "steps": 64
-        },
-        "exemplars": {
-          "color": "rgba(255,0,255,0.7)"
-        },
-        "filterValues": {
-          "le": 1e-9
-        },
         "legend": {
-          "show": true
-        },
-        "rowsFrame": {
-          "layout": "auto"
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
         },
         "tooltip": {
           "mode": "single",
-          "showColorScale": false,
-          "yHistogram": false
-        },
-        "yAxis": {
-          "axisPlacement": "left",
-          "reverse": false
+          "sort": "none"
         }
       },
       "pluginVersion": "11.3.0",
       "targets": [
         {
           "editorMode": "code",
-          "expr": "silo_metrics_write_ops_size{device=\"device_rodev_$Device\"}",
+          "expr": "silo_cow_size{device=\"$Device\"}",
           "interval": "100ms",
-          "legendFormat": "{{le}}",
+          "legendFormat": "Base",
           "range": true,
           "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ds_prometheus"
+          },
+          "editorMode": "code",
+          "expr": "silo_cow_overlay_size{device=\"$Device\"}",
+          "hide": false,
+          "interval": "100ms",
+          "legendFormat": "Overlay",
+          "range": true,
+          "refId": "B"
         }
       ],
-      "title": "ROSOURCE Disk WriteOp size",
-      "type": "heatmap"
+      "title": "Overlay size",
+      "type": "timeseries"
     },
     {
       "datasource": {
@@ -894,7 +926,7 @@
           "refId": "B"
         }
       ],
-      "title": "NBD Throughput",
+      "title": "NBD IOPs",
       "type": "timeseries"
     },
     {
@@ -1089,7 +1121,7 @@
           "editorMode": "code",
           "expr": "silo_nbd_active_reads{device=\"$Device\"}",
           "interval": "100ms",
-          "legendFormat": "Reads",
+          "legendFormat": "Read",
           "range": true,
           "refId": "A"
         },
@@ -1102,7 +1134,7 @@
           "expr": "silo_nbd_active_writes{device=\"$Device\"}",
           "hide": false,
           "interval": "100ms",
-          "legendFormat": "Writes",
+          "legendFormat": "Write",
           "range": true,
           "refId": "B"
         }
@@ -1250,6 +1282,6 @@
   "timezone": "browser",
   "title": "Disks",
   "uid": "ae324d16sary81",
-  "version": 3,
+  "version": 1,
   "weekStart": ""
 }
