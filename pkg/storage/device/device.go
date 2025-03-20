@@ -193,6 +193,13 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 
 	}
 
+	if met != nil {
+		// Expose some basic metrics for the devices storage.
+		metrics := modules.NewMetrics(prov)
+		met.AddMetrics(instanceID, fmt.Sprintf("device_%s", ds.Name), metrics)
+		prov = metrics
+	}
+
 	// Optionally use a copy on write RO source...
 	if ds.ROSource != nil {
 		if log != nil {
@@ -203,6 +210,12 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 		rodev, _, err := NewDevice(ds.ROSource)
 		if err != nil {
 			return nil, nil, err
+		}
+
+		if met != nil {
+			metrics := modules.NewMetrics(rodev)
+			met.AddMetrics(instanceID, fmt.Sprintf("device_rodev_%s", ds.Name), metrics)
+			rodev = metrics
 		}
 
 		// Now hook it in as the read only source for this device...
@@ -256,13 +269,6 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 		if err != nil {
 			return nil, nil, err
 		}
-	}
-
-	if met != nil {
-		// Expose some basic metrics for the devices storage.
-		metrics := modules.NewMetrics(prov)
-		met.AddMetrics(instanceID, fmt.Sprintf("device_%s", ds.Name), metrics)
-		prov = metrics
 	}
 
 	// Now optionaly expose the device
