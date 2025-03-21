@@ -8,6 +8,7 @@ import (
 
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
+	"github.com/loopholelabs/silo/pkg/storage/util"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -257,4 +258,50 @@ func TestCopyOnWriteClose(t *testing.T) {
 	// The ReadAt2 should happen during this close, which will cause a panic.
 	err := cow.Close()
 	assert.NoError(t, err)
+}
+
+func TestCopyOnWriteReadsNonzero(t *testing.T) {
+
+	// Create a new block storage, backed by memory storage
+	size := 1024 * 1024
+	mem := sources.NewMemoryStorage(size)
+	cache := sources.NewMemoryStorage(size)
+
+	// Fill it with stuff
+	data := make([]byte, size)
+	_, err := rand.Read(data)
+	assert.NoError(t, err)
+	_, err = mem.WriteAt(data, 0)
+	assert.NoError(t, err)
+
+	nonzero := util.NewBitfield((1024*1024 + 10 - 1) / 10)
+	// Set some bits
+	nonzero.SetBits(0, nonzero.Length()/2)
+
+	cow := NewCopyOnWrite(mem, cache, 10, true, nonzero)
+
+	// Now try doing some reads...
+
+	buff := make([]byte, 30)
+	_, err = cow.ReadAt(buff, 18)
+	assert.NoError(t, err)
+
+	// Check the data is correct...
+	assert.Equal(t, data[18:48], buff)
+
+	// Do another read in the other half
+
+	buff2 := make([]byte, 50)
+	_, err = cow.ReadAt(buff2, 512*1024+89)
+	assert.NoError(t, err)
+
+	zerobytes := make([]byte, 50)
+
+	assert.Equal(t, zerobytes, buff2)
+
+	// Checl metrics
+	met := cow.GetMetrics()
+
+	assert.Equal(t, uint64(1), met.MetricZeroReadOps)
+	assert.Equal(t, uint64(50), met.MetricZeroReadBytes)
 }
