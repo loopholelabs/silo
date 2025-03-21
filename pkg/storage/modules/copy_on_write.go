@@ -1,6 +1,7 @@
 package modules
 
 import (
+	"bytes"
 	"errors"
 	"sync"
 
@@ -19,6 +20,9 @@ type CopyOnWrite struct {
 	writeLock  sync.Mutex // TODO: Do this at the block level to increase throughput
 	sharedBase bool
 
+	readBeforeWrites bool
+	verifyRequired   bool
+
 	wg        sync.WaitGroup
 	closing   bool
 	closeLock sync.Mutex
@@ -32,6 +36,26 @@ func (i *CopyOnWrite) SendSiloEvent(eventType storage.EventType, eventData stora
 		if eventType == storage.EventTypeCowGetBlocks {
 			i.writeLock.Lock() // Just makes sure that no writes are in progress while we snapshot.
 			unrequired := i.exists.CollectZeroes(0, i.exists.Length())
+
+			// Optionally check if the overlay data is different from the base.
+			// If it's equal, then we need not transfer it, and it can be added to the list of unrequired blocks.
+			if i.verifyRequired {
+				required := i.exists.Collect(0, i.exists.Length())
+				bufferSource := make([]byte, i.blockSize)
+				bufferCache := make([]byte, i.blockSize)
+				for _, b := range required {
+					// Read the block and check if it's really required
+					nSource, errSource := i.source.ReadAt(bufferSource, int64(int(b)*i.blockSize))
+					nCache, errCache := i.cache.ReadAt(bufferCache, int64(int(b)*i.blockSize))
+
+					if errSource == nil && errCache == nil && nSource == nCache {
+						// If the data is equal, we can add it to unrequired.
+						if bytes.Equal(bufferSource[:nSource], bufferCache[:nSource]) {
+							unrequired = append(unrequired, b)
+						}
+					}
+				}
+			}
 			i.writeLock.Unlock()
 			return []storage.EventReturnData{
 				unrequired,
@@ -44,31 +68,25 @@ func (i *CopyOnWrite) SendSiloEvent(eventType storage.EventType, eventData stora
 	return append(data, storage.SendSiloEvent(i.source, eventType, eventData)...)
 }
 
-func NewCopyOnWrite(source storage.Provider, cache storage.Provider, blockSize int) *CopyOnWrite {
-	numBlocks := (source.Size() + uint64(blockSize) - 1) / uint64(blockSize)
-	return &CopyOnWrite{
-		source:     source,
-		cache:      cache,
-		exists:     util.NewBitfield(int(numBlocks)),
-		size:       source.Size(),
-		blockSize:  blockSize,
-		CloseFn:    func() {},
-		sharedBase: true,
-		closing:    false,
-	}
+type CopyOnWriteConfig struct {
+	SharedBase      bool
+	ReadBeforeWrite bool
+	VerifyRequired  bool
 }
 
-func NewCopyOnWriteHiddenBase(source storage.Provider, cache storage.Provider, blockSize int) *CopyOnWrite {
+func NewCopyOnWrite(source storage.Provider, cache storage.Provider, blockSize int, conf *CopyOnWriteConfig) *CopyOnWrite {
 	numBlocks := (source.Size() + uint64(blockSize) - 1) / uint64(blockSize)
 	return &CopyOnWrite{
-		source:     source,
-		cache:      cache,
-		exists:     util.NewBitfield(int(numBlocks)),
-		size:       source.Size(),
-		blockSize:  blockSize,
-		CloseFn:    func() {},
-		sharedBase: false,
-		closing:    false,
+		source:           source,
+		cache:            cache,
+		exists:           util.NewBitfield(int(numBlocks)),
+		size:             source.Size(),
+		blockSize:        blockSize,
+		CloseFn:          func() {},
+		sharedBase:       conf.SharedBase,
+		readBeforeWrites: conf.ReadBeforeWrite,
+		verifyRequired:   conf.VerifyRequired,
+		closing:          false,
 	}
 }
 
@@ -235,11 +253,26 @@ func (i *CopyOnWrite) WriteAt(buffer []byte, offset int64) (int, error) {
 					// Read existing data
 					_, err = i.source.ReadAt(blockBuffer, blockOffset)
 					if err == nil {
-						// Merge in data
-						count = copy(blockBuffer, buffer[blockOffset-offset:bufferEnd])
-						// Write back to cache
-						_, err = i.cache.WriteAt(blockBuffer, blockOffset)
-						i.exists.SetBit(int(b))
+						if i.readBeforeWrites {
+							count = int(bufferEnd - (blockOffset - offset))
+							for o := int64(0); o < (bufferEnd - (blockOffset - offset)); o++ {
+								if blockBuffer[o] != buffer[blockOffset-offset+o] {
+									// Data has changed. Write it
+									// Merge in data
+									count = copy(blockBuffer, buffer[blockOffset-offset:bufferEnd])
+									// Write back to cache
+									_, err = i.cache.WriteAt(blockBuffer, blockOffset)
+									i.exists.SetBit(int(b))
+									break
+								}
+							}
+						} else {
+							// Merge in data
+							count = copy(blockBuffer, buffer[blockOffset-offset:bufferEnd])
+							// Write back to cache
+							_, err = i.cache.WriteAt(blockBuffer, blockOffset)
+							i.exists.SetBit(int(b))
+						}
 					}
 				}
 			} else {
@@ -249,9 +282,11 @@ func (i *CopyOnWrite) WriteAt(buffer []byte, offset int64) (int, error) {
 				if e > int64(len(buffer)) {
 					e = int64(len(buffer))
 				}
-				_, err = i.cache.WriteAt(buffer[s:e], blockOffset)
-				i.exists.SetBit(int(b))
-				count = i.blockSize
+
+				err = i.writeBlock(b, buffer[s:e])
+				if err == nil {
+					count = i.blockSize
+				}
 			}
 		} else {
 			// Partial write at the start
@@ -266,10 +301,23 @@ func (i *CopyOnWrite) WriteAt(buffer []byte, offset int64) (int, error) {
 				blockBuffer := make([]byte, i.blockSize)
 				_, err = i.source.ReadAt(blockBuffer, blockOffset)
 				if err == nil {
-					// Merge in data
-					count = copy(blockBuffer[offset-blockOffset:], buffer[:bufferEnd])
-					_, err = i.cache.WriteAt(blockBuffer, blockOffset)
-					i.exists.SetBit(int(b))
+					if i.readBeforeWrites {
+						count = i.blockSize - int(offset-blockOffset)
+						for o := offset - blockOffset; o < int64(i.blockSize); o++ {
+							if blockBuffer[o] != buffer[o-(offset-blockOffset)] {
+
+								count = copy(blockBuffer[offset-blockOffset:], buffer[:bufferEnd])
+								_, err = i.cache.WriteAt(blockBuffer, blockOffset)
+								i.exists.SetBit(int(b))
+								break
+							}
+						}
+					} else {
+						// Merge in data
+						count = copy(blockBuffer[offset-blockOffset:], buffer[:bufferEnd])
+						_, err = i.cache.WriteAt(blockBuffer, blockOffset)
+						i.exists.SetBit(int(b))
+					}
 				}
 			}
 		}
@@ -289,6 +337,31 @@ func (i *CopyOnWrite) WriteAt(buffer []byte, offset int64) (int, error) {
 	}
 
 	return count, nil
+}
+
+func (i *CopyOnWrite) writeBlock(b uint, data []byte) error {
+	blockOffset := int64(b) * int64(i.blockSize)
+
+	var err error
+	if i.readBeforeWrites {
+		baseData := make([]byte, i.blockSize)
+		_, err = i.source.ReadAt(baseData, blockOffset)
+		if err == nil {
+			// Check if the data changed
+			for f := 0; f < i.blockSize; f++ {
+				if baseData[f] != data[f] {
+					// Data has changed, write it.
+					_, err = i.cache.WriteAt(data, blockOffset)
+					i.exists.SetBit(int(b))
+					break
+				}
+			}
+		}
+	} else {
+		_, err = i.cache.WriteAt(data, blockOffset)
+		i.exists.SetBit(int(b))
+	}
+	return err
 }
 
 func (i *CopyOnWrite) Flush() error {
