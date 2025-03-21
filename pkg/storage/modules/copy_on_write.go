@@ -3,6 +3,7 @@ package modules
 import (
 	"errors"
 	"sync"
+	"sync/atomic"
 
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/util"
@@ -13,6 +14,7 @@ type CopyOnWrite struct {
 	source     storage.Provider
 	cache      storage.Provider
 	exists     *util.Bitfield
+	nonzero    *util.Bitfield
 	size       uint64
 	blockSize  int
 	CloseFn    func()
@@ -22,11 +24,16 @@ type CopyOnWrite struct {
 	wg        sync.WaitGroup
 	closing   bool
 	closeLock sync.Mutex
+
+	metricZeroReadOps   uint64
+	metricZeroReadBytes uint64
 }
 
 type CopyOnWriteMetrics struct {
-	MetricSize        uint64
-	MetricOverlaySize uint64
+	MetricSize          uint64
+	MetricOverlaySize   uint64
+	MetricZeroReadOps   uint64
+	MetricZeroReadBytes uint64
 }
 
 func (i *CopyOnWrite) GetMetrics() *CopyOnWriteMetrics {
@@ -69,40 +76,28 @@ func (i *CopyOnWrite) SendSiloEvent(eventType storage.EventType, eventData stora
 	return append(data, storage.SendSiloEvent(i.source, eventType, eventData)...)
 }
 
-func NewCopyOnWrite(source storage.Provider, cache storage.Provider, blockSize int) *CopyOnWrite {
+func NewCopyOnWrite(source storage.Provider, cache storage.Provider, blockSize int, sharedBase bool, nonzero *util.Bitfield) *CopyOnWrite {
 	numBlocks := (source.Size() + uint64(blockSize) - 1) / uint64(blockSize)
 	locks := make([]*sync.Mutex, numBlocks)
 	for t := 0; t < int(numBlocks); t++ {
 		locks[t] = &sync.Mutex{}
 	}
-	return &CopyOnWrite{
-		source:     source,
-		cache:      cache,
-		exists:     util.NewBitfield(int(numBlocks)),
-		writeLocks: locks,
-		size:       source.Size(),
-		blockSize:  blockSize,
-		CloseFn:    func() {},
-		sharedBase: true,
-		closing:    false,
-	}
-}
 
-func NewCopyOnWriteHiddenBase(source storage.Provider, cache storage.Provider, blockSize int) *CopyOnWrite {
-	numBlocks := (source.Size() + uint64(blockSize) - 1) / uint64(blockSize)
-	locks := make([]*sync.Mutex, numBlocks)
-	for t := 0; t < int(numBlocks); t++ {
-		locks[t] = &sync.Mutex{}
+	if nonzero == nil {
+		nonzero = util.NewBitfield(int(numBlocks))
+		nonzero.SetBits(0, nonzero.Length())
 	}
+
 	return &CopyOnWrite{
 		source:     source,
 		cache:      cache,
 		exists:     util.NewBitfield(int(numBlocks)),
+		nonzero:    nonzero,
 		writeLocks: locks,
 		size:       source.Size(),
 		blockSize:  blockSize,
 		CloseFn:    func() {},
-		sharedBase: false,
+		sharedBase: sharedBase,
 		closing:    false,
 	}
 }
@@ -141,6 +136,18 @@ func (i *CopyOnWrite) ReadAt(buffer []byte, offset int64) (int, error) {
 
 	bStart := uint(offset / int64(i.blockSize))
 	bEnd := uint((end-1)/uint64(i.blockSize)) + 1
+
+	// Special case where it's all zeroes.
+	if len(i.nonzero.Collect(bStart, bEnd)) == 0 {
+		// Clear the buffer
+		length := len(buffer)
+		for f := 0; f < length; f++ {
+			buffer[f] = 0
+		}
+		atomic.AddUint64(&i.metricZeroReadOps, 1)
+		atomic.AddUint64(&i.metricZeroReadBytes, uint64(length))
+		return length, nil
+	}
 
 	// Special case where all the data is ALL in the cache
 	if i.exists.BitsSet(bStart, bEnd) {

@@ -22,6 +22,7 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/modules"
 	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
+	"github.com/loopholelabs/silo/pkg/storage/util"
 	"github.com/loopholelabs/silo/pkg/storage/volatilitymonitor"
 )
 
@@ -213,12 +214,17 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 		}
 
 		// Now hook it in as the read only source for this device...
-		var cow *modules.CopyOnWrite
-		if ds.ROSourceShared {
-			cow = modules.NewCopyOnWrite(rodev, prov, bs)
-		} else {
-			cow = modules.NewCopyOnWriteHiddenBase(rodev, prov, bs)
+		var nonzero *util.Bitfield
+		if ds.ROSourceBlocks != "" {
+			numBlocks := (ds.ByteSize() + int64(bs) - 1) / int64(bs)
+			nonzero := util.NewBitfield(int(numBlocks))
+			err = nonzero.LoadShortText(ds.ROSourceBlocks)
+			if err != nil {
+				return nil, nil, err
+			}
 		}
+
+		cow := modules.NewCopyOnWrite(rodev, prov, bs, ds.ROSourceShared, nonzero)
 		if met != nil {
 			met.AddCopyOnWrite(instanceID, deviceName, cow)
 		}

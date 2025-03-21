@@ -25,7 +25,7 @@ func TestCopyOnWriteReads(t *testing.T) {
 	_, err = mem.WriteAt(data, 0)
 	assert.NoError(t, err)
 
-	cow := NewCopyOnWrite(mem, cache, 10)
+	cow := NewCopyOnWrite(mem, cache, 10, true, nil)
 
 	// Now try doing some reads...
 
@@ -68,7 +68,7 @@ func TestCopyOnWriteWrites(t *testing.T) {
 	_, err = srcMem.WriteAt(data, 0)
 	assert.NoError(t, err)
 
-	cow := NewCopyOnWrite(mem, cache, 10)
+	cow := NewCopyOnWrite(mem, cache, 10, true, nil)
 
 	// Now try doing some writes...
 
@@ -112,7 +112,7 @@ func TestCopyOnWriteReadOverrun(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, size, n)
 
-	cow := NewCopyOnWrite(mem, cache, 1024)
+	cow := NewCopyOnWrite(mem, cache, 1024, true, nil)
 
 	buff2 := make([]byte, 100)
 	n, err = cow.ReadAt(buff2, int64(size-50))
@@ -138,7 +138,7 @@ func TestCopyOnWriteReadOverrunNonMultiple(t *testing.T) {
 	assert.NoError(t, err)
 	onlydata := data[:size]
 
-	cow := NewCopyOnWrite(mem, cache, 1000) // NB 1024*1024 isn't multiple of 1000 blocksize
+	cow := NewCopyOnWrite(mem, cache, 1000, true, nil) // NB 1024*1024 isn't multiple of 1000 blocksize
 
 	n, err := cow.WriteAt(data, 0)
 	assert.NoError(t, err)
@@ -168,7 +168,7 @@ func TestCopyOnWriteCRCIssue(t *testing.T) {
 
 	rosource := sources.NewMemoryStorage(size)
 
-	cow := NewCopyOnWrite(rosource, fstore, blockSize)
+	cow := NewCopyOnWrite(rosource, fstore, blockSize, true, nil)
 
 	reference := sources.NewMemoryStorage(size)
 
@@ -234,7 +234,7 @@ func TestCopyOnWriteClose(t *testing.T) {
 		return true, 0, nil
 	}
 
-	cow := NewCopyOnWrite(memHooks, cache, 10)
+	cow := NewCopyOnWrite(memHooks, cache, 10, true, nil)
 
 	// ReadAt1
 	go func() {
