@@ -217,11 +217,12 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 		var nonzero *util.Bitfield
 		if ds.ROSourceBlocks != "" {
 			numBlocks := (ds.ByteSize() + int64(bs) - 1) / int64(bs)
-			nonzero := util.NewBitfield(int(numBlocks))
+			nonzero = util.NewBitfield(int(numBlocks))
 			err = nonzero.LoadShortText(ds.ROSourceBlocks)
 			if err != nil {
 				return nil, nil, err
 			}
+			fmt.Printf("Using nonzero %s\n", ds.ROSourceBlocks)
 		}
 
 		cow := modules.NewCopyOnWrite(rodev, prov, bs, ds.ROSourceShared, nonzero)
