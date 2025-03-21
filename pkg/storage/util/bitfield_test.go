@@ -193,3 +193,18 @@ func TestBitfieldSetBitIfClear(t *testing.T) {
 	assert.Equal(t, true, bf.BitSet(99))
 	assert.Equal(t, true, bf.BitSet(100))
 }
+
+func TestBitfieldShortText(t *testing.T) {
+	bf := NewBitfield(1000)
+	for _, v := range []int{7, 100, 101, 102, 905, 907} {
+		bf.SetBit(v)
+	}
+
+	data := bf.GetShortText()
+	assert.Equal(t, "7 100-102 905 907", data)
+
+	nbf := NewBitfield(1000)
+	nbf.LoadShortText(data)
+
+	assert.True(t, bf.Equals(nbf))
+}

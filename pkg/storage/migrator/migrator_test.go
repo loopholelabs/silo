@@ -793,7 +793,7 @@ func TestMigratorSimpleCowSparse(t *testing.T) {
 	sourceStorageMem := sources.NewMemoryStorage(size)
 	overlay, err := sources.NewFileStorageSparseCreate("test_simple_migrate_cow", uint64(size), blockSize)
 	assert.NoError(t, err)
-	cow := modules.NewCopyOnWrite(sourceStorageMem, overlay, blockSize)
+	cow := modules.NewCopyOnWrite(sourceStorageMem, overlay, blockSize, true, nil)
 	sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(cow, blockSize)
 	sourceStorage := modules.NewLockable(sourceDirtyLocal)
 
@@ -850,7 +850,7 @@ func TestMigratorSimpleCowSparse(t *testing.T) {
 	// START moving data from sourceStorage to destStorage
 
 	destStorage := sources.NewMemoryStorage(size)
-	destCow := modules.NewCopyOnWrite(sourceStorageMem, destStorage, blockSize)
+	destCow := modules.NewCopyOnWrite(sourceStorageMem, destStorage, blockSize, true, nil)
 
 	conf := NewConfig().WithBlockSize(blockSize)
 	conf.LockerHandler = sourceStorage.Lock
