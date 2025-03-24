@@ -31,6 +31,7 @@ type MetricsConfig struct {
 	SubMetrics            string
 	SubNBD                string
 	SubWaitingCache       string
+	SubCopyOnWrite        string
 	TickMigrator          time.Duration
 	TickSyncer            time.Duration
 	TickProtocol          time.Duration
@@ -42,6 +43,7 @@ type MetricsConfig struct {
 	TickMetrics           time.Duration
 	TickNBD               time.Duration
 	TickWaitingCache      time.Duration
+	TickCopyOnWrite       time.Duration
 }
 
 func DefaultConfig() *MetricsConfig {
@@ -59,6 +61,7 @@ func DefaultConfig() *MetricsConfig {
 		SubMetrics:            "metrics",
 		SubNBD:                "nbd",
 		SubWaitingCache:       "waitingCache",
+		SubCopyOnWrite:        "cow",
 		TickMigrator:          100 * time.Millisecond,
 		TickSyncer:            100 * time.Millisecond,
 		TickProtocol:          100 * time.Millisecond,
@@ -70,6 +73,7 @@ func DefaultConfig() *MetricsConfig {
 		TickMetrics:           100 * time.Millisecond,
 		TickNBD:               100 * time.Millisecond,
 		TickWaitingCache:      100 * time.Millisecond,
+		TickCopyOnWrite:       100 * time.Millisecond,
 	}
 }
 
@@ -167,25 +171,31 @@ type Metrics struct {
 	volatilityMonitorHeatmap    *prometheus.GaugeVec
 
 	// metrics
-	metricsReadOps     *prometheus.GaugeVec
-	metricsReadBytes   *prometheus.GaugeVec
-	metricsReadTime    *prometheus.GaugeVec
-	metricsReadErrors  *prometheus.GaugeVec
-	metricsWriteOps    *prometheus.GaugeVec
-	metricsWriteBytes  *prometheus.GaugeVec
-	metricsWriteTime   *prometheus.GaugeVec
-	metricsWriteErrors *prometheus.GaugeVec
-	metricsFlushOps    *prometheus.GaugeVec
-	metricsFlushTime   *prometheus.GaugeVec
-	metricsFlushErrors *prometheus.GaugeVec
+	metricsReadOps      *prometheus.GaugeVec
+	metricsReadBytes    *prometheus.GaugeVec
+	metricsReadTime     *prometheus.GaugeVec
+	metricsReadErrors   *prometheus.GaugeVec
+	metricsWriteOps     *prometheus.GaugeVec
+	metricsWriteBytes   *prometheus.GaugeVec
+	metricsWriteTime    *prometheus.GaugeVec
+	metricsWriteErrors  *prometheus.GaugeVec
+	metricsFlushOps     *prometheus.GaugeVec
+	metricsFlushTime    *prometheus.GaugeVec
+	metricsFlushErrors  *prometheus.GaugeVec
+	metricsReadOpsSize  *prometheus.GaugeVec
+	metricsWriteOpsSize *prometheus.GaugeVec
 
 	// nbd
 	nbdPacketsIn    *prometheus.GaugeVec
 	nbdPacketsOut   *prometheus.GaugeVec
 	nbdReadAt       *prometheus.GaugeVec
 	nbdReadAtBytes  *prometheus.GaugeVec
+	nbdReadAtTime   *prometheus.GaugeVec
+	nbdActiveReads  *prometheus.GaugeVec
 	nbdWriteAt      *prometheus.GaugeVec
 	nbdWriteAtBytes *prometheus.GaugeVec
+	nbdWriteAtTime  *prometheus.GaugeVec
+	nbdActiveWrites *prometheus.GaugeVec
 
 	// waitingCache
 	waitingCacheWaitForBlock             *prometheus.GaugeVec
@@ -197,6 +207,15 @@ type Metrics struct {
 	waitingCacheMarkAvailableRemoteBlock *prometheus.GaugeVec
 	waitingCacheAvailableLocal           *prometheus.GaugeVec
 	waitingCacheAvailableRemote          *prometheus.GaugeVec
+
+	// copyOnWrite
+	copyOnWriteSize                  *prometheus.GaugeVec
+	copyOnWriteNonZeroSize           *prometheus.GaugeVec
+	copyOnWriteOverlaySize           *prometheus.GaugeVec
+	copyOnWriteZeroReadOps           *prometheus.GaugeVec
+	copyOnWriteZeroReadBytes         *prometheus.GaugeVec
+	copyOnWriteZeroPreWriteReadOps   *prometheus.GaugeVec
+	copyOnWriteZeroPreWriteReadBytes *prometheus.GaugeVec
 
 	cancelfns map[string]map[string]context.CancelFunc
 }
@@ -391,6 +410,10 @@ func New(reg prometheus.Registerer, config *MetricsConfig) *Metrics {
 			Namespace: config.Namespace, Subsystem: config.SubMetrics, Name: "flush_errors", Help: "FlushErrors"}, labels),
 		metricsFlushTime: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: config.Namespace, Subsystem: config.SubMetrics, Name: "flush_time", Help: "FlushTime"}, labels),
+		metricsReadOpsSize: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: config.Namespace, Subsystem: config.SubMetrics, Name: "read_ops_size", Help: "ReadOpsSize"}, append(labels, "le")),
+		metricsWriteOpsSize: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: config.Namespace, Subsystem: config.SubMetrics, Name: "write_ops_size", Help: "WriteOpsSize"}, append(labels, "le")),
 
 		// nbd
 		nbdPacketsIn: prometheus.NewGaugeVec(prometheus.GaugeOpts{
@@ -401,10 +424,18 @@ func New(reg prometheus.Registerer, config *MetricsConfig) *Metrics {
 			Namespace: config.Namespace, Subsystem: config.SubNBD, Name: "read_at", Help: "ReadAt"}, labels),
 		nbdReadAtBytes: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: config.Namespace, Subsystem: config.SubNBD, Name: "read_at_bytes", Help: "ReadAtBytes"}, labels),
+		nbdReadAtTime: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: config.Namespace, Subsystem: config.SubNBD, Name: "read_at_time", Help: "ReadAtTime"}, labels),
+		nbdActiveReads: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: config.Namespace, Subsystem: config.SubNBD, Name: "active_reads", Help: "ActiveReads"}, labels),
 		nbdWriteAt: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: config.Namespace, Subsystem: config.SubNBD, Name: "write_at", Help: "WriteAt"}, labels),
 		nbdWriteAtBytes: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: config.Namespace, Subsystem: config.SubNBD, Name: "write_at_bytes", Help: "WriteAtBytes"}, labels),
+		nbdWriteAtTime: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: config.Namespace, Subsystem: config.SubNBD, Name: "write_at_time", Help: "WriteAtTime"}, labels),
+		nbdActiveWrites: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: config.Namespace, Subsystem: config.SubNBD, Name: "active_writes", Help: "ActiveWrites"}, labels),
 
 		// waitingCache
 		waitingCacheWaitForBlock: prometheus.NewGaugeVec(prometheus.GaugeOpts{
@@ -425,6 +456,22 @@ func New(reg prometheus.Registerer, config *MetricsConfig) *Metrics {
 			Namespace: config.Namespace, Subsystem: config.SubWaitingCache, Name: "available_local", Help: "AvailableLocal"}, labels),
 		waitingCacheAvailableRemote: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: config.Namespace, Subsystem: config.SubWaitingCache, Name: "available_remote", Help: "AvailableRemote"}, labels),
+
+		// copyOnWrite
+		copyOnWriteSize: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: config.Namespace, Subsystem: config.SubCopyOnWrite, Name: "size", Help: "Size"}, labels),
+		copyOnWriteNonZeroSize: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: config.Namespace, Subsystem: config.SubCopyOnWrite, Name: "nonzero_size", Help: "NonZeroSize"}, labels),
+		copyOnWriteOverlaySize: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: config.Namespace, Subsystem: config.SubCopyOnWrite, Name: "overlay_size", Help: "OverlaySize"}, labels),
+		copyOnWriteZeroReadOps: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: config.Namespace, Subsystem: config.SubCopyOnWrite, Name: "zero_read_ops", Help: "ZeroReadOps"}, labels),
+		copyOnWriteZeroReadBytes: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: config.Namespace, Subsystem: config.SubCopyOnWrite, Name: "zero_read_bytes", Help: "ZeroReadBytes"}, labels),
+		copyOnWriteZeroPreWriteReadOps: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: config.Namespace, Subsystem: config.SubCopyOnWrite, Name: "zero_pre_write_read_ops", Help: "ZeroPreWriteReadOps"}, labels),
+		copyOnWriteZeroPreWriteReadBytes: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: config.Namespace, Subsystem: config.SubCopyOnWrite, Name: "zero_pre_write_read_bytes", Help: "ZeroPreWriteReadBytes"}, labels),
 
 		cancelfns: make(map[string]map[string]context.CancelFunc),
 	}
@@ -470,10 +517,14 @@ func New(reg prometheus.Registerer, config *MetricsConfig) *Metrics {
 		met.metricsWriteErrors,
 		met.metricsFlushOps,
 		met.metricsFlushTime,
-		met.metricsFlushErrors)
+		met.metricsFlushErrors,
+		met.metricsReadOpsSize,
+		met.metricsWriteOpsSize)
 
 	reg.MustRegister(
-		met.nbdPacketsIn, met.nbdPacketsOut, met.nbdReadAt, met.nbdReadAtBytes, met.nbdWriteAt, met.nbdWriteAtBytes)
+		met.nbdPacketsIn, met.nbdPacketsOut,
+		met.nbdReadAt, met.nbdReadAtBytes, met.nbdReadAtTime, met.nbdActiveReads,
+		met.nbdWriteAt, met.nbdWriteAtBytes, met.nbdWriteAtTime, met.nbdActiveWrites)
 
 	reg.MustRegister(
 		met.waitingCacheWaitForBlock,
@@ -485,6 +536,16 @@ func New(reg prometheus.Registerer, config *MetricsConfig) *Metrics {
 		met.waitingCacheMarkAvailableRemoteBlock,
 		met.waitingCacheAvailableLocal,
 		met.waitingCacheAvailableRemote,
+	)
+
+	reg.MustRegister(
+		met.copyOnWriteSize,
+		met.copyOnWriteNonZeroSize,
+		met.copyOnWriteOverlaySize,
+		met.copyOnWriteZeroReadOps,
+		met.copyOnWriteZeroReadBytes,
+		met.copyOnWriteZeroPreWriteReadOps,
+		met.copyOnWriteZeroPreWriteReadBytes,
 	)
 
 	return met
@@ -785,6 +846,14 @@ func (m *Metrics) AddMetrics(id string, name string, mm *modules.Metrics) {
 		m.metricsFlushOps.WithLabelValues(id, name).Set(float64(met.FlushOps))
 		m.metricsFlushErrors.WithLabelValues(id, name).Set(float64(met.FlushErrors))
 		m.metricsFlushTime.WithLabelValues(id, name).Set(float64(met.FlushTime))
+
+		// Add the size metrics here...
+		for _, v := range modules.OpSizeBuckets {
+			le := fmt.Sprintf("%d", v)
+			m.metricsReadOpsSize.WithLabelValues(id, name, le).Set(float64(met.ReadOpsSize[v]))
+			m.metricsWriteOpsSize.WithLabelValues(id, name, le).Set(float64(met.WriteOpsSize[v]))
+		}
+
 	})
 }
 
@@ -799,8 +868,12 @@ func (m *Metrics) AddNBD(id string, name string, mm *expose.ExposedStorageNBDNL)
 		m.nbdPacketsOut.WithLabelValues(id, name).Set(float64(met.PacketsOut))
 		m.nbdReadAt.WithLabelValues(id, name).Set(float64(met.ReadAt))
 		m.nbdReadAtBytes.WithLabelValues(id, name).Set(float64(met.ReadAtBytes))
+		m.nbdReadAtTime.WithLabelValues(id, name).Set(float64(met.ReadAtTime))
+		m.nbdActiveReads.WithLabelValues(id, name).Set(float64(met.ActiveReads))
 		m.nbdWriteAt.WithLabelValues(id, name).Set(float64(met.WriteAt))
 		m.nbdWriteAtBytes.WithLabelValues(id, name).Set(float64(met.WriteAtBytes))
+		m.nbdWriteAtTime.WithLabelValues(id, name).Set(float64(met.WriteAtTime))
+		m.nbdActiveWrites.WithLabelValues(id, name).Set(float64(met.ActiveWrites))
 	})
 }
 
@@ -825,4 +898,21 @@ func (m *Metrics) AddWaitingCache(id string, name string, wc *waitingcache.Remot
 
 func (m *Metrics) RemoveWaitingCache(id string, name string) {
 	m.remove(m.config.SubWaitingCache, id, name)
+}
+
+func (m *Metrics) AddCopyOnWrite(id string, name string, cow *modules.CopyOnWrite) {
+	m.add(m.config.SubCopyOnWrite, id, name, m.config.TickCopyOnWrite, func() {
+		met := cow.GetMetrics()
+		m.copyOnWriteSize.WithLabelValues(id, name).Set(float64(met.MetricSize))
+		m.copyOnWriteNonZeroSize.WithLabelValues(id, name).Set(float64(met.MetricNonZeroSize))
+		m.copyOnWriteOverlaySize.WithLabelValues(id, name).Set(float64(met.MetricOverlaySize))
+		m.copyOnWriteZeroReadOps.WithLabelValues(id, name).Set(float64(met.MetricZeroReadOps))
+		m.copyOnWriteZeroReadBytes.WithLabelValues(id, name).Set(float64(met.MetricZeroReadBytes))
+		m.copyOnWriteZeroPreWriteReadOps.WithLabelValues(id, name).Set(float64(met.MetricZeroPreWriteReadOps))
+		m.copyOnWriteZeroPreWriteReadBytes.WithLabelValues(id, name).Set(float64(met.MetricZeroPreWriteReadBytes))
+	})
+}
+
+func (m *Metrics) RemoveCopyOnWrite(id string, name string) {
+	m.remove(m.config.SubCopyOnWrite, id, name)
 }

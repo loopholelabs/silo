@@ -218,7 +218,7 @@ func TestStorageEventsForModules(tt *testing.T) {
 			addModule(mod2)
 			mod3 := modules.NewBlockSplitter(mod2, blockSize)
 			addModule(mod3)
-			mod4 := modules.NewCopyOnWrite(mod3, sources.NewMemoryStorage(size), blockSize)
+			mod4 := modules.NewCopyOnWrite(mod3, sources.NewMemoryStorage(size), blockSize, true, nil)
 			addModule(mod4)
 			mod5 := modules.NewDummyTracker(mod4, blockSize)
 			addModule(mod5)

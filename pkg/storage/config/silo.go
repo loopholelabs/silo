@@ -25,6 +25,7 @@ type DeviceSchema struct {
 	Expose         bool          `hcl:"expose,optional"`
 	Location       string        `hcl:"location,optional"`
 	ROSource       *DeviceSchema `hcl:"source,block"`
+	ROSourceHashes string        `hcl:"sourcehashes,optional"`
 	ROSourceShared bool          `hcl:"sourceshared,optional"`
 	LoadBinLog     string        `hcl:"loadbinlog,optional"`
 	Binlog         string        `hcl:"binlog,optional"`

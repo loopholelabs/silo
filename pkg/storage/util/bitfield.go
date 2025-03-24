@@ -2,6 +2,9 @@ package util
 
 import (
 	"errors"
+	"fmt"
+	"strconv"
+	"strings"
 	"sync/atomic"
 )
 
@@ -469,6 +472,72 @@ func (bf *Bitfield) Equals(bf2 *Bitfield) bool {
 		}
 	}
 	return true
+}
+
+func (bf *Bitfield) GetShortText() string {
+	data := ""
+	bits := bf.Collect(0, bf.Length())
+	currentRangeStart := -1
+	lastv := -1
+	for _, v := range bits {
+		if currentRangeStart != -1 {
+			if int(v) != lastv+1 {
+				// Close the current range and start again...
+				if currentRangeStart == lastv {
+					data = fmt.Sprintf("%s %d", data, currentRangeStart)
+				} else {
+					data = fmt.Sprintf("%s %d-%d", data, currentRangeStart, lastv)
+				}
+				currentRangeStart = int(v)
+			}
+		} else {
+			currentRangeStart = int(v)
+		}
+
+		lastv = int(v)
+	}
+
+	// Close any remaining block
+	if currentRangeStart != -1 {
+		if currentRangeStart == lastv {
+			data = fmt.Sprintf("%s %d", data, currentRangeStart)
+		} else {
+			data = fmt.Sprintf("%s %d-%d", data, currentRangeStart, lastv)
+		}
+	}
+	return strings.Trim(data, " ")
+}
+
+func (bf *Bitfield) LoadShortText(data string) error {
+	// Load up the bits from a ShortText representation
+	bits := strings.Split(data, " ")
+	for _, b := range bits {
+		vals := strings.Split(b, "-")
+		switch len(vals) {
+		case 1:
+			val1, err := strconv.ParseInt(vals[0], 10, 64)
+			if err != nil {
+				return err
+			}
+			bf.SetBit(int(val1))
+		case 2:
+			val1, err := strconv.ParseInt(vals[0], 10, 64)
+			if err != nil {
+				return err
+			}
+			val2, err := strconv.ParseInt(vals[1], 10, 64)
+			if err != nil {
+				return err
+			}
+			if val2 <= val1 {
+				return errors.New("malformed data")
+			}
+			bf.SetBits(uint(val1), uint(val2)+1)
+		default:
+			return errors.New("malformed data")
+		}
+	}
+	return nil
 }
 
 // Create a mask of bits at the start of this range

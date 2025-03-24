@@ -2,12 +2,14 @@ package modules
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"os"
 	"testing"
 	"time"
 
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
+	"github.com/loopholelabs/silo/pkg/storage/util"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -25,7 +27,7 @@ func TestCopyOnWriteReads(t *testing.T) {
 	_, err = mem.WriteAt(data, 0)
 	assert.NoError(t, err)
 
-	cow := NewCopyOnWrite(mem, cache, 10)
+	cow := NewCopyOnWrite(mem, cache, 10, true, nil)
 
 	// Now try doing some reads...
 
@@ -68,7 +70,7 @@ func TestCopyOnWriteWrites(t *testing.T) {
 	_, err = srcMem.WriteAt(data, 0)
 	assert.NoError(t, err)
 
-	cow := NewCopyOnWrite(mem, cache, 10)
+	cow := NewCopyOnWrite(mem, cache, 10, true, nil)
 
 	// Now try doing some writes...
 
@@ -112,7 +114,7 @@ func TestCopyOnWriteReadOverrun(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, size, n)
 
-	cow := NewCopyOnWrite(mem, cache, 1024)
+	cow := NewCopyOnWrite(mem, cache, 1024, true, nil)
 
 	buff2 := make([]byte, 100)
 	n, err = cow.ReadAt(buff2, int64(size-50))
@@ -138,7 +140,7 @@ func TestCopyOnWriteReadOverrunNonMultiple(t *testing.T) {
 	assert.NoError(t, err)
 	onlydata := data[:size]
 
-	cow := NewCopyOnWrite(mem, cache, 1000) // NB 1024*1024 isn't multiple of 1000 blocksize
+	cow := NewCopyOnWrite(mem, cache, 1000, true, nil) // NB 1024*1024 isn't multiple of 1000 blocksize
 
 	n, err := cow.WriteAt(data, 0)
 	assert.NoError(t, err)
@@ -168,7 +170,7 @@ func TestCopyOnWriteCRCIssue(t *testing.T) {
 
 	rosource := sources.NewMemoryStorage(size)
 
-	cow := NewCopyOnWrite(rosource, fstore, blockSize)
+	cow := NewCopyOnWrite(rosource, fstore, blockSize, true, nil)
 
 	reference := sources.NewMemoryStorage(size)
 
@@ -234,7 +236,7 @@ func TestCopyOnWriteClose(t *testing.T) {
 		return true, 0, nil
 	}
 
-	cow := NewCopyOnWrite(memHooks, cache, 10)
+	cow := NewCopyOnWrite(memHooks, cache, 10, true, nil)
 
 	// ReadAt1
 	go func() {
@@ -257,4 +259,80 @@ func TestCopyOnWriteClose(t *testing.T) {
 	// The ReadAt2 should happen during this close, which will cause a panic.
 	err := cow.Close()
 	assert.NoError(t, err)
+}
+
+func TestCopyOnWriteReadsNonzero(t *testing.T) {
+
+	// Create a new block storage, backed by memory storage
+	size := 1024 * 1024
+	mem := sources.NewMemoryStorage(size)
+	cache := sources.NewMemoryStorage(size)
+
+	// Fill it with stuff
+	data := make([]byte, size)
+	_, err := rand.Read(data)
+	assert.NoError(t, err)
+	_, err = mem.WriteAt(data, 0)
+	assert.NoError(t, err)
+
+	nonzero := util.NewBitfield((1024*1024 + 10 - 1) / 10)
+	// Set some bits
+	nonzero.SetBits(0, nonzero.Length()/2)
+
+	hashes := make([][sha256.Size]byte, 0)
+	numBlocks := (size + 10 - 1) / 10
+	zeroHash := [sha256.Size]byte(make([]byte, sha256.Size))
+	hash := make([]byte, sha256.Size)
+
+	// Setup some dummy hash data, only really matters if it's zeroes or not for now...
+	for b := 0; b < numBlocks; b++ {
+		if b < (numBlocks / 2) {
+			rand.Read(hash)
+			hashes = append(hashes, [sha256.Size]byte(hash))
+		} else {
+			hashes = append(hashes, zeroHash)
+		}
+	}
+
+	cow := NewCopyOnWrite(mem, cache, 10, true, hashes)
+
+	// Now try doing some reads...
+
+	buff := make([]byte, 30)
+	_, err = cow.ReadAt(buff, 18)
+	assert.NoError(t, err)
+
+	// Check the data is correct...
+	assert.Equal(t, data[18:48], buff)
+
+	// Do another read in the other half
+
+	buff2 := make([]byte, 50)
+	_, err = cow.ReadAt(buff2, 512*1024+89)
+	assert.NoError(t, err)
+
+	zerobytes := make([]byte, 50)
+
+	assert.Equal(t, zerobytes, buff2)
+
+	// Check metrics
+	met := cow.GetMetrics()
+
+	// There should have been some zero reads
+	assert.Greater(t, met.MetricZeroReadOps, uint64(0))
+	assert.Greater(t, met.MetricZeroReadBytes, uint64(0))
+
+	// Now try a write...
+
+	buff3 := make([]byte, 30)
+	_, err = cow.WriteAt(buff3, 512*1024+89)
+	assert.NoError(t, err)
+
+	// Check metrics
+	met = cow.GetMetrics()
+
+	// There should have been some zero reads
+	assert.Greater(t, met.MetricZeroPreWriteReadOps, uint64(0))
+	assert.Greater(t, met.MetricZeroPreWriteReadBytes, uint64(0))
+
 }

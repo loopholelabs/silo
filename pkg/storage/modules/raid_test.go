@@ -28,7 +28,7 @@ func TestRaid(t *testing.T) {
 		os.Remove("testraid_cache")
 	})
 
-	cow := NewCopyOnWrite(source, cache, blockSize)
+	cow := NewCopyOnWrite(source, cache, blockSize, true, nil)
 
 	mem := sources.NewMemoryStorage(size)
 

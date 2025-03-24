@@ -2,11 +2,14 @@ package modules
 
 import (
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/loopholelabs/silo/pkg/storage"
 )
+
+var OpSizeBuckets = []int{4 * 1024, 8 * 1024, 16 * 1024, 32 * 1024, 64 * 1024, 128 * 1024, 256 * 1024, 512 * 1024, 1024 * 1024}
 
 /**
  * Simple metrics filter for reader/writer
@@ -26,25 +29,40 @@ type Metrics struct {
 	metricFlushOps    uint64
 	metricFlushTime   uint64
 	metricFlushErrors uint64
+
+	metricReadOpsLock  sync.Mutex
+	metricReadOpsSize  map[int]uint64
+	metricWriteOpsLock sync.Mutex
+	metricWriteOpsSize map[int]uint64
 }
 
 type MetricsSnapshot struct {
-	ReadOps     uint64
-	ReadBytes   uint64
-	ReadTime    uint64
-	ReadErrors  uint64
-	WriteOps    uint64
-	WriteBytes  uint64
-	WriteTime   uint64
-	WriteErrors uint64
-	FlushOps    uint64
-	FlushTime   uint64
-	FlushErrors uint64
+	ReadOps      uint64
+	ReadBytes    uint64
+	ReadTime     uint64
+	ReadErrors   uint64
+	WriteOps     uint64
+	WriteBytes   uint64
+	WriteTime    uint64
+	WriteErrors  uint64
+	FlushOps     uint64
+	FlushTime    uint64
+	FlushErrors  uint64
+	ReadOpsSize  map[int]uint64
+	WriteOpsSize map[int]uint64
 }
 
 func NewMetrics(prov storage.Provider) *Metrics {
+	readSize := make(map[int]uint64)
+	writeSize := make(map[int]uint64)
+	for _, v := range OpSizeBuckets {
+		readSize[v] = 0
+		writeSize[v] = 0
+	}
 	return &Metrics{
-		prov: prov,
+		prov:               prov,
+		metricReadOpsSize:  readSize,
+		metricWriteOpsSize: writeSize,
 	}
 }
 
@@ -112,7 +130,7 @@ func (i *Metrics) ShowStats(prefix string) {
 }
 
 func (i *Metrics) GetMetrics() *MetricsSnapshot {
-	return &MetricsSnapshot{
+	ms := &MetricsSnapshot{
 		ReadOps:     atomic.LoadUint64(&i.metricReadOps),
 		ReadBytes:   atomic.LoadUint64(&i.metricReadBytes),
 		ReadTime:    atomic.LoadUint64(&i.metricReadTime),
@@ -125,6 +143,24 @@ func (i *Metrics) GetMetrics() *MetricsSnapshot {
 		FlushTime:   atomic.LoadUint64(&i.metricFlushTime),
 		FlushErrors: atomic.LoadUint64(&i.metricFlushErrors),
 	}
+
+	readOpsSize := make(map[int]uint64)
+	i.metricReadOpsLock.Lock()
+	for k, v := range i.metricReadOpsSize {
+		readOpsSize[k] = v
+	}
+	i.metricReadOpsLock.Unlock()
+	ms.ReadOpsSize = readOpsSize
+
+	writeOpsSize := make(map[int]uint64)
+	i.metricWriteOpsLock.Lock()
+	for k, v := range i.metricWriteOpsSize {
+		writeOpsSize[k] = v
+	}
+	i.metricWriteOpsLock.Unlock()
+	ms.WriteOpsSize = writeOpsSize
+
+	return ms
 }
 
 func (i *Metrics) ResetMetrics() {
@@ -139,9 +175,30 @@ func (i *Metrics) ResetMetrics() {
 	atomic.StoreUint64(&i.metricFlushOps, 0)
 	atomic.StoreUint64(&i.metricFlushTime, 0)
 	atomic.StoreUint64(&i.metricFlushErrors, 0)
+	i.metricReadOpsLock.Lock()
+	for k := range i.metricReadOpsSize {
+		i.metricReadOpsSize[k] = 0
+	}
+	i.metricReadOpsLock.Unlock()
+
+	i.metricWriteOpsLock.Lock()
+	for k := range i.metricWriteOpsSize {
+		i.metricWriteOpsSize[k] = 0
+	}
+	i.metricWriteOpsLock.Unlock()
 }
 
 func (i *Metrics) ReadAt(buffer []byte, offset int64) (int, error) {
+	i.metricReadOpsLock.Lock()
+	num := len(buffer)
+	for _, v := range OpSizeBuckets {
+		if num <= v {
+			i.metricReadOpsSize[v]++
+			break
+		}
+	}
+	i.metricReadOpsLock.Unlock()
+
 	atomic.AddUint64(&i.metricReadOps, 1)
 	atomic.AddUint64(&i.metricReadBytes, uint64(len(buffer)))
 	ctime := time.Now()
@@ -155,6 +212,16 @@ func (i *Metrics) ReadAt(buffer []byte, offset int64) (int, error) {
 }
 
 func (i *Metrics) WriteAt(buffer []byte, offset int64) (int, error) {
+	i.metricWriteOpsLock.Lock()
+	num := len(buffer)
+	for _, v := range OpSizeBuckets {
+		if num <= v {
+			i.metricWriteOpsSize[v]++
+			break
+		}
+	}
+	i.metricWriteOpsLock.Unlock()
+
 	atomic.AddUint64(&i.metricWriteOps, 1)
 	atomic.AddUint64(&i.metricWriteBytes, uint64(len(buffer)))
 	ctime := time.Now()
