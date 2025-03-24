@@ -198,7 +198,7 @@ type Metrics struct {
 	waitingCacheAvailableLocal           *prometheus.GaugeVec
 	waitingCacheAvailableRemote          *prometheus.GaugeVec
 
-	cancelfns map[string]context.CancelFunc
+	cancelfns map[string]map[string]context.CancelFunc
 }
 
 func New(reg prometheus.Registerer, config *MetricsConfig) *Metrics {
@@ -426,7 +426,7 @@ func New(reg prometheus.Registerer, config *MetricsConfig) *Metrics {
 		waitingCacheAvailableRemote: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: config.Namespace, Subsystem: config.SubWaitingCache, Name: "available_remote", Help: "AvailableRemote"}, labels),
 
-		cancelfns: make(map[string]context.CancelFunc),
+		cancelfns: make(map[string]map[string]context.CancelFunc),
 	}
 
 	// Register all the metrics
@@ -492,18 +492,37 @@ func New(reg prometheus.Registerer, config *MetricsConfig) *Metrics {
 
 func (m *Metrics) remove(subsystem string, id string, name string) {
 	m.lock.Lock()
-	cancelfn, ok := m.cancelfns[fmt.Sprintf("%s_%s_%s", subsystem, id, name)]
+	cancelfns, ok := m.cancelfns[id]
 	if ok {
-		cancelfn()
-		delete(m.cancelfns, fmt.Sprintf("%s_%s_%s", subsystem, id, name))
+		cancelfn, ok := cancelfns[fmt.Sprintf("%s_%s", subsystem, name)]
+		if ok {
+			cancelfn()
+			delete(cancelfns, fmt.Sprintf("%s_%s", subsystem, name))
+			if len(cancelfns) == 0 {
+				delete(m.cancelfns, id)
+			}
+		}
 	}
 	m.lock.Unlock()
 }
 
 func (m *Metrics) add(subsystem string, id string, name string, interval time.Duration, tickfn func()) {
-	ctx, cancelfn := context.WithCancel(context.TODO())
 	m.lock.Lock()
-	m.cancelfns[fmt.Sprintf("%s_%s_%s", subsystem, id, name)] = cancelfn
+	cancelfns, ok := m.cancelfns[id]
+	if !ok {
+		cancelfns = make(map[string]context.CancelFunc)
+		m.cancelfns[id] = cancelfns
+	}
+	_, existing := cancelfns[fmt.Sprintf("%s_%s", subsystem, name)]
+	if existing {
+		// The metric is already being tracked.
+		m.lock.Unlock()
+		return
+	}
+
+	ctx, cancelfn := context.WithCancel(context.TODO())
+	cancelfns[fmt.Sprintf("%s_%s", subsystem, name)] = cancelfn
+
 	m.lock.Unlock()
 
 	ticker := time.NewTicker(interval)
@@ -522,10 +541,25 @@ func (m *Metrics) add(subsystem string, id string, name string, interval time.Du
 // Shutdown everything
 func (m *Metrics) Shutdown() {
 	m.lock.Lock()
-	for _, cancelfn := range m.cancelfns {
-		cancelfn()
+	for _, cancelfns := range m.cancelfns {
+		for _, cancelfn := range cancelfns {
+			cancelfn()
+		}
 	}
-	m.cancelfns = make(map[string]context.CancelFunc)
+	m.cancelfns = make(map[string]map[string]context.CancelFunc)
+	m.lock.Unlock()
+}
+
+// Remove everything associated with the given id
+func (m *Metrics) RemoveAllID(id string) {
+	m.lock.Lock()
+	cancelfns, ok := m.cancelfns[id]
+	if ok {
+		for _, cancelfn := range cancelfns {
+			cancelfn()
+		}
+		delete(m.cancelfns, id)
+	}
 	m.lock.Unlock()
 }
 

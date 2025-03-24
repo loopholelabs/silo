@@ -19,6 +19,7 @@ import (
 
 const NBDDefaultBlockSize = 4096
 
+const NBDMinSectors = 8
 const NBDAlignSectorSize = 512
 
 var DefaultConfig = &Config{
@@ -116,6 +117,10 @@ func NewExposedStorageNBDNL(prov storage.Provider, conf *Config) *ExposedStorage
 
 	// The size must be a multiple of sector size
 	size = NBDAlignSectorSize * ((size + NBDAlignSectorSize - 1) / NBDAlignSectorSize)
+
+	if size < NBDAlignSectorSize*NBDMinSectors {
+		size = NBDAlignSectorSize * NBDMinSectors
+	}
 
 	ctx, cancelfn := context.WithCancel(context.TODO())
 
