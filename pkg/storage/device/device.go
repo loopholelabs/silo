@@ -136,6 +136,33 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 			} else {
 				return nil, nil, err
 			}
+
+			// Deal with optional binlogload
+			if ds.LoadBinLog != "" {
+				blr, err := modules.NewBinLogReplay(ds.LoadBinLog, prov)
+				if err != nil {
+					return nil, nil, err
+				}
+				if log != nil {
+					log.Info().
+						Str("source", ds.LoadBinLog).
+						Str("device", ds.Name).
+						Msg("replaying binlog")
+				}
+				provErr, err := blr.ExecuteAll()
+				if provErr != nil {
+					return nil, nil, provErr
+				}
+				if err != nil {
+					return nil, nil, err
+				}
+				if log != nil {
+					log.Info().
+						Str("source", ds.LoadBinLog).
+						Str("device", ds.Name).
+						Msg("binlog replay completed")
+				}
+			}
 		} else {
 			defer file.Close()
 

@@ -27,6 +27,7 @@ type DeviceSchema struct {
 	ROSource       *DeviceSchema `hcl:"source,block"`
 	ROSourceShared bool          `hcl:"sourceshared,optional"`
 	ROSourceRBW    bool          `hcl:"sourcerbw,optional"`
+	LoadBinLog     string        `hcl:"loadbinlog,optional"`
 	Binlog         string        `hcl:"binlog,optional"`
 	PageServerPID  int           `hcl:"pid,optional"`
 	Sync           *SyncS3Schema `hcl:"sync,block"`
