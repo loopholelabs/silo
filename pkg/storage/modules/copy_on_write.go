@@ -206,13 +206,13 @@ func (i *CopyOnWrite) ReadAt(buffer []byte, offset int64) (int, error) {
 					} else {
 						if i.nonzero.BitSet(int(b)) {
 							_, err = i.source.ReadAt(buffer[s:e], blockOffset)
-							atomic.AddUint64(&i.metricZeroReadOps, 1)
-							atomic.AddUint64(&i.metricZeroReadBytes, uint64(i.blockSize))
 						} else {
 							// Clear
 							for p := s; p < e; p++ {
 								buffer[p] = 0
 							}
+							atomic.AddUint64(&i.metricZeroReadOps, 1)
+							atomic.AddUint64(&i.metricZeroReadBytes, uint64(i.blockSize))
 							err = nil
 						}
 					}

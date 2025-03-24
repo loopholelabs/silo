@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/sha256"
+	"fmt"
 	"os"
 
 	"github.com/loopholelabs/silo/pkg/storage/sources"
@@ -84,4 +85,6 @@ func runCheckDev(_ *cobra.Command, _ []string) {
 	if err != nil {
 		panic(err)
 	}
+
+	fmt.Printf("non zero set is %v\n", bitmap.GetShortText())
 }
