@@ -177,10 +177,11 @@ func (i *CopyOnWrite) ReadAt(buffer []byte, offset int64) (int, error) {
 			if blockOffset >= offset {
 				// Partial read at the end
 				if len(buffer[blockOffset-offset:bufferEnd]) < i.blockSize {
+					num := bufferEnd - (blockOffset - offset)
 					if i.exists.BitSet(int(b)) {
 						count, err = i.cache.ReadAt(buffer[blockOffset-offset:bufferEnd], blockOffset)
 					} else {
-						blockBuffer := make([]byte, i.blockSize)
+						blockBuffer := make([]byte, num)
 
 						if i.nonzero.BitSet(int(b)) {
 							// Read existing data
@@ -227,16 +228,16 @@ func (i *CopyOnWrite) ReadAt(buffer []byte, offset int64) (int, error) {
 					}
 					count, err = i.cache.ReadAt(buffer[:plen], offset)
 				} else {
-					blockBuffer := make([]byte, i.blockSize)
+					blockBuffer := make([]byte, i.blockSize-int(offset-blockOffset))
 					if i.nonzero.BitSet(int(b)) {
-						_, err = i.source.ReadAt(blockBuffer, blockOffset)
+						_, err = i.source.ReadAt(blockBuffer, offset)
 					} else {
 						err = nil
 						atomic.AddUint64(&i.metricZeroReadOps, 1)
 						atomic.AddUint64(&i.metricZeroReadBytes, uint64(int64(i.blockSize)-(offset-blockOffset)))
 					}
 					if err == nil {
-						count = copy(buffer[:bufferEnd], blockBuffer[offset-blockOffset:])
+						count = copy(buffer[:bufferEnd], blockBuffer)
 					}
 				}
 			}
