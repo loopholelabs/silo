@@ -34,6 +34,7 @@ type CopyOnWrite struct {
 }
 
 type CopyOnWriteMetrics struct {
+	MetricNonZeroSize           uint64
 	MetricSize                  uint64
 	MetricOverlaySize           uint64
 	MetricZeroReadOps           uint64
@@ -46,6 +47,7 @@ func (i *CopyOnWrite) GetMetrics() *CopyOnWriteMetrics {
 	overlaySize := uint64(i.exists.Count(0, i.exists.Length())) * uint64(i.blockSize)
 	return &CopyOnWriteMetrics{
 		MetricSize:                  i.size,
+		MetricNonZeroSize:           uint64(i.blockSize * i.nonzero.Count(0, i.nonzero.Length())),
 		MetricOverlaySize:           overlaySize,
 		MetricZeroReadOps:           i.metricZeroReadOps,
 		MetricZeroReadBytes:         i.metricZeroReadBytes,

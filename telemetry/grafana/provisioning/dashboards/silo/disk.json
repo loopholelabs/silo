@@ -84,7 +84,7 @@
             "spanNulls": false,
             "stacking": {
               "group": "A",
-              "mode": "normal"
+              "mode": "none"
             },
             "thresholdsStyle": {
               "mode": "off"
@@ -243,7 +243,7 @@
             "spanNulls": false,
             "stacking": {
               "group": "A",
-              "mode": "normal"
+              "mode": "none"
             },
             "thresholdsStyle": {
               "mode": "off"
@@ -325,20 +325,6 @@
             "uid": "ds_prometheus"
           },
           "editorMode": "code",
-          "expr": "rate(silo_metrics_write_ops{device=\"device_rodev_$Device\"}[1s])",
-          "hide": false,
-          "instant": false,
-          "interval": "100ms",
-          "legendFormat": "Write IOPs",
-          "range": true,
-          "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "ds_prometheus"
-          },
-          "editorMode": "code",
           "expr": "rate(silo_metrics_read_bytes{device=\"device_rodev_$Device\"}[1s])",
           "hide": false,
           "instant": false,
@@ -346,20 +332,6 @@
           "legendFormat": "Read Throughput",
           "range": true,
           "refId": "B"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "ds_prometheus"
-          },
-          "editorMode": "code",
-          "expr": "rate(silo_metrics_write_bytes{device=\"device_rodev_$Device\"}[1s])",
-          "hide": false,
-          "instant": false,
-          "interval": "100ms",
-          "legendFormat": "Write Throughput",
-          "range": true,
-          "refId": "C"
         }
       ],
       "title": "ROSOURCE activity",
@@ -565,7 +537,7 @@
             "spanNulls": false,
             "stacking": {
               "group": "A",
-              "mode": "normal"
+              "mode": "none"
             },
             "thresholdsStyle": {
               "mode": "off"
@@ -789,6 +761,19 @@
           "legendFormat": "Overlay",
           "range": true,
           "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ds_prometheus"
+          },
+          "editorMode": "code",
+          "expr": "silo_cow_nonzero_size{device=\"$Device\"}",
+          "hide": false,
+          "interval": "100ms",
+          "legendFormat": "Non-Zero-Base",
+          "range": true,
+          "refId": "C"
         }
       ],
       "title": "Overlay size",
@@ -919,7 +904,7 @@
             "spanNulls": false,
             "stacking": {
               "group": "A",
-              "mode": "normal"
+              "mode": "none"
             },
             "thresholdsStyle": {
               "mode": "off"

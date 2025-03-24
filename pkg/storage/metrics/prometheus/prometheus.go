@@ -210,6 +210,7 @@ type Metrics struct {
 
 	// copyOnWrite
 	copyOnWriteSize                  *prometheus.GaugeVec
+	copyOnWriteNonZeroSize           *prometheus.GaugeVec
 	copyOnWriteOverlaySize           *prometheus.GaugeVec
 	copyOnWriteZeroReadOps           *prometheus.GaugeVec
 	copyOnWriteZeroReadBytes         *prometheus.GaugeVec
@@ -459,6 +460,8 @@ func New(reg prometheus.Registerer, config *MetricsConfig) *Metrics {
 		// copyOnWrite
 		copyOnWriteSize: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: config.Namespace, Subsystem: config.SubCopyOnWrite, Name: "size", Help: "Size"}, labels),
+		copyOnWriteNonZeroSize: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: config.Namespace, Subsystem: config.SubCopyOnWrite, Name: "nonzero_size", Help: "NonZeroSize"}, labels),
 		copyOnWriteOverlaySize: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: config.Namespace, Subsystem: config.SubCopyOnWrite, Name: "overlay_size", Help: "OverlaySize"}, labels),
 		copyOnWriteZeroReadOps: prometheus.NewGaugeVec(prometheus.GaugeOpts{
@@ -537,6 +540,7 @@ func New(reg prometheus.Registerer, config *MetricsConfig) *Metrics {
 
 	reg.MustRegister(
 		met.copyOnWriteSize,
+		met.copyOnWriteNonZeroSize,
 		met.copyOnWriteOverlaySize,
 		met.copyOnWriteZeroReadOps,
 		met.copyOnWriteZeroReadBytes,
@@ -900,6 +904,7 @@ func (m *Metrics) AddCopyOnWrite(id string, name string, cow *modules.CopyOnWrit
 	m.add(m.config.SubCopyOnWrite, id, name, m.config.TickCopyOnWrite, func() {
 		met := cow.GetMetrics()
 		m.copyOnWriteSize.WithLabelValues(id, name).Set(float64(met.MetricSize))
+		m.copyOnWriteNonZeroSize.WithLabelValues(id, name).Set(float64(met.MetricNonZeroSize))
 		m.copyOnWriteOverlaySize.WithLabelValues(id, name).Set(float64(met.MetricOverlaySize))
 		m.copyOnWriteZeroReadOps.WithLabelValues(id, name).Set(float64(met.MetricZeroReadOps))
 		m.copyOnWriteZeroReadBytes.WithLabelValues(id, name).Set(float64(met.MetricZeroReadBytes))
