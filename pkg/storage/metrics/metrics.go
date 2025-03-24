@@ -13,6 +13,7 @@ import (
 
 type SiloMetrics interface {
 	Shutdown()
+	RemoveAllID(id string)
 
 	AddSyncer(id string, name string, sync *migrator.Syncer)
 	RemoveSyncer(id string, name string)

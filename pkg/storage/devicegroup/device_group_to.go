@@ -10,7 +10,6 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/config"
 	"github.com/loopholelabs/silo/pkg/storage/device"
 	"github.com/loopholelabs/silo/pkg/storage/dirtytracker"
-	"github.com/loopholelabs/silo/pkg/storage/expose"
 	"github.com/loopholelabs/silo/pkg/storage/metrics"
 	"github.com/loopholelabs/silo/pkg/storage/migrator"
 	"github.com/loopholelabs/silo/pkg/storage/modules"
@@ -69,9 +68,6 @@ func NewFromSchema(instanceID string, ds []*config.DeviceSchema, createWC bool, 
 		// Add to metrics if given.
 		if met != nil {
 			met.AddMetrics(dg.instanceID, s.Name, mlocal)
-			if exp != nil {
-				met.AddNBD(dg.instanceID, s.Name, exp.(*expose.ExposedStorageNBDNL))
-			}
 			met.AddDirtyTracker(dg.instanceID, s.Name, dirtyRemote)
 			met.AddVolatilityMonitor(dg.instanceID, s.Name, vmonitor)
 		}
