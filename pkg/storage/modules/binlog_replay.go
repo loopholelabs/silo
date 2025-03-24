@@ -113,3 +113,19 @@ func (i *BinLogReplay) Next(speed float64, execute bool) (error, error) {
 	}
 	return nil, nil
 }
+
+func (i *BinLogReplay) ExecuteAll() (error, error) {
+	for {
+		provErr, err := i.Next(0, true)
+		if provErr != nil {
+			return provErr, err
+		}
+		if err != nil {
+			if err == io.EOF {
+				break // All done
+			}
+			return nil, err
+		}
+	}
+	return nil, nil
+}
