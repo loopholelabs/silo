@@ -149,7 +149,7 @@ func TestMigratorCow(tt *testing.T) {
 					destOverlay, err = sources.NewFileStorageCreate(path.Join(testCowDir, "test_overlay_dest"), int64(di.Size))
 					assert.NoError(t, err)
 
-					destStorage = modules.NewCopyOnWrite(baseProvider, destOverlay, blockSize)
+					destStorage = modules.NewCopyOnWrite(baseProvider, destOverlay, blockSize, &modules.CopyOnWriteConfig{SharedBase: true})
 
 					waitingCacheLocal, waitingCacheRemote = waitingcache.NewWaitingCache(destStorage, blockSize)
 					return waitingCacheRemote
