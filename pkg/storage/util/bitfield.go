@@ -481,9 +481,7 @@ func (bf *Bitfield) GetShortText() string {
 	lastv := -1
 	for _, v := range bits {
 		if currentRangeStart != -1 {
-			if int(v) == lastv+1 {
-				// Just keep going...
-			} else {
+			if int(v) != lastv+1 {
 				// Close the current range and start again...
 				if currentRangeStart == lastv {
 					data = fmt.Sprintf("%s %d", data, currentRangeStart)
@@ -515,13 +513,14 @@ func (bf *Bitfield) LoadShortText(data string) error {
 	bits := strings.Split(data, " ")
 	for _, b := range bits {
 		vals := strings.Split(b, "-")
-		if len(vals) == 1 {
+		switch len(vals) {
+		case 1:
 			val1, err := strconv.ParseInt(vals[0], 10, 64)
 			if err != nil {
 				return err
 			}
 			bf.SetBit(int(val1))
-		} else if len(vals) == 2 {
+		case 2:
 			val1, err := strconv.ParseInt(vals[0], 10, 64)
 			if err != nil {
 				return err
@@ -534,7 +533,7 @@ func (bf *Bitfield) LoadShortText(data string) error {
 				return errors.New("malformed data")
 			}
 			bf.SetBits(uint(val1), uint(val2)+1)
-		} else {
+		default:
 			return errors.New("malformed data")
 		}
 	}
