@@ -22,7 +22,6 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/modules"
 	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
-	"github.com/loopholelabs/silo/pkg/storage/util"
 	"github.com/loopholelabs/silo/pkg/storage/volatilitymonitor"
 )
 
@@ -214,18 +213,25 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 		}
 
 		// Now hook it in as the read only source for this device...
-		var nonzero *util.Bitfield
-		if ds.ROSourceBlocks != "" {
-			numBlocks := (ds.ByteSize() + int64(bs) - 1) / int64(bs)
-			nonzero = util.NewBitfield(int(numBlocks))
-			err = nonzero.LoadShortText(ds.ROSourceBlocks)
+		var hashes [][sha256.Size]byte
+		if ds.ROSourceHashes != "" {
+			hashData, err := os.ReadFile(ds.ROSourceHashes)
 			if err != nil {
 				return nil, nil, err
 			}
-			fmt.Printf("Using nonzero %s\n", ds.ROSourceBlocks)
+
+			numBlocks := (ds.ByteSize() + int64(bs) - 1) / int64(bs)
+
+			for t := 0; t < int(numBlocks); t++ {
+				if (t+1)*bs > len(hashData) {
+					return nil, nil, errors.New("hash data incomplete")
+				}
+				hash := hashData[t*bs : (t+1)*bs]
+				hashes = append(hashes, [sha256.Size]byte(hash))
+			}
 		}
 
-		cow := modules.NewCopyOnWrite(rodev, prov, bs, ds.ROSourceShared, nonzero)
+		cow := modules.NewCopyOnWrite(rodev, prov, bs, ds.ROSourceShared, hashes)
 		if met != nil {
 			met.AddCopyOnWrite(instanceID, deviceName, cow)
 		}

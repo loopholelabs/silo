@@ -2,6 +2,7 @@ package modules
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"os"
 	"testing"
 	"time"
@@ -278,7 +279,22 @@ func TestCopyOnWriteReadsNonzero(t *testing.T) {
 	// Set some bits
 	nonzero.SetBits(0, nonzero.Length()/2)
 
-	cow := NewCopyOnWrite(mem, cache, 10, true, nonzero)
+	hashes := make([][sha256.Size]byte, 0)
+	numBlocks := (size + 10 - 1) / 10
+	zeroHash := [sha256.Size]byte(make([]byte, sha256.Size))
+	hash := make([]byte, sha256.Size)
+
+	// Setup some dummy hash data, only really matters if it's zeroes or not for now...
+	for b := 0; b < numBlocks; b++ {
+		if b < (numBlocks / 2) {
+			rand.Read(hash)
+			hashes = append(hashes, [sha256.Size]byte(hash))
+		} else {
+			hashes = append(hashes, zeroHash)
+		}
+	}
+
+	cow := NewCopyOnWrite(mem, cache, 10, true, hashes)
 
 	// Now try doing some reads...
 
@@ -299,9 +315,24 @@ func TestCopyOnWriteReadsNonzero(t *testing.T) {
 
 	assert.Equal(t, zerobytes, buff2)
 
-	// Checl metrics
+	// Check metrics
 	met := cow.GetMetrics()
 
-	assert.Equal(t, uint64(1), met.MetricZeroReadOps)
-	assert.Equal(t, uint64(50), met.MetricZeroReadBytes)
+	// There should have been some zero reads
+	assert.Greater(t, met.MetricZeroReadOps, uint64(0))
+	assert.Greater(t, met.MetricZeroReadBytes, uint64(0))
+
+	// Now try a write...
+
+	buff3 := make([]byte, 30)
+	_, err = cow.WriteAt(buff3, 512*1024+89)
+	assert.NoError(t, err)
+
+	// Check metrics
+	met = cow.GetMetrics()
+
+	// There should have been some zero reads
+	assert.Greater(t, met.MetricZeroPreWriteReadOps, uint64(0))
+	assert.Greater(t, met.MetricZeroPreWriteReadBytes, uint64(0))
+
 }

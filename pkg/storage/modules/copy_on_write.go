@@ -1,6 +1,8 @@
 package modules
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"errors"
 	"sync"
 	"sync/atomic"
@@ -25,24 +27,30 @@ type CopyOnWrite struct {
 	closing   bool
 	closeLock sync.Mutex
 
-	metricZeroReadOps   uint64
-	metricZeroReadBytes uint64
+	metricZeroReadOps           uint64
+	metricZeroReadBytes         uint64
+	metricZeroPreWriteReadOps   uint64
+	metricZeroPreWriteReadBytes uint64
 }
 
 type CopyOnWriteMetrics struct {
-	MetricSize          uint64
-	MetricOverlaySize   uint64
-	MetricZeroReadOps   uint64
-	MetricZeroReadBytes uint64
+	MetricSize                  uint64
+	MetricOverlaySize           uint64
+	MetricZeroReadOps           uint64
+	MetricZeroReadBytes         uint64
+	MetricZeroPreWriteReadOps   uint64
+	MetricZeroPreWriteReadBytes uint64
 }
 
 func (i *CopyOnWrite) GetMetrics() *CopyOnWriteMetrics {
 	overlaySize := uint64(i.exists.Count(0, i.exists.Length())) * uint64(i.blockSize)
 	return &CopyOnWriteMetrics{
-		MetricSize:          i.size,
-		MetricOverlaySize:   overlaySize,
-		MetricZeroReadOps:   i.metricZeroReadOps,
-		MetricZeroReadBytes: i.metricZeroReadBytes,
+		MetricSize:                  i.size,
+		MetricOverlaySize:           overlaySize,
+		MetricZeroReadOps:           i.metricZeroReadOps,
+		MetricZeroReadBytes:         i.metricZeroReadBytes,
+		MetricZeroPreWriteReadOps:   i.metricZeroPreWriteReadOps,
+		MetricZeroPreWriteReadBytes: i.metricZeroPreWriteReadBytes,
 	}
 }
 
@@ -78,15 +86,26 @@ func (i *CopyOnWrite) SendSiloEvent(eventType storage.EventType, eventData stora
 	return append(data, storage.SendSiloEvent(i.source, eventType, eventData)...)
 }
 
-func NewCopyOnWrite(source storage.Provider, cache storage.Provider, blockSize int, sharedBase bool, nonzero *util.Bitfield) *CopyOnWrite {
+func NewCopyOnWrite(source storage.Provider, cache storage.Provider, blockSize int, sharedBase bool, hashes [][sha256.Size]byte) *CopyOnWrite {
 	numBlocks := (source.Size() + uint64(blockSize) - 1) / uint64(blockSize)
 	locks := make([]*sync.Mutex, numBlocks)
 	for t := 0; t < int(numBlocks); t++ {
 		locks[t] = &sync.Mutex{}
 	}
 
-	if nonzero == nil {
-		nonzero = util.NewBitfield(int(numBlocks))
+	nonzero := util.NewBitfield(int(numBlocks))
+
+	zeroHash := make([]byte, sha256.Size)
+
+	if hashes != nil {
+		// We have hash info, and if the hash is all zeroes, it means the data is all zeroes.
+		for b := 0; b < int(numBlocks); b++ {
+			if !bytes.Equal(hashes[b][:], zeroHash) {
+				nonzero.SetBit(b)
+			}
+		}
+	} else {
+		// We have no hash data, so we'll assume all the data is non-zero
 		nonzero.SetBits(0, nonzero.Length())
 	}
 
@@ -139,18 +158,6 @@ func (i *CopyOnWrite) ReadAt(buffer []byte, offset int64) (int, error) {
 	bStart := uint(offset / int64(i.blockSize))
 	bEnd := uint((end-1)/uint64(i.blockSize)) + 1
 
-	// Special case where it's all zeroes.
-	if len(i.nonzero.Collect(bStart, bEnd)) == 0 {
-		// Clear the buffer
-		length := len(buffer)
-		for f := 0; f < length; f++ {
-			buffer[f] = 0
-		}
-		atomic.AddUint64(&i.metricZeroReadOps, 1)
-		atomic.AddUint64(&i.metricZeroReadBytes, uint64(length))
-		return length, nil
-	}
-
 	// Special case where all the data is ALL in the cache
 	if i.exists.BitsSet(bStart, bEnd) {
 		return i.cache.ReadAt(buffer, offset)
@@ -172,8 +179,15 @@ func (i *CopyOnWrite) ReadAt(buffer []byte, offset int64) (int, error) {
 						count, err = i.cache.ReadAt(buffer[blockOffset-offset:bufferEnd], blockOffset)
 					} else {
 						blockBuffer := make([]byte, i.blockSize)
-						// Read existing data
-						_, err = i.source.ReadAt(blockBuffer, blockOffset)
+
+						if i.nonzero.BitSet(int(b)) {
+							// Read existing data
+							_, err = i.source.ReadAt(blockBuffer, blockOffset)
+						} else {
+							atomic.AddUint64(&i.metricZeroReadOps, 1)
+							atomic.AddUint64(&i.metricZeroReadBytes, uint64(bufferEnd-(blockOffset-offset)))
+							err = nil
+						}
 						if err == nil {
 							count = copy(buffer[blockOffset-offset:bufferEnd], blockBuffer)
 						}
@@ -188,7 +202,17 @@ func (i *CopyOnWrite) ReadAt(buffer []byte, offset int64) (int, error) {
 					if i.exists.BitSet(int(b)) {
 						_, err = i.cache.ReadAt(buffer[s:e], blockOffset)
 					} else {
-						_, err = i.source.ReadAt(buffer[s:e], blockOffset)
+						if i.nonzero.BitSet(int(b)) {
+							_, err = i.source.ReadAt(buffer[s:e], blockOffset)
+							atomic.AddUint64(&i.metricZeroReadOps, 1)
+							atomic.AddUint64(&i.metricZeroReadBytes, uint64(i.blockSize))
+						} else {
+							// Clear
+							for p := s; p < e; p++ {
+								buffer[p] = 0
+							}
+							err = nil
+						}
 					}
 					count = i.blockSize
 				}
@@ -202,7 +226,13 @@ func (i *CopyOnWrite) ReadAt(buffer []byte, offset int64) (int, error) {
 					count, err = i.cache.ReadAt(buffer[:plen], offset)
 				} else {
 					blockBuffer := make([]byte, i.blockSize)
-					_, err = i.source.ReadAt(blockBuffer, blockOffset)
+					if i.nonzero.BitSet(int(b)) {
+						_, err = i.source.ReadAt(blockBuffer, blockOffset)
+					} else {
+						err = nil
+						atomic.AddUint64(&i.metricZeroReadOps, 1)
+						atomic.AddUint64(&i.metricZeroReadBytes, uint64(int64(i.blockSize)-(offset-blockOffset)))
+					}
 					if err == nil {
 						count = copy(buffer[:bufferEnd], blockBuffer[offset-blockOffset:])
 					}
@@ -279,7 +309,13 @@ func (i *CopyOnWrite) WriteAt(buffer []byte, offset int64) (int, error) {
 					} else {
 						blockBuffer := make([]byte, i.blockSize)
 						// Read existing data
-						_, err = i.source.ReadAt(blockBuffer, blockOffset)
+						if i.nonzero.BitSet(int(b)) {
+							_, err = i.source.ReadAt(blockBuffer, blockOffset)
+						} else {
+							atomic.AddUint64(&i.metricZeroPreWriteReadOps, 1)
+							atomic.AddUint64(&i.metricZeroPreWriteReadBytes, uint64(bufferEnd-(blockOffset-offset)))
+							err = nil
+						}
 						if err == nil {
 							// Merge in data
 							count = copy(blockBuffer, buffer[blockOffset-offset:bufferEnd])
@@ -310,7 +346,13 @@ func (i *CopyOnWrite) WriteAt(buffer []byte, offset int64) (int, error) {
 					count, err = i.cache.WriteAt(buffer[:plen], offset)
 				} else {
 					blockBuffer := make([]byte, i.blockSize)
-					_, err = i.source.ReadAt(blockBuffer, blockOffset)
+					if i.nonzero.BitSet(int(b)) {
+						_, err = i.source.ReadAt(blockBuffer, blockOffset)
+					} else {
+						err = nil
+						atomic.AddUint64(&i.metricZeroPreWriteReadOps, 1)
+						atomic.AddUint64(&i.metricZeroPreWriteReadBytes, uint64(int64(i.blockSize)-(offset-blockOffset)))
+					}
 					if err == nil {
 						// Merge in data
 						count = copy(blockBuffer[offset-blockOffset:], buffer[:bufferEnd])
