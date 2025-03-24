@@ -209,10 +209,12 @@ type Metrics struct {
 	waitingCacheAvailableRemote          *prometheus.GaugeVec
 
 	// copyOnWrite
-	copyOnWriteSize          *prometheus.GaugeVec
-	copyOnWriteOverlaySize   *prometheus.GaugeVec
-	copyOnWriteZeroReadOps   *prometheus.GaugeVec
-	copyOnWriteZeroReadBytes *prometheus.GaugeVec
+	copyOnWriteSize                  *prometheus.GaugeVec
+	copyOnWriteOverlaySize           *prometheus.GaugeVec
+	copyOnWriteZeroReadOps           *prometheus.GaugeVec
+	copyOnWriteZeroReadBytes         *prometheus.GaugeVec
+	copyOnWriteZeroPreWriteReadOps   *prometheus.GaugeVec
+	copyOnWriteZeroPreWriteReadBytes *prometheus.GaugeVec
 
 	cancelfns map[string]map[string]context.CancelFunc
 }
@@ -463,6 +465,10 @@ func New(reg prometheus.Registerer, config *MetricsConfig) *Metrics {
 			Namespace: config.Namespace, Subsystem: config.SubCopyOnWrite, Name: "zero_read_ops", Help: "ZeroReadOps"}, labels),
 		copyOnWriteZeroReadBytes: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: config.Namespace, Subsystem: config.SubCopyOnWrite, Name: "zero_read_bytes", Help: "ZeroReadBytes"}, labels),
+		copyOnWriteZeroPreWriteReadOps: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: config.Namespace, Subsystem: config.SubCopyOnWrite, Name: "zero_pre_write_read_ops", Help: "ZeroPreWriteReadOps"}, labels),
+		copyOnWriteZeroPreWriteReadBytes: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: config.Namespace, Subsystem: config.SubCopyOnWrite, Name: "zero_pre_write_read_bytes", Help: "ZeroPreWriteReadBytes"}, labels),
 
 		cancelfns: make(map[string]map[string]context.CancelFunc),
 	}
@@ -534,6 +540,8 @@ func New(reg prometheus.Registerer, config *MetricsConfig) *Metrics {
 		met.copyOnWriteOverlaySize,
 		met.copyOnWriteZeroReadOps,
 		met.copyOnWriteZeroReadBytes,
+		met.copyOnWriteZeroPreWriteReadOps,
+		met.copyOnWriteZeroPreWriteReadBytes,
 	)
 
 	return met
@@ -895,6 +903,8 @@ func (m *Metrics) AddCopyOnWrite(id string, name string, cow *modules.CopyOnWrit
 		m.copyOnWriteOverlaySize.WithLabelValues(id, name).Set(float64(met.MetricOverlaySize))
 		m.copyOnWriteZeroReadOps.WithLabelValues(id, name).Set(float64(met.MetricZeroReadOps))
 		m.copyOnWriteZeroReadBytes.WithLabelValues(id, name).Set(float64(met.MetricZeroReadBytes))
+		m.copyOnWriteZeroPreWriteReadOps.WithLabelValues(id, name).Set(float64(met.MetricZeroPreWriteReadOps))
+		m.copyOnWriteZeroPreWriteReadBytes.WithLabelValues(id, name).Set(float64(met.MetricZeroPreWriteReadBytes))
 	})
 }
 

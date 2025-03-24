@@ -223,10 +223,10 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 			numBlocks := (ds.ByteSize() + int64(bs) - 1) / int64(bs)
 
 			for t := 0; t < int(numBlocks); t++ {
-				if (t+1)*bs > len(hashData) {
+				if (t+1)*sha256.Size > len(hashData) {
 					return nil, nil, errors.New("hash data incomplete")
 				}
-				hash := hashData[t*bs : (t+1)*bs]
+				hash := hashData[t*sha256.Size : (t+1)*sha256.Size]
 				hashes = append(hashes, [sha256.Size]byte(hash))
 			}
 		}
