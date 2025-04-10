@@ -2,6 +2,7 @@ package storage
 
 import (
 	"errors"
+	"fmt"
 	"io"
 )
 
@@ -35,4 +36,9 @@ func (rs *ReadSeeker) Seek(offset int64, whence int) (int64, error) {
 
 func (rs *ReadSeeker) Read(p []byte) (int, error) {
 	return rs.prov.ReadAt(p, rs.offset)
+}
+
+func (fs *ReadSeeker) Write(p []byte) (int, error) {
+	fmt.Printf("TODO: Write?\n")
+	return len(p), nil
 }
