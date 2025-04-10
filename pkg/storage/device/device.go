@@ -309,6 +309,11 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 		}
 	}
 
+	// TEST checking ext4 stuff...
+	if deviceName == "disk" {
+		prov = modules.NewExt4Check(prov)
+	}
+
 	// Now optionaly expose the device
 	// NB You may well need to call ex.SetProvider if you wish to insert other things in the chain.
 	var ex storage.ExposedStorage
