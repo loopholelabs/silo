@@ -68,6 +68,7 @@ require (
 	github.com/rs/xid v1.6.0 // indirect
 	github.com/rs/zerolog v1.33.0 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
+	github.com/smira/go-statsd v1.3.4 // indirect
 	github.com/spf13/pflag v1.0.6 // indirect
 	github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb // indirect
 	github.com/xeipuuv/gojsonreference v0.0.0-20180127040603-bd5ef7bd5415 // indirect
