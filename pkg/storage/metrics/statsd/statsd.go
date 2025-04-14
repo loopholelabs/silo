@@ -85,8 +85,8 @@ type Metrics struct {
 	cancelfns map[string]map[string]context.CancelFunc
 }
 
-func NewMetrics(config *MetricsConfig) *Metrics {
-	client := statsd.NewClient("localhost:8125",
+func New(addr string, config *MetricsConfig) *Metrics {
+	client := statsd.NewClient(addr,
 		statsd.MaxPacketSize(1400),
 		statsd.MetricPrefix("silo."))
 
@@ -168,7 +168,19 @@ func (m *Metrics) RemoveAllID(id string) {
 	m.lock.Unlock()
 }
 
-func (m *Metrics) AddSyncer(id string, name string, sync *migrator.Syncer) {}
+func (m *Metrics) AddSyncer(id string, name string, syncer *migrator.Syncer) {
+	m.add(m.config.SubSyncer, id, name, m.config.TickSyncer, func() {
+		met := syncer.GetMetrics()
+		if met != nil {
+			m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubSyncer, "block_size"), int64(met.BlockSize), statsd.StringTag("id", id), statsd.StringTag("name", name))
+			m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubSyncer, "total_blocks"), int64(met.TotalBlocks), statsd.StringTag("id", id), statsd.StringTag("name", name))
+			m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubSyncer, "active_blocks"), int64(met.ActiveBlocks), statsd.StringTag("id", id), statsd.StringTag("name", name))
+			m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubSyncer, "migrated_blocks"), int64(met.MigratedBlocks), statsd.StringTag("id", id), statsd.StringTag("name", name))
+			m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubSyncer, "ready_blocks"), int64(met.ReadyBlocks), statsd.StringTag("id", id), statsd.StringTag("name", name))
+			m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubSyncer, "total_migrated_blocks"), int64(met.TotalMigratedBlocks), statsd.StringTag("id", id), statsd.StringTag("name", name))
+		}
+	})
+}
 func (m *Metrics) RemoveSyncer(id string, name string) {
 	m.remove(m.config.SubSyncer, id, name)
 }
@@ -214,7 +226,23 @@ func (m *Metrics) RemoveMetrics(id string, name string) {
 	m.remove(m.config.SubMetrics, id, name)
 }
 
-func (m *Metrics) AddNBD(id string, name string, mm *expose.ExposedStorageNBDNL) {}
+func (m *Metrics) AddNBD(id string, name string, mm *expose.ExposedStorageNBDNL) {
+	m.add(m.config.SubNBD, id, name, m.config.TickNBD, func() {
+		met := mm.GetMetrics()
+		m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubNBD, "packets_in"), int64(met.PacketsIn), statsd.StringTag("id", id), statsd.StringTag("name", name))
+		m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubNBD, "packets_out"), int64(met.PacketsOut), statsd.StringTag("id", id), statsd.StringTag("name", name))
+
+		m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubNBD, "read_at"), int64(met.ReadAt), statsd.StringTag("id", id), statsd.StringTag("name", name))
+		m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubNBD, "read_at_bytes"), int64(met.ReadAtBytes), statsd.StringTag("id", id), statsd.StringTag("name", name))
+		m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubNBD, "read_at_time"), int64(met.ReadAtTime), statsd.StringTag("id", id), statsd.StringTag("name", name))
+		m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubNBD, "active_reads"), int64(met.ActiveReads), statsd.StringTag("id", id), statsd.StringTag("name", name))
+
+		m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubNBD, "write_at"), int64(met.WriteAt), statsd.StringTag("id", id), statsd.StringTag("name", name))
+		m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubNBD, "write_at_bytes"), int64(met.WriteAtBytes), statsd.StringTag("id", id), statsd.StringTag("name", name))
+		m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubNBD, "write_at_time"), int64(met.WriteAtTime), statsd.StringTag("id", id), statsd.StringTag("name", name))
+		m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubNBD, "active_writes"), int64(met.ActiveWrites), statsd.StringTag("id", id), statsd.StringTag("name", name))
+	})
+}
 func (m *Metrics) RemoveNBD(id string, name string) {
 	m.remove(m.config.SubNBD, id, name)
 }
