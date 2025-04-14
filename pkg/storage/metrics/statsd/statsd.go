@@ -88,6 +88,7 @@ type Metrics struct {
 func New(addr string, config *MetricsConfig) *Metrics {
 	client := statsd.NewClient(addr,
 		statsd.MaxPacketSize(1400),
+		statsd.TagStyle(statsd.TagFormatDatadog),
 		statsd.MetricPrefix("silo."))
 
 	return &Metrics{
@@ -227,20 +228,42 @@ func (m *Metrics) RemoveMetrics(id string, name string) {
 }
 
 func (m *Metrics) AddNBD(id string, name string, mm *expose.ExposedStorageNBDNL) {
+	lastmet := mm.GetMetrics()
+
 	m.add(m.config.SubNBD, id, name, m.config.TickNBD, func() {
 		met := mm.GetMetrics()
-		m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubNBD, "packets_in"), int64(met.PacketsIn), statsd.StringTag("id", id), statsd.StringTag("name", name))
-		m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubNBD, "packets_out"), int64(met.PacketsOut), statsd.StringTag("id", id), statsd.StringTag("name", name))
+		if lastmet.PacketsIn != met.PacketsIn {
+			m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubNBD, "packets_in"), int64(met.PacketsIn), statsd.StringTag("id", id), statsd.StringTag("name", name))
+		}
+		if lastmet.PacketsOut != met.PacketsOut {
+			m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubNBD, "packets_out"), int64(met.PacketsOut), statsd.StringTag("id", id), statsd.StringTag("name", name))
+		}
+		if lastmet.ReadAt != met.ReadAt {
+			m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubNBD, "read_at"), int64(met.ReadAt), statsd.StringTag("id", id), statsd.StringTag("name", name))
+		}
+		if lastmet.ReadAtBytes != met.ReadAtBytes {
+			m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubNBD, "read_at_bytes"), int64(met.ReadAtBytes), statsd.StringTag("id", id), statsd.StringTag("name", name))
+		}
+		if lastmet.ReadAtTime != met.ReadAtTime {
+			m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubNBD, "read_at_time"), int64(met.ReadAtTime), statsd.StringTag("id", id), statsd.StringTag("name", name))
+		}
+		if lastmet.ActiveReads != met.ActiveReads {
+			m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubNBD, "active_reads"), int64(met.ActiveReads), statsd.StringTag("id", id), statsd.StringTag("name", name))
+		}
 
-		m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubNBD, "read_at"), int64(met.ReadAt), statsd.StringTag("id", id), statsd.StringTag("name", name))
-		m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubNBD, "read_at_bytes"), int64(met.ReadAtBytes), statsd.StringTag("id", id), statsd.StringTag("name", name))
-		m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubNBD, "read_at_time"), int64(met.ReadAtTime), statsd.StringTag("id", id), statsd.StringTag("name", name))
-		m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubNBD, "active_reads"), int64(met.ActiveReads), statsd.StringTag("id", id), statsd.StringTag("name", name))
-
-		m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubNBD, "write_at"), int64(met.WriteAt), statsd.StringTag("id", id), statsd.StringTag("name", name))
-		m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubNBD, "write_at_bytes"), int64(met.WriteAtBytes), statsd.StringTag("id", id), statsd.StringTag("name", name))
-		m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubNBD, "write_at_time"), int64(met.WriteAtTime), statsd.StringTag("id", id), statsd.StringTag("name", name))
-		m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubNBD, "active_writes"), int64(met.ActiveWrites), statsd.StringTag("id", id), statsd.StringTag("name", name))
+		if lastmet.WriteAt != met.WriteAt {
+			m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubNBD, "write_at"), int64(met.WriteAt), statsd.StringTag("id", id), statsd.StringTag("name", name))
+		}
+		if lastmet.WriteAtBytes != met.WriteAtBytes {
+			m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubNBD, "write_at_bytes"), int64(met.WriteAtBytes), statsd.StringTag("id", id), statsd.StringTag("name", name))
+		}
+		if lastmet.WriteAtTime != met.WriteAtTime {
+			m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubNBD, "write_at_time"), int64(met.WriteAtTime), statsd.StringTag("id", id), statsd.StringTag("name", name))
+		}
+		if lastmet.ActiveWrites != met.ActiveWrites {
+			m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubNBD, "active_writes"), int64(met.ActiveWrites), statsd.StringTag("id", id), statsd.StringTag("name", name))
+		}
+		lastmet = met
 	})
 }
 func (m *Metrics) RemoveNBD(id string, name string) {
