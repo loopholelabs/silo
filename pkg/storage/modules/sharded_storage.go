@@ -30,7 +30,7 @@ func (i *ShardedStorage) SendSiloEvent(eventType storage.EventType, eventData st
 
 func NewShardedStorage(size int, blocksize int, creator func(index int, size int) (storage.Provider, error)) (*ShardedStorage, error) {
 	if blocksize == 0 {
-		return nil, fmt.Errorf("Invalid block size of 0")
+		return nil, fmt.Errorf("invalid block size of 0")
 	}
 	bms := &ShardedStorage{
 		blocks:    make([]storage.Provider, 0),

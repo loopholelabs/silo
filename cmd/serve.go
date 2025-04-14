@@ -110,6 +110,7 @@ func runServe(_ *cobra.Command, _ []string) {
 	go func() {
 		<-c
 		dg.CloseAll()
+		fmt.Printf("Shutting down\n")
 		os.Exit(1)
 	}()
 

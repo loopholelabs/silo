@@ -4,7 +4,7 @@ go 1.24
 
 toolchain go1.24.2
 
-// replace github.com/masahiro331/go-ext4-filesystem => ../go-ext4-filesystem
+replace github.com/masahiro331/go-ext4-filesystem => ../go-ext4-filesystem
 
 require (
 	github.com/Merovius/nbd v0.0.0-20231017152624-27b78b60d8da
