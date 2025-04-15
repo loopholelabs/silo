@@ -263,7 +263,84 @@ func (m *Metrics) RemoveToProtocol(id string, name string) {
 	m.remove(m.config.SubToProtocol, id, name)
 }
 
-func (m *Metrics) AddFromProtocol(id string, name string, proto *protocol.FromProtocol) {}
+func (m *Metrics) AddFromProtocol(id string, name string, proto *protocol.FromProtocol) {
+	lastmet := &protocol.FromProtocolMetrics{
+		AvailableP2P:        make([]uint, 0),
+		DuplicateP2P:        make([]uint, 0),
+		AvailableAltSources: make([]uint, 0),
+	}
+	m.add(m.config.SubFromProtocol, id, name, m.config.TickFromProtocol, func() {
+		met := proto.GetMetrics()
+
+		if met.DeviceName != "" {
+			name = met.DeviceName
+		}
+
+		m.updateMetric(id, name, m.config.SubFromProtocol, "recv_events", lastmet.RecvEvents, met.RecvEvents)
+		m.updateMetric(id, name, m.config.SubFromProtocol, "recv_hashes", lastmet.RecvHashes, met.RecvHashes)
+		m.updateMetric(id, name, m.config.SubFromProtocol, "recv_dev_info", lastmet.RecvDevInfo, met.RecvDevInfo)
+		m.updateMetric(id, name, m.config.SubFromProtocol, "recv_alt_sources", lastmet.RecvAltSources, met.RecvAltSources)
+		m.updateMetric(id, name, m.config.SubFromProtocol, "recv_read_at", lastmet.RecvReadAt, met.RecvReadAt)
+		m.updateMetric(id, name, m.config.SubFromProtocol, "recv_write_at_hash", lastmet.RecvWriteAtHash, met.RecvWriteAtHash)
+		m.updateMetric(id, name, m.config.SubFromProtocol, "recv_write_at_comp", lastmet.RecvWriteAtComp, met.RecvWriteAtComp)
+		m.updateMetric(id, name, m.config.SubFromProtocol, "recv_write_at", lastmet.RecvWriteAt, met.RecvWriteAt)
+		m.updateMetric(id, name, m.config.SubFromProtocol, "recv_write_at_with_map", lastmet.RecvWriteAtWithMap, met.RecvWriteAtWithMap)
+
+		m.updateMetric(id, name, m.config.SubFromProtocol, "recv_remove_from_map", lastmet.RecvRemoveFromMap, met.RecvRemoveFromMap)
+		m.updateMetric(id, name, m.config.SubFromProtocol, "recv_remove_dev", lastmet.RecvRemoveDev, met.RecvRemoveDev)
+		m.updateMetric(id, name, m.config.SubFromProtocol, "recv_dirty_list", lastmet.RecvDirtyList, met.RecvDirtyList)
+		m.updateMetric(id, name, m.config.SubFromProtocol, "sent_need_at", lastmet.SentNeedAt, met.SentNeedAt)
+		m.updateMetric(id, name, m.config.SubFromProtocol, "sent_dont_need_at", lastmet.SentDontNeedAt, met.SentDontNeedAt)
+
+		m.updateMetric(id, name, m.config.SubFromProtocol, "writes_allowed_p2p", lastmet.WritesAllowedP2P, met.WritesAllowedP2P)
+		m.updateMetric(id, name, m.config.SubFromProtocol, "writes_blocked_p2p", lastmet.WritesBlockedP2P, met.WritesBlockedP2P)
+		m.updateMetric(id, name, m.config.SubFromProtocol, "writes_allowed_alt_sources", lastmet.WritesAllowedAltSources, met.WritesAllowedAltSources)
+		m.updateMetric(id, name, m.config.SubFromProtocol, "writes_blocked_alt_sources", lastmet.WritesBlockedAltSources, met.WritesBlockedAltSources)
+
+		/*
+			   Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "heatmap", Help: "Heatmap"}, append(labels, "le")),
+
+				totalHeatmapP2P := make([]uint64, m.config.HeatmapResolution)
+				for _, block := range met.AvailableP2P {
+					part := uint64(block) * m.config.HeatmapResolution / met.NumBlocks
+					totalHeatmapP2P[part]++
+				}
+
+				totalHeatmapAltSources := make([]uint64, m.config.HeatmapResolution)
+				for _, block := range met.AvailableAltSources {
+					part := uint64(block) * m.config.HeatmapResolution / met.NumBlocks
+					totalHeatmapAltSources[part]++
+				}
+
+				totalHeatmapP2PDupe := make([]uint64, m.config.HeatmapResolution)
+				for _, block := range met.DuplicateP2P {
+					part := uint64(block) * m.config.HeatmapResolution / met.NumBlocks
+					totalHeatmapP2PDupe[part]++
+				}
+
+				blocksPerPart := 2 * (met.NumBlocks / m.config.HeatmapResolution)
+
+				//
+				for part, blocks := range totalHeatmapP2P {
+					m.fromProtocolHeatmap.WithLabelValues(id, name, fmt.Sprintf("%d", part)).Set(float64(blocks))
+				}
+
+				for part, blocks := range totalHeatmapAltSources {
+					if blocks > 0 {
+						m.fromProtocolHeatmap.WithLabelValues(id, name, fmt.Sprintf("%d", part)).Set(float64(blocksPerPart*2 + blocks))
+					}
+				}
+
+				for part, blocks := range totalHeatmapP2PDupe {
+					if blocks > 0 {
+						m.fromProtocolHeatmap.WithLabelValues(id, name, fmt.Sprintf("%d", part)).Set(float64(blocksPerPart + blocks))
+					}
+				}
+		*/
+		lastmet = met
+	})
+
+}
 func (m *Metrics) RemoveFromProtocol(id string, name string) {
 	m.remove(m.config.SubFromProtocol, id, name)
 }
