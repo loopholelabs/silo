@@ -146,6 +146,12 @@ func (m *Metrics) add(subsystem string, id string, name string, interval time.Du
 	}()
 }
 
+func (m *Metrics) updateMetric(id string, name string, sub string, metricName string, v1 uint64, v2 uint64) {
+	if v1 != v2 {
+		m.client.Gauge(fmt.Sprintf("%s_%s", sub, metricName), int64(v2), statsd.StringTag("id", id), statsd.StringTag("name", name))
+	}
+}
+
 func (m *Metrics) Shutdown() {
 	m.lock.Lock()
 	for _, cancelfns := range m.cancelfns {
@@ -170,23 +176,40 @@ func (m *Metrics) RemoveAllID(id string) {
 }
 
 func (m *Metrics) AddSyncer(id string, name string, syncer *migrator.Syncer) {
+	lastmet := &migrator.MigrationProgress{}
 	m.add(m.config.SubSyncer, id, name, m.config.TickSyncer, func() {
 		met := syncer.GetMetrics()
 		if met != nil {
-			m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubSyncer, "block_size"), int64(met.BlockSize), statsd.StringTag("id", id), statsd.StringTag("name", name))
-			m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubSyncer, "total_blocks"), int64(met.TotalBlocks), statsd.StringTag("id", id), statsd.StringTag("name", name))
-			m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubSyncer, "active_blocks"), int64(met.ActiveBlocks), statsd.StringTag("id", id), statsd.StringTag("name", name))
-			m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubSyncer, "migrated_blocks"), int64(met.MigratedBlocks), statsd.StringTag("id", id), statsd.StringTag("name", name))
-			m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubSyncer, "ready_blocks"), int64(met.ReadyBlocks), statsd.StringTag("id", id), statsd.StringTag("name", name))
-			m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubSyncer, "total_migrated_blocks"), int64(met.TotalMigratedBlocks), statsd.StringTag("id", id), statsd.StringTag("name", name))
+			m.updateMetric(id, name, m.config.SubSyncer, "block_size", uint64(lastmet.BlockSize), uint64(met.BlockSize))
+			m.updateMetric(id, name, m.config.SubSyncer, "total_blocks", uint64(lastmet.TotalBlocks), uint64(met.TotalBlocks))
+			m.updateMetric(id, name, m.config.SubSyncer, "active_blocks", uint64(lastmet.ActiveBlocks), uint64(met.ActiveBlocks))
+			m.updateMetric(id, name, m.config.SubSyncer, "migrated_blocks", uint64(lastmet.MigratedBlocks), uint64(met.MigratedBlocks))
+			m.updateMetric(id, name, m.config.SubSyncer, "ready_blocks", uint64(lastmet.ReadyBlocks), uint64(met.ReadyBlocks))
+			m.updateMetric(id, name, m.config.SubSyncer, "total_migrated_blocks", uint64(lastmet.TotalMigratedBlocks), uint64(met.TotalMigratedBlocks))
 		}
+		lastmet = met
 	})
 }
+
 func (m *Metrics) RemoveSyncer(id string, name string) {
 	m.remove(m.config.SubSyncer, id, name)
 }
 
-func (m *Metrics) AddMigrator(id string, name string, mig *migrator.Migrator) {}
+func (m *Metrics) AddMigrator(id string, name string, mig *migrator.Migrator) {
+	lastmet := &migrator.MigrationProgress{}
+	m.add(m.config.SubSyncer, id, name, m.config.TickSyncer, func() {
+		met := mig.GetMetrics()
+		if met != nil {
+			m.updateMetric(id, name, m.config.SubSyncer, "block_size", uint64(lastmet.BlockSize), uint64(met.BlockSize))
+			m.updateMetric(id, name, m.config.SubSyncer, "total_blocks", uint64(lastmet.TotalBlocks), uint64(met.TotalBlocks))
+			m.updateMetric(id, name, m.config.SubSyncer, "active_blocks", uint64(lastmet.ActiveBlocks), uint64(met.ActiveBlocks))
+			m.updateMetric(id, name, m.config.SubSyncer, "migrated_blocks", uint64(lastmet.MigratedBlocks), uint64(met.MigratedBlocks))
+			m.updateMetric(id, name, m.config.SubSyncer, "ready_blocks", uint64(lastmet.ReadyBlocks), uint64(met.ReadyBlocks))
+			m.updateMetric(id, name, m.config.SubSyncer, "total_migrated_blocks", uint64(lastmet.TotalMigratedBlocks), uint64(met.TotalMigratedBlocks))
+		}
+		lastmet = met
+	})
+}
 func (m *Metrics) RemoveMigrator(id string, name string) {
 	m.remove(m.config.SubMigrator, id, name)
 }
@@ -222,47 +245,54 @@ func (m *Metrics) RemoveVolatilityMonitor(id string, name string) {
 	m.remove(m.config.SubVolatilityMonitor, id, name)
 }
 
-func (m *Metrics) AddMetrics(id string, name string, mm *modules.Metrics) {}
+func (m *Metrics) AddMetrics(id string, name string, mm *modules.Metrics) {
+	lastmet := &modules.MetricsSnapshot{
+		ReadOpsSize:  make(map[int]uint64),
+		WriteOpsSize: make(map[int]uint64),
+	}
+
+	m.add(m.config.SubMetrics, id, name, m.config.TickMetrics, func() {
+		met := mm.GetMetrics()
+		m.updateMetric(id, name, m.config.SubMetrics, "read_ops", lastmet.ReadOps, met.ReadOps)
+		m.updateMetric(id, name, m.config.SubMetrics, "read_bytes", lastmet.ReadBytes, met.ReadBytes)
+		m.updateMetric(id, name, m.config.SubMetrics, "read_errors", lastmet.ReadErrors, met.ReadErrors)
+		m.updateMetric(id, name, m.config.SubMetrics, "read_time", lastmet.ReadTime, met.ReadTime)
+		m.updateMetric(id, name, m.config.SubMetrics, "write_ops", lastmet.WriteOps, met.WriteOps)
+		m.updateMetric(id, name, m.config.SubMetrics, "write_bytes", lastmet.WriteBytes, met.WriteBytes)
+		m.updateMetric(id, name, m.config.SubMetrics, "write_errors", lastmet.WriteErrors, met.WriteErrors)
+		m.updateMetric(id, name, m.config.SubMetrics, "write_time", lastmet.WriteTime, met.WriteTime)
+		m.updateMetric(id, name, m.config.SubMetrics, "flush_ops", lastmet.FlushOps, met.FlushOps)
+		m.updateMetric(id, name, m.config.SubMetrics, "flush_errors", lastmet.FlushErrors, met.FlushErrors)
+		m.updateMetric(id, name, m.config.SubMetrics, "flush_time", lastmet.FlushTime, met.FlushTime)
+
+		// Add the size metrics here...
+		for _, v := range modules.OpSizeBuckets {
+			m.updateMetric(id, name, m.config.SubMetrics, fmt.Sprintf("read_ops_size_%d", v), lastmet.ReadOpsSize[v], met.ReadOpsSize[v])
+			m.updateMetric(id, name, m.config.SubMetrics, fmt.Sprintf("write_ops_size_%d", v), lastmet.WriteOpsSize[v], met.WriteOpsSize[v])
+		}
+		lastmet = met
+	})
+}
+
 func (m *Metrics) RemoveMetrics(id string, name string) {
 	m.remove(m.config.SubMetrics, id, name)
 }
 
 func (m *Metrics) AddNBD(id string, name string, mm *expose.ExposedStorageNBDNL) {
-	lastmet := mm.GetMetrics()
+	lastmet := &expose.DispatchMetrics{}
 
 	m.add(m.config.SubNBD, id, name, m.config.TickNBD, func() {
 		met := mm.GetMetrics()
-		if lastmet.PacketsIn != met.PacketsIn {
-			m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubNBD, "packets_in"), int64(met.PacketsIn), statsd.StringTag("id", id), statsd.StringTag("name", name))
-		}
-		if lastmet.PacketsOut != met.PacketsOut {
-			m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubNBD, "packets_out"), int64(met.PacketsOut), statsd.StringTag("id", id), statsd.StringTag("name", name))
-		}
-		if lastmet.ReadAt != met.ReadAt {
-			m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubNBD, "read_at"), int64(met.ReadAt), statsd.StringTag("id", id), statsd.StringTag("name", name))
-		}
-		if lastmet.ReadAtBytes != met.ReadAtBytes {
-			m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubNBD, "read_at_bytes"), int64(met.ReadAtBytes), statsd.StringTag("id", id), statsd.StringTag("name", name))
-		}
-		if lastmet.ReadAtTime != met.ReadAtTime {
-			m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubNBD, "read_at_time"), int64(met.ReadAtTime), statsd.StringTag("id", id), statsd.StringTag("name", name))
-		}
-		if lastmet.ActiveReads != met.ActiveReads {
-			m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubNBD, "active_reads"), int64(met.ActiveReads), statsd.StringTag("id", id), statsd.StringTag("name", name))
-		}
-
-		if lastmet.WriteAt != met.WriteAt {
-			m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubNBD, "write_at"), int64(met.WriteAt), statsd.StringTag("id", id), statsd.StringTag("name", name))
-		}
-		if lastmet.WriteAtBytes != met.WriteAtBytes {
-			m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubNBD, "write_at_bytes"), int64(met.WriteAtBytes), statsd.StringTag("id", id), statsd.StringTag("name", name))
-		}
-		if lastmet.WriteAtTime != met.WriteAtTime {
-			m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubNBD, "write_at_time"), int64(met.WriteAtTime), statsd.StringTag("id", id), statsd.StringTag("name", name))
-		}
-		if lastmet.ActiveWrites != met.ActiveWrites {
-			m.client.Gauge(fmt.Sprintf("%s_%s", m.config.SubNBD, "active_writes"), int64(met.ActiveWrites), statsd.StringTag("id", id), statsd.StringTag("name", name))
-		}
+		m.updateMetric(id, name, m.config.SubNBD, "packets_in", lastmet.PacketsIn, met.PacketsIn)
+		m.updateMetric(id, name, m.config.SubNBD, "packets_out", lastmet.PacketsOut, met.PacketsOut)
+		m.updateMetric(id, name, m.config.SubNBD, "read_at", lastmet.ReadAt, met.ReadAt)
+		m.updateMetric(id, name, m.config.SubNBD, "read_at_bytes", lastmet.ReadAtBytes, met.ReadAtBytes)
+		m.updateMetric(id, name, m.config.SubNBD, "read_at_time", uint64(lastmet.ReadAtTime), uint64(met.ReadAtTime))
+		m.updateMetric(id, name, m.config.SubNBD, "active_reads", lastmet.ActiveReads, met.ActiveReads)
+		m.updateMetric(id, name, m.config.SubNBD, "write_at", lastmet.WriteAt, met.WriteAt)
+		m.updateMetric(id, name, m.config.SubNBD, "write_at_bytes", lastmet.WriteAtBytes, met.WriteAtBytes)
+		m.updateMetric(id, name, m.config.SubNBD, "write_at_time", uint64(lastmet.WriteAtTime), uint64(met.WriteAtTime))
+		m.updateMetric(id, name, m.config.SubNBD, "active_writes", lastmet.ActiveWrites, met.ActiveWrites)
 		lastmet = met
 	})
 }
@@ -270,12 +300,42 @@ func (m *Metrics) RemoveNBD(id string, name string) {
 	m.remove(m.config.SubNBD, id, name)
 }
 
-func (m *Metrics) AddWaitingCache(id string, name string, wc *waitingcache.Remote) {}
+func (m *Metrics) AddWaitingCache(id string, name string, wc *waitingcache.Remote) {
+	lastmet := &waitingcache.Metrics{}
+	m.add(m.config.SubWaitingCache, id, name, m.config.TickWaitingCache, func() {
+		met := wc.GetMetrics()
+		m.updateMetric(id, name, m.config.SubCopyOnWrite, "waiting_for_block", lastmet.WaitForBlock, met.WaitForBlock)
+		m.updateMetric(id, name, m.config.SubCopyOnWrite, "waiting_for_block_had_remote", lastmet.WaitForBlockHadRemote, met.WaitForBlockHadRemote)
+		m.updateMetric(id, name, m.config.SubCopyOnWrite, "waiting_for_block_had_local", lastmet.WaitForBlockHadLocal, met.WaitForBlockHadLocal)
+		m.updateMetric(id, name, m.config.SubCopyOnWrite, "waiting_for_block_lock", lastmet.WaitForBlockLock, met.WaitForBlockLock)
+		m.updateMetric(id, name, m.config.SubCopyOnWrite, "waiting_for_block_lock_done", lastmet.WaitForBlockLockDone, met.WaitForBlockLockDone)
+		m.updateMetric(id, name, m.config.SubCopyOnWrite, "mark_available_local_block", lastmet.MarkAvailableLocalBlock, met.MarkAvailableLocalBlock)
+		m.updateMetric(id, name, m.config.SubCopyOnWrite, "mark_available_remote_block", lastmet.MarkAvailableRemoteBlock, met.MarkAvailableRemoteBlock)
+		m.updateMetric(id, name, m.config.SubCopyOnWrite, "available_local", lastmet.AvailableLocal, met.AvailableLocal)
+		m.updateMetric(id, name, m.config.SubCopyOnWrite, "available_remote", lastmet.AvailableRemote, met.AvailableRemote)
+		lastmet = met
+	})
+
+}
 func (m *Metrics) RemoveWaitingCache(id string, name string) {
 	m.remove(m.config.SubWaitingCache, id, name)
 }
 
-func (m *Metrics) AddCopyOnWrite(id string, name string, cow *modules.CopyOnWrite) {}
+func (m *Metrics) AddCopyOnWrite(id string, name string, cow *modules.CopyOnWrite) {
+	lastmet := &modules.CopyOnWriteMetrics{}
+	m.add(m.config.SubCopyOnWrite, id, name, m.config.TickCopyOnWrite, func() {
+		met := cow.GetMetrics()
+		m.updateMetric(id, name, m.config.SubCopyOnWrite, "size", lastmet.MetricSize, met.MetricSize)
+		m.updateMetric(id, name, m.config.SubCopyOnWrite, "nonzero_size", lastmet.MetricNonZeroSize, met.MetricNonZeroSize)
+		m.updateMetric(id, name, m.config.SubCopyOnWrite, "overlay_size", lastmet.MetricOverlaySize, met.MetricOverlaySize)
+		m.updateMetric(id, name, m.config.SubCopyOnWrite, "zero_read_ops", lastmet.MetricZeroReadOps, met.MetricZeroReadOps)
+		m.updateMetric(id, name, m.config.SubCopyOnWrite, "zero_read_bytes", lastmet.MetricZeroReadBytes, met.MetricZeroReadBytes)
+		m.updateMetric(id, name, m.config.SubCopyOnWrite, "zero_pre_write_read_ops", lastmet.MetricZeroPreWriteReadOps, met.MetricZeroPreWriteReadOps)
+		m.updateMetric(id, name, m.config.SubCopyOnWrite, "zero_pre_write_read_bytes", lastmet.MetricZeroPreWriteReadBytes, met.MetricZeroPreWriteReadBytes)
+		lastmet = met
+	})
+}
+
 func (m *Metrics) RemoveCopyOnWrite(id string, name string) {
 	m.remove(m.config.SubCopyOnWrite, id, name)
 }
