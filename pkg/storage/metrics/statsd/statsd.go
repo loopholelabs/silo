@@ -214,7 +214,21 @@ func (m *Metrics) RemoveMigrator(id string, name string) {
 	m.remove(m.config.SubMigrator, id, name)
 }
 
-func (m *Metrics) AddProtocol(id string, name string, proto *protocol.RW) {}
+func (m *Metrics) AddProtocol(id string, name string, proto *protocol.RW) {
+	lastmet := &protocol.Metrics{}
+	m.add(m.config.SubProtocol, id, name, m.config.TickProtocol, func() {
+		met := proto.GetMetrics()
+		m.updateMetric(id, name, m.config.SubProtocol, "active_packets_sending", lastmet.ActivePacketsSending, met.ActivePacketsSending)
+		m.updateMetric(id, name, m.config.SubProtocol, "packets_sent", lastmet.PacketsSent, met.PacketsSent)
+		m.updateMetric(id, name, m.config.SubProtocol, "data_sent", lastmet.DataSent, met.DataSent)
+		m.updateMetric(id, name, m.config.SubProtocol, "packets_recv", lastmet.PacketsRecv, met.PacketsRecv)
+		m.updateMetric(id, name, m.config.SubProtocol, "data_recv", lastmet.DataRecv, met.DataRecv)
+		m.updateMetric(id, name, m.config.SubProtocol, "writes", lastmet.Writes, met.Writes)
+		m.updateMetric(id, name, m.config.SubProtocol, "write_errors", lastmet.WriteErrors, met.WriteErrors)
+		m.updateMetric(id, name, m.config.SubProtocol, "waiting_for_id", uint64(lastmet.WaitingForID), uint64(met.WaitingForID))
+		lastmet = met
+	})
+}
 func (m *Metrics) RemoveProtocol(id string, name string) {
 	m.remove(m.config.SubProtocol, id, name)
 }
@@ -229,18 +243,67 @@ func (m *Metrics) RemoveFromProtocol(id string, name string) {
 	m.remove(m.config.SubFromProtocol, id, name)
 }
 
-func (m *Metrics) AddS3Storage(id string, name string, s3 *sources.S3Storage) {}
+func (m *Metrics) AddS3Storage(id string, name string, s3 *sources.S3Storage) {
+	lastmet := &sources.S3Metrics{}
+	m.add(m.config.SubS3, id, name, m.config.TickS3, func() {
+		met := s3.Metrics()
+		m.updateMetric(id, name, m.config.SubS3, "blocks_w", lastmet.BlocksWCount, met.BlocksWCount)
+		m.updateMetric(id, name, m.config.SubS3, "blocks_w_bytes", lastmet.BlocksWBytes, met.BlocksWBytes)
+		m.updateMetric(id, name, m.config.SubS3, "blocks_r", lastmet.BlocksRCount, met.BlocksRCount)
+		m.updateMetric(id, name, m.config.SubS3, "blocks_r_bytes", lastmet.BlocksRBytes, met.BlocksRBytes)
+		m.updateMetric(id, name, m.config.SubS3, "active_reads", lastmet.ActiveReads, met.ActiveReads)
+		m.updateMetric(id, name, m.config.SubS3, "active_writes", lastmet.ActiveWrites, met.ActiveWrites)
+		lastmet = met
+	})
+
+}
 func (m *Metrics) RemoveS3Storage(id string, name string) {
 	m.remove(m.config.SubS3, id, name)
 }
 
-func (m *Metrics) AddDirtyTracker(id string, name string, dt *dirtytracker.Remote) {}
+func (m *Metrics) AddDirtyTracker(id string, name string, dt *dirtytracker.Remote) {
+	lastmet := &dirtytracker.Metrics{}
+	m.add(m.config.SubDirtyTracker, id, name, m.config.TickDirtyTracker, func() {
+		met := dt.GetMetrics()
+		m.updateMetric(id, name, m.config.SubDirtyTracker, "block_size", lastmet.BlockSize, met.BlockSize)
+		m.updateMetric(id, name, m.config.SubDirtyTracker, "tracking_blocks", lastmet.TrackingBlocks, met.TrackingBlocks)
+		m.updateMetric(id, name, m.config.SubDirtyTracker, "dirty_blocks", lastmet.DirtyBlocks, met.DirtyBlocks)
+		m.updateMetric(id, name, m.config.SubDirtyTracker, "block_max_age", uint64(lastmet.MaxAgeDirty), uint64(met.MaxAgeDirty))
+		lastmet = met
+	})
+}
 func (m *Metrics) RemoveDirtyTracker(id string, name string) {
 	m.remove(m.config.SubDirtyTracker, id, name)
 }
 
 func (m *Metrics) AddVolatilityMonitor(id string, name string, vm *volatilitymonitor.VolatilityMonitor) {
+	lastmet := &volatilitymonitor.Metrics{
+		VolatilityMap: make(map[int]uint64),
+	}
+	m.add(m.config.SubVolatilityMonitor, id, name, m.config.TickVolatilityMonitor, func() {
+		met := vm.GetMetrics()
+		m.updateMetric(id, name, m.config.SubVolatilityMonitor, "block_size", lastmet.BlockSize, met.BlockSize)
+		m.updateMetric(id, name, m.config.SubVolatilityMonitor, "available", lastmet.Available, met.Available)
+		m.updateMetric(id, name, m.config.SubVolatilityMonitor, "volatility", lastmet.Volatility, met.Volatility)
+
+		totalVolatility := make([]uint64, m.config.HeatmapResolution)
+		lastTotalVolatility := make([]uint64, m.config.HeatmapResolution)
+		for block, volatility := range met.VolatilityMap {
+			part := uint64(block) * m.config.HeatmapResolution / met.NumBlocks
+			totalVolatility[part] += volatility
+
+			lastVolatility := lastmet.VolatilityMap[block]
+			lastTotalVolatility[part] += lastVolatility
+		}
+
+		for part, volatility := range totalVolatility {
+			lastVolatility := lastTotalVolatility[part]
+			m.updateMetric(id, name, m.config.SubVolatilityMonitor, fmt.Sprintf("volatility_%d", part), lastVolatility, volatility)
+		}
+		lastmet = met
+	})
 }
+
 func (m *Metrics) RemoveVolatilityMonitor(id string, name string) {
 	m.remove(m.config.SubVolatilityMonitor, id, name)
 }
@@ -304,15 +367,15 @@ func (m *Metrics) AddWaitingCache(id string, name string, wc *waitingcache.Remot
 	lastmet := &waitingcache.Metrics{}
 	m.add(m.config.SubWaitingCache, id, name, m.config.TickWaitingCache, func() {
 		met := wc.GetMetrics()
-		m.updateMetric(id, name, m.config.SubCopyOnWrite, "waiting_for_block", lastmet.WaitForBlock, met.WaitForBlock)
-		m.updateMetric(id, name, m.config.SubCopyOnWrite, "waiting_for_block_had_remote", lastmet.WaitForBlockHadRemote, met.WaitForBlockHadRemote)
-		m.updateMetric(id, name, m.config.SubCopyOnWrite, "waiting_for_block_had_local", lastmet.WaitForBlockHadLocal, met.WaitForBlockHadLocal)
-		m.updateMetric(id, name, m.config.SubCopyOnWrite, "waiting_for_block_lock", lastmet.WaitForBlockLock, met.WaitForBlockLock)
-		m.updateMetric(id, name, m.config.SubCopyOnWrite, "waiting_for_block_lock_done", lastmet.WaitForBlockLockDone, met.WaitForBlockLockDone)
-		m.updateMetric(id, name, m.config.SubCopyOnWrite, "mark_available_local_block", lastmet.MarkAvailableLocalBlock, met.MarkAvailableLocalBlock)
-		m.updateMetric(id, name, m.config.SubCopyOnWrite, "mark_available_remote_block", lastmet.MarkAvailableRemoteBlock, met.MarkAvailableRemoteBlock)
-		m.updateMetric(id, name, m.config.SubCopyOnWrite, "available_local", lastmet.AvailableLocal, met.AvailableLocal)
-		m.updateMetric(id, name, m.config.SubCopyOnWrite, "available_remote", lastmet.AvailableRemote, met.AvailableRemote)
+		m.updateMetric(id, name, m.config.SubWaitingCache, "waiting_for_block", lastmet.WaitForBlock, met.WaitForBlock)
+		m.updateMetric(id, name, m.config.SubWaitingCache, "waiting_for_block_had_remote", lastmet.WaitForBlockHadRemote, met.WaitForBlockHadRemote)
+		m.updateMetric(id, name, m.config.SubWaitingCache, "waiting_for_block_had_local", lastmet.WaitForBlockHadLocal, met.WaitForBlockHadLocal)
+		m.updateMetric(id, name, m.config.SubWaitingCache, "waiting_for_block_lock", lastmet.WaitForBlockLock, met.WaitForBlockLock)
+		m.updateMetric(id, name, m.config.SubWaitingCache, "waiting_for_block_lock_done", lastmet.WaitForBlockLockDone, met.WaitForBlockLockDone)
+		m.updateMetric(id, name, m.config.SubWaitingCache, "mark_available_local_block", lastmet.MarkAvailableLocalBlock, met.MarkAvailableLocalBlock)
+		m.updateMetric(id, name, m.config.SubWaitingCache, "mark_available_remote_block", lastmet.MarkAvailableRemoteBlock, met.MarkAvailableRemoteBlock)
+		m.updateMetric(id, name, m.config.SubWaitingCache, "available_local", lastmet.AvailableLocal, met.AvailableLocal)
+		m.updateMetric(id, name, m.config.SubWaitingCache, "available_remote", lastmet.AvailableRemote, met.AvailableRemote)
 		lastmet = met
 	})
 
