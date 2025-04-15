@@ -297,46 +297,58 @@ func (m *Metrics) AddFromProtocol(id string, name string, proto *protocol.FromPr
 		m.updateMetric(id, name, m.config.SubFromProtocol, "writes_allowed_alt_sources", lastmet.WritesAllowedAltSources, met.WritesAllowedAltSources)
 		m.updateMetric(id, name, m.config.SubFromProtocol, "writes_blocked_alt_sources", lastmet.WritesBlockedAltSources, met.WritesBlockedAltSources)
 
-		/*
-			   Namespace: config.Namespace, Subsystem: config.SubFromProtocol, Name: "heatmap", Help: "Heatmap"}, append(labels, "le")),
+		totalHeatmapP2P := make([]uint64, m.config.HeatmapResolution)
+		for _, block := range met.AvailableP2P {
+			part := uint64(block) * m.config.HeatmapResolution / met.NumBlocks
+			totalHeatmapP2P[part]++
+		}
 
-				totalHeatmapP2P := make([]uint64, m.config.HeatmapResolution)
-				for _, block := range met.AvailableP2P {
-					part := uint64(block) * m.config.HeatmapResolution / met.NumBlocks
-					totalHeatmapP2P[part]++
-				}
+		lastTotalHeatmapP2P := make([]uint64, m.config.HeatmapResolution)
+		for _, block := range lastmet.AvailableP2P {
+			part := uint64(block) * m.config.HeatmapResolution / lastmet.NumBlocks
+			lastTotalHeatmapP2P[part]++
+		}
 
-				totalHeatmapAltSources := make([]uint64, m.config.HeatmapResolution)
-				for _, block := range met.AvailableAltSources {
-					part := uint64(block) * m.config.HeatmapResolution / met.NumBlocks
-					totalHeatmapAltSources[part]++
-				}
+		totalHeatmapAltSources := make([]uint64, m.config.HeatmapResolution)
+		for _, block := range met.AvailableAltSources {
+			part := uint64(block) * m.config.HeatmapResolution / met.NumBlocks
+			totalHeatmapAltSources[part]++
+		}
 
-				totalHeatmapP2PDupe := make([]uint64, m.config.HeatmapResolution)
-				for _, block := range met.DuplicateP2P {
-					part := uint64(block) * m.config.HeatmapResolution / met.NumBlocks
-					totalHeatmapP2PDupe[part]++
-				}
+		lastTotalHeatmapAltSources := make([]uint64, m.config.HeatmapResolution)
+		for _, block := range lastmet.AvailableAltSources {
+			part := uint64(block) * m.config.HeatmapResolution / lastmet.NumBlocks
+			lastTotalHeatmapAltSources[part]++
+		}
 
-				blocksPerPart := 2 * (met.NumBlocks / m.config.HeatmapResolution)
+		totalHeatmapP2PDupe := make([]uint64, m.config.HeatmapResolution)
+		for _, block := range met.DuplicateP2P {
+			part := uint64(block) * m.config.HeatmapResolution / met.NumBlocks
+			totalHeatmapP2PDupe[part]++
+		}
 
-				//
-				for part, blocks := range totalHeatmapP2P {
-					m.fromProtocolHeatmap.WithLabelValues(id, name, fmt.Sprintf("%d", part)).Set(float64(blocks))
-				}
+		lastTotalHeatmapP2PDupe := make([]uint64, m.config.HeatmapResolution)
+		for _, block := range lastmet.DuplicateP2P {
+			part := uint64(block) * m.config.HeatmapResolution / lastmet.NumBlocks
+			lastTotalHeatmapP2PDupe[part]++
+		}
 
-				for part, blocks := range totalHeatmapAltSources {
-					if blocks > 0 {
-						m.fromProtocolHeatmap.WithLabelValues(id, name, fmt.Sprintf("%d", part)).Set(float64(blocksPerPart*2 + blocks))
-					}
-				}
+		for part, blocks := range totalHeatmapP2P {
+			m.updateMetric(id, name, m.config.SubFromProtocol, fmt.Sprintf("heatmap_p2p_%d", part), lastTotalHeatmapP2P[part], blocks)
+		}
 
-				for part, blocks := range totalHeatmapP2PDupe {
-					if blocks > 0 {
-						m.fromProtocolHeatmap.WithLabelValues(id, name, fmt.Sprintf("%d", part)).Set(float64(blocksPerPart + blocks))
-					}
-				}
-		*/
+		for part, blocks := range totalHeatmapAltSources {
+			if blocks > 0 {
+				m.updateMetric(id, name, m.config.SubFromProtocol, fmt.Sprintf("heatmap_alt_sources_%d", part), lastTotalHeatmapAltSources[part], blocks)
+			}
+		}
+
+		for part, blocks := range totalHeatmapP2PDupe {
+			if blocks > 0 {
+				m.updateMetric(id, name, m.config.SubFromProtocol, fmt.Sprintf("heatmap_p2p_dupe_%d", part), lastTotalHeatmapP2PDupe[part], blocks)
+			}
+		}
+
 		lastmet = met
 	})
 
