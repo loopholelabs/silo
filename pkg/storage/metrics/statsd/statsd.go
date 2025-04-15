@@ -233,7 +233,32 @@ func (m *Metrics) RemoveProtocol(id string, name string) {
 	m.remove(m.config.SubProtocol, id, name)
 }
 
-func (m *Metrics) AddToProtocol(id string, name string, proto *protocol.ToProtocol) {}
+func (m *Metrics) AddToProtocol(id string, name string, proto *protocol.ToProtocol) {
+	lastmet := &protocol.ToProtocolMetrics{}
+	m.add(m.config.SubToProtocol, id, name, m.config.TickToProtocol, func() {
+		met := proto.GetMetrics()
+		m.updateMetric(id, name, m.config.SubToProtocol, "sent_events", lastmet.SentEvents, met.SentEvents)
+		m.updateMetric(id, name, m.config.SubToProtocol, "sent_alt_sources", lastmet.SentAltSources, met.SentAltSources)
+		m.updateMetric(id, name, m.config.SubToProtocol, "sent_hashes", lastmet.SentHashes, met.SentHashes)
+		m.updateMetric(id, name, m.config.SubToProtocol, "sent_dev_info", lastmet.SentDevInfo, met.SentDevInfo)
+		m.updateMetric(id, name, m.config.SubToProtocol, "sent_dirty_list", lastmet.SentDirtyList, met.SentDirtyList)
+		m.updateMetric(id, name, m.config.SubToProtocol, "sent_read_at", lastmet.SentReadAt, met.SentReadAt)
+		m.updateMetric(id, name, m.config.SubToProtocol, "sent_write_at_hash", lastmet.SentWriteAtHash, met.SentWriteAtHash)
+		m.updateMetric(id, name, m.config.SubToProtocol, "sent_write_at_hash_bytes", lastmet.SentWriteAtHashBytes, met.SentWriteAtHashBytes)
+		m.updateMetric(id, name, m.config.SubToProtocol, "sent_write_at_comp", lastmet.SentWriteAtComp, met.SentWriteAtComp)
+		m.updateMetric(id, name, m.config.SubToProtocol, "sent_write_at_comp_bytes", lastmet.SentWriteAtCompBytes, met.SentWriteAtCompBytes)
+		m.updateMetric(id, name, m.config.SubToProtocol, "sent_write_at_comp_data_bytes", lastmet.SentWriteAtCompDataBytes, met.SentWriteAtCompDataBytes)
+		m.updateMetric(id, name, m.config.SubToProtocol, "sent_write_at", lastmet.SentWriteAt, met.SentWriteAt)
+		m.updateMetric(id, name, m.config.SubToProtocol, "sent_write_at_bytes", lastmet.SentWriteAtBytes, met.SentWriteAtBytes)
+		m.updateMetric(id, name, m.config.SubToProtocol, "sent_write_at_with_map", lastmet.SentWriteAtWithMap, met.SentWriteAtWithMap)
+		m.updateMetric(id, name, m.config.SubToProtocol, "sent_remove_from_map", lastmet.SentRemoveFromMap, met.SentRemoveFromMap)
+		m.updateMetric(id, name, m.config.SubToProtocol, "sent_you_already_have", lastmet.SentYouAlreadyHave, met.SentYouAlreadyHave)
+		m.updateMetric(id, name, m.config.SubToProtocol, "sent_you_already_have_bytes", lastmet.SentYouAlreadyHaveBytes, met.SentYouAlreadyHaveBytes)
+		m.updateMetric(id, name, m.config.SubToProtocol, "recv_need_at", lastmet.RecvNeedAt, met.RecvNeedAt)
+		m.updateMetric(id, name, m.config.SubToProtocol, "recv_dont_need_at", lastmet.RecvDontNeedAt, met.RecvDontNeedAt)
+		lastmet = met
+	})
+}
 func (m *Metrics) RemoveToProtocol(id string, name string) {
 	m.remove(m.config.SubToProtocol, id, name)
 }
