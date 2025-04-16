@@ -61,7 +61,9 @@ func NewFromSchema(instanceID string, ds []*config.DeviceSchema, createWC bool, 
 		var vmonitor *volatilitymonitor.VolatilityMonitor
 		var order storage.BlockOrder
 
-		if s.Migration == nil || !s.Migration.AnyOrder {
+		if s.Migration != nil && s.Migration.AnyOrder {
+			order = blocks.NewAnyBlockOrder(totalBlocks, nil)
+		} else {
 			vmonitor = volatilitymonitor.NewVolatilityMonitor(dirtyLocal, blockSize, volatilityExpiry)
 			if exp != nil {
 				exp.SetProvider(vmonitor)
@@ -70,8 +72,6 @@ func NewFromSchema(instanceID string, ds []*config.DeviceSchema, createWC bool, 
 				met.AddVolatilityMonitor(dg.instanceID, s.Name, vmonitor)
 			}
 			order = vmonitor
-		} else {
-			order = blocks.NewAnyBlockOrder(totalBlocks, nil)
 		}
 
 		orderer := blocks.NewPriorityBlockOrder(totalBlocks, order)
