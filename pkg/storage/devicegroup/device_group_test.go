@@ -30,6 +30,9 @@ var testDeviceSchema = []*config.DeviceSchema{
 		BlockSize: "1m",
 		//	Expose:    true,
 		Location: "test_data/test1",
+		Migration: &config.MigrationConfigSchema{
+			AnyOrder: true,
+		},
 	},
 
 	{
@@ -325,6 +328,13 @@ func TestDeviceGroupMigrate(t *testing.T) {
 		eq, err := storage.Equals(prov, destProvider, 1024*1024)
 		assert.NoError(t, err)
 		assert.True(t, eq)
+
+		di := dg.GetDeviceInformationByName(s.Name)
+		if s.Name == "test1" {
+			assert.Nil(t, di.Volatility)
+		} else {
+			assert.NotNil(t, di.Volatility)
+		}
 	}
 
 	// Cancel context
