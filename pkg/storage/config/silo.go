@@ -18,19 +18,24 @@ type SiloSchema struct {
 }
 
 type DeviceSchema struct {
-	Name           string        `hcl:"name,label"`
-	Size           string        `hcl:"size,attr"`
-	System         string        `hcl:"system,attr"`
-	BlockSize      string        `hcl:"blocksize,optional"`
-	Expose         bool          `hcl:"expose,optional"`
-	Location       string        `hcl:"location,optional"`
-	ROSource       *DeviceSchema `hcl:"source,block"`
-	ROSourceHashes string        `hcl:"sourcehashes,optional"`
-	ROSourceShared bool          `hcl:"sourceshared,optional"`
-	LoadBinLog     string        `hcl:"loadbinlog,optional"`
-	Binlog         string        `hcl:"binlog,optional"`
-	PageServerPID  int           `hcl:"pid,optional"`
-	Sync           *SyncS3Schema `hcl:"sync,block"`
+	Name           string                 `hcl:"name,label"`
+	Size           string                 `hcl:"size,attr"`
+	System         string                 `hcl:"system,attr"`
+	BlockSize      string                 `hcl:"blocksize,optional"`
+	Expose         bool                   `hcl:"expose,optional"`
+	Location       string                 `hcl:"location,optional"`
+	ROSource       *DeviceSchema          `hcl:"source,block"`
+	ROSourceHashes string                 `hcl:"sourcehashes,optional"`
+	ROSourceShared bool                   `hcl:"sourceshared,optional"`
+	LoadBinLog     string                 `hcl:"loadbinlog,optional"`
+	Binlog         string                 `hcl:"binlog,optional"`
+	PageServerPID  int                    `hcl:"pid,optional"`
+	Sync           *SyncS3Schema          `hcl:"sync,block"`
+	Migration      *MigrationConfigSchema `hcl:"migration,block"`
+}
+
+type MigrationConfigSchema struct {
+	AnyOrder bool `hcl:"anyorder,attr"`
 }
 
 type SyncConfigSchema struct {
