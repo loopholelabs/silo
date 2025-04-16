@@ -55,21 +55,28 @@ func NewFromSchema(instanceID string, ds []*config.DeviceSchema, createWC bool, 
 		local := modules.NewLockable(prov)
 		mlocal := modules.NewMetrics(local)
 		dirtyLocal, dirtyRemote := dirtytracker.NewDirtyTracker(mlocal, blockSize)
-		vmonitor := volatilitymonitor.NewVolatilityMonitor(dirtyLocal, blockSize, volatilityExpiry)
 
 		totalBlocks := (int(local.Size()) + blockSize - 1) / blockSize
+
+		var vmonitor *volatilitymonitor.VolatilityMonitor
+
+		if s.Migration == nil || !s.Migration.AnyOrder {
+			vmonitor = volatilitymonitor.NewVolatilityMonitor(dirtyLocal, blockSize, volatilityExpiry)
+			if exp != nil {
+				exp.SetProvider(vmonitor)
+			}
+			if met != nil {
+				met.AddVolatilityMonitor(dg.instanceID, s.Name, vmonitor)
+			}
+		}
+
 		orderer := blocks.NewPriorityBlockOrder(totalBlocks, vmonitor)
 		orderer.AddAll()
-
-		if exp != nil {
-			exp.SetProvider(vmonitor)
-		}
 
 		// Add to metrics if given.
 		if met != nil {
 			met.AddMetrics(dg.instanceID, s.Name, mlocal)
 			met.AddDirtyTracker(dg.instanceID, s.Name, dirtyRemote)
-			met.AddVolatilityMonitor(dg.instanceID, s.Name, vmonitor)
 		}
 
 		dg.devices = append(dg.devices, &DeviceInformation{
