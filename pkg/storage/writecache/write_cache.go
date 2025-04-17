@@ -13,9 +13,11 @@ import (
 )
 
 type WriteCache struct {
+	storage.ProviderWithEvents
 	prov      storage.Provider
 	ctx       context.Context
 	cancel    context.CancelFunc
+	enabled   atomic.Bool
 	blockSize int
 	blocks    []*BlockInfo
 	totalData int64 // Current count of data stored here
@@ -78,6 +80,26 @@ func (bi *BlockInfo) Clear(blockSize int64) {
 	bi.maxOffset = 0
 }
 
+// Relay events to embedded StorageProvider
+func (i *WriteCache) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
+	if eventType == storage.EventSyncStop {
+		// A migration is starting. We should flush, and stop caching.
+		// It may be the case that later on we want to change this behaviour.
+
+		i.disable()
+
+		// Flush all data
+		// TODO: err
+		i.Flush()
+	}
+	data := i.ProviderWithEvents.SendSiloEvent(eventType, eventData)
+	return append(data, storage.SendSiloEvent(i.prov, eventType, eventData)...)
+}
+
+/**
+ * Create a new cache
+ *
+ */
 func NewWriteCache(blockSize int, prov storage.Provider, maxData int64, minData int64, flushPeriod time.Duration) *WriteCache {
 	numBlocks := (prov.Size() + uint64(blockSize) - 1) / uint64(blockSize)
 
@@ -101,7 +123,10 @@ func NewWriteCache(blockSize int, prov storage.Provider, maxData int64, minData 
 		blocks:    blocks,
 		maxData:   maxData,
 		minData:   minData,
+		enabled:   atomic.Bool{},
 	}
+
+	wc.enabled.Store(true) // Enable this cache
 
 	// Set something up to periodically flush writes...
 	go func() {
@@ -136,6 +161,11 @@ func (i *WriteCache) ReadAt(buffer []byte, offset int64) (int, error) {
 }
 
 func (i *WriteCache) WriteAt(buffer []byte, offset int64) (int, error) {
+	// Pass through
+	if !i.enabled.Load() {
+		return i.prov.WriteAt(buffer, offset)
+	}
+
 	end := offset + int64(len(buffer))
 
 	bStart := offset / int64(i.blockSize)
@@ -269,9 +299,27 @@ func (i *WriteCache) Size() uint64 {
 func (i *WriteCache) Close() error {
 	i.cancel() // We don't need to be flushing things any more.
 
+	i.disable()
+
 	return errors.Join(i.Flush(), i.prov.Close())
 }
 
 func (i *WriteCache) CancelWrites(offset int64, length int64) {
 	i.prov.CancelWrites(offset, length)
+}
+
+// Disable the cache, and wait for any pending writes to be completed
+func (i *WriteCache) disable() {
+	// First lock all blocks...
+	for _, bi := range i.blocks {
+		bi.lock.Lock()
+	}
+
+	// Now disable caching
+	i.enabled.Store(false)
+
+	// Unlock all blocks
+	for _, bi := range i.blocks {
+		bi.lock.Unlock()
+	}
 }

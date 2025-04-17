@@ -23,6 +23,7 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
 	"github.com/loopholelabs/silo/pkg/storage/volatilitymonitor"
+	"github.com/loopholelabs/silo/pkg/storage/writecache"
 )
 
 const (
@@ -307,6 +308,18 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 		if err != nil {
 			return nil, nil, err
 		}
+	}
+
+	// Optionally cache writes
+	if ds.WriteCache != nil {
+		minSize := config.ParseByteValue(ds.WriteCache.MinSize)
+		maxSize := config.ParseByteValue(ds.WriteCache.MaxSize)
+		period, err := time.ParseDuration(ds.WriteCache.FlushPeriod)
+		if err != nil {
+			return nil, nil, err
+		}
+		wc := writecache.NewWriteCache(int(ds.ByteBlockSize()), prov, maxSize, minSize, period)
+		prov = wc
 	}
 
 	// Now optionaly expose the device
