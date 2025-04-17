@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/loopholelabs/silo/pkg/storage"
+	"github.com/loopholelabs/silo/pkg/storage/util"
 )
 
 type WriteCache struct {
@@ -28,6 +29,9 @@ type BlockInfo struct {
 	writes    []*WriteData
 	bytes     int       // How much data is stored here
 	lastFlush time.Time // When was this block last flushed?
+
+	minOffset int64
+	maxOffset int64
 }
 
 type WriteData struct {
@@ -44,13 +48,23 @@ func (bi *BlockInfo) WriteAt(buffer []byte, offset int64) {
 		data:   buffer,
 	})
 	bi.bytes += len(buffer)
+
+	// Update data extents
+	if offset < bi.minOffset {
+		bi.minOffset = offset
+	}
+	if offset+int64(len(buffer)) > bi.maxOffset {
+		bi.maxOffset = offset + int64(len(buffer))
+	}
 }
 
 // Clear all data from the BlockInfo
-func (bi *BlockInfo) Clear() {
+func (bi *BlockInfo) Clear(blockSize int64) {
 	bi.writes = make([]*WriteData, 0)
 	bi.lastFlush = time.Now()
 	bi.bytes = 0
+	bi.minOffset = blockSize
+	bi.maxOffset = 0
 }
 
 func NewWriteCache(blockSize int, prov storage.Provider, maxData int64, minData int64, flushPeriod time.Duration) *WriteCache {
@@ -59,8 +73,10 @@ func NewWriteCache(blockSize int, prov storage.Provider, maxData int64, minData 
 	blocks := make([]*BlockInfo, numBlocks)
 	for i := uint64(0); i < numBlocks; i++ {
 		blocks[i] = &BlockInfo{
-			block:  i,
-			writes: make([]*WriteData, 0),
+			block:     i,
+			writes:    make([]*WriteData, 0),
+			maxOffset: 0,
+			minOffset: int64(blockSize),
 		}
 	}
 
@@ -156,38 +172,37 @@ func (i *WriteCache) flushBlock(b int) error {
 		// We need to flush these writes...
 
 		// Find out the extents
-		minOffset := int64(i.blockSize)
-		maxOffset := int64(0)
+		bf := util.NewBitfield(i.blockSize)
 		for _, w := range bi.writes {
-			if w.offset+int64(len(w.data)) > maxOffset {
-				maxOffset = w.offset + int64(len(w.data))
-			}
-			if w.offset < minOffset {
-				minOffset = w.offset
-			}
+			bf.SetBits(uint(w.offset), uint(w.offset+int64(len(w.data))))
 		}
+		gaps := !bf.BitsSet(uint(bi.minOffset), uint(bi.maxOffset))
 
-		blockBuffer := make([]byte, maxOffset-minOffset)
-		_, err := i.prov.ReadAt(blockBuffer, int64(b*i.blockSize)+minOffset)
-		if err != nil {
-			bi.lock.Unlock()
-			return err
+		blockBuffer := make([]byte, bi.maxOffset-bi.minOffset)
+
+		// There are gaps in the write data, which means we need to do a read
+		if gaps {
+			_, err := i.prov.ReadAt(blockBuffer, int64(b*i.blockSize)+bi.minOffset)
+			if err != nil {
+				bi.lock.Unlock()
+				return err
+			}
 		}
 
 		// Now merge in the writes to the blockBuffer...
 		for _, w := range bi.writes {
-			copy(blockBuffer[w.offset-minOffset:], w.data)
+			copy(blockBuffer[w.offset-bi.minOffset:], w.data)
 			atomic.AddInt64(&i.totalData, -int64(len(w.data)))
 		}
 
 		// And write the data back
-		_, err = i.prov.WriteAt(blockBuffer, int64(b*i.blockSize)+minOffset)
+		_, err := i.prov.WriteAt(blockBuffer, int64(b*i.blockSize)+bi.minOffset)
 		if err != nil {
 			bi.lock.Unlock()
 			return err
 		}
 
-		bi.Clear()
+		bi.Clear(int64(i.blockSize))
 	}
 	bi.lock.Unlock()
 	return nil
