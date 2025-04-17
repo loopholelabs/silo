@@ -3,6 +3,7 @@ package writecache
 import (
 	"context"
 	"errors"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -18,9 +19,11 @@ type WriteCache struct {
 	blocks    []*BlockInfo
 	totalData int64 // Current count of data stored here
 	maxData   int64 // Maximum amount of data we want to cache
+	minData   int64 // Minimum amount of data after a partial flush
 }
 
 type BlockInfo struct {
+	block     uint64
 	lock      sync.Mutex
 	writes    []*WriteData
 	bytes     int       // How much data is stored here
@@ -50,34 +53,58 @@ func (bi *BlockInfo) Clear() {
 	bi.bytes = 0
 }
 
-func NewWriteCache(blockSize int, prov storage.Provider, maxData int64) *WriteCache {
+func NewWriteCache(blockSize int, prov storage.Provider, maxData int64, minData int64, flushPeriod time.Duration) *WriteCache {
 	numBlocks := (prov.Size() + uint64(blockSize) - 1) / uint64(blockSize)
 
 	blocks := make([]*BlockInfo, numBlocks)
 	for i := uint64(0); i < numBlocks; i++ {
 		blocks[i] = &BlockInfo{
+			block:  i,
 			writes: make([]*WriteData, 0),
 		}
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	// Set something up to periodically flush writes...
-	go func() {
-
-	}()
-
-	return &WriteCache{
+	wc := &WriteCache{
 		ctx:       ctx,
 		cancel:    cancel,
 		prov:      prov,
 		blockSize: blockSize,
 		blocks:    blocks,
 		maxData:   maxData,
+		minData:   minData,
 	}
+
+	// Set something up to periodically flush writes...
+	go func() {
+		ticker := time.NewTicker(flushPeriod)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				wc.flushSome(minData)
+			}
+		}
+	}()
+
+	return wc
 }
 
 func (i *WriteCache) ReadAt(buffer []byte, offset int64) (int, error) {
+	end := offset + int64(len(buffer))
+
+	bStart := offset / int64(i.blockSize)
+	bEnd := ((end - 1) / int64(i.blockSize)) + 1
+
+	// In this first implementation, we simply flush blocks before we read from them.
+	for b := bStart; b < bEnd; b++ {
+		err := i.flushBlock(int(b))
+		if err != nil {
+			return 0, err
+		}
+	}
 	return i.prov.ReadAt(buffer, offset)
 }
 
@@ -107,7 +134,7 @@ func (i *WriteCache) WriteAt(buffer []byte, offset int64) (int, error) {
 		// TODO: Instead of flushing *everything*, we could just flush the most active blocks
 		// this would smooth out the writes over time...
 		if atomic.LoadInt64(&i.totalData)+int64(len(blockData)) >= i.maxData {
-			i.Flush()
+			i.flushSome(i.minData)
 		}
 
 		// Add the write data to the block
@@ -175,6 +202,36 @@ func (i *WriteCache) Flush() error {
 		}
 	}
 
+	return nil
+}
+
+/**
+ * Flush some data out of the writeCache.
+ * Data is flushed until some target is reached, starting with the block with most data
+ */
+func (i *WriteCache) flushSome(target int64) error {
+	blocks := make([]*BlockInfo, len(i.blocks))
+	for b, bi := range i.blocks {
+		blocks[b] = bi
+	}
+
+	// Now sort it
+	sort.Slice(blocks, func(i int, j int) bool {
+		return blocks[i].bytes > blocks[j].bytes
+	})
+
+	// Flush from biggest to smallest
+	for _, bi := range blocks {
+		if bi.bytes > 0 {
+			err := i.flushBlock(int(bi.block))
+			if err != nil {
+				return nil
+			}
+			if atomic.LoadInt64(&i.totalData) < target {
+				break
+			}
+		}
+	}
 	return nil
 }
 

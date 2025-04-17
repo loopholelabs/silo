@@ -3,6 +3,7 @@ package writecache
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/modules"
@@ -21,16 +22,27 @@ func TestWriteCache(t *testing.T) {
 
 	// Now try the same thing but with a WriteCache
 
-	met.ShowStats("memory")
+	fmt.Printf("No WriteCache        \t %s\n", showStats(met.GetMetrics()))
 
 	MB := int64(1024 * 1024)
 
-	for _, cacheSize := range []int64{1 * MB, 4 * MB, 64 * MB, 256 * MB, 1024 * MB} {
+	type cacheConfig struct {
+		name    string
+		minData int64
+		maxData int64
+		period  time.Duration
+	}
 
+	for _, conf := range []cacheConfig{
+		{name: "1mb_basic", minData: 0, maxData: 1 * MB, period: 10 * time.Second},
+		{name: "5-10mb", minData: 5 * MB, maxData: 10 * MB, period: 10 * time.Second},
+		{name: "50-100mb", minData: 50 * MB, maxData: 100 * MB, period: 10 * time.Second},
+		{name: "250-500mb", minData: 250 * MB, maxData: 500 * MB, period: 100 * time.Millisecond},
+	} {
 		provWC := sources.NewMemoryStorage(1024 * 1024 * 1024) // 1GB memory
 		metWC := modules.NewMetrics(provWC)
 
-		wc := NewWriteCache(1024*1024, metWC, cacheSize)
+		wc := NewWriteCache(1024*1024, metWC, conf.maxData, conf.minData, conf.period)
 
 		blWC, err := modules.NewBinLogReplay("memory_binlog", wc)
 		assert.NoError(t, err)
@@ -48,6 +60,16 @@ func TestWriteCache(t *testing.T) {
 		assert.True(t, eq)
 
 		// Look at the stats...
-		metWC.ShowStats(fmt.Sprintf("memoryWC_%d", cacheSize))
+		fmt.Printf("WriteCache_%s\t %s\n", conf.name, showStats(metWC.GetMetrics()))
 	}
+}
+
+func showStats(met *modules.MetricsSnapshot) string {
+	return fmt.Sprintf("IOPS %d (%d r %d w)\tData %d (%d r %d w)",
+		met.ReadOps+met.WriteOps,
+		met.ReadOps,
+		met.WriteOps,
+		met.ReadBytes+met.WriteBytes,
+		met.ReadBytes,
+		met.WriteBytes)
 }
