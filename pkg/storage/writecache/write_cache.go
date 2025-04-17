@@ -43,7 +43,18 @@ type WriteData struct {
 func (bi *BlockInfo) WriteAt(buffer []byte, offset int64) {
 	bi.lock.Lock()
 	defer bi.lock.Unlock()
-	bi.writes = append(bi.writes, &WriteData{
+
+	// Remove anything this overwrites completely
+	newWrites := make([]*WriteData, 0)
+	for _, w := range bi.writes {
+		if w.offset >= offset && (w.offset+int64(len(w.data))) <= (offset+int64(len(buffer))) {
+			// This is enclosed inside the new write, so it's now irrelevant, and can be discarded.
+		} else {
+			newWrites = append(newWrites, w)
+		}
+	}
+
+	bi.writes = append(newWrites, &WriteData{
 		offset: offset,
 		data:   buffer,
 	})
@@ -171,7 +182,8 @@ func (i *WriteCache) flushBlock(b int) error {
 	if len(bi.writes) > 0 {
 		// We need to flush these writes...
 
-		// Find out the extents
+		// Check if we need to do a read
+		// TODO: Do this as we receive the writes.
 		bf := util.NewBitfield(i.blockSize)
 		for _, w := range bi.writes {
 			bf.SetBits(uint(w.offset), uint(w.offset+int64(len(w.data))))
