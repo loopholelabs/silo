@@ -1,8 +1,8 @@
 module github.com/loopholelabs/silo
 
-go 1.24
+go 1.23.0
 
-toolchain go1.24.2
+toolchain go1.23.8
 
 require (
 	github.com/Merovius/nbd v0.0.0-20231017152624-27b78b60d8da
