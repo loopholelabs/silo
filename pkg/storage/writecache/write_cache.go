@@ -85,18 +85,6 @@ func (bi *BlockInfo) Clear(blockSize int64) {
 
 // Relay events to embedded StorageProvider
 func (i *WriteCache) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
-	if eventType == storage.EventSyncStop {
-		// A migration is starting. We should flush, and stop caching.
-		// It may be the case that later on we want to change this behaviour.
-
-		i.disable()
-
-		// Flush all data
-		// TODO: err
-		i.Flush()
-
-		//		fmt.Printf("\n\n\nWriteCache FLUSHED and disabled\n\n\n")
-	}
 	data := i.ProviderWithEvents.SendSiloEvent(eventType, eventData)
 	return append(data, storage.SendSiloEvent(i.prov, eventType, eventData)...)
 }
