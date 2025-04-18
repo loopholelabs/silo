@@ -2,17 +2,17 @@ package writecache
 
 import (
 	"context"
-	"errors"
 	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/loopholelabs/silo/pkg/storage"
-	"github.com/loopholelabs/silo/pkg/storage/util"
 )
 
 type WriteCache struct {
+	uuid string
 	storage.ProviderWithEvents
 	prov      storage.Provider
 	ctx       context.Context
@@ -23,6 +23,8 @@ type WriteCache struct {
 	totalData int64 // Current count of data stored here
 	maxData   int64 // Maximum amount of data we want to cache
 	minData   int64 // Minimum amount of data after a partial flush
+
+	writeLock sync.RWMutex
 }
 
 type BlockInfo struct {
@@ -46,17 +48,18 @@ func (bi *BlockInfo) WriteAt(buffer []byte, offset int64) {
 	bi.lock.Lock()
 	defer bi.lock.Unlock()
 
-	// Remove anything this overwrites completely
-	newWrites := make([]*WriteData, 0)
-	for _, w := range bi.writes {
-		if w.offset >= offset && (w.offset+int64(len(w.data))) <= (offset+int64(len(buffer))) {
-			// This is enclosed inside the new write, so it's now irrelevant, and can be discarded.
-		} else {
-			newWrites = append(newWrites, w)
+	/*
+		// Remove anything this overwrites completely
+		newWrites := make([]*WriteData, 0)
+		for _, w := range bi.writes {
+			if w.offset >= offset && (w.offset+int64(len(w.data))) <= (offset+int64(len(buffer))) {
+				// This is enclosed inside the new write, so it's now irrelevant, and can be discarded.
+			} else {
+				newWrites = append(newWrites, w)
+			}
 		}
-	}
-
-	bi.writes = append(newWrites, &WriteData{
+	*/
+	bi.writes = append(bi.writes, &WriteData{
 		offset: offset,
 		data:   buffer,
 	})
@@ -91,6 +94,8 @@ func (i *WriteCache) SendSiloEvent(eventType storage.EventType, eventData storag
 		// Flush all data
 		// TODO: err
 		i.Flush()
+
+		//		fmt.Printf("\n\n\nWriteCache FLUSHED and disabled\n\n\n")
 	}
 	data := i.ProviderWithEvents.SendSiloEvent(eventType, eventData)
 	return append(data, storage.SendSiloEvent(i.prov, eventType, eventData)...)
@@ -116,6 +121,7 @@ func NewWriteCache(blockSize int, prov storage.Provider, maxData int64, minData 
 	ctx, cancel := context.WithCancel(context.Background())
 
 	wc := &WriteCache{
+		uuid:      uuid.NewString(),
 		ctx:       ctx,
 		cancel:    cancel,
 		prov:      prov,
@@ -150,7 +156,8 @@ func (i *WriteCache) ReadAt(buffer []byte, offset int64) (int, error) {
 	bStart := offset / int64(i.blockSize)
 	bEnd := ((end - 1) / int64(i.blockSize)) + 1
 
-	// In this first implementation, we simply flush blocks before we read from them.
+	// In this first implementation, we simply flush blocks before we read from them, to make sure
+	// the data is correct.
 	for b := bStart; b < bEnd; b++ {
 		err := i.flushBlock(int(b))
 		if err != nil {
@@ -161,6 +168,12 @@ func (i *WriteCache) ReadAt(buffer []byte, offset int64) (int, error) {
 }
 
 func (i *WriteCache) WriteAt(buffer []byte, offset int64) (int, error) {
+	// Incase a cache disable / flush op is going on
+	// NOTE we are intentionally using RLock/RUnlock here. We don't mind if concurrent WriteAt
+	// go on, as long as a disable cache / flush op isn't going on.
+	i.writeLock.RLock()
+	defer i.writeLock.RUnlock()
+
 	// Pass through
 	if !i.enabled.Load() {
 		return i.prov.WriteAt(buffer, offset)
@@ -212,14 +225,17 @@ func (i *WriteCache) flushBlock(b int) error {
 	if len(bi.writes) > 0 {
 		// We need to flush these writes...
 
-		// Check if we need to do a read
-		// TODO: Do this as we receive the writes.
-		bf := util.NewBitfield(i.blockSize)
-		for _, w := range bi.writes {
-			bf.SetBits(uint(w.offset), uint(w.offset+int64(len(w.data))))
-		}
-		gaps := !bf.BitsSet(uint(bi.minOffset), uint(bi.maxOffset))
+		/*
+			// Check if we need to do a read
+			// TODO: Do this as we receive the writes.
+			bf := util.NewBitfield(i.blockSize)
+			for _, w := range bi.writes {
+				bf.SetBits(uint(w.offset), uint(w.offset+int64(len(w.data))))
+			}
+			gaps := !bf.BitsSet(uint(bi.minOffset), uint(bi.maxOffset))
+		*/
 
+		gaps := true
 		blockBuffer := make([]byte, bi.maxOffset-bi.minOffset)
 
 		// There are gaps in the write data, which means we need to do a read
@@ -299,9 +315,9 @@ func (i *WriteCache) Size() uint64 {
 func (i *WriteCache) Close() error {
 	i.cancel() // We don't need to be flushing things any more.
 
-	i.disable()
+	i.disable() // Disable any more caching behaviour
 
-	return errors.Join(i.Flush(), i.prov.Close())
+	return i.prov.Close()
 }
 
 func (i *WriteCache) CancelWrites(offset int64, length int64) {
@@ -310,16 +326,12 @@ func (i *WriteCache) CancelWrites(offset int64, length int64) {
 
 // Disable the cache, and wait for any pending writes to be completed
 func (i *WriteCache) disable() {
-	// First lock all blocks...
-	for _, bi := range i.blocks {
-		bi.lock.Lock()
-	}
+	i.writeLock.Lock()
+	defer i.writeLock.Unlock()
 
 	// Now disable caching
 	i.enabled.Store(false)
 
-	// Unlock all blocks
-	for _, bi := range i.blocks {
-		bi.lock.Unlock()
-	}
+	// FLUSH everything NOW
+	i.Flush()
 }
