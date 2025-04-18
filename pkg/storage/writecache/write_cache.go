@@ -2,6 +2,7 @@ package writecache
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/loopholelabs/silo/pkg/storage"
+	"github.com/loopholelabs/silo/pkg/storage/util"
 )
 
 type WriteCache struct {
@@ -59,9 +61,13 @@ func (bi *BlockInfo) WriteAt(buffer []byte, offset int64) {
 			}
 		}
 	*/
+
+	cdata := make([]byte, len(buffer))
+	copy(cdata, buffer)
+
 	bi.writes = append(bi.writes, &WriteData{
 		offset: offset,
-		data:   buffer,
+		data:   cdata,
 	})
 	bi.bytes += len(buffer)
 
@@ -85,6 +91,12 @@ func (bi *BlockInfo) Clear(blockSize int64) {
 
 // Relay events to embedded StorageProvider
 func (i *WriteCache) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
+	if eventType == storage.EventTypeCowGetBlocks {
+		fmt.Printf("block 0 CowGetBlocks\n")
+		i.Flush()
+		// We *need* to flush here, so that Cow knows which blocks are changed etc
+	}
+
 	data := i.ProviderWithEvents.SendSiloEvent(eventType, eventData)
 	return append(data, storage.SendSiloEvent(i.prov, eventType, eventData)...)
 }
@@ -162,15 +174,15 @@ func (i *WriteCache) WriteAt(buffer []byte, offset int64) (int, error) {
 	i.writeLock.RLock()
 	defer i.writeLock.RUnlock()
 
-	// Pass through
-	if !i.enabled.Load() {
-		return i.prov.WriteAt(buffer, offset)
-	}
-
 	end := offset + int64(len(buffer))
 
 	bStart := offset / int64(i.blockSize)
 	bEnd := ((end - 1) / int64(i.blockSize)) + 1
+
+	// Pass through
+	if !i.enabled.Load() {
+		return i.prov.WriteAt(buffer, offset)
+	}
 
 	// Go through blocks
 	for b := bStart; b < bEnd; b++ {
@@ -213,17 +225,15 @@ func (i *WriteCache) flushBlock(b int) error {
 	if len(bi.writes) > 0 {
 		// We need to flush these writes...
 
-		/*
-			// Check if we need to do a read
-			// TODO: Do this as we receive the writes.
-			bf := util.NewBitfield(i.blockSize)
-			for _, w := range bi.writes {
-				bf.SetBits(uint(w.offset), uint(w.offset+int64(len(w.data))))
-			}
-			gaps := !bf.BitsSet(uint(bi.minOffset), uint(bi.maxOffset))
-		*/
+		// Check if we need to do a read
+		// TODO: Do this as we receive the writes.
+		bf := util.NewBitfield(i.blockSize)
+		for _, w := range bi.writes {
+			bf.SetBits(uint(w.offset), uint(w.offset+int64(len(w.data))))
+		}
+		gaps := !bf.BitsSet(uint(bi.minOffset), uint(bi.maxOffset))
 
-		gaps := true
+		// gaps := true
 		blockBuffer := make([]byte, bi.maxOffset-bi.minOffset)
 
 		// There are gaps in the write data, which means we need to do a read
