@@ -27,8 +27,9 @@ type FileStorageSparse struct {
 	fp          *os.File
 	size        uint64
 	blockSize   int
+	offsetsLock sync.RWMutex
 	offsets     map[uint]uint64
-	writeLock   sync.Mutex
+	writeLocks  []sync.RWMutex
 	currentSize uint64
 	wg          sync.WaitGroup
 }
@@ -39,6 +40,9 @@ func NewFileStorageSparseCreate(f string, size uint64, blockSize int) (*FileStor
 		return nil, err
 	}
 
+	numBlocks := (int(size) + blockSize - 1) / blockSize
+	locks := make([]sync.RWMutex, numBlocks)
+
 	return &FileStorageSparse{
 		f:           f,
 		fp:          fp,
@@ -46,6 +50,7 @@ func NewFileStorageSparseCreate(f string, size uint64, blockSize int) (*FileStor
 		blockSize:   blockSize,
 		offsets:     make(map[uint]uint64),
 		currentSize: 0,
+		writeLocks:  locks,
 	}, nil
 }
 
@@ -54,6 +59,9 @@ func NewFileStorageSparse(f string, size uint64, blockSize int) (*FileStorageSpa
 	if err != nil {
 		return nil, err
 	}
+
+	numBlocks := (int(size) + blockSize - 1) / blockSize
+	locks := make([]sync.RWMutex, numBlocks)
 
 	// Scan through the file and get the offsets...
 	offsets := make(map[uint]uint64)
@@ -82,11 +90,19 @@ func NewFileStorageSparse(f string, size uint64, blockSize int) (*FileStorageSpa
 		blockSize:   blockSize,
 		offsets:     offsets,
 		currentSize: uint64(len(offsets) * (blockHeaderSize + blockSize)),
+		writeLocks:  locks,
 	}, nil
 }
 
+/**
+ * Write a block, or partial block.
+ * If the block is not found, the block must be complete (not partial)
+ * If the block is not found, and is a complete block, it'll be appended to the storage.
+ */
 func (i *FileStorageSparse) writeBlock(buffer []byte, b uint, blockOffset int64) error {
+	i.offsetsLock.RLock()
 	off, ok := i.offsets[b]
+	i.offsetsLock.RUnlock()
 	if ok {
 		// Write to the data where it is...
 		_, err := i.fp.WriteAt(buffer, int64(off)+blockOffset)
@@ -99,6 +115,8 @@ func (i *FileStorageSparse) writeBlock(buffer []byte, b uint, blockOffset int64)
 	}
 
 	// Need to append the data to the end of the file...
+	i.offsetsLock.Lock()
+	defer i.offsetsLock.Unlock()
 	blockHeader := make([]byte, blockHeaderSize)
 	binary.LittleEndian.PutUint64(blockHeader, uint64(b))
 	i.offsets[b] = i.currentSize + blockHeaderSize
@@ -116,8 +134,14 @@ func (i *FileStorageSparse) writeBlock(buffer []byte, b uint, blockOffset int64)
 	return err
 }
 
+/**
+ * Read a block, or partial block
+ *
+ */
 func (i *FileStorageSparse) readBlock(buffer []byte, b uint, blockOffset int64) error {
+	i.offsetsLock.RLock()
 	off, ok := i.offsets[b]
+	i.offsetsLock.RUnlock()
 	if ok {
 		// Read the data where it is...
 		_, err := i.fp.ReadAt(buffer, int64(off)+blockOffset)
@@ -126,12 +150,13 @@ func (i *FileStorageSparse) readBlock(buffer []byte, b uint, blockOffset int64) 
 	return errors.New("cannot do a partial block write on incomplete block")
 }
 
+/**
+ * Implementation of ReadAt
+ *
+ */
 func (i *FileStorageSparse) ReadAt(buffer []byte, offset int64) (int, error) {
 	i.wg.Add(1)
 	defer i.wg.Done()
-	// FIXME: overkill lock
-	i.writeLock.Lock()
-	defer i.writeLock.Unlock()
 
 	bufferEnd := int64(len(buffer))
 	if offset+int64(len(buffer)) > int64(i.size) {
@@ -147,6 +172,15 @@ func (i *FileStorageSparse) ReadAt(buffer []byte, offset int64) (int, error) {
 	bStart := uint(offset / int64(i.blockSize))
 	bEnd := uint((end-1)/uint64(i.blockSize)) + 1
 	count := 0
+
+	for b := bStart; b < bEnd; b++ {
+		i.writeLocks[b].RLock()
+	}
+	defer func() {
+		for b := bStart; b < bEnd; b++ {
+			i.writeLocks[b].RUnlock()
+		}
+	}()
 
 	// FIXME: We should paralelise these
 	for b := bStart; b < bEnd; b++ {
@@ -191,12 +225,13 @@ func (i *FileStorageSparse) ReadAt(buffer []byte, offset int64) (int, error) {
 	return count, nil
 }
 
+/**
+ * Implementation of WriteAt
+ *
+ */
 func (i *FileStorageSparse) WriteAt(buffer []byte, offset int64) (int, error) {
 	i.wg.Add(1)
 	defer i.wg.Done()
-
-	i.writeLock.Lock()
-	defer i.writeLock.Unlock()
 
 	bufferEnd := int64(len(buffer))
 	if offset+int64(len(buffer)) > int64(i.size) {
@@ -212,6 +247,15 @@ func (i *FileStorageSparse) WriteAt(buffer []byte, offset int64) (int, error) {
 	bStart := uint(offset / int64(i.blockSize))
 	bEnd := uint((end-1)/uint64(i.blockSize)) + 1
 	count := 0
+
+	for b := bStart; b < bEnd; b++ {
+		i.writeLocks[b].Lock()
+	}
+	defer func() {
+		for b := bStart; b < bEnd; b++ {
+			i.writeLocks[b].Unlock()
+		}
+	}()
 
 	for b := bStart; b < bEnd; b++ {
 		blockOffset := int64(b) * int64(i.blockSize)
