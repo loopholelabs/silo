@@ -91,6 +91,7 @@ func (i *WriteCache) SendSiloEvent(eventType storage.EventType, eventData storag
 	if eventType == storage.EventTypeCowGetBlocks {
 		i.disable() // Lock writes, disable future caching, and flush the cache.
 		// We *need* to flush here, so that Cow knows which blocks are changed etc
+		// We disable the cache for the migration, because we need to make sure ALL data is migrated.
 	}
 
 	data := i.ProviderWithEvents.SendSiloEvent(eventType, eventData)
