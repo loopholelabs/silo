@@ -14,6 +14,8 @@ const blockHeaderSize = 8
 
 var errNoBlock = errors.New("no such block")
 
+var ErrClosing = errors.New("close in progress or closed")
+
 /**
  * Simple sparse file storage provider
  *
@@ -33,6 +35,8 @@ type FileStorageSparse struct {
 	writeLocks  []sync.RWMutex
 	currentSize uint64
 	wg          sync.WaitGroup
+	closing     bool
+	closingLock sync.RWMutex
 }
 
 func NewFileStorageSparseCreate(f string, size uint64, blockSize int) (*FileStorageSparse, error) {
@@ -156,6 +160,12 @@ func (i *FileStorageSparse) readBlock(buffer []byte, b uint, blockOffset int64) 
  *
  */
 func (i *FileStorageSparse) ReadAt(buffer []byte, offset int64) (int, error) {
+	i.closingLock.Lock()
+	defer i.closingLock.Unlock()
+	if i.closing {
+		return 0, ErrClosing
+	}
+
 	i.wg.Add(1)
 	defer i.wg.Done()
 
@@ -232,6 +242,12 @@ func (i *FileStorageSparse) ReadAt(buffer []byte, offset int64) (int, error) {
  *
  */
 func (i *FileStorageSparse) WriteAt(buffer []byte, offset int64) (int, error) {
+	i.closingLock.Lock()
+	defer i.closingLock.Unlock()
+	if i.closing {
+		return 0, ErrClosing
+	}
+
 	i.wg.Add(1)
 	defer i.wg.Done()
 
@@ -340,6 +356,9 @@ func (i *FileStorageSparse) WriteAt(buffer []byte, offset int64) (int, error) {
 }
 
 func (i *FileStorageSparse) Close() error {
+	i.closingLock.Lock()
+	i.closing = true
+	i.closingLock.Unlock()
 	i.wg.Wait() // Wait for any pending ops to complete
 	return i.fp.Close()
 }
