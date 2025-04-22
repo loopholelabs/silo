@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"sync"
+	"sync/atomic"
 
 	"github.com/loopholelabs/silo/pkg/storage"
 )
@@ -171,7 +172,6 @@ func (i *FileStorageSparse) ReadAt(buffer []byte, offset int64) (int, error) {
 
 	bStart := uint(offset / int64(i.blockSize))
 	bEnd := uint((end-1)/uint64(i.blockSize)) + 1
-	count := 0
 
 	for b := bStart; b < bEnd; b++ {
 		i.writeLocks[b].RLock()
@@ -182,47 +182,48 @@ func (i *FileStorageSparse) ReadAt(buffer []byte, offset int64) (int, error) {
 		}
 	}()
 
-	// FIXME: We should paralelise these
-	for b := bStart; b < bEnd; b++ {
-		blockOffset := int64(b) * int64(i.blockSize)
-		if blockOffset >= offset {
-			n := bufferEnd - (blockOffset - offset)
-			if int(n) < i.blockSize {
-				// Partial read at the end
+	errs := make(chan error, bEnd-bStart+1)
+	var count uint64
 
-				blockBuffer := make([]byte, n)
-				err := i.readBlock(blockBuffer, b, 0)
-				if err == nil {
-					count += copy(buffer[blockOffset-offset:bufferEnd], blockBuffer)
-				} else {
-					return 0, err
-				}
-			} else {
-				// Full block in the middle
+	for blockNo := bStart; blockNo < bEnd; blockNo++ {
+		go func(b uint) {
+			blockOffset := int64(b) * int64(i.blockSize)
+			var err error
+			var n int
+
+			if blockOffset >= offset {
 				s := blockOffset - offset
-				e := s + int64(i.blockSize)
-				if e > int64(len(buffer)) {
-					e = int64(len(buffer))
+				n = int(bufferEnd - s)
+				if n > i.blockSize {
+					n = i.blockSize
 				}
-				err := i.readBlock(buffer[s:e], b, 0)
-				if err != nil {
-					return 0, err
-				}
-				count += i.blockSize
-			}
-		} else {
-			// Partial read at the start
-			blockBuffer := make([]byte, i.blockSize-int(offset-blockOffset))
-			err := i.readBlock(blockBuffer, b, offset-blockOffset)
-			if err == nil {
-				count += copy(buffer[:bufferEnd], blockBuffer)
+				err = i.readBlock(buffer[s:s+int64(n)], b, 0)
 			} else {
-				return 0, err
+				// Partial read at the start
+				s := offset - blockOffset
+				n = i.blockSize - int(s)
+				if n > int(bufferEnd) {
+					n = int(bufferEnd)
+				}
+				err = i.readBlock(buffer[:n], b, s)
 			}
+
+			if err == nil {
+				atomic.AddUint64(&count, uint64(n))
+			}
+			errs <- err
+		}(blockNo)
+	}
+
+	// Wait for all reads to complete, and return any error
+	for blockNo := bStart; blockNo < bEnd; blockNo++ {
+		e := <-errs
+		if e != nil {
+			return 0, e
 		}
 	}
 
-	return count, nil
+	return int(count), nil
 }
 
 /**
