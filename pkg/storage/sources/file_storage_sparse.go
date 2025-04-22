@@ -173,6 +173,7 @@ func (i *FileStorageSparse) ReadAt(buffer []byte, offset int64) (int, error) {
 	bStart := uint(offset / int64(i.blockSize))
 	bEnd := uint((end-1)/uint64(i.blockSize)) + 1
 
+	// Lock and unlock the blocks involved (read lock)
 	for b := bStart; b < bEnd; b++ {
 		i.writeLocks[b].RLock()
 	}
@@ -249,6 +250,7 @@ func (i *FileStorageSparse) WriteAt(buffer []byte, offset int64) (int, error) {
 	bEnd := uint((end-1)/uint64(i.blockSize)) + 1
 	count := 0
 
+	// Lock and unlock the blocks involved.
 	for b := bStart; b < bEnd; b++ {
 		i.writeLocks[b].Lock()
 	}
@@ -282,6 +284,7 @@ func (i *FileStorageSparse) WriteAt(buffer []byte, offset int64) (int, error) {
 					return 0, nil
 				}
 			} else {
+				// Complete write in the middle - no need for a read.
 				s := blockOffset - offset
 				e := s + int64(i.blockSize)
 				if e > int64(len(buffer)) {
@@ -294,17 +297,32 @@ func (i *FileStorageSparse) WriteAt(buffer []byte, offset int64) (int, error) {
 				count += i.blockSize
 			}
 		} else {
-			// Partial write at the start
-			blockBuffer := make([]byte, i.blockSize)
-			err := i.readBlock(blockBuffer, b, 0)
-			if err != nil {
-				return 0, err
+			dataStart := offset - blockOffset
+			be := i.blockSize - int(dataStart)
+			if be > len(buffer) {
+				be = len(buffer)
 			}
-			// Merge the data in, and write it back...
-			count += copy(blockBuffer[offset-blockOffset:], buffer[:bufferEnd])
-			err = i.writeBlock(blockBuffer, b, 0)
-			if err != nil {
+			// First try doing the write without a pre-read (If the block already exists)
+			err := i.writeBlock(buffer[:be], b, dataStart)
+			if err == errNoBlock {
+				// We need to read, merge and write a complete block.
+
+				// Partial write at the start
+				blockBuffer := make([]byte, i.blockSize)
+				err := i.readBlock(blockBuffer, b, 0)
+				if err != nil {
+					return 0, err
+				}
+				// Merge the data in, and write it back...
+				count += copy(blockBuffer[offset-blockOffset:], buffer[:bufferEnd])
+				err = i.writeBlock(blockBuffer, b, 0)
+				if err != nil {
+					return 0, nil
+				}
+			} else if err != nil {
 				return 0, nil
+			} else if err == nil {
+				count += be
 			}
 		}
 	}
