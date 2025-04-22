@@ -265,23 +265,33 @@ func (i *FileStorageSparse) WriteAt(buffer []byte, offset int64) (int, error) {
 		if blockOffset >= offset {
 			if len(buffer[blockOffset-offset:bufferEnd]) < i.blockSize {
 				// Partial write at the end
-				blockBuffer := make([]byte, i.blockSize)
-				var err error
 
+				// Try doing the write in place
 				dataLen := bufferEnd - (blockOffset - offset)
 
-				// If the write doesn't extend to the end of the storage size, we need to do a read first.
-				if blockOffset+dataLen < int64(i.size) {
-					err = i.readBlock(blockBuffer, b, 0)
-				}
-				if err != nil {
+				err := i.writeBlock(buffer[blockOffset-offset:bufferEnd], b, 0)
+				if err == errNoBlock {
+					// The block doesn't exist yet
+					blockBuffer := make([]byte, i.blockSize)
+					var err error
+
+					// If the write doesn't extend to the end of the storage size, we need to do a read first.
+					if blockOffset+dataLen < int64(i.size) {
+						err = i.readBlock(blockBuffer, b, 0)
+					}
+					if err != nil {
+						return 0, err
+					}
+					// Merge the data in, and write it back...
+					count += copy(blockBuffer, buffer[blockOffset-offset:bufferEnd])
+					err = i.writeBlock(blockBuffer, b, 0)
+					if err != nil {
+						return 0, err
+					}
+				} else if err != nil {
 					return 0, err
-				}
-				// Merge the data in, and write it back...
-				count += copy(blockBuffer, buffer[blockOffset-offset:bufferEnd])
-				err = i.writeBlock(blockBuffer, b, 0)
-				if err != nil {
-					return 0, nil
+				} else if err == nil {
+					count += int(dataLen)
 				}
 			} else {
 				// Complete write in the middle - no need for a read.
