@@ -2,7 +2,6 @@ package writecache
 
 import (
 	"context"
-	"fmt"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -50,22 +49,20 @@ func (bi *BlockInfo) WriteAt(buffer []byte, offset int64) {
 	bi.lock.Lock()
 	defer bi.lock.Unlock()
 
-	/*
-		// Remove anything this overwrites completely
-		newWrites := make([]*WriteData, 0)
-		for _, w := range bi.writes {
-			if w.offset >= offset && (w.offset+int64(len(w.data))) <= (offset+int64(len(buffer))) {
-				// This is enclosed inside the new write, so it's now irrelevant, and can be discarded.
-			} else {
-				newWrites = append(newWrites, w)
-			}
+	// Remove anything this overwrites completely
+	newWrites := make([]*WriteData, 0)
+	for _, w := range bi.writes {
+		if w.offset >= offset && (w.offset+int64(len(w.data))) <= (offset+int64(len(buffer))) {
+			// This is enclosed inside the new write, so it's now irrelevant, and can be discarded.
+		} else {
+			newWrites = append(newWrites, w)
 		}
-	*/
+	}
 
 	cdata := make([]byte, len(buffer))
 	copy(cdata, buffer)
 
-	bi.writes = append(bi.writes, &WriteData{
+	bi.writes = append(newWrites, &WriteData{
 		offset: offset,
 		data:   cdata,
 	})
@@ -92,8 +89,7 @@ func (bi *BlockInfo) Clear(blockSize int64) {
 // Relay events to embedded StorageProvider
 func (i *WriteCache) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
 	if eventType == storage.EventTypeCowGetBlocks {
-		fmt.Printf("block 0 CowGetBlocks\n")
-		i.Flush()
+		i.disable() // Lock writes, disable future caching, and flush the cache.
 		// We *need* to flush here, so that Cow knows which blocks are changed etc
 	}
 
@@ -174,15 +170,15 @@ func (i *WriteCache) WriteAt(buffer []byte, offset int64) (int, error) {
 	i.writeLock.RLock()
 	defer i.writeLock.RUnlock()
 
-	end := offset + int64(len(buffer))
-
-	bStart := offset / int64(i.blockSize)
-	bEnd := ((end - 1) / int64(i.blockSize)) + 1
-
 	// Pass through
 	if !i.enabled.Load() {
 		return i.prov.WriteAt(buffer, offset)
 	}
+
+	end := offset + int64(len(buffer))
+
+	bStart := offset / int64(i.blockSize)
+	bEnd := ((end - 1) / int64(i.blockSize)) + 1
 
 	// Go through blocks
 	for b := bStart; b < bEnd; b++ {
@@ -225,20 +221,21 @@ func (i *WriteCache) flushBlock(b int) error {
 	if len(bi.writes) > 0 {
 		// We need to flush these writes...
 
-		// Check if we need to do a read
-		// TODO: Do this as we receive the writes.
+		// Check if we need to do a read, and the extents
+		// TODO: Do this as we receive the writes?
 		bf := util.NewBitfield(i.blockSize)
 		for _, w := range bi.writes {
 			bf.SetBits(uint(w.offset), uint(w.offset+int64(len(w.data))))
 		}
-		gaps := !bf.BitsSet(uint(bi.minOffset), uint(bi.maxOffset))
+		readStart, readEnd := bf.CollectZeroExtents(uint(bi.minOffset), uint(bi.maxOffset))
 
-		// gaps := true
 		blockBuffer := make([]byte, bi.maxOffset-bi.minOffset)
 
 		// There are gaps in the write data, which means we need to do a read
-		if gaps {
-			_, err := i.prov.ReadAt(blockBuffer, int64(b*i.blockSize)+bi.minOffset)
+		// We can read only the data we need though
+		if readStart != readEnd {
+			srcOffset := int64(b*i.blockSize) + int64(readStart)
+			_, err := i.prov.ReadAt(blockBuffer[int64(readStart)-bi.minOffset:int64(readEnd)-bi.minOffset], srcOffset)
 			if err != nil {
 				bi.lock.Unlock()
 				return err
@@ -272,7 +269,6 @@ func (i *WriteCache) Flush() error {
 			return err
 		}
 	}
-
 	return nil
 }
 
@@ -311,10 +307,8 @@ func (i *WriteCache) Size() uint64 {
 }
 
 func (i *WriteCache) Close() error {
-	i.cancel() // We don't need to be flushing things any more.
-
+	i.cancel()  // We don't need to be flushing things any more.
 	i.disable() // Disable any more caching behaviour
-
 	return i.prov.Close()
 }
 
@@ -326,6 +320,8 @@ func (i *WriteCache) CancelWrites(offset int64, length int64) {
 func (i *WriteCache) disable() {
 	i.writeLock.Lock()
 	defer i.writeLock.Unlock()
+
+	i.cancel() // We don't need to be flushing things any more.
 
 	// Now disable caching
 	i.enabled.Store(false)
