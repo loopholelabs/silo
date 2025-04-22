@@ -45,20 +45,25 @@ type WriteData struct {
 }
 
 // Add some write data to a block
-func (bi *BlockInfo) WriteAt(buffer []byte, offset int64) {
+func (bi *BlockInfo) writeAt(buffer []byte, offset int64) int {
 	bi.lock.Lock()
 	defer bi.lock.Unlock()
 
-	// Remove anything this overwrites completely
+	dataChange := 0
+
+	// Optimization: remove anything this overwrites completely
 	newWrites := make([]*WriteData, 0)
 	for _, w := range bi.writes {
 		if w.offset >= offset && (w.offset+int64(len(w.data))) <= (offset+int64(len(buffer))) {
 			// This is enclosed inside the new write, so it's now irrelevant, and can be discarded.
+			dataChange -= len(w.data)
+			bi.bytes -= len(w.data)
 		} else {
 			newWrites = append(newWrites, w)
 		}
 	}
 
+	// Copy the data. Since we're caching it, we don't want to assume the buffer won't be reused by the consumer.
 	cdata := make([]byte, len(buffer))
 	copy(cdata, buffer)
 
@@ -67,6 +72,7 @@ func (bi *BlockInfo) WriteAt(buffer []byte, offset int64) {
 		data:   cdata,
 	})
 	bi.bytes += len(buffer)
+	dataChange += len(buffer)
 
 	// Update data extents
 	if offset < bi.minOffset {
@@ -75,6 +81,7 @@ func (bi *BlockInfo) WriteAt(buffer []byte, offset int64) {
 	if offset+int64(len(buffer)) > bi.maxOffset {
 		bi.maxOffset = offset + int64(len(buffer))
 	}
+	return dataChange
 }
 
 // Clear all data from the BlockInfo
@@ -147,6 +154,10 @@ func NewWriteCache(blockSize int, prov storage.Provider, maxData int64, minData 
 	return wc
 }
 
+/**
+ * Implementation of ReadAt.
+ * In this first version, we simply flush all blocks required, and then ReadAt
+ */
 func (i *WriteCache) ReadAt(buffer []byte, offset int64) (int, error) {
 	end := offset + int64(len(buffer))
 
@@ -164,6 +175,10 @@ func (i *WriteCache) ReadAt(buffer []byte, offset int64) (int, error) {
 	return i.prov.ReadAt(buffer, offset)
 }
 
+/**
+ * Implementation of WriteAt
+ *
+ */
 func (i *WriteCache) WriteAt(buffer []byte, offset int64) (int, error) {
 	// Incase a cache disable / flush op is going on
 	// NOTE we are intentionally using RLock/RUnlock here. We don't mind if concurrent WriteAt
@@ -198,15 +213,13 @@ func (i *WriteCache) WriteAt(buffer []byte, offset int64) (int, error) {
 		}
 
 		// We have too much data, lets flush some of it
-		// TODO: Instead of flushing *everything*, we could just flush the most active blocks
-		// this would smooth out the writes over time...
 		if atomic.LoadInt64(&i.totalData)+int64(len(blockData)) >= i.maxData {
 			i.flushSome(i.minData)
 		}
 
-		// Add the write data to the block
-		i.blocks[b].WriteAt(blockData, blockOffset)
-		atomic.AddInt64(&i.totalData, int64(len(blockData)))
+		// Add the write data to the block, and update totalData
+		dataChange := i.blocks[b].writeAt(blockData, blockOffset)
+		atomic.AddInt64(&i.totalData, int64(dataChange))
 	}
 
 	return len(buffer), nil
@@ -322,11 +335,18 @@ func (i *WriteCache) disable() {
 	i.writeLock.Lock()
 	defer i.writeLock.Unlock()
 
-	i.cancel() // We don't need to be flushing things any more.
-
 	// Now disable caching
 	i.enabled.Store(false)
 
 	// FLUSH everything NOW
 	i.Flush()
+}
+
+// Enable the cache again
+func (i *WriteCache) enable() {
+	i.writeLock.Lock()
+	defer i.writeLock.Unlock()
+
+	// Now enable caching
+	i.enabled.Store(true)
 }
