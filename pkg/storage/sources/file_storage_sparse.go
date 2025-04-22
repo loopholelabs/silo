@@ -11,6 +11,8 @@ import (
 
 const blockHeaderSize = 8
 
+var errNoBlock = errors.New("no such block")
+
 /**
  * Simple sparse file storage provider
  *
@@ -83,12 +85,17 @@ func NewFileStorageSparse(f string, size uint64, blockSize int) (*FileStorageSpa
 	}, nil
 }
 
-func (i *FileStorageSparse) writeBlock(buffer []byte, b uint) error {
+func (i *FileStorageSparse) writeBlock(buffer []byte, b uint, blockOffset int64) error {
 	off, ok := i.offsets[b]
 	if ok {
 		// Write to the data where it is...
-		_, err := i.fp.WriteAt(buffer, int64(off))
+		_, err := i.fp.WriteAt(buffer, int64(off)+blockOffset)
 		return err
+	}
+
+	// It needs to be a complete block...
+	if blockOffset != 0 || len(buffer) != i.blockSize {
+		return errNoBlock
 	}
 
 	// Need to append the data to the end of the file...
@@ -109,11 +116,11 @@ func (i *FileStorageSparse) writeBlock(buffer []byte, b uint) error {
 	return err
 }
 
-func (i *FileStorageSparse) readBlock(buffer []byte, b uint) error {
+func (i *FileStorageSparse) readBlock(buffer []byte, b uint, blockOffset int64) error {
 	off, ok := i.offsets[b]
 	if ok {
 		// Read the data where it is...
-		_, err := i.fp.ReadAt(buffer, int64(off))
+		_, err := i.fp.ReadAt(buffer, int64(off)+blockOffset)
 		return err
 	}
 	return errors.New("cannot do a partial block write on incomplete block")
@@ -145,22 +152,25 @@ func (i *FileStorageSparse) ReadAt(buffer []byte, offset int64) (int, error) {
 	for b := bStart; b < bEnd; b++ {
 		blockOffset := int64(b) * int64(i.blockSize)
 		if blockOffset >= offset {
-			if len(buffer[blockOffset-offset:bufferEnd]) < i.blockSize {
+			n := bufferEnd - (blockOffset - offset)
+			if int(n) < i.blockSize {
 				// Partial read at the end
-				blockBuffer := make([]byte, i.blockSize)
-				err := i.readBlock(blockBuffer, b)
+
+				blockBuffer := make([]byte, n)
+				err := i.readBlock(blockBuffer, b, 0)
 				if err == nil {
 					count += copy(buffer[blockOffset-offset:bufferEnd], blockBuffer)
 				} else {
 					return 0, err
 				}
 			} else {
+				// Full block in the middle
 				s := blockOffset - offset
 				e := s + int64(i.blockSize)
 				if e > int64(len(buffer)) {
 					e = int64(len(buffer))
 				}
-				err := i.readBlock(buffer[s:e], b)
+				err := i.readBlock(buffer[s:e], b, 0)
 				if err != nil {
 					return 0, err
 				}
@@ -168,10 +178,10 @@ func (i *FileStorageSparse) ReadAt(buffer []byte, offset int64) (int, error) {
 			}
 		} else {
 			// Partial read at the start
-			blockBuffer := make([]byte, i.blockSize)
-			err := i.readBlock(blockBuffer, b)
+			blockBuffer := make([]byte, i.blockSize-int(offset-blockOffset))
+			err := i.readBlock(blockBuffer, b, offset-blockOffset)
 			if err == nil {
-				count += copy(buffer[:bufferEnd], blockBuffer[offset-blockOffset:])
+				count += copy(buffer[:bufferEnd], blockBuffer)
 			} else {
 				return 0, err
 			}
@@ -215,14 +225,14 @@ func (i *FileStorageSparse) WriteAt(buffer []byte, offset int64) (int, error) {
 
 				// If the write doesn't extend to the end of the storage size, we need to do a read first.
 				if blockOffset+dataLen < int64(i.size) {
-					err = i.readBlock(blockBuffer, b)
+					err = i.readBlock(blockBuffer, b, 0)
 				}
 				if err != nil {
 					return 0, err
 				}
 				// Merge the data in, and write it back...
 				count += copy(blockBuffer, buffer[blockOffset-offset:bufferEnd])
-				err = i.writeBlock(blockBuffer, b)
+				err = i.writeBlock(blockBuffer, b, 0)
 				if err != nil {
 					return 0, nil
 				}
@@ -232,7 +242,7 @@ func (i *FileStorageSparse) WriteAt(buffer []byte, offset int64) (int, error) {
 				if e > int64(len(buffer)) {
 					e = int64(len(buffer))
 				}
-				err := i.writeBlock(buffer[s:e], b)
+				err := i.writeBlock(buffer[s:e], b, 0)
 				if err != nil {
 					return 0, err
 				}
@@ -241,13 +251,13 @@ func (i *FileStorageSparse) WriteAt(buffer []byte, offset int64) (int, error) {
 		} else {
 			// Partial write at the start
 			blockBuffer := make([]byte, i.blockSize)
-			err := i.readBlock(blockBuffer, b)
+			err := i.readBlock(blockBuffer, b, 0)
 			if err != nil {
 				return 0, err
 			}
 			// Merge the data in, and write it back...
 			count += copy(blockBuffer[offset-blockOffset:], buffer[:bufferEnd])
-			err = i.writeBlock(blockBuffer, b)
+			err = i.writeBlock(blockBuffer, b, 0)
 			if err != nil {
 				return 0, nil
 			}
