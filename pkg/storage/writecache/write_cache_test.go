@@ -52,11 +52,11 @@ func TestWriteCache(t *testing.T) {
 
 		// Flush the data...
 		err = wc.Flush()
-		assert.NoError(t, err2)
+		assert.NoError(t, err)
 
 		// Make sure the data is the same
 		eq, err := storage.Equals(prov, provWC, 1024*1024)
-		assert.NoError(t, err2)
+		assert.NoError(t, err)
 		assert.True(t, eq)
 
 		// Look at the stats...

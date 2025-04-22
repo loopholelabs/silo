@@ -67,10 +67,11 @@ func (bi *BlockInfo) writeAt(buffer []byte, offset int64) int {
 	cdata := make([]byte, len(buffer))
 	copy(cdata, buffer)
 
-	bi.writes = append(newWrites, &WriteData{
+	newWrites = append(newWrites, &WriteData{
 		offset: offset,
 		data:   cdata,
 	})
+	bi.writes = newWrites
 	bi.bytes += len(buffer)
 	dataChange += len(buffer)
 
@@ -96,7 +97,7 @@ func (bi *BlockInfo) Clear(blockSize int64) {
 // Relay events to embedded StorageProvider
 func (i *WriteCache) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
 	if eventType == storage.EventTypeCowGetBlocks {
-		i.disable() // Lock writes, disable future caching, and flush the cache.
+		i.Disable() // Lock writes, disable future caching, and flush the cache.
 		// We *need* to flush here, so that Cow knows which blocks are changed etc
 		// We disable the cache for the migration, because we need to make sure ALL data is migrated.
 	}
@@ -291,10 +292,9 @@ func (i *WriteCache) Flush() error {
  * Data is flushed until some target is reached, starting with the block with most data
  */
 func (i *WriteCache) flushSome(target int64) error {
+	// Make a copy so we can sort it
 	blocks := make([]*BlockInfo, len(i.blocks))
-	for b, bi := range i.blocks {
-		blocks[b] = bi
-	}
+	copy(blocks, i.blocks)
 
 	// Now sort it
 	sort.Slice(blocks, func(i int, j int) bool {
@@ -322,7 +322,7 @@ func (i *WriteCache) Size() uint64 {
 
 func (i *WriteCache) Close() error {
 	i.cancel()  // We don't need to be flushing things any more.
-	i.disable() // Disable any more caching behaviour
+	i.Disable() // Disable any more caching behaviour
 	return i.prov.Close()
 }
 
@@ -331,7 +331,7 @@ func (i *WriteCache) CancelWrites(offset int64, length int64) {
 }
 
 // Disable the cache, and wait for any pending writes to be completed
-func (i *WriteCache) disable() {
+func (i *WriteCache) Disable() {
 	i.writeLock.Lock()
 	defer i.writeLock.Unlock()
 
@@ -343,7 +343,7 @@ func (i *WriteCache) disable() {
 }
 
 // Enable the cache again
-func (i *WriteCache) enable() {
+func (i *WriteCache) Enable() {
 	i.writeLock.Lock()
 	defer i.writeLock.Unlock()
 

@@ -286,7 +286,8 @@ func (i *FileStorageSparse) WriteAt(buffer []byte, offset int64) (int, error) {
 				dataLen := bufferEnd - (blockOffset - offset)
 
 				err := i.writeBlock(buffer[blockOffset-offset:bufferEnd], b, 0)
-				if err == errNoBlock {
+				switch err {
+				case errNoBlock:
 					// The block doesn't exist yet
 					blockBuffer := make([]byte, i.blockSize)
 					var err error
@@ -304,10 +305,10 @@ func (i *FileStorageSparse) WriteAt(buffer []byte, offset int64) (int, error) {
 					if err != nil {
 						return 0, err
 					}
-				} else if err != nil {
-					return 0, err
-				} else if err == nil {
+				case nil:
 					count += int(dataLen)
+				default:
+					return 0, err
 				}
 			} else {
 				// Complete write in the middle - no need for a read.
@@ -330,7 +331,8 @@ func (i *FileStorageSparse) WriteAt(buffer []byte, offset int64) (int, error) {
 			}
 			// First try doing the write without a pre-read (If the block already exists)
 			err := i.writeBlock(buffer[:be], b, dataStart)
-			if err == errNoBlock {
+			switch err {
+			case errNoBlock:
 				// We need to read, merge and write a complete block.
 
 				// Partial write at the start
@@ -345,10 +347,10 @@ func (i *FileStorageSparse) WriteAt(buffer []byte, offset int64) (int, error) {
 				if err != nil {
 					return 0, nil
 				}
-			} else if err != nil {
-				return 0, nil
-			} else if err == nil {
+			case nil:
 				count += be
+			default:
+				return 0, err
 			}
 		}
 	}
