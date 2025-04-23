@@ -65,7 +65,8 @@ func runServe(_ *cobra.Command, _ []string) {
 	}
 
 	if serveMetrics != "" {
-		if serveMetricsSystem == "prometheus" {
+		switch serveMetricsSystem {
+		case "prometheus":
 			reg := prometheus.NewRegistry()
 
 			siloMetrics = siloprom.New(reg, siloprom.DefaultConfig())
@@ -87,9 +88,9 @@ func runServe(_ *cobra.Command, _ []string) {
 			))
 
 			go http.ListenAndServe(serveMetrics, nil)
-		} else if serveMetricsSystem == "statsd" {
+		case "statsd":
 			siloMetrics = silostatsd.New(serveMetrics, silostatsd.DefaultConfig())
-		} else {
+		default:
 			panic("Unknown metrics system")
 		}
 	}
