@@ -296,21 +296,25 @@ func (i *WriteCache) flushSome(target int64) error {
 	blocks := make([]*BlockInfo, len(i.blocks))
 	copy(blocks, i.blocks)
 
-	// Now sort it
+	// Now sort it.
+	// We must lock the blocks to avoid concurrent access.
 	sort.Slice(blocks, func(i int, j int) bool {
+		blocks[i].lock.Lock()
+		blocks[j].lock.Lock()
+		defer blocks[i].lock.Unlock()
+		defer blocks[j].lock.Unlock()
+
 		return blocks[i].bytes > blocks[j].bytes
 	})
 
 	// Flush from biggest to smallest
 	for _, bi := range blocks {
-		if bi.bytes > 0 {
-			err := i.flushBlock(int(bi.block))
-			if err != nil {
-				return nil
-			}
-			if atomic.LoadInt64(&i.totalData) < target {
-				break
-			}
+		err := i.flushBlock(int(bi.block))
+		if err != nil {
+			return nil
+		}
+		if atomic.LoadInt64(&i.totalData) < target {
+			break
 		}
 	}
 	return nil
