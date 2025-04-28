@@ -344,6 +344,9 @@ func (i *WriteCache) Close() error {
 	err1 := i.Flush() // Flush anything else out
 	i.Disable()       // Disable any more caching behaviour
 	err2 := i.prov.Close()
+	if err1 == nil && err2 == nil {
+		return nil
+	}
 
 	return errors.Join(err1, err2)
 }
