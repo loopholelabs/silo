@@ -107,7 +107,7 @@ func (i *WriteCache) SendSiloEvent(eventType storage.EventType, eventData storag
 	return append(data, storage.SendSiloEvent(i.prov, eventType, eventData)...)
 }
 
-type WriteCacheConfig struct {
+type Config struct {
 	MinData           int64
 	MaxData           int64
 	FlushPeriod       time.Duration
@@ -118,7 +118,7 @@ type WriteCacheConfig struct {
  * Create a new cache
  *
  */
-func NewWriteCache(blockSize int, prov storage.Provider, conf *WriteCacheConfig) *WriteCache {
+func NewWriteCache(blockSize int, prov storage.Provider, conf *Config) *WriteCache {
 	numBlocks := (prov.Size() + uint64(blockSize) - 1) / uint64(blockSize)
 
 	blocks := make([]*BlockInfo, numBlocks)

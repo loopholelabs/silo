@@ -44,7 +44,7 @@ func TestWriteCache(t *testing.T) {
 		provWC := sources.NewMemoryStorage(1024 * 1024 * 1024) // 1GB memory
 		metWC := modules.NewMetrics(provWC)
 
-		wc := NewWriteCache(1024*1024, metWC, &WriteCacheConfig{
+		wc := NewWriteCache(1024*1024, metWC, &Config{
 			MinData:           conf.minData,
 			MaxData:           conf.maxData,
 			FlushPeriod:       conf.period,
