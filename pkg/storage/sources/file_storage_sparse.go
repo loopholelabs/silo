@@ -345,7 +345,7 @@ func (i *FileStorageSparse) WriteAt(buffer []byte, offset int64) (int, error) {
 				count += copy(blockBuffer[offset-blockOffset:], buffer[:bufferEnd])
 				err = i.writeBlock(blockBuffer, b, 0)
 				if err != nil {
-					return 0, nil
+					return 0, err
 				}
 			case nil:
 				count += be
