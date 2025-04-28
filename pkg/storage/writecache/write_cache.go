@@ -357,11 +357,11 @@ func (i *WriteCache) CancelWrites(offset int64, length int64) {
 
 // Disable the cache, and wait for any pending writes to be completed
 func (i *WriteCache) Disable() {
+	// Disable caching
+	i.enabled.Store(false)
+
 	i.writeLock.Lock()
 	defer i.writeLock.Unlock()
-
-	// Now disable caching
-	i.enabled.Store(false)
 
 	// FLUSH everything NOW
 	i.Flush()
