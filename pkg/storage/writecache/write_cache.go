@@ -2,6 +2,7 @@ package writecache
 
 import (
 	"context"
+	"errors"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -339,12 +340,12 @@ func (i *WriteCache) Size() uint64 {
 }
 
 func (i *WriteCache) Close() error {
-	i.cancel()  // We don't need to be flushing things any more.
-	i.Flush()   // Flush anything else out
-	i.Disable() // Disable any more caching behaviour
-	err := i.prov.Close()
+	i.cancel()        // We don't need to be flushing things any more.
+	err1 := i.Flush() // Flush anything else out
+	i.Disable()       // Disable any more caching behaviour
+	err2 := i.prov.Close()
 
-	return err
+	return errors.Join(err1, err2)
 }
 
 func (i *WriteCache) CancelWrites(offset int64, length int64) {
