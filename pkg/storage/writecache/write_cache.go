@@ -15,25 +15,26 @@ import (
 type WriteCache struct {
 	uuid string
 	storage.ProviderWithEvents
-	prov      storage.Provider
-	ctx       context.Context
-	cancel    context.CancelFunc
-	enabled   atomic.Bool
-	blockSize int
-	blocks    []*BlockInfo
-	totalData int64 // Current count of data stored here
-	maxData   int64 // Maximum amount of data we want to cache
-	minData   int64 // Minimum amount of data after a partial flush
+	prov              storage.Provider
+	ctx               context.Context
+	cancel            context.CancelFunc
+	enabled           atomic.Bool
+	blockSize         int
+	blocks            []*BlockInfo
+	totalData         int64 // Current count of data stored here
+	maxData           int64 // Maximum amount of data we want to cache
+	minData           int64 // Minimum amount of data after a partial flush
+	minimizeReadBytes bool  // Should we try to minimize read bytes (cpu cost)
 
+	flushLock sync.Mutex
 	writeLock sync.RWMutex
 }
 
 type BlockInfo struct {
-	block     uint64
-	lock      sync.Mutex
-	writes    []*WriteData
-	bytes     int       // How much data is stored here
-	lastFlush time.Time // When was this block last flushed?
+	block  uint64
+	lock   sync.Mutex
+	writes []*WriteData
+	bytes  int64 // How much data is stored here
 
 	minOffset int64
 	maxOffset int64
@@ -57,7 +58,7 @@ func (bi *BlockInfo) writeAt(buffer []byte, offset int64) int {
 		if w.offset >= offset && (w.offset+int64(len(w.data))) <= (offset+int64(len(buffer))) {
 			// This is enclosed inside the new write, so it's now irrelevant, and can be discarded.
 			dataChange -= len(w.data)
-			bi.bytes -= len(w.data)
+			atomic.AddInt64(&bi.bytes, int64(-len(w.data)))
 		} else {
 			newWrites = append(newWrites, w)
 		}
@@ -72,7 +73,7 @@ func (bi *BlockInfo) writeAt(buffer []byte, offset int64) int {
 		data:   cdata,
 	})
 	bi.writes = newWrites
-	bi.bytes += len(buffer)
+	atomic.AddInt64(&bi.bytes, int64(len(buffer)))
 	dataChange += len(buffer)
 
 	// Update data extents
@@ -88,8 +89,7 @@ func (bi *BlockInfo) writeAt(buffer []byte, offset int64) int {
 // Clear all data from the BlockInfo
 func (bi *BlockInfo) Clear(blockSize int64) {
 	bi.writes = make([]*WriteData, 0)
-	bi.lastFlush = time.Now()
-	bi.bytes = 0
+	atomic.StoreInt64(&bi.bytes, 0)
 	bi.minOffset = blockSize
 	bi.maxOffset = 0
 }
@@ -106,11 +106,18 @@ func (i *WriteCache) SendSiloEvent(eventType storage.EventType, eventData storag
 	return append(data, storage.SendSiloEvent(i.prov, eventType, eventData)...)
 }
 
+type WriteCacheConfig struct {
+	MinData           int64
+	MaxData           int64
+	FlushPeriod       time.Duration
+	MinimizeReadBytes bool
+}
+
 /**
  * Create a new cache
  *
  */
-func NewWriteCache(blockSize int, prov storage.Provider, maxData int64, minData int64, flushPeriod time.Duration) *WriteCache {
+func NewWriteCache(blockSize int, prov storage.Provider, conf *WriteCacheConfig) *WriteCache {
 	numBlocks := (prov.Size() + uint64(blockSize) - 1) / uint64(blockSize)
 
 	blocks := make([]*BlockInfo, numBlocks)
@@ -126,28 +133,29 @@ func NewWriteCache(blockSize int, prov storage.Provider, maxData int64, minData 
 	ctx, cancel := context.WithCancel(context.Background())
 
 	wc := &WriteCache{
-		uuid:      uuid.NewString(),
-		ctx:       ctx,
-		cancel:    cancel,
-		prov:      prov,
-		blockSize: blockSize,
-		blocks:    blocks,
-		maxData:   maxData,
-		minData:   minData,
-		enabled:   atomic.Bool{},
+		uuid:              uuid.NewString(),
+		ctx:               ctx,
+		cancel:            cancel,
+		prov:              prov,
+		blockSize:         blockSize,
+		blocks:            blocks,
+		maxData:           conf.MaxData,
+		minData:           conf.MinData,
+		enabled:           atomic.Bool{},
+		minimizeReadBytes: conf.MinimizeReadBytes,
 	}
 
 	wc.enabled.Store(true) // Enable this cache
 
 	// Set something up to periodically flush writes...
 	go func() {
-		ticker := time.NewTicker(flushPeriod)
+		ticker := time.NewTicker(conf.FlushPeriod)
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				wc.flushSome(minData)
+				wc.flushSome(conf.MinData)
 			}
 		}
 	}()
@@ -213,6 +221,8 @@ func (i *WriteCache) WriteAt(buffer []byte, offset int64) (int, error) {
 			blockData = blockData[:(int64(i.blockSize) - blockOffset)]
 		}
 
+		// We lock here so that only one is doing the flush...
+		i.flushLock.Lock()
 		// We have too much data, lets flush some of it
 		if atomic.LoadInt64(&i.totalData)+int64(len(blockData)) >= i.maxData {
 			i.flushSome(i.minData)
@@ -221,6 +231,8 @@ func (i *WriteCache) WriteAt(buffer []byte, offset int64) (int, error) {
 		// Add the write data to the block, and update totalData
 		dataChange := i.blocks[b].writeAt(blockData, blockOffset)
 		atomic.AddInt64(&i.totalData, int64(dataChange))
+
+		i.flushLock.Unlock()
 	}
 
 	return len(buffer), nil
@@ -236,13 +248,17 @@ func (i *WriteCache) flushBlock(b int) error {
 	if len(bi.writes) > 0 {
 		// We need to flush these writes...
 
-		// Check if we need to do a read, and the extents
-		// TODO: Do this as we receive the writes?
-		bf := util.NewBitfield(i.blockSize)
-		for _, w := range bi.writes {
-			bf.SetBits(uint(w.offset), uint(w.offset+int64(len(w.data))))
+		readStart := uint(bi.minOffset)
+		readEnd := uint(bi.maxOffset)
+		if i.minimizeReadBytes {
+			// Check if we need to do a read, and the extents
+			// TODO: Do this as we receive the writes?
+			bf := util.NewBitfield(i.blockSize)
+			for _, w := range bi.writes {
+				bf.SetBits(uint(w.offset), uint(w.offset+int64(len(w.data))))
+			}
+			readStart, readEnd = bf.CollectZeroExtents(uint(bi.minOffset), uint(bi.maxOffset))
 		}
-		readStart, readEnd := bf.CollectZeroExtents(uint(bi.minOffset), uint(bi.maxOffset))
 
 		blockBuffer := make([]byte, bi.maxOffset-bi.minOffset)
 
@@ -262,6 +278,9 @@ func (i *WriteCache) flushBlock(b int) error {
 			copy(blockBuffer[w.offset-bi.minOffset:], w.data)
 			atomic.AddInt64(&i.totalData, -int64(len(w.data)))
 		}
+
+		// Here, we can write changedMin - changedMax
+		// num, err := i.prov.WriteAt(blockBuffer[changedMin:changedMax], int64(b*i.blockSize)+bi.minOffset+int64(changedMin))
 
 		// And write the data back
 		_, err := i.prov.WriteAt(blockBuffer, int64(b*i.blockSize)+bi.minOffset)
@@ -299,12 +318,7 @@ func (i *WriteCache) flushSome(target int64) error {
 	// Now sort it.
 	// We must lock the blocks to avoid concurrent access.
 	sort.Slice(blocks, func(i int, j int) bool {
-		blocks[i].lock.Lock()
-		blocks[j].lock.Lock()
-		defer blocks[i].lock.Unlock()
-		defer blocks[j].lock.Unlock()
-
-		return blocks[i].bytes > blocks[j].bytes
+		return atomic.LoadInt64(&blocks[i].bytes) > atomic.LoadInt64(&blocks[j].bytes)
 	})
 
 	// Flush from biggest to smallest
@@ -326,8 +340,11 @@ func (i *WriteCache) Size() uint64 {
 
 func (i *WriteCache) Close() error {
 	i.cancel()  // We don't need to be flushing things any more.
+	i.Flush()   // Flush anything else out
 	i.Disable() // Disable any more caching behaviour
-	return i.prov.Close()
+	err := i.prov.Close()
+
+	return err
 }
 
 func (i *WriteCache) CancelWrites(offset int64, length int64) {

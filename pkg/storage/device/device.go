@@ -318,7 +318,12 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 		if err != nil {
 			return nil, nil, err
 		}
-		wc := writecache.NewWriteCache(int(ds.ByteBlockSize()), prov, maxSize, minSize, period)
+		wc := writecache.NewWriteCache(int(ds.ByteBlockSize()), prov, &writecache.WriteCacheConfig{
+			MinData:           minSize,
+			MaxData:           maxSize,
+			FlushPeriod:       period,
+			MinimizeReadBytes: false,
+		})
 		prov = wc
 	}
 

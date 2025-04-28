@@ -27,22 +27,29 @@ func TestWriteCache(t *testing.T) {
 	MB := int64(1024 * 1024)
 
 	type cacheConfig struct {
-		name    string
-		minData int64
-		maxData int64
-		period  time.Duration
+		name              string
+		minData           int64
+		maxData           int64
+		period            time.Duration
+		minimizeReadBytes bool
 	}
 
 	for _, conf := range []cacheConfig{
-		{name: "1mb_basic", minData: 0, maxData: 1 * MB, period: 10 * time.Second},
-		{name: "5-10mb", minData: 5 * MB, maxData: 10 * MB, period: 10 * time.Second},
-		{name: "50-100mb", minData: 50 * MB, maxData: 100 * MB, period: 10 * time.Second},
-		{name: "250-500mb", minData: 250 * MB, maxData: 500 * MB, period: 100 * time.Millisecond},
+		{name: "1mb_basic", minData: 0, maxData: 1 * MB, period: 10 * time.Second, minimizeReadBytes: false},
+		{name: "5-10mb", minData: 5 * MB, maxData: 10 * MB, period: 10 * time.Second, minimizeReadBytes: false},
+		{name: "50-100mb", minData: 50 * MB, maxData: 100 * MB, period: 10 * time.Second, minimizeReadBytes: false},
+		{name: "250-500mb", minData: 250 * MB, maxData: 500 * MB, period: 100 * time.Millisecond, minimizeReadBytes: false},
+		{name: "250-500mb MINREADS", minData: 250 * MB, maxData: 500 * MB, period: 100 * time.Millisecond, minimizeReadBytes: true},
 	} {
 		provWC := sources.NewMemoryStorage(1024 * 1024 * 1024) // 1GB memory
 		metWC := modules.NewMetrics(provWC)
 
-		wc := NewWriteCache(1024*1024, metWC, conf.maxData, conf.minData, conf.period)
+		wc := NewWriteCache(1024*1024, metWC, &WriteCacheConfig{
+			MinData:           conf.minData,
+			MaxData:           conf.maxData,
+			FlushPeriod:       conf.period,
+			MinimizeReadBytes: conf.minimizeReadBytes,
+		})
 
 		blWC, err := modules.NewBinLogReplay("memory_binlog", wc)
 		assert.NoError(t, err)
