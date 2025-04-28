@@ -34,22 +34,34 @@ type Metrics struct {
 	metricReadOpsSize  map[int]uint64
 	metricWriteOpsLock sync.Mutex
 	metricWriteOpsSize map[int]uint64
+
+	metricCurrentReadOps  int64
+	metricCurrentWriteOps int64
+
+	metricWriteOpsConcurrency int64
+	metricReadOpsConcurrency  int64
+	metricOpsConcurrency      int64
 }
 
 type MetricsSnapshot struct {
-	ReadOps      uint64
-	ReadBytes    uint64
-	ReadTime     uint64
-	ReadErrors   uint64
-	WriteOps     uint64
-	WriteBytes   uint64
-	WriteTime    uint64
-	WriteErrors  uint64
-	FlushOps     uint64
-	FlushTime    uint64
-	FlushErrors  uint64
-	ReadOpsSize  map[int]uint64
-	WriteOpsSize map[int]uint64
+	ReadOps             uint64
+	ReadBytes           uint64
+	ReadTime            uint64
+	ReadErrors          uint64
+	WriteOps            uint64
+	WriteBytes          uint64
+	WriteTime           uint64
+	WriteErrors         uint64
+	FlushOps            uint64
+	FlushTime           uint64
+	FlushErrors         uint64
+	ReadOpsSize         map[int]uint64
+	WriteOpsSize        map[int]uint64
+	CurrentReadOps      uint64
+	CurrentWriteOps     uint64
+	ReadOpsConcurrency  uint64
+	WriteOpsConcurrency uint64
+	OpsConcurrency      uint64
 }
 
 func NewMetrics(prov storage.Provider) *Metrics {
@@ -90,12 +102,14 @@ func (i *Metrics) ShowStats(prefix string) {
 		readAvgTime = readTime / (readOps - readErrors)
 	}
 	readAvgTimeF := formatDuration(time.Duration(readAvgTime))
-	fmt.Printf("%s: Reads=%d (%d bytes) avg latency %s, %d errors, ",
+	fmt.Printf("%s: Reads=%d (%d bytes) avg latency %s, %d errors, concurrency=%d (all ops concurrency %d)\n",
 		prefix,
 		readOps,
 		atomic.LoadUint64(&i.metricReadBytes),
 		readAvgTimeF,
 		readErrors,
+		atomic.LoadInt64(&i.metricReadOpsConcurrency),
+		atomic.LoadInt64(&i.metricOpsConcurrency),
 	)
 
 	writeOps := atomic.LoadUint64(&i.metricWriteOps)
@@ -106,11 +120,13 @@ func (i *Metrics) ShowStats(prefix string) {
 		writeAvgTime = writeTime / (writeOps - writeErrors)
 	}
 	writeAvgTimeF := formatDuration(time.Duration(writeAvgTime))
-	fmt.Printf("Writes=%d (%d bytes) avg latency %s, %d errors, ",
+	fmt.Printf("%s: Writes=%d (%d bytes) avg latency %s, %d errors, concurrency=%d\n",
+		prefix,
 		writeOps,
 		atomic.LoadUint64(&i.metricWriteBytes),
 		writeAvgTimeF,
 		writeErrors,
+		atomic.LoadInt64(&i.metricWriteOpsConcurrency),
 	)
 
 	flushOps := atomic.LoadUint64(&i.metricFlushOps)
@@ -131,17 +147,22 @@ func (i *Metrics) ShowStats(prefix string) {
 
 func (i *Metrics) GetMetrics() *MetricsSnapshot {
 	ms := &MetricsSnapshot{
-		ReadOps:     atomic.LoadUint64(&i.metricReadOps),
-		ReadBytes:   atomic.LoadUint64(&i.metricReadBytes),
-		ReadTime:    atomic.LoadUint64(&i.metricReadTime),
-		ReadErrors:  atomic.LoadUint64(&i.metricReadErrors),
-		WriteOps:    atomic.LoadUint64(&i.metricWriteOps),
-		WriteBytes:  atomic.LoadUint64(&i.metricWriteBytes),
-		WriteTime:   atomic.LoadUint64(&i.metricWriteTime),
-		WriteErrors: atomic.LoadUint64(&i.metricWriteErrors),
-		FlushOps:    atomic.LoadUint64(&i.metricFlushOps),
-		FlushTime:   atomic.LoadUint64(&i.metricFlushTime),
-		FlushErrors: atomic.LoadUint64(&i.metricFlushErrors),
+		ReadOps:             atomic.LoadUint64(&i.metricReadOps),
+		ReadBytes:           atomic.LoadUint64(&i.metricReadBytes),
+		ReadTime:            atomic.LoadUint64(&i.metricReadTime),
+		ReadErrors:          atomic.LoadUint64(&i.metricReadErrors),
+		WriteOps:            atomic.LoadUint64(&i.metricWriteOps),
+		WriteBytes:          atomic.LoadUint64(&i.metricWriteBytes),
+		WriteTime:           atomic.LoadUint64(&i.metricWriteTime),
+		WriteErrors:         atomic.LoadUint64(&i.metricWriteErrors),
+		FlushOps:            atomic.LoadUint64(&i.metricFlushOps),
+		FlushTime:           atomic.LoadUint64(&i.metricFlushTime),
+		FlushErrors:         atomic.LoadUint64(&i.metricFlushErrors),
+		CurrentReadOps:      uint64(atomic.LoadInt64(&i.metricCurrentReadOps)),
+		CurrentWriteOps:     uint64(atomic.LoadInt64(&i.metricCurrentWriteOps)),
+		ReadOpsConcurrency:  uint64(atomic.LoadInt64(&i.metricReadOpsConcurrency)),
+		WriteOpsConcurrency: uint64(atomic.LoadInt64(&i.metricWriteOpsConcurrency)),
+		OpsConcurrency:      uint64(atomic.LoadInt64(&i.metricOpsConcurrency)),
 	}
 
 	readOpsSize := make(map[int]uint64)
@@ -189,6 +210,11 @@ func (i *Metrics) ResetMetrics() {
 }
 
 func (i *Metrics) ReadAt(buffer []byte, offset int64) (int, error) {
+	cc := atomic.AddInt64(&i.metricCurrentReadOps, 1)
+	defer atomic.AddInt64(&i.metricCurrentReadOps, -1)
+	atomic.AddInt64(&i.metricReadOpsConcurrency, cc)
+	atomic.AddInt64(&i.metricOpsConcurrency, cc+atomic.LoadInt64(&i.metricCurrentWriteOps))
+
 	i.metricReadOpsLock.Lock()
 	num := len(buffer)
 	for _, v := range OpSizeBuckets {
@@ -212,6 +238,11 @@ func (i *Metrics) ReadAt(buffer []byte, offset int64) (int, error) {
 }
 
 func (i *Metrics) WriteAt(buffer []byte, offset int64) (int, error) {
+	cc := atomic.AddInt64(&i.metricCurrentWriteOps, 1)
+	defer atomic.AddInt64(&i.metricCurrentWriteOps, -1)
+	atomic.AddInt64(&i.metricWriteOpsConcurrency, cc)
+	atomic.AddInt64(&i.metricOpsConcurrency, cc+atomic.LoadInt64(&i.metricCurrentReadOps))
+
 	i.metricWriteOpsLock.Lock()
 	num := len(buffer)
 	for _, v := range OpSizeBuckets {
