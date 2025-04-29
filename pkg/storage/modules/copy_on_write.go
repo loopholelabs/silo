@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 
@@ -54,6 +55,49 @@ func (i *CopyOnWrite) GetMetrics() *CopyOnWriteMetrics {
 		MetricZeroPreWriteReadOps:   i.metricZeroPreWriteReadOps,
 		MetricZeroPreWriteReadBytes: i.metricZeroPreWriteReadBytes,
 	}
+}
+
+/**
+ * Check exactly how much data has changed in this COW
+ *
+ */
+func (i *CopyOnWrite) GetDifference() (int64, int64, error) {
+	blocksChanged := int64(0)
+	bytesChanged := int64(0)
+
+	numBlocks := int(i.exists.Length())
+	for b := 0; b < numBlocks; b++ {
+		if i.exists.BitSet(b) {
+			// Check the data here...
+			bufferBase := make([]byte, i.blockSize)
+			bufferOverlay := make([]byte, i.blockSize)
+			nOverlay, err := i.cache.ReadAt(bufferOverlay, int64(b*i.blockSize))
+			if err != nil {
+				return 0, 0, err
+			}
+			nBase, err := i.source.ReadAt(bufferBase, int64(b*i.blockSize))
+			if err != nil {
+				return 0, 0, err
+			}
+
+			if nBase != nOverlay {
+				return 0, 0, fmt.Errorf("ReadAt returned different values %d %d", nBase, nOverlay)
+			}
+			// Now check the data
+			same := true
+			for n := 0; n < nBase; n++ {
+				if bufferBase[n] != bufferOverlay[n] {
+					same = false
+					bytesChanged++
+				}
+			}
+
+			if !same {
+				blocksChanged++
+			}
+		}
+	}
+	return blocksChanged, bytesChanged, nil
 }
 
 var ErrClosed = errors.New("device is closing or already closed")
