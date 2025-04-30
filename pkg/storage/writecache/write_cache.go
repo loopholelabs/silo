@@ -274,20 +274,42 @@ func (i *WriteCache) flushBlock(b int) error {
 			}
 		}
 
+		// Make a copy of the current data.
+		orgBlockBuffer := make([]byte, len(blockBuffer))
+		copy(orgBlockBuffer, blockBuffer)
+
 		// Now merge in the writes to the blockBuffer...
 		for _, w := range bi.writes {
 			copy(blockBuffer[w.offset-bi.minOffset:], w.data)
 			atomic.AddInt64(&i.totalData, -int64(len(w.data)))
 		}
 
-		// Here, we can write changedMin - changedMax
-		// num, err := i.prov.WriteAt(blockBuffer[changedMin:changedMax], int64(b*i.blockSize)+bi.minOffset+int64(changedMin))
+		// Check where the data has changed...
+		minChanged := len(blockBuffer)
+		maxChanged := 0
+		somethingChanged := false
+		for i := 0; i < len(blockBuffer); i++ {
+			if blockBuffer[i] != orgBlockBuffer[i] {
+				if i+1 > maxChanged {
+					maxChanged = i + 1
+				}
+				if i < minChanged {
+					minChanged = i
+				}
+				somethingChanged = true
+			}
+		}
 
-		// And write the data back
-		_, err := i.prov.WriteAt(blockBuffer, int64(b*i.blockSize)+bi.minOffset)
-		if err != nil {
-			bi.lock.Unlock()
-			return err
+		if somethingChanged {
+			// Here, we can write changedMin - changedMax
+			_, err := i.prov.WriteAt(blockBuffer[minChanged:maxChanged], int64(b*i.blockSize)+bi.minOffset+int64(minChanged))
+
+			// And write the data back
+			// _, err := i.prov.WriteAt(blockBuffer, int64(b*i.blockSize)+bi.minOffset)
+			if err != nil {
+				bi.lock.Unlock()
+				return err
+			}
 		}
 
 		bi.Clear(int64(i.blockSize))
