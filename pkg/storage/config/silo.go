@@ -39,6 +39,7 @@ type WriteCacheSchema struct {
 	MinSize     string `hcl:"minsize,attr"`
 	MaxSize     string `hcl:"maxsize,attr"`
 	FlushPeriod string `hcl:"flushperiod,attr"`
+	BlockSize   string `hcl:"blocksize,optional"`
 }
 
 type MigrationConfigSchema struct {
