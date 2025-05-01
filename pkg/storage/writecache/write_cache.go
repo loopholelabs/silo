@@ -115,7 +115,8 @@ type Config struct {
 }
 
 /**
- * Create a new cache
+ * NewWriteCache creates a new write caching layer around the provided storage.Provider.
+ * It buffers writes up to the configured size limits before flushing them to the underlying provider.
  *
  */
 func NewWriteCache(blockSize int, prov storage.Provider, conf *Config) *WriteCache {
@@ -165,8 +166,9 @@ func NewWriteCache(blockSize int, prov storage.Provider, conf *Config) *WriteCac
 }
 
 /**
- * Implementation of ReadAt.
- * In this first version, we simply flush all blocks required, and then ReadAt
+ * ReadAt implements the Provider interface.
+ * This implementation flushes all blocks required by the read operation before
+ * forwarding the request to the underlying provider.
  */
 func (i *WriteCache) ReadAt(buffer []byte, offset int64) (int, error) {
 	end := offset + int64(len(buffer))
@@ -186,8 +188,7 @@ func (i *WriteCache) ReadAt(buffer []byte, offset int64) (int, error) {
 }
 
 /**
- * Implementation of WriteAt
- *
+ * WriteAt implements the Provider interface.
  */
 func (i *WriteCache) WriteAt(buffer []byte, offset int64) (int, error) {
 	// Incase a cache disable / flush op is going on
@@ -240,7 +241,7 @@ func (i *WriteCache) WriteAt(buffer []byte, offset int64) (int, error) {
 }
 
 /**
- * Flush a block out to the provider
+ * flushBlock flushes a specific block out to the provider
  *
  */
 func (i *WriteCache) flushBlock(b int) error {
@@ -318,6 +319,10 @@ func (i *WriteCache) flushBlock(b int) error {
 	return nil
 }
 
+/**
+ * Flush implements provider
+ *
+ */
 func (i *WriteCache) Flush() error {
 	// Here we need to flush all the blocks out...
 	for b := range i.blocks {
@@ -330,8 +335,9 @@ func (i *WriteCache) Flush() error {
 }
 
 /**
- * Flush some data out of the writeCache.
+ * flushSome flushes some data out of the writeCache.
  * Data is flushed until some target is reached, starting with the block with most data
+ * TODO: Optimize this so we're not sorting lots
  */
 func (i *WriteCache) flushSome(target int64) error {
 	// Make a copy so we can sort it
@@ -357,10 +363,18 @@ func (i *WriteCache) flushSome(target int64) error {
 	return nil
 }
 
+/**
+ * Size implemnts provider
+ *
+ */
 func (i *WriteCache) Size() uint64 {
 	return i.prov.Size()
 }
 
+/**
+ * Close implements provider
+ *
+ */
 func (i *WriteCache) Close() error {
 	i.cancel()        // We don't need to be flushing things any more.
 	err1 := i.Flush() // Flush anything else out
@@ -373,11 +387,18 @@ func (i *WriteCache) Close() error {
 	return errors.Join(err1, err2)
 }
 
+/**
+ * CancelWrites implements provider
+ *
+ */
 func (i *WriteCache) CancelWrites(offset int64, length int64) {
 	i.prov.CancelWrites(offset, length)
 }
 
-// Disable the cache, and wait for any pending writes to be completed
+/**
+ * Disable disables the cache, and waits for any pending writes to be completed
+ * this is useful for example when a migration starts.
+ */
 func (i *WriteCache) Disable() {
 	// Disable caching
 	i.enabled.Store(false)
@@ -389,7 +410,10 @@ func (i *WriteCache) Disable() {
 	i.Flush()
 }
 
-// Enable the cache again
+/**
+ * Enable enables the writeCache after it's been disabled.
+ *
+ */
 func (i *WriteCache) Enable() {
 	i.writeLock.Lock()
 	defer i.writeLock.Unlock()
