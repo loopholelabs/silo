@@ -315,6 +315,74 @@ func (pm *ProcessMemory) ReadSoftDirtyMemory(addrStart uint64, addrEnd uint64, p
 	return bytesRead, nil
 }
 
+type DirtyRange struct {
+	Start uint64
+	End   uint64
+}
+
+/**
+ * ReadSoftDirtyMemoryRangeList
+ *
+ */
+func (pm *ProcessMemory) ReadSoftDirtyMemoryRangeList(addrStart uint64, addrEnd uint64) ([]DirtyRange, error) {
+	ranges := make([]DirtyRange, 0)
+
+	f, err := os.OpenFile(fmt.Sprintf("/proc/%d/pagemap", pm.pid), os.O_RDONLY, 0)
+	if err != nil {
+		return ranges, err
+	}
+	defer f.Close()
+
+	// seek, and read
+	pos := int64((addrStart >> PageShift) << 3)
+	_, err = f.Seek(pos, io.SeekStart)
+	if err != nil {
+		return ranges, err
+	}
+
+	currentStart := uint64(0)
+	currentEnd := uint64(0)
+
+	numPages := ((addrEnd - addrStart) + PageSize - 1) / PageSize
+	pageBuffer := make([]byte, numPages<<3)
+	_, err = f.Read(pageBuffer)
+	if err != nil {
+		return ranges, err
+	}
+
+	dataIndex := 0
+	for xx := addrStart; xx < addrEnd; xx += PageSize {
+		val := binary.LittleEndian.Uint64(pageBuffer[dataIndex:])
+		dataIndex += 8
+
+		if (val & PagemapFlagPresent) == PagemapFlagPresent {
+			if (val & PagemapFlagSoftDirty) == PagemapFlagSoftDirty {
+				if currentEnd == xx {
+					currentEnd = xx + PageSize
+				} else {
+					if currentEnd != 0 {
+						ranges = append(ranges, DirtyRange{
+							Start: currentStart,
+							End:   currentEnd,
+						})
+					}
+					currentStart = xx
+					currentEnd = xx + PageSize
+				}
+			}
+		}
+	}
+
+	if currentEnd != 0 {
+		ranges = append(ranges, DirtyRange{
+			Start: currentStart,
+			End:   currentEnd,
+		})
+	}
+
+	return ranges, nil
+}
+
 /**
  * ReadDirtyMemory
  *
