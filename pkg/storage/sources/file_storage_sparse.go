@@ -160,8 +160,8 @@ func (i *FileStorageSparse) readBlock(buffer []byte, b uint, blockOffset int64) 
  *
  */
 func (i *FileStorageSparse) ReadAt(buffer []byte, offset int64) (int, error) {
-	i.closingLock.Lock()
-	defer i.closingLock.Unlock()
+	i.closingLock.RLock()
+	defer i.closingLock.RUnlock()
 	if i.closing {
 		return 0, ErrClosing
 	}
@@ -242,8 +242,8 @@ func (i *FileStorageSparse) ReadAt(buffer []byte, offset int64) (int, error) {
  *
  */
 func (i *FileStorageSparse) WriteAt(buffer []byte, offset int64) (int, error) {
-	i.closingLock.Lock()
-	defer i.closingLock.Unlock()
+	i.closingLock.RLock()
+	defer i.closingLock.RUnlock()
 	if i.closing {
 		return 0, ErrClosing
 	}

@@ -194,6 +194,9 @@ func (i *WriteCache) WriteAt(buffer []byte, offset int64) (int, error) {
 	// Incase a cache disable / flush op is going on
 	// NOTE we are intentionally using RLock/RUnlock here. We don't mind if concurrent WriteAt
 	// go on, as long as a disable cache / flush op isn't going on.
+	// Note that the user should be aware that overlapping concurrent WriteAt calls may not
+	// work as expected, since they may be split up into multiple blocks, so the WriteAt is no longer
+	// atomic.
 	i.writeLock.RLock()
 	defer i.writeLock.RUnlock()
 
@@ -227,7 +230,11 @@ func (i *WriteCache) WriteAt(buffer []byte, offset int64) (int, error) {
 		i.flushLock.Lock()
 		// We have too much data, lets flush some of it
 		if atomic.LoadInt64(&i.totalData)+int64(len(blockData)) >= i.maxData {
-			i.flushSome(i.minData)
+			err := i.flushSome(i.minData)
+			if err != nil {
+				i.flushLock.Unlock()
+				return 0, err
+			}
 		}
 
 		// Add the write data to the block, and update totalData
