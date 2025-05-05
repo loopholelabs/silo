@@ -1,6 +1,7 @@
 package expose
 
 import (
+	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -8,6 +9,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/loopholelabs/silo/pkg/storage"
 )
@@ -216,15 +219,19 @@ func (pm *ProcessMemory) GetSmap(dev string) (*Smap, error) {
 	}
 }
 
+/**
+ * ClearSoftDirty clears the soft dirty flags
+ *
+ */
 func (pm *ProcessMemory) ClearSoftDirty() error {
 	return os.WriteFile(fmt.Sprintf("/proc/%d/clear_refs", pm.pid), []byte("4"), 0666)
 }
 
 /**
- * ReadSoftDirtyMemory
+ * CopySoftDirtyMemory
  *
  */
-func (pm *ProcessMemory) ReadSoftDirtyMemory(addrStart uint64, addrEnd uint64, prov storage.Provider) (uint64, error) {
+func (pm *ProcessMemory) CopySoftDirtyMemory(addrStart uint64, addrEnd uint64, prov storage.Provider) (uint64, error) {
 	bytesRead := uint64(0)
 	memf, err := os.OpenFile(fmt.Sprintf("/proc/%d/mem", pm.pid), os.O_RDONLY, 0)
 	if err != nil {
@@ -315,7 +322,57 @@ func (pm *ProcessMemory) ReadSoftDirtyMemory(addrStart uint64, addrEnd uint64, p
 	return bytesRead, nil
 }
 
-type DirtyRange struct {
+/**
+ * CopyMemoryRanges
+ *
+ */
+func (pm *ProcessMemory) CopyMemoryRanges(addrStart uint64, ranges []MemoryRange, prov storage.Provider) (uint64, error) {
+	bytesRead := uint64(0)
+	memf, err := os.OpenFile(fmt.Sprintf("/proc/%d/mem", pm.pid), os.O_RDONLY, 0)
+	if err != nil {
+		return 0, err
+	}
+	defer memf.Close()
+
+	dataBuffer := make([]byte, ReadBufferSize) // Max read size
+
+	copyData := func(start uint64, end uint64) error {
+		length := end - start
+		_, err := memf.ReadAt(dataBuffer[:length], int64(start))
+		if err != nil {
+			return err
+		}
+		// NB here we adjust for the start of memory
+		_, err = prov.WriteAt(dataBuffer[:length], int64(start-addrStart))
+		return err
+	}
+
+	for _, r := range ranges {
+		// Chop it up into blocks if we need to, and read them sequentially.
+		if r.End-r.Start > ReadBufferSize {
+			for b := uint64(0); b < (r.End - r.Start); b += ReadBufferSize {
+				end := r.Start + b + ReadBufferSize
+				if end > r.End {
+					end = r.End
+				}
+				err := copyData(r.Start+b, end)
+				if err != nil {
+					return 0, err
+				}
+			}
+		} else {
+			err := copyData(r.Start, r.End)
+			if err != nil {
+				return 0, err
+			}
+		}
+		bytesRead += (r.End - r.Start)
+	}
+
+	return bytesRead, nil
+}
+
+type MemoryRange struct {
 	Start uint64
 	End   uint64
 }
@@ -324,8 +381,8 @@ type DirtyRange struct {
  * ReadSoftDirtyMemoryRangeList
  *
  */
-func (pm *ProcessMemory) ReadSoftDirtyMemoryRangeList(addrStart uint64, addrEnd uint64) ([]DirtyRange, error) {
-	ranges := make([]DirtyRange, 0)
+func (pm *ProcessMemory) ReadSoftDirtyMemoryRangeList(addrStart uint64, addrEnd uint64) ([]MemoryRange, error) {
+	ranges := make([]MemoryRange, 0)
 
 	f, err := os.OpenFile(fmt.Sprintf("/proc/%d/pagemap", pm.pid), os.O_RDONLY, 0)
 	if err != nil {
@@ -361,7 +418,7 @@ func (pm *ProcessMemory) ReadSoftDirtyMemoryRangeList(addrStart uint64, addrEnd 
 					currentEnd = xx + PageSize
 				} else {
 					if currentEnd != 0 {
-						ranges = append(ranges, DirtyRange{
+						ranges = append(ranges, MemoryRange{
 							Start: currentStart,
 							End:   currentEnd,
 						})
@@ -374,7 +431,7 @@ func (pm *ProcessMemory) ReadSoftDirtyMemoryRangeList(addrStart uint64, addrEnd 
 	}
 
 	if currentEnd != 0 {
-		ranges = append(ranges, DirtyRange{
+		ranges = append(ranges, MemoryRange{
 			Start: currentStart,
 			End:   currentEnd,
 		})
@@ -384,10 +441,10 @@ func (pm *ProcessMemory) ReadSoftDirtyMemoryRangeList(addrStart uint64, addrEnd 
 }
 
 /**
- * ReadDirtyMemory
+ * CopyDirtyMemory
  *
  */
-func (pm *ProcessMemory) ReadDirtyMemory(addrStart uint64, addrEnd uint64, prov storage.Provider) error {
+func (pm *ProcessMemory) CopyDirtyMemory(addrStart uint64, addrEnd uint64, prov storage.Provider) error {
 	memf, err := os.OpenFile(fmt.Sprintf("/proc/%d/mem", pm.pid), os.O_RDONLY, 0)
 	if err != nil {
 		return err
@@ -489,34 +546,49 @@ func (pm *ProcessMemory) ReadDirtyMemory(addrStart uint64, addrEnd uint64, prov 
 	return nil
 }
 
-/**
- * ReadAllMemory
- *
- */
-func (pm *ProcessMemory) ReadAllMemory(addrStart uint64, addrEnd uint64, prov storage.Provider) error {
-	memf, err := os.OpenFile(fmt.Sprintf("/proc/%d/mem", pm.pid), os.O_RDONLY, 0)
+const waitProcessChangeTimeout = 10 * time.Second
+
+func (pm *ProcessMemory) PauseProcess() error {
+	return pm.signalProcess(syscall.SIGSTOP, "T (stopped)")
+}
+
+func (pm *ProcessMemory) ResumeProcess() error {
+	return pm.signalProcess(syscall.SIGCONT, "S (sleeping)")
+}
+
+// signalProcess send a signal
+func (pm *ProcessMemory) signalProcess(sig syscall.Signal, expect string) error {
+
+	// Send a signal to STOP
+	err := syscall.Kill(pm.pid, sig)
 	if err != nil {
 		return err
 	}
-	defer memf.Close()
 
-	dataBuffer := make([]byte, ReadBufferSize) // Max read size
-
-	for xx := addrStart; xx < addrEnd; xx += uint64(len(dataBuffer)) {
-		length := uint64(len(dataBuffer))
-		if xx+length >= addrEnd {
-			length = addrEnd - xx
-		}
-		_, err := memf.ReadAt(dataBuffer[:length], int64(xx))
-		if err != nil {
-			return err
-		}
-		// NB here we adjust for the start of memory
-		_, err = prov.WriteAt(dataBuffer[:length], int64(xx-addrStart))
-		if err != nil {
-			return err
+	// Wait until it's stopped
+	waitTick := time.NewTicker(10 * time.Millisecond)
+	waitCtx, waitCancel := context.WithTimeout(context.Background(), waitProcessChangeTimeout)
+	defer waitCancel()
+waitStop:
+	for {
+		select {
+		case <-waitCtx.Done():
+			return errors.New("Could not stop process?")
+		case <-waitTick.C:
+			state := ""
+			dd, err := os.ReadFile(fmt.Sprintf("/proc/%d/status", pm.pid))
+			if err == nil {
+				lines := strings.Split(string(dd), "\n")
+				for _, l := range lines {
+					if strings.HasPrefix(l, "State:") {
+						state = strings.Trim(l[6:], "\r\n \t")
+						if state == expect {
+							break waitStop
+						}
+					}
+				}
+			}
 		}
 	}
-
 	return nil
 }
