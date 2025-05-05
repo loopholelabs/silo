@@ -381,7 +381,7 @@ type MemoryRange struct {
  * ReadSoftDirtyMemoryRangeList
  *
  */
-func (pm *ProcessMemory) ReadSoftDirtyMemoryRangeList(addrStart uint64, addrEnd uint64) ([]MemoryRange, error) {
+func (pm *ProcessMemory) ReadSoftDirtyMemoryRangeList(addrStart uint64, addrEnd uint64, lockCB func(), unlockCB func()) ([]MemoryRange, error) {
 	ranges := make([]MemoryRange, 0)
 
 	f, err := os.OpenFile(fmt.Sprintf("/proc/%d/pagemap", pm.pid), os.O_RDONLY, 0)
@@ -397,15 +397,17 @@ func (pm *ProcessMemory) ReadSoftDirtyMemoryRangeList(addrStart uint64, addrEnd 
 		return ranges, err
 	}
 
-	currentStart := uint64(0)
-	currentEnd := uint64(0)
-
 	numPages := ((addrEnd - addrStart) + PageSize - 1) / PageSize
 	pageBuffer := make([]byte, numPages<<3)
+	lockCB()
 	_, err = f.Read(pageBuffer)
+	unlockCB()
 	if err != nil {
 		return ranges, err
 	}
+
+	currentStart := uint64(0)
+	currentEnd := uint64(0)
 
 	dataIndex := 0
 	for xx := addrStart; xx < addrEnd; xx += PageSize {
