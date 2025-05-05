@@ -171,19 +171,23 @@ type Metrics struct {
 	volatilityMonitorHeatmap    *prometheus.GaugeVec
 
 	// metrics
-	metricsReadOps      *prometheus.GaugeVec
-	metricsReadBytes    *prometheus.GaugeVec
-	metricsReadTime     *prometheus.GaugeVec
-	metricsReadErrors   *prometheus.GaugeVec
-	metricsWriteOps     *prometheus.GaugeVec
-	metricsWriteBytes   *prometheus.GaugeVec
-	metricsWriteTime    *prometheus.GaugeVec
-	metricsWriteErrors  *prometheus.GaugeVec
-	metricsFlushOps     *prometheus.GaugeVec
-	metricsFlushTime    *prometheus.GaugeVec
-	metricsFlushErrors  *prometheus.GaugeVec
-	metricsReadOpsSize  *prometheus.GaugeVec
-	metricsWriteOpsSize *prometheus.GaugeVec
+	metricsReadOps             *prometheus.GaugeVec
+	metricsReadBytes           *prometheus.GaugeVec
+	metricsReadTime            *prometheus.GaugeVec
+	metricsReadErrors          *prometheus.GaugeVec
+	metricsWriteOps            *prometheus.GaugeVec
+	metricsWriteBytes          *prometheus.GaugeVec
+	metricsWriteTime           *prometheus.GaugeVec
+	metricsWriteErrors         *prometheus.GaugeVec
+	metricsFlushOps            *prometheus.GaugeVec
+	metricsFlushTime           *prometheus.GaugeVec
+	metricsFlushErrors         *prometheus.GaugeVec
+	metricsReadOpsSize         *prometheus.GaugeVec
+	metricsWriteOpsSize        *prometheus.GaugeVec
+	metricsCurrentReadOps      *prometheus.GaugeVec
+	metricsCurrentWriteOps     *prometheus.GaugeVec
+	metricsReadOpsConcurrency  *prometheus.GaugeVec
+	metricsWriteOpsConcurrency *prometheus.GaugeVec
 
 	// nbd
 	nbdPacketsIn    *prometheus.GaugeVec
@@ -414,6 +418,14 @@ func New(reg prometheus.Registerer, config *MetricsConfig) *Metrics {
 			Namespace: config.Namespace, Subsystem: config.SubMetrics, Name: "read_ops_size", Help: "ReadOpsSize"}, append(labels, "le")),
 		metricsWriteOpsSize: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: config.Namespace, Subsystem: config.SubMetrics, Name: "write_ops_size", Help: "WriteOpsSize"}, append(labels, "le")),
+		metricsCurrentReadOps: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: config.Namespace, Subsystem: config.SubMetrics, Name: "current_read_ops", Help: "CurrentReadOps"}, labels),
+		metricsCurrentWriteOps: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: config.Namespace, Subsystem: config.SubMetrics, Name: "current_write_ops", Help: "CurrentWriteOps"}, labels),
+		metricsReadOpsConcurrency: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: config.Namespace, Subsystem: config.SubMetrics, Name: "read_ops_concurrency", Help: "ReadOpsConcurrency"}, labels),
+		metricsWriteOpsConcurrency: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: config.Namespace, Subsystem: config.SubMetrics, Name: "write_ops_concurrency", Help: "WriteOpsConcurrency"}, labels),
 
 		// nbd
 		nbdPacketsIn: prometheus.NewGaugeVec(prometheus.GaugeOpts{
@@ -519,7 +531,11 @@ func New(reg prometheus.Registerer, config *MetricsConfig) *Metrics {
 		met.metricsFlushTime,
 		met.metricsFlushErrors,
 		met.metricsReadOpsSize,
-		met.metricsWriteOpsSize)
+		met.metricsWriteOpsSize,
+		met.metricsCurrentReadOps,
+		met.metricsCurrentWriteOps,
+		met.metricsReadOpsConcurrency,
+		met.metricsWriteOpsConcurrency)
 
 	reg.MustRegister(
 		met.nbdPacketsIn, met.nbdPacketsOut,
@@ -846,6 +862,12 @@ func (m *Metrics) AddMetrics(id string, name string, mm *modules.Metrics) {
 		m.metricsFlushOps.WithLabelValues(id, name).Set(float64(met.FlushOps))
 		m.metricsFlushErrors.WithLabelValues(id, name).Set(float64(met.FlushErrors))
 		m.metricsFlushTime.WithLabelValues(id, name).Set(float64(met.FlushTime))
+
+		m.metricsCurrentReadOps.WithLabelValues(id, name).Set(float64(met.CurrentReadOps))
+		m.metricsCurrentWriteOps.WithLabelValues(id, name).Set(float64(met.CurrentWriteOps))
+
+		m.metricsReadOpsConcurrency.WithLabelValues(id, name).Set(float64(met.ReadOpsConcurrency))
+		m.metricsWriteOpsConcurrency.WithLabelValues(id, name).Set(float64(met.WriteOpsConcurrency))
 
 		// Add the size metrics here...
 		for _, v := range modules.OpSizeBuckets {

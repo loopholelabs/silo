@@ -32,6 +32,14 @@ type DeviceSchema struct {
 	PageServerPID  int                    `hcl:"pid,optional"`
 	Sync           *SyncS3Schema          `hcl:"sync,block"`
 	Migration      *MigrationConfigSchema `hcl:"migration,block"`
+	WriteCache     *WriteCacheSchema      `hcl:"writecache,block"`
+}
+
+type WriteCacheSchema struct {
+	MinSize     string `hcl:"minsize,attr"`
+	MaxSize     string `hcl:"maxsize,attr"`
+	FlushPeriod string `hcl:"flushperiod,attr"`
+	BlockSize   string `hcl:"blocksize,optional"`
 }
 
 type MigrationConfigSchema struct {
@@ -61,7 +69,7 @@ type SyncS3Schema struct {
 	GrabConcurrency int               `hcl:"grabconcurrency,attr"`
 }
 
-func parseByteValue(val string) int64 {
+func ParseByteValue(val string) int64 {
 	// Parse the size string
 	multiplier := int64(1)
 	s := strings.Trim(strings.ToLower(val), " \t\r\n")
@@ -93,11 +101,11 @@ func parseByteValue(val string) int64 {
 }
 
 func (ds *DeviceSchema) ByteSize() int64 {
-	return parseByteValue(ds.Size)
+	return ParseByteValue(ds.Size)
 }
 
 func (ds *DeviceSchema) ByteBlockSize() int64 {
-	return parseByteValue(ds.BlockSize)
+	return ParseByteValue(ds.BlockSize)
 }
 
 func ReadSchema(path string) (*SiloSchema, error) {

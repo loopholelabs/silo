@@ -5,11 +5,16 @@ import (
 	"errors"
 	"os"
 	"sync"
+	"sync/atomic"
 
 	"github.com/loopholelabs/silo/pkg/storage"
 )
 
 const blockHeaderSize = 8
+
+var errNoBlock = errors.New("no such block")
+
+var ErrClosing = errors.New("close in progress or closed")
 
 /**
  * Simple sparse file storage provider
@@ -25,10 +30,13 @@ type FileStorageSparse struct {
 	fp          *os.File
 	size        uint64
 	blockSize   int
+	offsetsLock sync.RWMutex
 	offsets     map[uint]uint64
-	writeLock   sync.Mutex
+	writeLocks  []sync.RWMutex
 	currentSize uint64
 	wg          sync.WaitGroup
+	closing     bool
+	closingLock sync.RWMutex
 }
 
 func NewFileStorageSparseCreate(f string, size uint64, blockSize int) (*FileStorageSparse, error) {
@@ -37,6 +45,9 @@ func NewFileStorageSparseCreate(f string, size uint64, blockSize int) (*FileStor
 		return nil, err
 	}
 
+	numBlocks := (int(size) + blockSize - 1) / blockSize
+	locks := make([]sync.RWMutex, numBlocks)
+
 	return &FileStorageSparse{
 		f:           f,
 		fp:          fp,
@@ -44,6 +55,7 @@ func NewFileStorageSparseCreate(f string, size uint64, blockSize int) (*FileStor
 		blockSize:   blockSize,
 		offsets:     make(map[uint]uint64),
 		currentSize: 0,
+		writeLocks:  locks,
 	}, nil
 }
 
@@ -52,6 +64,9 @@ func NewFileStorageSparse(f string, size uint64, blockSize int) (*FileStorageSpa
 	if err != nil {
 		return nil, err
 	}
+
+	numBlocks := (int(size) + blockSize - 1) / blockSize
+	locks := make([]sync.RWMutex, numBlocks)
 
 	// Scan through the file and get the offsets...
 	offsets := make(map[uint]uint64)
@@ -80,18 +95,33 @@ func NewFileStorageSparse(f string, size uint64, blockSize int) (*FileStorageSpa
 		blockSize:   blockSize,
 		offsets:     offsets,
 		currentSize: uint64(len(offsets) * (blockHeaderSize + blockSize)),
+		writeLocks:  locks,
 	}, nil
 }
 
-func (i *FileStorageSparse) writeBlock(buffer []byte, b uint) error {
+/**
+ * Write a block, or partial block.
+ * If the block is not found, the block must be complete (not partial)
+ * If the block is not found, and is a complete block, it'll be appended to the storage.
+ */
+func (i *FileStorageSparse) writeBlock(buffer []byte, b uint, blockOffset int64) error {
+	i.offsetsLock.RLock()
 	off, ok := i.offsets[b]
+	i.offsetsLock.RUnlock()
 	if ok {
 		// Write to the data where it is...
-		_, err := i.fp.WriteAt(buffer, int64(off))
+		_, err := i.fp.WriteAt(buffer, int64(off)+blockOffset)
 		return err
 	}
 
+	// It needs to be a complete block...
+	if blockOffset != 0 || len(buffer) != i.blockSize {
+		return errNoBlock
+	}
+
 	// Need to append the data to the end of the file...
+	i.offsetsLock.Lock()
+	defer i.offsetsLock.Unlock()
 	blockHeader := make([]byte, blockHeaderSize)
 	binary.LittleEndian.PutUint64(blockHeader, uint64(b))
 	i.offsets[b] = i.currentSize + blockHeaderSize
@@ -109,22 +139,35 @@ func (i *FileStorageSparse) writeBlock(buffer []byte, b uint) error {
 	return err
 }
 
-func (i *FileStorageSparse) readBlock(buffer []byte, b uint) error {
+/**
+ * Read a block, or partial block
+ *
+ */
+func (i *FileStorageSparse) readBlock(buffer []byte, b uint, blockOffset int64) error {
+	i.offsetsLock.RLock()
 	off, ok := i.offsets[b]
+	i.offsetsLock.RUnlock()
 	if ok {
 		// Read the data where it is...
-		_, err := i.fp.ReadAt(buffer, int64(off))
+		_, err := i.fp.ReadAt(buffer, int64(off)+blockOffset)
 		return err
 	}
 	return errors.New("cannot do a partial block write on incomplete block")
 }
 
+/**
+ * Implementation of ReadAt
+ *
+ */
 func (i *FileStorageSparse) ReadAt(buffer []byte, offset int64) (int, error) {
+	i.closingLock.RLock()
+	defer i.closingLock.RUnlock()
+	if i.closing {
+		return 0, ErrClosing
+	}
+
 	i.wg.Add(1)
 	defer i.wg.Done()
-	// FIXME: overkill lock
-	i.writeLock.Lock()
-	defer i.writeLock.Unlock()
 
 	bufferEnd := int64(len(buffer))
 	if offset+int64(len(buffer)) > int64(i.size) {
@@ -139,54 +182,74 @@ func (i *FileStorageSparse) ReadAt(buffer []byte, offset int64) (int, error) {
 
 	bStart := uint(offset / int64(i.blockSize))
 	bEnd := uint((end-1)/uint64(i.blockSize)) + 1
-	count := 0
 
-	// FIXME: We should paralelise these
+	// Lock and unlock the blocks involved (read lock)
 	for b := bStart; b < bEnd; b++ {
-		blockOffset := int64(b) * int64(i.blockSize)
-		if blockOffset >= offset {
-			if len(buffer[blockOffset-offset:bufferEnd]) < i.blockSize {
-				// Partial read at the end
-				blockBuffer := make([]byte, i.blockSize)
-				err := i.readBlock(blockBuffer, b)
-				if err == nil {
-					count += copy(buffer[blockOffset-offset:bufferEnd], blockBuffer)
-				} else {
-					return 0, err
-				}
-			} else {
+		i.writeLocks[b].RLock()
+	}
+	defer func() {
+		for b := bStart; b < bEnd; b++ {
+			i.writeLocks[b].RUnlock()
+		}
+	}()
+
+	errs := make(chan error, bEnd-bStart+1)
+	var count uint64
+
+	for blockNo := bStart; blockNo < bEnd; blockNo++ {
+		go func(b uint) {
+			blockOffset := int64(b) * int64(i.blockSize)
+			var err error
+			var n int
+
+			if blockOffset >= offset {
 				s := blockOffset - offset
-				e := s + int64(i.blockSize)
-				if e > int64(len(buffer)) {
-					e = int64(len(buffer))
+				n = int(bufferEnd - s)
+				if n > i.blockSize {
+					n = i.blockSize
 				}
-				err := i.readBlock(buffer[s:e], b)
-				if err != nil {
-					return 0, err
-				}
-				count += i.blockSize
-			}
-		} else {
-			// Partial read at the start
-			blockBuffer := make([]byte, i.blockSize)
-			err := i.readBlock(blockBuffer, b)
-			if err == nil {
-				count += copy(buffer[:bufferEnd], blockBuffer[offset-blockOffset:])
+				err = i.readBlock(buffer[s:s+int64(n)], b, 0)
 			} else {
-				return 0, err
+				// Partial read at the start
+				s := offset - blockOffset
+				n = i.blockSize - int(s)
+				if n > int(bufferEnd) {
+					n = int(bufferEnd)
+				}
+				err = i.readBlock(buffer[:n], b, s)
 			}
+
+			if err == nil {
+				atomic.AddUint64(&count, uint64(n))
+			}
+			errs <- err
+		}(blockNo)
+	}
+
+	// Wait for all reads to complete, and return any error
+	for blockNo := bStart; blockNo < bEnd; blockNo++ {
+		e := <-errs
+		if e != nil {
+			return 0, e
 		}
 	}
 
-	return count, nil
+	return int(count), nil
 }
 
+/**
+ * Implementation of WriteAt
+ *
+ */
 func (i *FileStorageSparse) WriteAt(buffer []byte, offset int64) (int, error) {
+	i.closingLock.RLock()
+	defer i.closingLock.RUnlock()
+	if i.closing {
+		return 0, ErrClosing
+	}
+
 	i.wg.Add(1)
 	defer i.wg.Done()
-
-	i.writeLock.Lock()
-	defer i.writeLock.Unlock()
 
 	bufferEnd := int64(len(buffer))
 	if offset+int64(len(buffer)) > int64(i.size) {
@@ -202,54 +265,92 @@ func (i *FileStorageSparse) WriteAt(buffer []byte, offset int64) (int, error) {
 	bStart := uint(offset / int64(i.blockSize))
 	bEnd := uint((end-1)/uint64(i.blockSize)) + 1
 	count := 0
+
+	// Lock and unlock the blocks involved.
+	for b := bStart; b < bEnd; b++ {
+		i.writeLocks[b].Lock()
+	}
+	defer func() {
+		for b := bStart; b < bEnd; b++ {
+			i.writeLocks[b].Unlock()
+		}
+	}()
 
 	for b := bStart; b < bEnd; b++ {
 		blockOffset := int64(b) * int64(i.blockSize)
 		if blockOffset >= offset {
 			if len(buffer[blockOffset-offset:bufferEnd]) < i.blockSize {
 				// Partial write at the end
-				blockBuffer := make([]byte, i.blockSize)
-				var err error
 
+				// Try doing the write in place
 				dataLen := bufferEnd - (blockOffset - offset)
 
-				// If the write doesn't extend to the end of the storage size, we need to do a read first.
-				if blockOffset+dataLen < int64(i.size) {
-					err = i.readBlock(blockBuffer, b)
-				}
-				if err != nil {
+				err := i.writeBlock(buffer[blockOffset-offset:bufferEnd], b, 0)
+				switch err {
+				case errNoBlock:
+					// The block doesn't exist yet
+					blockBuffer := make([]byte, i.blockSize)
+					var err error
+
+					// If the write doesn't extend to the end of the storage size, we need to do a read first.
+					if blockOffset+dataLen < int64(i.size) {
+						err = i.readBlock(blockBuffer, b, 0)
+					}
+					if err != nil {
+						return 0, err
+					}
+					// Merge the data in, and write it back...
+					count += copy(blockBuffer, buffer[blockOffset-offset:bufferEnd])
+					err = i.writeBlock(blockBuffer, b, 0)
+					if err != nil {
+						return 0, err
+					}
+				case nil:
+					count += int(dataLen)
+				default:
 					return 0, err
 				}
-				// Merge the data in, and write it back...
-				count += copy(blockBuffer, buffer[blockOffset-offset:bufferEnd])
-				err = i.writeBlock(blockBuffer, b)
-				if err != nil {
-					return 0, nil
-				}
 			} else {
+				// Complete write in the middle - no need for a read.
 				s := blockOffset - offset
 				e := s + int64(i.blockSize)
 				if e > int64(len(buffer)) {
 					e = int64(len(buffer))
 				}
-				err := i.writeBlock(buffer[s:e], b)
+				err := i.writeBlock(buffer[s:e], b, 0)
 				if err != nil {
 					return 0, err
 				}
 				count += i.blockSize
 			}
 		} else {
-			// Partial write at the start
-			blockBuffer := make([]byte, i.blockSize)
-			err := i.readBlock(blockBuffer, b)
-			if err != nil {
-				return 0, err
+			dataStart := offset - blockOffset
+			be := i.blockSize - int(dataStart)
+			if be > len(buffer) {
+				be = len(buffer)
 			}
-			// Merge the data in, and write it back...
-			count += copy(blockBuffer[offset-blockOffset:], buffer[:bufferEnd])
-			err = i.writeBlock(blockBuffer, b)
-			if err != nil {
-				return 0, nil
+			// First try doing the write without a pre-read (If the block already exists)
+			err := i.writeBlock(buffer[:be], b, dataStart)
+			switch err {
+			case errNoBlock:
+				// We need to read, merge and write a complete block.
+
+				// Partial write at the start
+				blockBuffer := make([]byte, i.blockSize)
+				err := i.readBlock(blockBuffer, b, 0)
+				if err != nil {
+					return 0, err
+				}
+				// Merge the data in, and write it back...
+				count += copy(blockBuffer[offset-blockOffset:], buffer[:bufferEnd])
+				err = i.writeBlock(blockBuffer, b, 0)
+				if err != nil {
+					return 0, err
+				}
+			case nil:
+				count += be
+			default:
+				return 0, err
 			}
 		}
 	}
@@ -257,6 +358,9 @@ func (i *FileStorageSparse) WriteAt(buffer []byte, offset int64) (int, error) {
 }
 
 func (i *FileStorageSparse) Close() error {
+	i.closingLock.Lock()
+	i.closing = true
+	i.closingLock.Unlock()
 	i.wg.Wait() // Wait for any pending ops to complete
 	return i.fp.Close()
 }

@@ -2,6 +2,7 @@ package storage
 
 import (
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io"
 
@@ -150,4 +151,56 @@ func MapOverBlocks(offset int64, length int32, blockSize int, f func(b int, comp
 
 		f(b, complete)
 	}
+}
+
+/**
+ * Check how much data differs between two providers
+ *
+ */
+func Difference(sp1 Provider, sp2 Provider, blockSize int) (uint64, uint64, error) {
+	if sp1.Size() != sp2.Size() {
+		fmt.Printf("Difference: Size differs (%d %d)\n", sp1.Size(), sp2.Size())
+		return 0, 0, errors.New("size differs")
+	}
+
+	size := int(sp1.Size())
+
+	differentBlocks := uint64(0)
+	differentBytes := uint64(0)
+
+	sourceBuff := make([]byte, blockSize)
+	destBuff := make([]byte, blockSize)
+	for i := 0; i < size; i += blockSize {
+		sourceBuff = sourceBuff[:cap(sourceBuff)]
+		destBuff = destBuff[:cap(destBuff)]
+
+		n, err := sp1.ReadAt(sourceBuff, int64(i))
+		if err != nil {
+			fmt.Printf("Equals: sp1.ReadAt %v\n", err)
+			return 0, 0, err
+		}
+		sourceBuff = sourceBuff[:n]
+		n, err = sp2.ReadAt(destBuff, int64(i))
+		if err != nil {
+			fmt.Printf("Equals: sp2.ReadAt %v\n", err)
+			return 0, 0, err
+		}
+		destBuff = destBuff[:n]
+		if len(sourceBuff) != len(destBuff) {
+			fmt.Printf("Equals: data len sp1 sp2 %d %d\n", len(sourceBuff), len(destBuff))
+			return 0, 0, errors.New("read size differs")
+		}
+		equal := true
+		for j := 0; j < n; j++ {
+			if sourceBuff[j] != destBuff[j] {
+				differentBytes++
+				equal = false
+			}
+		}
+		if !equal {
+			differentBlocks++
+		}
+	}
+
+	return differentBlocks, differentBytes, nil
 }
