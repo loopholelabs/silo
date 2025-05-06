@@ -149,6 +149,12 @@ func (n *ExposedStorageNBDNL) SetProvider(prov storage.Provider) {
 	n.provLock.Unlock()
 }
 
+func (n *ExposedStorageNBDNL) GetProvider() storage.Provider {
+	n.provLock.Lock()
+	defer n.provLock.Unlock()
+	return n.prov
+}
+
 // Impl StorageProvider here so we can route calls to provider
 func (n *ExposedStorageNBDNL) ReadAt(buffer []byte, offset int64) (int, error) {
 	n.provLock.RLock()
