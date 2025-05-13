@@ -406,9 +406,12 @@ func (pm *ProcessMemory) ReadSoftDirtyMemoryRangeList(addrStart uint64, addrEnd 
 	if err != nil {
 		return ranges, err
 	}
-	_, err = f.Read(pageBuffer)
+	n, err := f.Read(pageBuffer)
 	if err != nil {
 		return ranges, err
+	}
+	if n != len(pageBuffer) {
+		return ranges, fmt.Errorf("incomplete read, wanted %d got %d", len(pageBuffer), n)
 	}
 	err = unlockCB()
 	if err != nil {
