@@ -74,8 +74,14 @@ func TestProcessMemory(t *testing.T) {
 	_, err = crand.Read(mmdata1[:changedData])
 	assert.NoError(t, err)
 
+	ranges, err := pm.ReadSoftDirtyMemoryRangeList(memStart, memEnd, func() error { return nil }, func() error { return nil })
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(ranges))
+	assert.Equal(t, uint64(0), ranges[0].Start-memStart)
+	assert.Equal(t, uint64(changedData), ranges[0].End-memStart)
+
 	// Read the soft dirty memory
-	nbytes, err := pm.ReadSoftDirtyMemory(memStart, memEnd, provCheck)
+	nbytes, err := pm.CopySoftDirtyMemory(memStart, memEnd, provCheck)
 	assert.Equal(t, uint64(PageSize*((changedData+PageSize-1)/PageSize)), nbytes)
 	assert.NoError(t, err)
 
@@ -88,7 +94,7 @@ func TestProcessMemory(t *testing.T) {
 
 	// Retry
 	// Read the soft dirty memory
-	nbytes, err = pm.ReadSoftDirtyMemory(memStart, memEnd, provCheck)
+	nbytes, err = pm.CopySoftDirtyMemory(memStart, memEnd, provCheck)
 	assert.NoError(t, err)
 	assert.Equal(t, uint64(PageSize), nbytes)
 

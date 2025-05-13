@@ -336,3 +336,80 @@ func TestCopyOnWriteReadsNonzero(t *testing.T) {
 	assert.Greater(t, met.MetricZeroPreWriteReadBytes, uint64(0))
 
 }
+
+/**
+ * This test checks that CoW is doing things in an optimized way
+ * We don't want to read or write more than we need to.
+ */
+func TestCopyOnWriteOptimized(t *testing.T) {
+	blockSize := 1024
+
+	// Create a new block storage, backed by memory storage
+	size := 1024 * 1024
+	mem := sources.NewMemoryStorage(size)
+	metMem := NewMetrics(mem)
+	cache := sources.NewMemoryStorage(size)
+	metCache := NewMetrics(cache)
+
+	// Fill it with stuff
+	data := make([]byte, size)
+	_, err := rand.Read(data)
+	assert.NoError(t, err)
+	_, err = mem.WriteAt(data, 0)
+	assert.NoError(t, err)
+
+	cow := NewCopyOnWrite(metMem, metCache, blockSize, true, nil)
+
+	// Do a single small write to the CoW.
+	// This should result in a read of a block from the ROsrc,
+	// Then a block write to the cache.
+
+	smallData := make([]byte, 16)
+	n, err := cow.WriteAt(smallData, 40) // Block 0
+	assert.NoError(t, err)
+	assert.Equal(t, len(smallData), n)
+
+	mCache := metCache.GetMetrics()
+	mMem := metMem.GetMetrics()
+
+	// We should expect to have to read a block, and write a block.
+	assert.Equal(t, uint64(blockSize), mMem.ReadBytes)
+	assert.Equal(t, uint64(0), mMem.WriteBytes)
+
+	assert.Equal(t, uint64(blockSize), mCache.WriteBytes)
+	assert.Equal(t, uint64(0), mCache.ReadBytes)
+
+	// Now lets overwrite on that same block.
+	// This time, the block is already in our cache, so we should ONLY need to write n bytes
+
+	n, err = cow.WriteAt(smallData, 30) // Block 0
+	assert.NoError(t, err)
+	assert.Equal(t, len(smallData), n)
+
+	mCache = metCache.GetMetrics()
+	mMem = metMem.GetMetrics()
+
+	assert.Equal(t, uint64(blockSize), mMem.ReadBytes)
+	assert.Equal(t, uint64(0), mMem.WriteBytes)
+
+	assert.Equal(t, uint64(blockSize+n), mCache.WriteBytes)
+	assert.Equal(t, uint64(0), mCache.ReadBytes)
+
+	// Check that a read is efficient as well
+
+	somedata := make([]byte, 16)
+
+	n, err = cow.ReadAt(somedata, 20) // Block 0, so it's in the cache
+	assert.NoError(t, err)
+	assert.Equal(t, len(somedata), n)
+
+	mCache = metCache.GetMetrics()
+	mMem = metMem.GetMetrics()
+
+	assert.Equal(t, uint64(blockSize), mMem.ReadBytes)
+	assert.Equal(t, uint64(0), mMem.WriteBytes)
+
+	assert.Equal(t, uint64(blockSize+n), mCache.WriteBytes)
+	assert.Equal(t, uint64(len(somedata)), mCache.ReadBytes)
+
+}

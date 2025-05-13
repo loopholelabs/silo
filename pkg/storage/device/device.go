@@ -23,6 +23,7 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
 	"github.com/loopholelabs/silo/pkg/storage/volatilitymonitor"
+	"github.com/loopholelabs/silo/pkg/storage/writecache"
 )
 
 const (
@@ -307,6 +308,37 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 		if err != nil {
 			return nil, nil, err
 		}
+	}
+
+	// Optionally cache writes
+	if ds.WriteCache != nil {
+		minSize := config.ParseByteValue(ds.WriteCache.MinSize)
+		maxSize := config.ParseByteValue(ds.WriteCache.MaxSize)
+		wcBlockSize := ds.ByteBlockSize() // Default to the device blockSize if none is given
+		if ds.WriteCache.BlockSize != "" {
+			wcBlockSize = config.ParseByteValue(ds.WriteCache.BlockSize)
+		}
+		period, err := time.ParseDuration(ds.WriteCache.FlushPeriod)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		if log != nil {
+			log.Debug().Str("name", deviceName).
+				Int64("minSize", minSize).
+				Int64("maxSize", maxSize).
+				Int64("blockSize", wcBlockSize).
+				Int64("flushPeriodMS", period.Milliseconds()).
+				Msg("Using a writeCache")
+		}
+
+		wc := writecache.NewWriteCache(int(wcBlockSize), prov, &writecache.Config{
+			MinData:           minSize,
+			MaxData:           maxSize,
+			FlushPeriod:       period,
+			MinimizeReadBytes: false,
+		})
+		prov = wc
 	}
 
 	// Now optionaly expose the device

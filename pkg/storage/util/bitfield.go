@@ -419,6 +419,47 @@ func (bf *Bitfield) CollectZeroes(start uint, end uint) []uint {
 }
 
 /**
+ * This finds the extent of zeroes in the range.
+ * TODO: Searching backwards could be more optimal to find zeroEnd
+ */
+func (bf *Bitfield) CollectZeroExtents(start uint, end uint) (uint, uint) {
+	zeroStart := start
+	zeroStartSet := false
+	zeroEnd := start
+	p := start >> 6
+	i := uint64(1 << (start & 63))
+	n := start
+	if n < end {
+		val := atomic.LoadUint64(&bf.data[p])
+		for {
+			// Check the bit, and update zeroStart / zeroEnd
+			if (val & i) == 0 {
+				if (n + 1) > zeroEnd {
+					zeroEnd = (n + 1)
+				}
+				if !zeroStartSet {
+					zeroStart = n
+					zeroStartSet = true
+				}
+			}
+
+			// Move along one...
+			n++
+			if n == end {
+				break
+			}
+			i <<= 1
+			if i == 0 {
+				i = 1
+				p++
+				val = atomic.LoadUint64(&bf.data[p])
+			}
+		}
+	}
+	return zeroStart, zeroEnd
+}
+
+/**
  * Collect the first set bit, and clear it
  *
  */
