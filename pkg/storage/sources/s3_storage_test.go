@@ -52,12 +52,29 @@ func TestS3StorageCancelWrites(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Cancel writes just after the WriteAt()
-	time.AfterFunc(10*time.Millisecond, func() {
-		s3store.CancelWrites(0, int64(size)) // Cancel ALL writes!
-	})
+	for _, delay := range []time.Duration{
+		10 * time.Millisecond,
+		20 * time.Millisecond,
+		30 * time.Millisecond,
+		40 * time.Millisecond,
+		50 * time.Millisecond} {
+		time.AfterFunc(delay, func() {
+			s3store.CancelWrites(0, int64(size)) // Cancel ALL writes!
+		})
+	}
 
-	_, err = s3store.WriteAt(buffer, 80)
-	assert.ErrorIs(t, err, context.Canceled)
+	// Do some writes...
+	cancelled := 0
+	for i := 0; i < 10; i++ {
+		_, err = s3store.WriteAt(buffer, 80)
+		// Either it succeeded before the cancel, or it will return canceled.
+		if err != nil {
+			assert.ErrorIs(t, err, context.Canceled)
+			cancelled++
+		}
+	}
+
+	assert.Greater(t, cancelled, 0)
 
 	err = s3store.Close()
 	assert.NoError(t, err)
