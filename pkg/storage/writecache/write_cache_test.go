@@ -61,6 +61,13 @@ func TestWriteCache(t *testing.T) {
 		err = wc.Flush()
 		assert.NoError(t, err)
 
+		assert.Equal(t, int64(0), wc.totalData)
+		// Make sure all data is flushed
+		for _, b := range wc.blocks {
+			assert.Equal(t, 0, len(b.writes))
+			assert.Equal(t, int64(0), b.bytes)
+		}
+
 		// Make sure the data is the same
 		eq, err := storage.Equals(prov, provWC, 1024*1024)
 		assert.NoError(t, err)
