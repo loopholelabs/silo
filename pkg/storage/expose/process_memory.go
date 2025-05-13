@@ -16,7 +16,7 @@ import (
 )
 
 const PageShift = 12
-const PageSize = 2 << PageShift // 4096
+const PageSize = 1 << PageShift // 4096
 
 const ReadBufferSize = 4 * 1024 * 1024 // 4mb should be fairly fast reading memory
 
