@@ -25,12 +25,19 @@ func TestStorageDifference(t *testing.T) {
 
 	// Now modify sp2 a bit
 	for _, offset := range []int64{7, 8, 900, 3000} {
-		d = make([]byte, 6)
-		_, err = rand.Read(d)
+		modd := make([]byte, 6)
+		_, err = rand.Read(modd)
 		assert.NoError(t, err)
-		n, err = sp2.WriteAt(d, offset)
+		// Make sure it's different... (Otherwise this is a flaky test)
+		for i := range modd {
+			if d[offset+int64(i)] == modd[i] {
+				modd[i]++
+			}
+		}
+
+		n, err = sp2.WriteAt(modd, offset)
 		assert.NoError(t, err)
-		assert.Equal(t, len(d), n)
+		assert.Equal(t, len(modd), n)
 	}
 
 	diffBlocks, diffBytes, err := storage.Difference(sp1, sp2, 1024)
