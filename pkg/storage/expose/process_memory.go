@@ -15,10 +15,13 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage"
 )
 
-const PageSize = 4096
 const PageShift = 12
+const PageSize = 2 << PageShift // 4096
 
-const ReadBufferSize = 4 * 1024 * 1024 // 4mb should be fairly fast
+const ReadBufferSize = 4 * 1024 * 1024 // 4mb should be fairly fast reading memory
+
+const WaitProcessChangeTimeout = 10 * time.Second
+const WaitProcessChangePollInterval = 10 * time.Millisecond
 
 // pagemap flags
 const PagemapFlagSoftDirty = 1 << 55
@@ -554,8 +557,6 @@ func (pm *ProcessMemory) CopyDirtyMemory(addrStart uint64, addrEnd uint64, prov 
 	return nil
 }
 
-const waitProcessChangeTimeout = 10 * time.Second
-
 func (pm *ProcessMemory) PauseProcess() error {
 	return pm.signalProcess(syscall.SIGSTOP, "T (stopped)")
 }
@@ -574,9 +575,9 @@ func (pm *ProcessMemory) signalProcess(sig syscall.Signal, expect string) error 
 	}
 
 	// Wait until it's stopped
-	waitTick := time.NewTicker(10 * time.Millisecond)
+	waitTick := time.NewTicker(WaitProcessChangePollInterval)
 	defer waitTick.Stop()
-	waitCtx, waitCancel := context.WithTimeout(context.Background(), waitProcessChangeTimeout)
+	waitCtx, waitCancel := context.WithTimeout(context.Background(), WaitProcessChangeTimeout)
 	defer waitCancel()
 waitStop:
 	for {
