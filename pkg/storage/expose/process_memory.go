@@ -575,6 +575,7 @@ func (pm *ProcessMemory) signalProcess(sig syscall.Signal, expect string) error 
 
 	// Wait until it's stopped
 	waitTick := time.NewTicker(10 * time.Millisecond)
+	defer waitTick.Stop()
 	waitCtx, waitCancel := context.WithTimeout(context.Background(), waitProcessChangeTimeout)
 	defer waitCancel()
 waitStop:
