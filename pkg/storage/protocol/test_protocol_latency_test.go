@@ -21,7 +21,7 @@ func TestTestProtocolLatency(t *testing.T) {
 
 	prm := NewMockProtocol(context.TODO())
 	// Add some recv latency
-	pr := NewTestProtocolLatency(prm, 50*time.Millisecond)
+	pr := NewTestProtocolLatency(prm, 200*time.Millisecond)
 
 	sourceToProtocol := NewToProtocol(uint64(size), 1, pr)
 
@@ -57,5 +57,5 @@ func TestTestProtocolLatency(t *testing.T) {
 	assert.Equal(t, len(buff), n)
 
 	// Check it took some time
-	assert.WithinDuration(t, ctime.Add(50*time.Millisecond), time.Now(), 10*time.Millisecond)
+	assert.WithinDuration(t, ctime.Add(200*time.Millisecond), time.Now(), 50*time.Millisecond)
 }

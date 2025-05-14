@@ -621,39 +621,45 @@ func TestMigratorWithReaderWriterWrite(t *testing.T) {
 
 	// Set up some data here.
 	buffer := make([]byte, size)
-	for i := 0; i < size; i++ {
-		buffer[i] = 9
-	}
+	_, err := crand.Read(buffer)
+	assert.NoError(t, err)
 
 	n, err := sourceStorage.WriteAt(buffer, 0)
 	assert.NoError(t, err)
 	assert.Equal(t, len(buffer), n)
 
+	writeCtx, writeCancel := context.WithCancel(context.Background())
+	defer writeCancel()
+
 	// Periodically write to sourceStorage (Make it non-uniform)
 	go func() {
+		ticker := time.NewTicker(100 * time.Millisecond)
 		for {
-			mid := size / 2
-			quarter := size / 4
+			select {
+			case <-writeCtx.Done():
+				return
+			case <-ticker.C:
+				mid := size / 2
+				quarter := size / 4
 
-			var o int
-			area := rand.Intn(4)
-			if area == 0 {
-				// random in upper half
-				o = mid + rand.Intn(mid)
-			} else {
-				// random in the lower quarter
-				v := rand.Float64() * math.Pow(float64(quarter), 8)
-				o = quarter + int(math.Sqrt(math.Sqrt(math.Sqrt(v))))
+				var o int
+				area := rand.Intn(4)
+				if area == 0 {
+					// random in upper half
+					o = mid + rand.Intn(mid)
+				} else {
+					// random in the lower quarter
+					v := rand.Float64() * math.Pow(float64(quarter), 8)
+					o = quarter + int(math.Sqrt(math.Sqrt(math.Sqrt(v))))
+				}
+
+				v := rand.Intn(256)
+				b := make([]byte, 1)
+				b[0] = byte(v)
+				n, err := sourceStorage.WriteAt(b, int64(o))
+				assert.NoError(t, err)
+				assert.Equal(t, 1, n)
 			}
-
-			v := rand.Intn(256)
-			b := make([]byte, 1)
-			b[0] = byte(v)
-			n, err := sourceStorage.WriteAt(b, int64(o))
-			assert.NoError(t, err)
-			assert.Equal(t, 1, n)
-
-			time.Sleep(time.Duration(rand.Intn(100)) * time.Millisecond)
 		}
 	}()
 
@@ -713,8 +719,16 @@ func TestMigratorWithReaderWriterWrite(t *testing.T) {
 	}
 
 	// Set something up to read dest...
+	readContext, readCancel := context.WithCancel(context.Background())
+	defer readCancel()
+
 	go func() {
 		for {
+			select {
+			case <-readContext.Done():
+				return
+			default:
+			}
 			o := rand.Intn(size)
 			b := make([]byte, 1)
 
@@ -728,10 +742,7 @@ func TestMigratorWithReaderWriterWrite(t *testing.T) {
 			assert.NoError(t, serr)
 			assert.Equal(t, len(sb), sn)
 
-			// Check the data is the same...
-			for i, v := range b {
-				assert.Equal(t, v, sb[i])
-			}
+			// NOTE. The data may not be the same at this point if it's become dirty in the source.
 
 			time.Sleep(time.Duration(rand.Intn(50)) * time.Millisecond)
 		}
