@@ -621,7 +621,7 @@ func TestMigratorWithReaderWriterWrite(t *testing.T) {
 
 	// Set up some data here.
 	buffer := make([]byte, size)
-	_, err := rand.Read(buffer)
+	_, err := crand.Read(buffer)
 	assert.NoError(t, err)
 
 	n, err := sourceStorage.WriteAt(buffer, 0)
