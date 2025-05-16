@@ -561,15 +561,15 @@ func (pm *ProcessMemory) CopyDirtyMemory(addrStart uint64, addrEnd uint64, prov 
 }
 
 func (pm *ProcessMemory) PauseProcess() error {
-	return pm.signalProcess(syscall.SIGSTOP, "T (stopped)")
+	return pm.signalProcess(syscall.SIGSTOP, []string{"T (stopped)"})
 }
 
 func (pm *ProcessMemory) ResumeProcess() error {
-	return pm.signalProcess(syscall.SIGCONT, "S (sleeping)")
+	return pm.signalProcess(syscall.SIGCONT, []string{"S (sleeping)", "D (disk sleep)", "R (running)"})
 }
 
 // signalProcess send a signal
-func (pm *ProcessMemory) signalProcess(sig syscall.Signal, expect string) error {
+func (pm *ProcessMemory) signalProcess(sig syscall.Signal, expects []string) error {
 
 	// Send a signal to STOP
 	err := syscall.Kill(pm.pid, sig)
@@ -595,8 +595,10 @@ waitStop:
 				for _, l := range lines {
 					if strings.HasPrefix(l, "State:") {
 						state = strings.Trim(l[6:], "\r\n \t")
-						if state == expect {
-							break waitStop
+						for _, expect := range expects {
+							if state == expect {
+								break waitStop
+							}
 						}
 					}
 				}
