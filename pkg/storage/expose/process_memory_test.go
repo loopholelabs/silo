@@ -66,8 +66,11 @@ func TestProcessMemory(t *testing.T) {
 	pid := os.Getpid()
 	pm := NewProcessMemory(pid)
 
-	memStart, memEnd, err := pm.GetMemoryRange(fmt.Sprintf("/dev/nbd%d", dev1.deviceIndex))
+	mranges, err := pm.GetMemoryRange(fmt.Sprintf("/dev/nbd%d", dev1.deviceIndex))
 	assert.NoError(t, err)
+	assert.Equal(t, 1, len(mranges))
+	memStart := mranges[0].Start
+	memEnd := mranges[0].End
 
 	// Change some of the data...
 	changedData := 1024 * 1024 * 1
@@ -106,4 +109,12 @@ func TestProcessMemory(t *testing.T) {
 	equal, err := storage.Equals(provCheck, prov, 64*1024)
 	assert.NoError(t, err)
 	assert.True(t, equal)
+
+	pm.ClearSoftDirty()
+
+	// Shouldn't be any more
+	nbytes, err = pm.CopySoftDirtyMemory(memStart, memEnd, provCheck)
+	assert.NoError(t, err)
+	assert.Equal(t, uint64(0), nbytes)
+
 }

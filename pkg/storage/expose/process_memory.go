@@ -106,32 +106,50 @@ func NewProcessMemory(pid int) *ProcessMemory {
 	return &ProcessMemory{pid: pid}
 }
 
+type MapMemoryRange struct {
+	Start  uint64
+	End    uint64
+	Offset uint64
+}
+
 /**
  *
  *
  */
-func (pm *ProcessMemory) GetMemoryRange(dev string) (uint64, uint64, error) {
+func (pm *ProcessMemory) GetMemoryRange(dev string) ([]MapMemoryRange, error) {
 	maps, err := os.ReadFile(fmt.Sprintf("/proc/%d/maps", pm.pid))
 	if err != nil {
-		return 0, 0, err
+		return nil, err
 	}
 	lines := strings.Split(string(maps), "\n")
+	ranges := make([]MapMemoryRange, 0)
+
 	for _, l := range lines {
 		data := strings.Fields(l)
 		if len(data) == 6 && data[5] == dev {
 			mems := strings.Split(data[0], "-")
 			memStart, err := strconv.ParseUint(mems[0], 16, 64)
 			if err != nil {
-				return 0, 0, err
+				return nil, err
 			}
 			memEnd, err := strconv.ParseUint(mems[1], 16, 64)
 			if err != nil {
-				return 0, 0, err
+				return nil, err
 			}
-			return memStart, memEnd, nil
+			offset, err := strconv.ParseUint(data[2], 16, 64)
+			if err != nil {
+				return nil, err
+			}
+
+			ranges = append(ranges, MapMemoryRange{Start: memStart, End: memEnd, Offset: offset})
 		}
 	}
-	return 0, 0, errors.New("device not found in maps")
+
+	if len(ranges) > 0 {
+		return ranges, nil
+	}
+
+	return nil, errors.New("device not found in maps")
 }
 
 /**
@@ -329,7 +347,7 @@ func (pm *ProcessMemory) CopySoftDirtyMemory(addrStart uint64, addrEnd uint64, p
  * CopyMemoryRanges
  *
  */
-func (pm *ProcessMemory) CopyMemoryRanges(addrStart uint64, ranges []MemoryRange, prov storage.Provider) (uint64, error) {
+func (pm *ProcessMemory) CopyMemoryRanges(addrAdjust int64, ranges []MemoryRange, prov storage.Provider) (uint64, error) {
 	bytesRead := uint64(0)
 	memf, err := os.OpenFile(fmt.Sprintf("/proc/%d/mem", pm.pid), os.O_RDONLY, 0)
 	if err != nil {
@@ -346,7 +364,7 @@ func (pm *ProcessMemory) CopyMemoryRanges(addrStart uint64, ranges []MemoryRange
 			return err
 		}
 		// NB here we adjust for the start of memory
-		_, err = prov.WriteAt(dataBuffer[:length], int64(start-addrStart))
+		_, err = prov.WriteAt(dataBuffer[:length], int64(start)-addrAdjust)
 		return err
 	}
 
@@ -426,22 +444,23 @@ func (pm *ProcessMemory) ReadSoftDirtyMemoryRangeList(addrStart uint64, addrEnd 
 		val := binary.LittleEndian.Uint64(pageBuffer[dataIndex:])
 		dataIndex += 8
 
-		if (val & PagemapFlagPresent) == PagemapFlagPresent {
-			if (val & PagemapFlagSoftDirty) == PagemapFlagSoftDirty {
-				if currentEnd == xx {
-					currentEnd = xx + PageSize
-				} else {
-					if currentEnd != 0 {
-						ranges = append(ranges, MemoryRange{
-							Start: currentStart,
-							End:   currentEnd,
-						})
-					}
-					currentStart = xx
-					currentEnd = xx + PageSize
+		if (val&PagemapFlagPresent) == PagemapFlagPresent &&
+			(val&PagemapFlagSoftDirty) == PagemapFlagSoftDirty {
+
+			if currentEnd == xx {
+				currentEnd = xx + PageSize
+			} else {
+				if currentEnd != 0 {
+					ranges = append(ranges, MemoryRange{
+						Start: currentStart,
+						End:   currentEnd,
+					})
 				}
+				currentStart = xx
+				currentEnd = xx + PageSize
 			}
 		}
+
 	}
 
 	if currentEnd != 0 {
