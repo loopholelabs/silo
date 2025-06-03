@@ -3,6 +3,8 @@ package protocol
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 
@@ -353,14 +355,24 @@ func (fp *FromProtocol) HandleReadAt() error {
 
 		// Handle them in goroutines
 		go func(goffset int64, glength int32, gid uint32) {
+			var err error
+
 			buff := make([]byte, glength)
-			n, err := fp.provP2P.ReadAt(buff, goffset)
+			n, readErr := fp.provP2P.ReadAt(buff, goffset)
+			if readErr != nil {
+				err = fmt.Errorf("failed to read from offset %d: %w", goffset, readErr)
+			}
+
 			rar := &packets.ReadAtResponse{
 				Bytes: n,
 				Error: err,
 				Data:  buff,
 			}
-			_, err = fp.protocol.SendPacket(fp.dev, gid, packets.EncodeReadAtResponse(rar), UrgencyNormal)
+			_, sendErr := fp.protocol.SendPacket(fp.dev, gid, packets.EncodeReadAtResponse(rar), UrgencyNormal)
+			if sendErr != nil {
+				err = errors.Join(err, fmt.Errorf("failed to send ReadAtResponse packet: %w", sendErr))
+			}
+
 			if err != nil {
 				errLock.Lock()
 				errValue = err
@@ -462,12 +474,22 @@ func (fp *FromProtocol) HandleWriteAt() error {
 
 		// Handle in a goroutine
 		go func(goffset int64, gdata []byte, gid uint32) {
-			n, err := fp.provP2P.WriteAt(gdata, goffset)
+			var err error
+
+			n, writeErr := fp.provP2P.WriteAt(gdata, goffset)
+			if writeErr != nil {
+				err = fmt.Errorf("failed to write to offset %d: %w", goffset, writeErr)
+			}
+
 			war := &packets.WriteAtResponse{
 				Bytes: n,
 				Error: err,
 			}
-			_, err = fp.protocol.SendPacket(fp.dev, gid, packets.EncodeWriteAtResponse(war), UrgencyNormal)
+			_, sendErr := fp.protocol.SendPacket(fp.dev, gid, packets.EncodeWriteAtResponse(war), UrgencyNormal)
+			if sendErr != nil {
+				err = errors.Join(err, fmt.Errorf("failed to send WriteAtResponse packet: %w", sendErr))
+			}
+
 			if err != nil {
 				errLock.Lock()
 				errValue = err
