@@ -127,6 +127,10 @@ func (dtr *Remote) SetRemoteReadProv(prov storage.Provider) {
 	dtr.dt.remoteReadProv = prov
 }
 
+func (dtr *Remote) GetRemoteReadProv() storage.Provider {
+	return dtr.dt.remoteReadProv
+}
+
 func NewDirtyTracker(prov storage.Provider, blockSize int) (*Local, *Remote) {
 	size := int(prov.Size())
 	numBlocks := (size + blockSize - 1) / blockSize
