@@ -49,7 +49,7 @@ func TestMemoryProvider(t *testing.T) {
 	// Now try doing some things...
 	wd, err := os.Getwd()
 	assert.NoError(t, err)
-	mem, err := NewProcessMemoryStorage(os.Getpid(), path.Join(wd, file1))
+	mem, err := NewProcessMemoryStorage(os.Getpid(), path.Join(wd, file1), func() []uint { return []uint{} })
 	assert.NoError(t, err)
 
 	buffer := make([]byte, prov.Size())

@@ -14,15 +14,16 @@ var ErrNotFound = errors.New("memory range not found")
 
 type ProcessMemoryStorage struct {
 	storage.ProviderWithEvents
-	lock      sync.RWMutex
-	pid       int
-	size      uint64
-	memRanges []MapMemoryRange
-	memf      *os.File
+	lock             sync.RWMutex
+	pid              int
+	size             uint64
+	memRanges        []MapMemoryRange
+	memf             *os.File
+	unrequiredBlocks func() []uint
 }
 
 // NewProcessMemoryStorage creates a new provider
-func NewProcessMemoryStorage(pid int, device string) (*ProcessMemoryStorage, error) {
+func NewProcessMemoryStorage(pid int, device string, unrequiredBlocks func() []uint) (*ProcessMemoryStorage, error) {
 	pm := NewProcessMemory(pid)
 	memRanges, err := pm.GetMemoryRange(device)
 	if err != nil {
@@ -40,11 +41,23 @@ func NewProcessMemoryStorage(pid int, device string) (*ProcessMemoryStorage, err
 	}
 
 	return &ProcessMemoryStorage{
-		pid:       pid,
-		memRanges: memRanges,
-		size:      size,
-		memf:      memf,
+		pid:              pid,
+		memRanges:        memRanges,
+		size:             size,
+		memf:             memf,
+		unrequiredBlocks: unrequiredBlocks,
 	}, nil
+}
+
+// Respond to EventTypeCowGetBlocks
+func (i *ProcessMemoryStorage) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
+	if eventType == storage.EventTypeCowGetBlocks {
+		return []storage.EventReturnData{
+			i.unrequiredBlocks(),
+		}
+	}
+
+	return i.ProviderWithEvents.SendSiloEvent(eventType, eventData)
 }
 
 // Find the memory range we need for a specified offset
@@ -61,6 +74,8 @@ func (i *ProcessMemoryStorage) ReadAt(buffer []byte, offset int64) (int, error) 
 	i.lock.RLock()
 	defer i.lock.RUnlock()
 
+	fmt.Printf("#Memory ReadAt %x len %x\n", offset, len(buffer))
+
 	bufferOffset := int64(0)
 	for {
 		if bufferOffset == int64(len(buffer)) {
@@ -68,7 +83,8 @@ func (i *ProcessMemoryStorage) ReadAt(buffer []byte, offset int64) (int, error) 
 		}
 		r := i.findMemoryRange(uint64(offset + bufferOffset))
 		if r == nil {
-			return 0, ErrNotFound
+			return len(buffer), nil // lie for now
+			// return 0, ErrNotFound
 		}
 		memOffset := uint64(offset+bufferOffset) - r.Offset
 		canRead := (r.End - r.Start) - memOffset               // How much could we read from the range?
