@@ -24,13 +24,13 @@ const WaitProcessChangeTimeout = 10 * time.Second
 const WaitProcessChangePollInterval = 10 * time.Millisecond
 
 // pagemap flags
-const PagemapFlagSoftDirty = 1 << 55
-const PagemapFlagExclusive = 1 << 56
-const PagemapFlagFilepage = 1 << 61
-const PagemapFlagSwapped = 1 << 62
-const PagemapFlagPresent = 1 << 63
+const PagemapFlagSoftDirty = 1 << 55 // 00 80 00 00 00 00 00 00
+const PagemapFlagExclusive = 1 << 56 // 01 00 00 00 00 00 00 00
+const PagemapFlagFilepage = 1 << 61  // 20 00 00 00 00 00 00 00
+const PagemapFlagSwapped = 1 << 62   // 40 00 00 00 00 00 00 00
+const PagemapFlagPresent = 1 << 63   // 80 00 00 00 00 00 00 00
 const PagemapMaskPfn = (1 << 55) - 1
-const PagemapMaskSwapType = (1 << 5) - 1
+const PagemapMaskSwapType = (1 << 5) - 1 // Lowest 5 bits
 const PagemapSwapOffsetShift = 5
 const PagemapMaskSwapOffset = (1 << 50) - 1
 
@@ -394,8 +394,9 @@ func (pm *ProcessMemory) CopyMemoryRanges(addrAdjust int64, ranges []MemoryRange
 }
 
 type MemoryRange struct {
-	Start uint64
-	End   uint64
+	Start   uint64
+	End     uint64
+	Swapped uint64
 }
 
 /**
@@ -438,26 +439,44 @@ func (pm *ProcessMemory) ReadSoftDirtyMemoryRangeList(addrStart uint64, addrEnd 
 
 	currentStart := uint64(0)
 	currentEnd := uint64(0)
+	currentSwapped := uint64(0)
 
 	dataIndex := 0
 	for xx := addrStart; xx < addrEnd; xx += PageSize {
 		val := binary.LittleEndian.Uint64(pageBuffer[dataIndex:])
 		dataIndex += 8
 
-		if (val&PagemapFlagPresent) == PagemapFlagPresent &&
-			(val&PagemapFlagSoftDirty) == PagemapFlagSoftDirty {
+		// When mmap is called, all the memory is marked as NOT_PRESENT SOFT_DIRTY.
+		//
+		// START		NOT_PRESENT			SOFT_DIRTY
+		// changed		PRESENT				SOFT_DIRTY
+		// swapped		SWAPPED NOT_PRESENT SOFT_DIRTY
 
-			if currentEnd == xx {
-				currentEnd = xx + PageSize
-			} else {
-				if currentEnd != 0 {
-					ranges = append(ranges, MemoryRange{
-						Start: currentStart,
-						End:   currentEnd,
-					})
+		if (val & PagemapFlagSoftDirty) == PagemapFlagSoftDirty {
+			if (val&PagemapFlagPresent) == PagemapFlagPresent ||
+				(val&PagemapFlagSwapped) == PagemapFlagSwapped {
+
+				if currentEnd == xx {
+					currentEnd = xx + PageSize
+					if (val & PagemapFlagSwapped) == PagemapFlagSwapped {
+						currentSwapped += PageSize
+					}
+
+				} else {
+					if currentEnd != 0 {
+						ranges = append(ranges, MemoryRange{
+							Start:   currentStart,
+							End:     currentEnd,
+							Swapped: currentSwapped,
+						})
+					}
+					currentStart = xx
+					currentEnd = xx + PageSize
+					currentSwapped = 0
+					if (val & PagemapFlagSwapped) == PagemapFlagSwapped {
+						currentSwapped += PageSize
+					}
 				}
-				currentStart = xx
-				currentEnd = xx + PageSize
 			}
 		}
 
@@ -465,8 +484,9 @@ func (pm *ProcessMemory) ReadSoftDirtyMemoryRangeList(addrStart uint64, addrEnd 
 
 	if currentEnd != 0 {
 		ranges = append(ranges, MemoryRange{
-			Start: currentStart,
-			End:   currentEnd,
+			Start:   currentStart,
+			End:     currentEnd,
+			Swapped: currentSwapped,
 		})
 	}
 
