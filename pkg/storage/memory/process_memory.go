@@ -347,7 +347,7 @@ func (pm *ProcessMemory) CopySoftDirtyMemory(addrStart uint64, addrEnd uint64, p
  * CopyMemoryRanges
  *
  */
-func (pm *ProcessMemory) CopyMemoryRanges(addrAdjust int64, ranges []MemoryRange, prov storage.Provider) (uint64, error) {
+func (pm *ProcessMemory) CopyMemoryRanges(addrAdjust int64, ranges []Range, prov storage.Provider) (uint64, error) {
 	bytesRead := uint64(0)
 	memf, err := os.OpenFile(fmt.Sprintf("/proc/%d/mem", pm.pid), os.O_RDONLY, 0)
 	if err != nil {
@@ -393,7 +393,7 @@ func (pm *ProcessMemory) CopyMemoryRanges(addrAdjust int64, ranges []MemoryRange
 	return bytesRead, nil
 }
 
-type MemoryRange struct {
+type Range struct {
 	Start   uint64
 	End     uint64
 	Swapped uint64
@@ -403,8 +403,8 @@ type MemoryRange struct {
  * ReadSoftDirtyMemoryRangeList
  *
  */
-func (pm *ProcessMemory) ReadSoftDirtyMemoryRangeList(addrStart uint64, addrEnd uint64, lockCB func() error, unlockCB func() error) ([]MemoryRange, error) {
-	ranges := make([]MemoryRange, 0)
+func (pm *ProcessMemory) ReadSoftDirtyMemoryRangeList(addrStart uint64, addrEnd uint64, lockCB func() error, unlockCB func() error) ([]Range, error) {
+	ranges := make([]Range, 0)
 
 	f, err := os.OpenFile(fmt.Sprintf("/proc/%d/pagemap", pm.pid), os.O_RDONLY, 0)
 	if err != nil {
@@ -464,7 +464,7 @@ func (pm *ProcessMemory) ReadSoftDirtyMemoryRangeList(addrStart uint64, addrEnd 
 
 				} else {
 					if currentEnd != 0 {
-						ranges = append(ranges, MemoryRange{
+						ranges = append(ranges, Range{
 							Start:   currentStart,
 							End:     currentEnd,
 							Swapped: currentSwapped,
@@ -483,7 +483,7 @@ func (pm *ProcessMemory) ReadSoftDirtyMemoryRangeList(addrStart uint64, addrEnd 
 	}
 
 	if currentEnd != 0 {
-		ranges = append(ranges, MemoryRange{
+		ranges = append(ranges, Range{
 			Start:   currentStart,
 			End:     currentEnd,
 			Swapped: currentSwapped,
