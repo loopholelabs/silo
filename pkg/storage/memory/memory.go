@@ -74,8 +74,6 @@ func (i *ProcessMemoryStorage) ReadAt(buffer []byte, offset int64) (int, error) 
 	i.lock.RLock()
 	defer i.lock.RUnlock()
 
-	fmt.Printf("#Memory ReadAt %x len %x\n", offset, len(buffer))
-
 	bufferOffset := int64(0)
 	for {
 		if bufferOffset == int64(len(buffer)) {
