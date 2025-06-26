@@ -163,9 +163,9 @@ func runServe(_ *cobra.Command, _ []string) {
 
 		// Now do a dirty block phase...
 		hooks := &devicegroup.MigrateDirtyHooks{
-			PreGetDirty: func(name string) error {
+			PreGetDirty: func(name string) (bool, error) {
 				fmt.Printf("# [%s]PreGetDirty\n", name)
-				return nil
+				return true, nil
 			},
 			PostGetDirty: func(name string, blocks []uint) (bool, error) {
 				fmt.Printf("# [%s]PostGetDirty %d\n", name, len(blocks))

@@ -365,7 +365,7 @@ func (dg *DeviceGroup) MigrateAll(maxConcurrency int, progressHandler func(p map
 }
 
 type MigrateDirtyHooks struct {
-	PreGetDirty      func(name string) error
+	PreGetDirty      func(name string) (bool, error)
 	PostGetDirty     func(name string, blocks []uint) (bool, error)
 	PostMigrateDirty func(name string, blocks []uint) (bool, error)
 	Completed        func(name string)
@@ -389,49 +389,57 @@ func (dg *DeviceGroup) MigrateDirty(hooks *MigrateDirtyHooks) error {
 
 		go func() {
 			for {
+				var err error
+				runDirty := false
 				if hooks != nil && hooks.PreGetDirty != nil {
-					hooks.PreGetDirty(d.Schema.Name)
-				}
-
-				blocks := d.Migrator.GetLatestDirty()
-				if dg.log != nil {
-					dg.log.Debug().
-						Int("blocks", len(blocks)).
-						Int("index", index).
-						Str("name", d.Schema.Name).
-						Msg("migrating dirty blocks")
-				}
-
-				if hooks != nil && hooks.PostGetDirty != nil {
-					cont, err := hooks.PostGetDirty(d.Schema.Name, blocks)
+					runDirty, err = hooks.PreGetDirty(d.Schema.Name)
 					if err != nil {
 						errs <- err
 						return
 					}
-					if !cont {
-						break
+				}
+
+				if runDirty {
+					blocks := d.Migrator.GetLatestDirty()
+					if dg.log != nil {
+						dg.log.Debug().
+							Int("blocks", len(blocks)).
+							Int("index", index).
+							Str("name", d.Schema.Name).
+							Msg("migrating dirty blocks")
 					}
-				}
 
-				err := d.To.DirtyList(int(d.BlockSize), blocks)
-				if err != nil {
-					errs <- err
-					return
-				}
+					if hooks != nil && hooks.PostGetDirty != nil {
+						cont, err := hooks.PostGetDirty(d.Schema.Name, blocks)
+						if err != nil {
+							errs <- err
+							return
+						}
+						if !cont {
+							break
+						}
+					}
 
-				err = d.Migrator.MigrateDirty(blocks)
-				if err != nil {
-					errs <- err
-					return
-				}
-
-				if hooks != nil && hooks.PostMigrateDirty != nil {
-					cont, err := hooks.PostMigrateDirty(d.Schema.Name, blocks)
+					err := d.To.DirtyList(int(d.BlockSize), blocks)
 					if err != nil {
 						errs <- err
+						return
 					}
-					if !cont {
-						break
+
+					err = d.Migrator.MigrateDirty(blocks)
+					if err != nil {
+						errs <- err
+						return
+					}
+
+					if hooks != nil && hooks.PostMigrateDirty != nil {
+						cont, err := hooks.PostMigrateDirty(d.Schema.Name, blocks)
+						if err != nil {
+							errs <- err
+						}
+						if !cont {
+							break
+						}
 					}
 				}
 			}

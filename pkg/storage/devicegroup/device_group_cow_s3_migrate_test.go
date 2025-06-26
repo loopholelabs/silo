@@ -228,8 +228,8 @@ func TestDeviceGroupCowS3Migrate(t *testing.T) {
 	}
 
 	hooks := &MigrateDirtyHooks{
-		PreGetDirty: func(_ string) error {
-			return nil
+		PreGetDirty: func(_ string) (bool, error) {
+			return true, nil
 		},
 		PostGetDirty: func(_ string, blocks []uint) (bool, error) {
 			return len(blocks) > 0, nil
