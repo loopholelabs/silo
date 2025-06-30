@@ -171,7 +171,7 @@ func (dtr *Remote) GetUnrequiredBlocks() []uint {
 	defer dtr.dt.writeLock.Unlock()
 
 	// Snapshot blocks from any CoW, and update the tracking
-	cowBlocks := storage.SendSiloEvent(dtr.dt.prov, storage.EventTypeCowGetBlocks, dtr)
+	cowBlocks := storage.SendSiloEvent(dtr.dt.remoteReadProv, storage.EventTypeCowGetBlocks, dtr)
 	if len(cowBlocks) == 1 {
 		blocks := cowBlocks[0].([]uint)
 		for _, b := range blocks {
