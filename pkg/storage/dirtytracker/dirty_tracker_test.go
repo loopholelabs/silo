@@ -95,13 +95,13 @@ func TestReadDirtyTrackerMaxAge(t *testing.T) {
 	trackerRemote := setupDirty(t)
 
 	// Check the dirty blocks
-	blocks := trackerRemote.GetDirtyBlocks(10*time.Millisecond, 100, 1, 1000)
+	blocks := trackerRemote.GetDirtyBlocks(100*time.Millisecond, 100, 1, 1000)
 	assert.Equal(t, 0, len(blocks))
 
-	time.Sleep(10 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 
 	// Things should expire now...
-	blocks = trackerRemote.GetDirtyBlocks(10*time.Millisecond, 100, 1, 1000)
+	blocks = trackerRemote.GetDirtyBlocks(100*time.Millisecond, 100, 1, 1000)
 	slices.Sort(blocks)
 	expectedBlocks := []uint{0, 1, 2, 4, 5}
 	assert.Equal(t, expectedBlocks, blocks)
