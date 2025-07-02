@@ -57,7 +57,7 @@ type Local struct {
 // Relay events to embedded StorageProvider
 func (dtl *Local) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
 	data := dtl.ProviderWithEvents.SendSiloEvent(eventType, eventData)
-	return append(data, storage.SendSiloEvent(dtl.dt.prov, eventType, eventData)...)
+	return append(data, storage.SendSiloEvent(dtl.dt.remoteReadProv, eventType, eventData)...)
 }
 
 func (dtl *Local) ReadAt(buffer []byte, offset int64) (int, error) {
