@@ -459,9 +459,10 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 				return sourceDirtyRemote.GetDirtyBlocks(
 					maxAge, ds.Sync.Config.Limit, ds.Sync.Config.BlockShift, ds.Sync.Config.MinChanged)
 			},
-			BlockSize:       bs,
-			ProgressHandler: func(_ *migrator.MigrationProgress) {},
-			ErrorHandler:    func(_ *storage.BlockInfo, _ error) {},
+			BlockSize:         bs,
+			ProgressHandler:   func(_ *migrator.MigrationProgress) {},
+			ProgressRateLimit: 1 * time.Second,
+			ErrorHandler:      func(_ *storage.BlockInfo, _ error) {},
 		})
 
 		if met != nil {
