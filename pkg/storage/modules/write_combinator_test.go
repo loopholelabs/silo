@@ -1,7 +1,6 @@
 package modules
 
 import (
-	"fmt"
 	"math/rand"
 	"sync"
 	"testing"
@@ -104,8 +103,7 @@ func TestWriteCombinatorConcurrent(t *testing.T) {
 	}
 
 	met := combinator.GetMetrics()
-	fmt.Printf("Allowed %v Blocked %v Dupe %v", met.WritesAllowed, met.WritesBlocked, met.WritesDuplicate)
 
-	// assert.Equal(t, map[int]uint64{1: 1, 2: 2}, met.WritesAllowed)
-	// assert.Equal(t, map[int]uint64{1: 1, 2: 0}, met.WritesBlocked)
+	assert.Equal(t, uint64(numBlocks), met.WritesAllowed[2]) // All of the writes from P2P should be allowed
+	assert.Equal(t, uint64(0), met.WritesBlocked[2])         // None should be blocked
 }
