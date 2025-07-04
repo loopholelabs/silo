@@ -20,7 +20,6 @@ const PageSize = 1 << PageShift // 4096
 
 const ReadBufferSize = 4 * 1024 * 1024 // 4mb should be fairly fast reading memory
 
-const WaitProcessChangeTimeout = 10 * time.Second
 const WaitProcessChangePollInterval = 10 * time.Millisecond
 
 // pagemap flags
@@ -599,16 +598,16 @@ func (pm *ProcessMemory) CopyDirtyMemory(addrStart uint64, addrEnd uint64, prov 
 	return nil
 }
 
-func (pm *ProcessMemory) PauseProcess() error {
-	return pm.signalProcess(syscall.SIGSTOP, []string{"T (stopped)"})
+func (pm *ProcessMemory) PauseProcess(timeout time.Duration) error {
+	return pm.signalProcess(timeout, syscall.SIGSTOP, []string{"T (stopped)"})
 }
 
-func (pm *ProcessMemory) ResumeProcess() error {
-	return pm.signalProcess(syscall.SIGCONT, []string{"S (sleeping)", "D (disk sleep)", "R (running)"})
+func (pm *ProcessMemory) ResumeProcess(timeout time.Duration) error {
+	return pm.signalProcess(timeout, syscall.SIGCONT, []string{"S (sleeping)", "D (disk sleep)", "R (running)"})
 }
 
 // signalProcess send a signal
-func (pm *ProcessMemory) signalProcess(sig syscall.Signal, expects []string) error {
+func (pm *ProcessMemory) signalProcess(timeout time.Duration, sig syscall.Signal, expects []string) error {
 
 	// Send a signal to STOP
 	err := syscall.Kill(pm.pid, sig)
@@ -619,23 +618,25 @@ func (pm *ProcessMemory) signalProcess(sig syscall.Signal, expects []string) err
 	// Wait until it's stopped
 	waitTick := time.NewTicker(WaitProcessChangePollInterval)
 	defer waitTick.Stop()
-	waitCtx, waitCancel := context.WithTimeout(context.Background(), WaitProcessChangeTimeout)
+	waitCtx, waitCancel := context.WithTimeout(context.Background(), timeout)
 	defer waitCancel()
+
+	lastState := ""
+
 waitStop:
 	for {
 		select {
 		case <-waitCtx.Done():
-			return errors.New("Could not stop process?")
+			return fmt.Errorf("Could not signal process? %s %s", sig, lastState)
 		case <-waitTick.C:
-			state := ""
 			dd, err := os.ReadFile(fmt.Sprintf("/proc/%d/status", pm.pid))
 			if err == nil {
 				lines := strings.Split(string(dd), "\n")
 				for _, l := range lines {
 					if strings.HasPrefix(l, "State:") {
-						state = strings.Trim(l[6:], "\r\n \t")
+						lastState = strings.Trim(l[6:], "\r\n \t")
 						for _, expect := range expects {
-							if state == expect {
+							if lastState == expect {
 								break waitStop
 							}
 						}
