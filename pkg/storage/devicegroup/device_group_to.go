@@ -122,7 +122,7 @@ func (dg *DeviceGroup) StartMigrationTo(pro protocol.Protocol, compression bool)
 	// First lets setup the ToProtocol
 	for index, d := range dg.devices {
 		d.To = protocol.NewToProtocol(d.Prov.Size(), uint32(index+1), pro)
-		d.To.SetCompression(compression)
+		d.To.SetCompression(compression, packets.WriteAtCompRLE) // TODO: Allow greater config here
 
 		if dg.met != nil {
 			dg.met.AddToProtocol(dg.instanceID, d.Schema.Name, d.To)

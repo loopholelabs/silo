@@ -1,18 +1,12 @@
 package packets
 
-var CompressionImpl = CompressRLE
-
-const CompressRLE = 0
-const CompressGzip = 1
-const CompressZeroes = 2
-
-func EncodeWriteAtComp(offset int64, data []byte) ([]byte, error) {
-	switch CompressionImpl {
-	case CompressRLE:
+func EncodeWriteAtComp(compressionType byte, offset int64, data []byte) ([]byte, error) {
+	switch compressionType {
+	case WriteAtCompRLE:
 		return EncodeWriteAtCompRLE(offset, data)
-	case CompressZeroes:
+	case WriteAtCompZeroes:
 		return EncodeWriteAtCompZeroes(offset, data)
-	case CompressGzip:
+	case WriteAtCompGzip:
 		return EncodeWriteAtCompGzip(offset, data)
 	}
 	return EncodeWriteAtCompRLE(offset, data)
