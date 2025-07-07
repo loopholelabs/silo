@@ -249,7 +249,7 @@ func TestWriteAtComp(t *testing.T) {
 		4, 4, 4, 4, 4,
 		0, 0, 9, 9, 5, 23,
 		8, 8, 8, 8, 8, 8, 8, 8,
-		0}
+		0, 7}
 
 	for _, compType := range []CompressionType{CompressionTypeRLE, CompressionTypeGzip, CompressionTypeZeroes} {
 		b, err := EncodeWriteAtComp(compType, 12345, buff)

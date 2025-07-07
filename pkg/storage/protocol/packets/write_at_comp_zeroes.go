@@ -3,6 +3,7 @@ package packets
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 )
 
 const TargetNumZeroes = 12
@@ -46,10 +47,10 @@ mainloop:
 
 		startRange := p
 
-		// Find a group of zeroes in the future
+		// Find a group of zeroes in the future, or the end of the data
 	findend:
 		for {
-			if p == len(data) { // All done.
+			if p == len(data) { // At the end of the data.
 				break findend
 			}
 			if data[p] == 0 {
@@ -100,6 +101,10 @@ func DecodeWriteAtCompZeroes(buff []byte) (offset int64, data []byte, err error)
 		p += n
 		rangeLength, n := binary.Varint(buff[p:])
 		p += n
+		if rangeStart+rangeLength > int64(len(d)) || p+int(rangeLength) > len(buff) {
+			return 0, nil, errors.New("invalid range in compressed data")
+		}
+		n = copy(d[rangeStart:], buff[p:p+int(rangeLength)])
 		n = copy(d[rangeStart:], buff[p:p+int(rangeLength)])
 		p += n
 	}
