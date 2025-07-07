@@ -23,7 +23,7 @@ func EncodeWriteAtCompZeroes(offset int64, data []byte) ([]byte, error) {
 	vbuff := make([]byte, binary.MaxVarintLen32+8)
 
 	buff.WriteByte(CommandWriteAt)
-	buff.WriteByte(WriteAtCompRLE)
+	buff.WriteByte(WriteAtCompZeroes)
 
 	binary.LittleEndian.PutUint64(vbuff, uint64(offset))
 	buff.Write(vbuff[:8])
@@ -83,7 +83,7 @@ mainloop:
 }
 
 func DecodeWriteAtCompZeroes(buff []byte) (offset int64, data []byte, err error) {
-	if len(buff) < 18 || buff[0] != CommandWriteAt || buff[1] != WriteAtCompRLE {
+	if len(buff) < 18 || buff[0] != CommandWriteAt || buff[1] != WriteAtCompZeroes {
 		return 0, nil, ErrInvalidPacket
 	}
 	off := int64(binary.LittleEndian.Uint64(buff[2:]))

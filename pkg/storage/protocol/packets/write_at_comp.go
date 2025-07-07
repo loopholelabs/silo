@@ -19,12 +19,16 @@ func EncodeWriteAtComp(offset int64, data []byte) ([]byte, error) {
 }
 
 func DecodeWriteAtComp(buff []byte) (offset int64, data []byte, err error) {
-	switch CompressionImpl {
-	case CompressRLE:
+	if len(buff) < 2 || buff[0] != CommandWriteAt {
+		return 0, nil, ErrInvalidPacket
+	}
+	compressionType := buff[1]
+	switch compressionType {
+	case WriteAtCompRLE:
 		return DecodeWriteAtCompRLE(buff)
-	case CompressZeroes:
+	case WriteAtCompZeroes:
 		return DecodeWriteAtCompZeroes(buff)
-	case CompressGzip:
+	case WriteAtCompGzip:
 		return DecodeWriteAtCompGzip(buff)
 	}
 	return DecodeWriteAtCompRLE(buff)
