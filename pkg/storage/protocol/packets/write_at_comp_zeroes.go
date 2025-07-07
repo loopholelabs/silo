@@ -105,7 +105,6 @@ func DecodeWriteAtCompZeroes(buff []byte) (offset int64, data []byte, err error)
 			return 0, nil, errors.New("invalid range in compressed data")
 		}
 		n = copy(d[rangeStart:], buff[p:p+int(rangeLength)])
-		n = copy(d[rangeStart:], buff[p:p+int(rangeLength)])
 		p += n
 	}
 
