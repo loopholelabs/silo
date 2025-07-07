@@ -385,7 +385,13 @@ func (dg *DeviceGroup) MigrateDirty(hooks *MigrateDirtyHooks) error {
 		// First unlock the storage if it is locked due to a previous MigrateDirty call
 		d.Storage.Unlock()
 
-		//		d.To.ClearAltSources()
+		// NB There is a potential issue if we use Alt Sources in dirty.
+		// The issue arises when the block is dirty, but data hasn't changed.
+		// In this case, a DirtyList will be sent, which will mark the data as unavailable.
+		// Then a WriteAtHash will be sent (data matches) but the block won't be set as available.
+		if !d.UseAltSourcesInDirty {
+			d.To.ClearAltSources()
+		}
 
 		go func() {
 			for {
