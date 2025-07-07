@@ -1,5 +1,7 @@
 package packets
 
+import "fmt"
+
 type CompressionType byte
 
 const CompressionTypeRLE = WriteAtCompRLE
@@ -14,8 +16,9 @@ func EncodeWriteAtComp(compressionType CompressionType, offset int64, data []byt
 		return EncodeWriteAtCompZeroes(offset, data)
 	case CompressionTypeGzip:
 		return EncodeWriteAtCompGzip(offset, data)
+	default:
+		return nil, fmt.Errorf("unknown compression type %d", compressionType)
 	}
-	return EncodeWriteAtCompRLE(offset, data)
 }
 
 func DecodeWriteAtComp(buff []byte) (offset int64, data []byte, err error) {
@@ -30,6 +33,7 @@ func DecodeWriteAtComp(buff []byte) (offset int64, data []byte, err error) {
 		return DecodeWriteAtCompZeroes(buff)
 	case WriteAtCompGzip:
 		return DecodeWriteAtCompGzip(buff)
+	default:
+		return 0, nil, fmt.Errorf("unknown compression type %d", compressionType)
 	}
-	return DecodeWriteAtCompRLE(buff)
 }
