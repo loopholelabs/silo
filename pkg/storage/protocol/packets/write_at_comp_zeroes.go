@@ -5,6 +5,8 @@ import (
 	"encoding/binary"
 )
 
+const TARGET_NUM_ZEROES = 12
+
 // 1 byte CommandWriteAt
 // 1 byte WriteAtCompRLE
 // 4 byte offset
@@ -27,8 +29,6 @@ func EncodeWriteAtCompZeroes(offset int64, data []byte) ([]byte, error) {
 	buff.Write(vbuff[:8])
 	binary.LittleEndian.PutUint64(vbuff, uint64(len(data)))
 	buff.Write(vbuff[:8])
-
-	targetNumZeroes := 12
 
 	p := 0 // Current position
 mainloop:
@@ -55,7 +55,7 @@ mainloop:
 			if data[p] == 0 {
 				goodStretch := true
 				// Make sure it's a good stretch of zeroes
-				for t := 0; t < targetNumZeroes; t++ {
+				for t := 0; t < TARGET_NUM_ZEROES; t++ {
 					if p+t == len(data) {
 						break // All done
 					}
@@ -71,7 +71,7 @@ mainloop:
 			p++
 		}
 
-		// Now encode it (startRnage - p)
+		// Now encode it (startRange - p)
 		lpos := binary.PutVarint(vbuff, int64(startRange))
 		buff.Write(vbuff[:lpos])
 		lpos = binary.PutVarint(vbuff, int64(p-startRange))
