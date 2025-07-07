@@ -127,7 +127,7 @@ func (i *ToProtocol) SendYouAlreadyHave(blockSize uint64, alreadyBlocks []uint32
 	return err
 }
 
-func (i *ToProtocol) SetCompression(compressed bool, compressionType byte) {
+func (i *ToProtocol) SetCompression(compressed bool, compressionType packets.CompressionType) {
 	atomic.StoreInt32(&i.compressedWritesType, int32(compressionType))
 	i.compressedWrites.Store(compressed)
 }
@@ -279,7 +279,7 @@ func (i *ToProtocol) WriteAt(buffer []byte, offset int64) (int, error) {
 
 	if !dontSendData {
 		if i.compressedWrites.Load() {
-			data, err := packets.EncodeWriteAtComp(byte(atomic.LoadInt32(&i.compressedWritesType)), offset, buffer)
+			data, err := packets.EncodeWriteAtComp(packets.CompressionType(atomic.LoadInt32(&i.compressedWritesType)), offset, buffer)
 			if err != nil {
 				return 0, err // Could not encode the writeAtComp
 			}

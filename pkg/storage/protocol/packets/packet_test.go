@@ -251,7 +251,7 @@ func TestWriteAtComp(t *testing.T) {
 		8, 8, 8, 8, 8, 8, 8, 8,
 		0}
 
-	for _, compType := range []byte{WriteAtCompRLE, WriteAtCompGzip, WriteAtCompZeroes} {
+	for _, compType := range []CompressionType{CompressionTypeRLE, CompressionTypeGzip, CompressionTypeZeroes} {
 		b, err := EncodeWriteAtComp(compType, 12345, buff)
 		assert.NoError(t, err)
 

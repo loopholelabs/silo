@@ -1,12 +1,18 @@
 package packets
 
-func EncodeWriteAtComp(compressionType byte, offset int64, data []byte) ([]byte, error) {
+type CompressionType byte
+
+const CompressionTypeRLE = WriteAtCompRLE
+const CompressionTypeGzip = WriteAtCompGzip
+const CompressionTypeZeroes = WriteAtCompZeroes
+
+func EncodeWriteAtComp(compressionType CompressionType, offset int64, data []byte) ([]byte, error) {
 	switch compressionType {
-	case WriteAtCompRLE:
+	case CompressionTypeRLE:
 		return EncodeWriteAtCompRLE(offset, data)
-	case WriteAtCompZeroes:
+	case CompressionTypeZeroes:
 		return EncodeWriteAtCompZeroes(offset, data)
-	case WriteAtCompGzip:
+	case CompressionTypeGzip:
 		return EncodeWriteAtCompGzip(offset, data)
 	}
 	return EncodeWriteAtCompRLE(offset, data)

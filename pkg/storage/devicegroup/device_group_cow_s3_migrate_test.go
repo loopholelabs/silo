@@ -16,6 +16,7 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/config"
 	"github.com/loopholelabs/silo/pkg/storage/migrator"
 	"github.com/loopholelabs/silo/pkg/storage/protocol"
+	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
 	"github.com/loopholelabs/silo/pkg/testutils"
 	"github.com/stretchr/testify/assert"
@@ -190,7 +191,7 @@ func TestDeviceGroupCowS3Migrate(t *testing.T) {
 	}()
 
 	// Send all the dev info...
-	err := dg.StartMigrationTo(prSource, true)
+	err := dg.StartMigrationTo(prSource, true, packets.CompressionTypeRLE)
 	assert.NoError(t, err)
 
 	// Make sure the incoming devices were setup completely
