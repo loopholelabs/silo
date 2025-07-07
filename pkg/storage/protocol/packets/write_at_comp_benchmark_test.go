@@ -33,7 +33,8 @@ func benchmarkWriteAtCompGeneral(mb *testing.B) {
 	compressedLength := 0
 
 	for i := 0; i < mb.N; i++ {
-		d := EncodeWriteAtComp(0, buff)
+		d, err := EncodeWriteAtComp(0, buff)
+		assert.NoError(mb, err)
 		compressedLength += len(d)
 		originalLength += len(buff)
 	}
@@ -49,7 +50,8 @@ func benchmarkWriteAtDecGeneral(mb *testing.B) {
 	encoded := make([][]byte, mb.N)
 
 	for i := 0; i < mb.N; i++ {
-		cbuff := EncodeWriteAtComp(0, buff)
+		cbuff, err := EncodeWriteAtComp(0, buff)
+		assert.NoError(mb, err)
 		encoded[i] = cbuff
 	}
 

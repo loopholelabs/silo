@@ -6,7 +6,7 @@ const CompressRLE = 0
 const CompressGzip = 1
 const CompressZeroes = 2
 
-func EncodeWriteAtComp(offset int64, data []byte) []byte {
+func EncodeWriteAtComp(offset int64, data []byte) ([]byte, error) {
 	switch CompressionImpl {
 	case CompressRLE:
 		return EncodeWriteAtCompRLE(offset, data)

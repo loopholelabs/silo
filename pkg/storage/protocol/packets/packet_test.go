@@ -261,7 +261,8 @@ func TestWriteAtComp(t *testing.T) {
 	// 11 | 08
 	// 02 | 00
 
-	b := EncodeWriteAtComp(12345, buff)
+	b, err := EncodeWriteAtComp(12345, buff)
+	assert.NoError(t, err)
 
 	off, data, err := DecodeWriteAtComp(b)
 	assert.NoError(t, err)

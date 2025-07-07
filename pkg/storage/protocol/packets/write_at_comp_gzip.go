@@ -7,7 +7,7 @@ import (
 	"io"
 )
 
-func EncodeWriteAtCompGzip(offset int64, data []byte) []byte {
+func EncodeWriteAtCompGzip(offset int64, data []byte) ([]byte, error) {
 	var buff bytes.Buffer
 
 	buff.WriteByte(CommandWriteAt)
@@ -21,20 +21,20 @@ func EncodeWriteAtCompGzip(offset int64, data []byte) []byte {
 
 	encoder, err := gzip.NewWriterLevel(&buff, gzip.BestSpeed)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
 	_, err = encoder.Write(data)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
 	err = encoder.Close()
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
-	return buff.Bytes()
+	return buff.Bytes(), nil
 }
 
 func DecodeWriteAtCompGzip(buff []byte) (offset int64, data []byte, err error) {
@@ -47,6 +47,7 @@ func DecodeWriteAtCompGzip(buff []byte) (offset int64, data []byte, err error) {
 	if err != nil {
 		return 0, nil, err
 	}
+	defer decoder.Close()
 
 	d, err := io.ReadAll(decoder)
 

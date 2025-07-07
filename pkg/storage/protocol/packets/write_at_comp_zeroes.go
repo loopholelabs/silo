@@ -15,7 +15,7 @@ import (
 // 		range data
 // }
 
-func EncodeWriteAtCompZeroes(offset int64, data []byte) []byte {
+func EncodeWriteAtCompZeroes(offset int64, data []byte) ([]byte, error) {
 	var buff bytes.Buffer
 
 	vbuff := make([]byte, binary.MaxVarintLen32+8)
@@ -79,7 +79,7 @@ mainloop:
 		buff.Write(data[startRange:p])
 	}
 
-	return buff.Bytes()
+	return buff.Bytes(), nil
 }
 
 func DecodeWriteAtCompZeroes(buff []byte) (offset int64, data []byte, err error) {

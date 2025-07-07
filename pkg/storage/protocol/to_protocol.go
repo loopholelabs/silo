@@ -277,7 +277,10 @@ func (i *ToProtocol) WriteAt(buffer []byte, offset int64) (int, error) {
 
 	if !dontSendData {
 		if i.compressedWrites.Load() {
-			data := packets.EncodeWriteAtComp(offset, buffer)
+			data, err := packets.EncodeWriteAtComp(offset, buffer)
+			if err != nil {
+				return 0, err // Could not encode the writeAtComp
+			}
 			id, err = i.protocol.SendPacket(i.dev, IDPickAny, data, UrgencyNormal)
 			if err == nil {
 				atomic.AddUint64(&i.metricSentWriteAtComp, 1)
