@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 )
 
-const TARGET_NUM_ZEROES = 12
+const TargetNumZeroes = 12
 
 // 1 byte CommandWriteAt
 // 1 byte WriteAtCompRLE
@@ -55,7 +55,7 @@ mainloop:
 			if data[p] == 0 {
 				goodStretch := true
 				// Make sure it's a good stretch of zeroes
-				for t := 0; t < TARGET_NUM_ZEROES; t++ {
+				for t := 0; t < TargetNumZeroes; t++ {
 					if p+t == len(data) {
 						break // All done
 					}
