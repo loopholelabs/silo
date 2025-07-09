@@ -445,7 +445,8 @@ func (fp *FromProtocol) HandleWriteAt() error {
 		var offset int64
 		var writeData []byte
 
-		if len(data) > 1 && data[1] == packets.WriteAtCompRLE {
+		if len(data) > 1 &&
+			(data[1] == packets.WriteAtCompRLE || data[1] == packets.WriteAtCompGzip || data[1] == packets.WriteAtCompZeroes) {
 			offset, writeData, err = packets.DecodeWriteAtComp(data)
 			if err == nil {
 				atomic.AddUint64(&fp.metricRecvWriteAtComp, 1)

@@ -200,7 +200,7 @@ func BenchmarkMigrationPipe(mb *testing.B) {
 			destination := protocol.NewToProtocol(sourceDirtyRemote.Size(), 17, prSource)
 
 			if testconf.compress {
-				destination.SetCompression(true)
+				destination.SetCompression(true, packets.WriteAtCompRLE)
 			}
 
 			err = destination.SendDevInfo("test", uint32(blockSize), "")
@@ -342,7 +342,7 @@ func BenchmarkBigMigrationPipe(mb *testing.B) {
 			destination := protocol.NewToProtocol(sourceDirtyRemote.Size(), 17, prSource)
 
 			if testconf.compress {
-				destination.SetCompression(true)
+				destination.SetCompression(true, packets.WriteAtCompRLE)
 			}
 
 			err = destination.SendDevInfo("test", uint32(blockSize), "")
