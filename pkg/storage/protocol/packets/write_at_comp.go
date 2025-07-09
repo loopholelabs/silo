@@ -1,31 +1,39 @@
 package packets
 
-var CompressionImpl = CompressRLE
+import "fmt"
 
-const CompressRLE = 0
-const CompressGzip = 1
-const CompressZeroes = 2
+type CompressionType byte
 
-func EncodeWriteAtComp(offset int64, data []byte) []byte {
-	switch CompressionImpl {
-	case CompressRLE:
+const CompressionTypeRLE = WriteAtCompRLE
+const CompressionTypeGzip = WriteAtCompGzip
+const CompressionTypeZeroes = WriteAtCompZeroes
+
+func EncodeWriteAtComp(compressionType CompressionType, offset int64, data []byte) ([]byte, error) {
+	switch compressionType {
+	case CompressionTypeRLE:
 		return EncodeWriteAtCompRLE(offset, data)
-	case CompressZeroes:
+	case CompressionTypeZeroes:
 		return EncodeWriteAtCompZeroes(offset, data)
-	case CompressGzip:
+	case CompressionTypeGzip:
 		return EncodeWriteAtCompGzip(offset, data)
+	default:
+		return nil, fmt.Errorf("unknown compression type %d", compressionType)
 	}
-	return EncodeWriteAtCompRLE(offset, data)
 }
 
 func DecodeWriteAtComp(buff []byte) (offset int64, data []byte, err error) {
-	switch CompressionImpl {
-	case CompressRLE:
-		return DecodeWriteAtCompRLE(buff)
-	case CompressZeroes:
-		return DecodeWriteAtCompZeroes(buff)
-	case CompressGzip:
-		return DecodeWriteAtCompGzip(buff)
+	if len(buff) < 2 || buff[0] != CommandWriteAt {
+		return 0, nil, ErrInvalidPacket
 	}
-	return DecodeWriteAtCompRLE(buff)
+	compressionType := buff[1]
+	switch compressionType {
+	case WriteAtCompRLE:
+		return DecodeWriteAtCompRLE(buff)
+	case WriteAtCompZeroes:
+		return DecodeWriteAtCompZeroes(buff)
+	case WriteAtCompGzip:
+		return DecodeWriteAtCompGzip(buff)
+	default:
+		return 0, nil, fmt.Errorf("unknown compression type %d", compressionType)
+	}
 }

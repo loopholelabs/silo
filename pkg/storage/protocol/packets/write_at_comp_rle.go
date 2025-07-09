@@ -7,7 +7,7 @@ import (
 
 const rleMinLength = 4
 
-func EncodeWriteAtCompRLE(offset int64, data []byte) []byte {
+func EncodeWriteAtCompRLE(offset int64, data []byte) ([]byte, error) {
 	var buff bytes.Buffer
 
 	buff.WriteByte(CommandWriteAt)
@@ -78,7 +78,7 @@ func EncodeWriteAtCompRLE(offset int64, data []byte) []byte {
 		buff.Write(dd[:lpos+(p-start)])
 	}
 
-	return buff.Bytes()
+	return buff.Bytes(), nil
 }
 
 func DecodeWriteAtCompRLE(buff []byte) (offset int64, data []byte, err error) {

@@ -94,7 +94,7 @@ func TestDeviceGroupSendDevInfo(t *testing.T) {
 
 	pro := protocol.NewMockProtocol(context.TODO())
 
-	err := dg.StartMigrationTo(pro, true)
+	err := dg.StartMigrationTo(pro, true, packets.CompressionTypeRLE)
 	assert.NoError(t, err)
 
 	// Make sure they all got sent correctly...
@@ -189,7 +189,7 @@ func TestDeviceGroupMigrateTo(t *testing.T) {
 	}
 
 	// Send all the dev info...
-	err := dg.StartMigrationTo(prSource, true)
+	err := dg.StartMigrationTo(prSource, true, packets.CompressionTypeRLE)
 	assert.NoError(t, err)
 
 	pHandler := func(_ map[string]*migrator.MigrationProgress) {}
@@ -292,7 +292,7 @@ func TestDeviceGroupMigrate(t *testing.T) {
 	}()
 
 	// Send all the dev info...
-	err := dg.StartMigrationTo(prSource, true)
+	err := dg.StartMigrationTo(prSource, true, packets.CompressionTypeRLE)
 	assert.NoError(t, err)
 
 	// Make sure the incoming devices were setup completely

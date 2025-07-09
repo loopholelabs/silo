@@ -22,7 +22,7 @@ func getSampleData() []byte {
 	return buff
 }
 
-func benchmarkWriteAtCompGeneral(mb *testing.B) {
+func benchmarkWriteAtCompGeneral(compressionType CompressionType, mb *testing.B) {
 	buff := getSampleData()
 
 	mb.ReportAllocs()
@@ -33,7 +33,8 @@ func benchmarkWriteAtCompGeneral(mb *testing.B) {
 	compressedLength := 0
 
 	for i := 0; i < mb.N; i++ {
-		d := EncodeWriteAtComp(0, buff)
+		d, err := EncodeWriteAtComp(compressionType, 0, buff)
+		assert.NoError(mb, err)
 		compressedLength += len(d)
 		originalLength += len(buff)
 	}
@@ -43,13 +44,14 @@ func benchmarkWriteAtCompGeneral(mb *testing.B) {
 	fmt.Printf("Compress %.2f%% Original %d bytes, compressed %d bytes\n", ratio, originalLength, compressedLength)
 }
 
-func benchmarkWriteAtDecGeneral(mb *testing.B) {
+func benchmarkWriteAtDecGeneral(compressionType CompressionType, mb *testing.B) {
 	buff := getSampleData()
 
 	encoded := make([][]byte, mb.N)
 
 	for i := 0; i < mb.N; i++ {
-		cbuff := EncodeWriteAtComp(0, buff)
+		cbuff, err := EncodeWriteAtComp(compressionType, 0, buff)
+		assert.NoError(mb, err)
 		encoded[i] = cbuff
 	}
 
@@ -64,30 +66,24 @@ func benchmarkWriteAtDecGeneral(mb *testing.B) {
 }
 
 func BenchmarkWriteAtCompRLE(mb *testing.B) {
-	CompressionImpl = CompressRLE
-	benchmarkWriteAtCompGeneral(mb)
+	benchmarkWriteAtCompGeneral(CompressionTypeRLE, mb)
 }
 
 func BenchmarkWriteAtCompGzip(mb *testing.B) {
-	CompressionImpl = CompressGzip
-	benchmarkWriteAtCompGeneral(mb)
+	benchmarkWriteAtCompGeneral(CompressionTypeGzip, mb)
 }
 
 func BenchmarkWriteAtCompZeroes(mb *testing.B) {
-	CompressionImpl = CompressZeroes
-	benchmarkWriteAtCompGeneral(mb)
+	benchmarkWriteAtCompGeneral(CompressionTypeZeroes, mb)
 }
 
 func BenchmarkWriteAtDecRLE(mb *testing.B) {
-	CompressionImpl = CompressRLE
-	benchmarkWriteAtDecGeneral(mb)
+	benchmarkWriteAtDecGeneral(CompressionTypeRLE, mb)
 }
 
 func BenchmarkWriteAtDecGzip(mb *testing.B) {
-	CompressionImpl = CompressGzip
-	benchmarkWriteAtDecGeneral(mb)
+	benchmarkWriteAtDecGeneral(CompressionTypeGzip, mb)
 }
 func BenchmarkWriteAtDecZeroes(mb *testing.B) {
-	CompressionImpl = CompressZeroes
-	benchmarkWriteAtDecGeneral(mb)
+	benchmarkWriteAtDecGeneral(CompressionTypeZeroes, mb)
 }
