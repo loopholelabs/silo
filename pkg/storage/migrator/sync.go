@@ -150,7 +150,7 @@ func (s *Syncer) Sync(syncAllFirst bool, continuous bool) (*MigrationProgress, e
 	}
 	conf.ErrorHandler = func(b *storage.BlockInfo, err error) {
 		if s.config.Logger != nil {
-			s.config.Logger.Error().
+			s.config.Logger.Debug().
 				Str("name", s.config.Name).
 				Err(err).
 				Int("block", b.Block).
