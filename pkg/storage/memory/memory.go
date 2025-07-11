@@ -81,8 +81,13 @@ func (i *ProcessMemoryStorage) ReadAt(buffer []byte, offset int64) (int, error) 
 		}
 		r := i.findMemoryRange(uint64(offset + bufferOffset))
 		if r == nil {
-			return len(buffer), nil // lie for now
-			// return 0, ErrNotFound
+			// If we do not have the range, return zeroes.
+			// It is up to the caller as to why we don't have the range.
+			// This is usually a small read at the end of the range.
+			for i := range buffer {
+				buffer[i] = 0
+			}
+			return len(buffer), nil
 		}
 		memOffset := uint64(offset+bufferOffset) - r.Offset
 		canRead := (r.End - r.Start) - memOffset               // How much could we read from the range?
