@@ -38,24 +38,25 @@ type DeviceGroup struct {
 }
 
 type DeviceInformation struct {
-	Size               uint64
-	BlockSize          uint64
-	NumBlocks          int
-	Schema             *config.DeviceSchema
-	Prov               storage.Provider
-	Storage            storage.LockableProvider
-	Exp                storage.ExposedStorage
-	Volatility         *volatilitymonitor.VolatilityMonitor
-	DirtyLocal         *dirtytracker.Local
-	DirtyRemote        *dirtytracker.Remote
-	To                 *protocol.ToProtocol
-	From               *protocol.FromProtocol
-	Orderer            *blocks.PriorityBlockOrder
-	Migrator           *migrator.Migrator
-	migrationError     chan error
-	WaitingCacheLocal  *waitingcache.Local
-	WaitingCacheRemote *waitingcache.Remote
-	EventHandler       func(e *packets.Event)
+	Size                 uint64
+	BlockSize            uint64
+	NumBlocks            int
+	Schema               *config.DeviceSchema
+	Prov                 storage.Provider
+	Storage              storage.LockableProvider
+	Exp                  storage.ExposedStorage
+	Volatility           *volatilitymonitor.VolatilityMonitor
+	DirtyLocal           *dirtytracker.Local
+	DirtyRemote          *dirtytracker.Remote
+	To                   *protocol.ToProtocol
+	From                 *protocol.FromProtocol
+	Orderer              *blocks.PriorityBlockOrder
+	Migrator             *migrator.Migrator
+	migrationError       chan error
+	WaitingCacheLocal    *waitingcache.Local
+	WaitingCacheRemote   *waitingcache.Remote
+	EventHandler         func(e *packets.Event)
+	UseAltSourcesInDirty bool
 }
 
 func (dg *DeviceGroup) GetDeviceSchema() []*config.DeviceSchema {
