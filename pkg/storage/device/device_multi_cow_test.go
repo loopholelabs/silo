@@ -12,7 +12,7 @@ import (
 // Single COW config
 const testCow1Schema = `
 device TestCow {
-	system = "file"
+	system = "sparsefile"
 	size = "4096"
 	blocksize = "1024"
 	location = "./testdata/testfile_cow1"
@@ -28,12 +28,12 @@ device TestCow {
 // Adding a second COW on top
 const testCow2Schema = `
 device TestCow {
-	system = "file"
+	system = "sparsefile"
 	size = "4096"
 	blocksize = "1024"
 	location = "./testdata/testfile_cow2"
 	source "./testdata/cow2_state" {
-		system = "file"
+		system = "sparsefile"
 		size = "4096"
 		blocksize = "1024"
 		location = "./testdata/testfile_cow1"
