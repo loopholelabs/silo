@@ -118,12 +118,13 @@ func TestCopyOnWriteMultiOverlap(t *testing.T) {
 		buff1 := make([]byte, 13) // 7 + 6
 		_, err = c.ReadAt(buff1, 0)
 		assert.NoError(t, err)
-		if c == cow1 {
+		switch c {
+		case cow1:
 			// We'd expect the first 6 to be 0s
 			assert.Equal(t, dataWrite1, buff1[:6])
-		} else if c == cow2 {
+		case cow2:
 			assert.Equal(t, []byte{0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1}, buff1[:11])
-		} else if c == cow3 {
+		case cow3:
 			assert.Equal(t, []byte{0, 0, 0, 0, 0, 1, 1, 2, 2, 2, 2, 2, 2}, buff1)
 		}
 	}
