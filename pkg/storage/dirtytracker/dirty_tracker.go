@@ -17,16 +17,17 @@ import (
  */
 
 type DirtyTracker struct {
-	prov           storage.Provider
-	remoteReadProv storage.Provider
-	size           uint64
-	blockSize      int
-	numBlocks      int
-	dirtyLog       *util.Bitfield
-	tracking       *util.Bitfield
-	trackingTimes  map[uint]time.Time
-	trackingLock   sync.Mutex
-	writeLock      sync.RWMutex
+	prov               storage.Provider
+	remoteReadProvLock sync.RWMutex
+	remoteReadProv     storage.Provider
+	size               uint64
+	blockSize          int
+	numBlocks          int
+	dirtyLog           *util.Bitfield
+	tracking           *util.Bitfield
+	trackingTimes      map[uint]time.Time
+	trackingLock       sync.Mutex
+	writeLock          sync.RWMutex
 }
 
 type Metrics struct {
@@ -56,6 +57,8 @@ type Local struct {
 
 // Relay events to embedded StorageProvider
 func (dtl *Local) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
+	dtl.dt.remoteReadProvLock.RLock()
+	defer dtl.dt.remoteReadProvLock.RUnlock()
 	data := dtl.ProviderWithEvents.SendSiloEvent(eventType, eventData)
 	return append(data, storage.SendSiloEvent(dtl.dt.remoteReadProv, eventType, eventData)...)
 }
@@ -124,10 +127,14 @@ func (dtr *Remote) MarkDirty(offset int64, length int64) {
 }
 
 func (dtr *Remote) SetRemoteReadProv(prov storage.Provider) {
+	dtr.dt.remoteReadProvLock.Lock()
+	defer dtr.dt.remoteReadProvLock.Unlock()
 	dtr.dt.remoteReadProv = prov
 }
 
 func (dtr *Remote) GetRemoteReadProv() storage.Provider {
+	dtr.dt.remoteReadProvLock.RLock()
+	defer dtr.dt.remoteReadProvLock.RUnlock()
 	return dtr.dt.remoteReadProv
 }
 
@@ -166,6 +173,9 @@ func (dt *DirtyTracker) trackArea(length int64, offset int64) {
  * As well as returning the blocks, this call will update the dirty tracker as if the blocks had been read (To start tracking dirty changes)
  */
 func (dtr *Remote) GetUnrequiredBlocks() []uint {
+	dtr.dt.remoteReadProvLock.RLock()
+	defer dtr.dt.remoteReadProvLock.RUnlock()
+
 	// Make sure no writes get through...
 	dtr.dt.writeLock.Lock()
 	defer dtr.dt.writeLock.Unlock()
@@ -398,6 +408,8 @@ func (dt *DirtyTracker) localSize() uint64 {
 }
 
 func (dt *DirtyTracker) remoteReadAt(buffer []byte, offset int64) (int, error) {
+	dt.remoteReadProvLock.RLock()
+	defer dt.remoteReadProvLock.RUnlock()
 
 	// Start tracking dirty on the area we read.
 	dt.trackArea(int64(len(buffer)), offset)
