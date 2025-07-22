@@ -1,4 +1,4 @@
-package expose
+package memory
 
 import (
 	crand "crypto/rand"
@@ -9,22 +9,23 @@ import (
 	"testing"
 
 	"github.com/loopholelabs/silo/pkg/storage"
+	"github.com/loopholelabs/silo/pkg/storage/expose"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/sys/unix"
 )
 
 // Setup an exposed nbd device, and mmap it.
-func setupDevTest(t *testing.T, size int) (*ExposedStorageNBDNL, storage.Provider, []byte) {
+func setupDevTest(t *testing.T, size int) (*expose.ExposedStorageNBDNL, storage.Provider, []byte) {
 	prov := sources.NewMemoryStorage(size)
 
-	n := NewExposedStorageNBDNL(prov, DefaultConfig)
+	n := expose.NewExposedStorageNBDNL(prov, expose.DefaultConfig)
 
 	err := n.Init()
 	assert.NoError(t, err)
 
 	// mmap the device as well...
-	file1 := fmt.Sprintf("/dev/nbd%d", n.deviceIndex)
+	file1 := fmt.Sprintf("/dev/%s", n.Device())
 	f, err := os.OpenFile(file1, os.O_RDWR, 0666)
 	assert.NoError(t, err)
 
@@ -66,7 +67,7 @@ func TestProcessMemory(t *testing.T) {
 	pid := os.Getpid()
 	pm := NewProcessMemory(pid)
 
-	mranges, err := pm.GetMemoryRange(fmt.Sprintf("/dev/nbd%d", dev1.deviceIndex))
+	mranges, err := pm.GetMemoryRange(fmt.Sprintf("/dev/%s", dev1.Device()))
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(mranges))
 	memStart := mranges[0].Start

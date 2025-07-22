@@ -1,6 +1,8 @@
 package storage
 
-import "sync"
+import (
+	"sync"
+)
 
 const EventTypeSources = EventType("sources")
 const EventTypeCowGetBlocks = EventType("cow.get.blocks")
@@ -10,6 +12,7 @@ const EventSyncStop = EventType("sync.stop")
 const EventSyncStart = EventType("sync.start")
 const EventSyncStatus = EventType("sync.status")
 const EventSyncRunning = EventType("sync.running")
+const EventSyncInfo = EventType("sync.info")
 
 /**
  * Events are an optional addition to StorageProvider.
