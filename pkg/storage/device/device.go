@@ -41,6 +41,15 @@ type Device struct {
 	Exposed  storage.ExposedStorage
 }
 
+type SyncInfo struct {
+	Volatility  *volatilitymonitor.VolatilityMonitor
+	DirtyLocal  *dirtytracker.Local
+	DirtyRemote *dirtytracker.Remote
+	S3Source    *sources.S3Storage
+	S3Dest      *sources.S3Storage
+	Syncer      *migrator.Syncer
+}
+
 func NewDevices(ds []*config.DeviceSchema) (map[string]*Device, error) {
 	return NewDevicesWithLogging(ds, nil)
 }
@@ -450,9 +459,10 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 				return sourceDirtyRemote.GetDirtyBlocks(
 					maxAge, ds.Sync.Config.Limit, ds.Sync.Config.BlockShift, ds.Sync.Config.MinChanged)
 			},
-			BlockSize:       bs,
-			ProgressHandler: func(_ *migrator.MigrationProgress) {},
-			ErrorHandler:    func(_ *storage.BlockInfo, _ error) {},
+			BlockSize:         bs,
+			ProgressHandler:   func(_ *migrator.MigrationProgress) {},
+			ProgressRateLimit: 1 * time.Second,
+			ErrorHandler:      func(_ *storage.BlockInfo, _ error) {},
 		})
 
 		if met != nil {
@@ -604,6 +614,21 @@ func NewDeviceWithLoggingMetrics(ds *config.DeviceSchema, log types.Logger, met 
 		// If the storage gets a "sync.status", get some status on the S3Storage
 		storage.AddSiloEventNotification(prov, storage.EventSyncStatus, func(_ storage.EventType, _ storage.EventData) storage.EventReturnData {
 			return []*sources.S3Metrics{s3source.Metrics(), s3dest.Metrics()}
+		})
+
+		storage.AddSiloEventNotification(prov, storage.EventSyncInfo, func(_ storage.EventType, _ storage.EventData) storage.EventReturnData {
+			// Return some useful sync stuff...
+
+			return []*SyncInfo{
+				{
+					Volatility:  vm,
+					DirtyLocal:  sourceDirtyLocal,
+					DirtyRemote: sourceDirtyRemote,
+					S3Source:    s3source,
+					S3Dest:      s3dest,
+					Syncer:      syncer,
+				},
+			}
 		})
 
 		// If the storage gets a "sync.running", return
