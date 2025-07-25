@@ -84,7 +84,7 @@ func TestCopyOnWriteMulti(t *testing.T) {
 func TestCopyOnWriteMultiOverlap(t *testing.T) {
 
 	// Create a new block storage, backed by memory storage
-	size := 1024 * 1024
+	size := 100
 	mem := sources.NewMemoryStorage(size)
 
 	// Fill the base with random data...
@@ -113,8 +113,24 @@ func TestCopyOnWriteMultiOverlap(t *testing.T) {
 	_, err = cow3.WriteAt(dataWrite3, 7)
 	assert.NoError(t, err)
 
-	// Check reads are as expected...
-	for _, c := range []storage.Provider{cow1, cow2, cow3} {
+	// Do some later writes in each layer
+	_, err = cow1.WriteAt(dataWrite1, 60)
+	assert.NoError(t, err)
+	_, err = cow2.WriteAt(dataWrite2, 70)
+	assert.NoError(t, err)
+	_, err = cow3.WriteAt(dataWrite3, 80)
+	assert.NoError(t, err)
+
+	// Overlap these ones
+	_, err = cow1.WriteAt(dataWrite1, 90)
+	assert.NoError(t, err)
+	_, err = cow2.WriteAt(dataWrite2, 90)
+	assert.NoError(t, err)
+	_, err = cow3.WriteAt(dataWrite3, 90)
+	assert.NoError(t, err)
+
+	// Check reads are as expected from each layer...
+	for _, c := range []*CopyOnWrite{cow1, cow2, cow3} {
 		buff1 := make([]byte, 13) // 7 + 6
 		_, err = c.ReadAt(buff1, 0)
 		assert.NoError(t, err)
@@ -126,6 +142,28 @@ func TestCopyOnWriteMultiOverlap(t *testing.T) {
 			assert.Equal(t, []byte{0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1}, buff1[:11])
 		case cow3:
 			assert.Equal(t, []byte{0, 0, 0, 0, 0, 1, 1, 2, 2, 2, 2, 2, 2}, buff1)
+		}
+
+		// Check the view in terms of unrequired blocks
+		chgBlocks, chgBytes, err := c.GetDifference()
+		assert.NoError(t, err)
+
+		blocks := storage.SendSiloEvent(c, storage.EventTypeCowGetBlocks, nil)
+		assert.Equal(t, 1, len(blocks))
+		bl := blocks[0].([]uint)
+		switch c {
+		case cow1:
+			assert.Equal(t, int64(3), chgBlocks)
+			assert.Equal(t, int64(18), chgBytes)
+			assert.Equal(t, []uint{0x1, 0x2, 0x3, 0x4, 0x5, 0x7, 0x8}, bl)
+		case cow2:
+			assert.Equal(t, int64(4), chgBlocks)
+			assert.Equal(t, int64(18), chgBytes)
+			assert.Equal(t, []uint{0x2, 0x3, 0x4, 0x5, 0x8}, bl)
+		case cow3:
+			assert.Equal(t, int64(4), chgBlocks)
+			assert.Equal(t, int64(18), chgBytes)
+			assert.Equal(t, []uint{0x2, 0x3, 0x4, 0x5}, bl)
 		}
 	}
 }
