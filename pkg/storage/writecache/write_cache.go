@@ -297,7 +297,10 @@ func (i *WriteCache) flushBlock(b int) error {
 		maxChanged := 0
 		somethingChanged := false
 		for i := 0; i < len(blockBuffer); i++ {
-			if blockBuffer[i] != orgBlockBuffer[i] {
+			if blockBuffer[i] != orgBlockBuffer[i] ||
+				// If we didn't read it, then it changed...
+				i < (int(readStart)-int(bi.minOffset)) ||
+				i >= (int(readEnd)-int(bi.minOffset)) {
 				if i+1 > maxChanged {
 					maxChanged = i + 1
 				}

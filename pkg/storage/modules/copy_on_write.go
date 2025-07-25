@@ -121,6 +121,30 @@ func (i *CopyOnWrite) SendSiloEvent(eventType storage.EventType, eventData stora
 			i.lockAll() // Just makes sure that no writes are in progress while we snapshot.
 			unrequired := i.exists.CollectZeroes(0, i.exists.Length())
 			i.unlockAll()
+
+			orgData := storage.SendSiloEvent(i.source, eventType, eventData)
+
+			// Now we need to combine the two...
+			if len(orgData) == 1 {
+				orgBlockMap := make(map[uint]bool)
+				orgUnrequired := orgData[0].([]uint)
+				for _, b := range orgUnrequired {
+					orgBlockMap[b] = true
+				}
+				// If we don't require it, AND any lower layers don't require it, then include it in the list.
+				unrequiredAll := make([]uint, 0)
+				for _, b := range unrequired {
+					if orgBlockMap[b] {
+						unrequiredAll = append(unrequiredAll, b)
+					}
+				}
+
+				return []storage.EventReturnData{
+					unrequiredAll,
+				}
+			}
+
+			// Lower layers aren't cow, so we just return our own.
 			return []storage.EventReturnData{
 				unrequired,
 			}
