@@ -11,6 +11,44 @@ import (
 
 const testDir = "testmulticow"
 
+func TestMultiCowAddRemove(t *testing.T) {
+
+	ds := &DeviceSchema{
+		Name:      "test",
+		Location:  "Base",
+		System:    "file",
+		Size:      "100",
+		BlockSize: "10",
+	}
+
+	encodedStart := ds.Encode()
+
+	overlay1 := &CowOverlay{
+		Name:     "overlay1",
+		System:   "file",
+		Location: "overlay1",
+		Shared:   true,
+	}
+
+	ds.AddOverlay(overlay1)
+
+	encodedMid := ds.Encode()
+
+	assert.NotEqual(t, encodedStart, encodedMid)
+
+	overlay, err := ds.RemoveOverlay()
+	assert.NoError(t, err)
+
+	assert.Equal(t, overlay1.Name, overlay.Name)
+	assert.Equal(t, overlay1.System, overlay.System)
+	assert.Equal(t, overlay1.Location, overlay.Location)
+	assert.Equal(t, overlay1.Shared, overlay.Shared)
+
+	encodedEnd := ds.Encode()
+
+	assert.Equal(t, encodedStart, encodedEnd)
+}
+
 func TestMultiCow(t *testing.T) {
 	err := os.Mkdir(testDir, 0777)
 	assert.NoError(t, err)
