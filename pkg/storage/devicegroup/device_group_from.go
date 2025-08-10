@@ -127,7 +127,7 @@ func NewFromProtocol(ctx context.Context,
 			err := d.From.HandleReadAt()
 			if err != nil && !errors.Is(err, context.Canceled) {
 				if log != nil {
-					log.Debug().Err(err).Msg("HandleReadAt returned")
+					log.Debug().Err(err).Str("device", di.Name).Msg("HandleReadAt returned")
 				}
 			}
 		}()
@@ -135,7 +135,7 @@ func NewFromProtocol(ctx context.Context,
 			err := d.From.HandleWriteAt()
 			if err != nil && !errors.Is(err, context.Canceled) {
 				if log != nil {
-					log.Debug().Err(err).Msg("HandleWriteAt returned")
+					log.Debug().Err(err).Str("device", di.Name).Msg("HandleWriteAt returned")
 				}
 			}
 		}()
@@ -146,7 +146,7 @@ func NewFromProtocol(ctx context.Context,
 			})
 			if err != nil && !errors.Is(err, context.Canceled) {
 				if log != nil {
-					log.Debug().Err(err).Msg("HandleDirtyList returned")
+					log.Debug().Err(err).Str("device", di.Name).Msg("HandleDirtyList returned")
 				}
 			}
 		}()
@@ -161,7 +161,7 @@ func NewFromProtocol(ctx context.Context,
 			})
 			if err != nil && !errors.Is(err, context.Canceled) {
 				if log != nil {
-					log.Debug().Err(err).Msg("HandleEvent returned")
+					log.Debug().Err(err).Str("device", di.Name).Msg("HandleEvent returned")
 				}
 			}
 		}()
