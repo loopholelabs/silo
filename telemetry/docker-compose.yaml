@@ -30,3 +30,15 @@ services:
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning
     network_mode: host
+
+  vector:
+    image: timberio/vector:0.46.0-debian
+    expose:
+      - 2114
+      - 9800
+    ports:
+      - "2114:2114"
+      - "9800:9800"
+    volumes:
+      - ./vector/vector.yaml:/etc/vector/vector.yaml
+    network_mode: host
