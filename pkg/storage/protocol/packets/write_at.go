@@ -12,6 +12,24 @@ const WriteAtCompRLE = 2
 const WriteAtCompGzip = 4
 const WriteAtCompZeroes = 5
 
+func WriteAtType(writeType byte) string {
+	switch writeType {
+	case WriteAtData:
+		return "WriteAt"
+	case WriteAtHash:
+		return "WriteAtHash"
+	case WriteAtYouAlreadyHave:
+		return "WriteAtYouAlreadyHave"
+	case WriteAtCompRLE:
+		return "WriteAtCompRLE"
+	case WriteAtCompGzip:
+		return "WriteAtCompGzip"
+	case WriteAtCompZeroes:
+		return "WriteAtCompZeroes"
+	}
+	return "unknown"
+}
+
 func EncodeWriteAt(offset int64, data []byte) []byte {
 	buff := make([]byte, 2+8+len(data))
 	buff[0] = CommandWriteAt

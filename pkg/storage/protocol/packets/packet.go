@@ -38,3 +38,51 @@ const (
 func IsResponse(cmd byte) bool {
 	return (cmd & CommandResponse) == CommandResponse
 }
+
+func CommandString(cmd byte) string {
+	switch cmd {
+	case CommandReadAt:
+		return "ReadAt"
+	case CommandWriteAt:
+		return "WriteAt"
+	case CommandNeedAt:
+		return "NeedAt"
+	case CommandDontNeedAt:
+		return "DontNeedAt"
+	case CommandDirtyList:
+		return "DirtyList"
+	case CommandDevInfo:
+		return "DevInfo"
+	case CommandEvent:
+		return "Event"
+	case CommandHashes:
+		return "Hashes"
+	case CommandWriteAtWithMap:
+		return "WriteAtWithMap"
+	case CommandRemoveDev:
+		return "RemoveDev"
+	case CommandRemoveFromMap:
+		return "RemoveFromMap"
+	case CommandAlternateSources:
+		return "AlternateSources"
+	case CommandDeviceGroupInfo:
+		return "DeviceGroupInfo"
+
+		// Responses
+	case CommandReadAtResponse:
+		return "ReadAtResponse"
+	case CommandReadAtResponseErr:
+		return "ReadAtResponseErr"
+	case CommandWriteAtResponse:
+		return "WriteAtResponse"
+	case CommandWriteAtResponseErr:
+		return "WriteAtResponseErr"
+	case CommandEventResponse:
+		return "EventResponse"
+	case CommandHashesResponse:
+		return "HashesResponse"
+	case CommandDirtyListResponse:
+		return "DirtyListResponse"
+	}
+	return "unknown"
+}
