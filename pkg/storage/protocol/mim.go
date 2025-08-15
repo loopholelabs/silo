@@ -8,11 +8,14 @@ type Mim struct {
 	PostSendPacket                func(dev uint32, id uint32, data []byte, urgency Urgency, pid uint32, err error)
 	PostSendDeviceGroupInfo       func(dev uint32, id uint32, dgi *packets.DeviceGroupInfo, err error)
 	PostSendAlternateSources      func(dev uint32, id uint32, as []packets.AlternateSource, err error)
+	PostSendEvent                 func(dev uint32, id uint32, ev *packets.Event, err error)
 	PostSendWriteAtData           func(dev uint32, id uint32, offset int64, data []byte, err error)
 	PostSendWriteAtYouAlreadyHave func(dev uint32, id uint32, blocksize uint64, blocks []uint32, err error)
 	PostSendWriteAtHash           func(dev uint32, id uint32, offset int64, length int64, hash []byte, loc packets.DataLocation, err error)
 	PostWaitForPacket             func(dev uint32, id uint32, data []byte, err error)
 	PostWaitForCommand            func(dev uint32, cmd byte, id uint32, data []byte, err error)
+	PostRecvEventResponse         func(dev uint32, id uint32, err error)
+	PostWriteAtResponse           func(dev uint32, id uint32, bytes int, writeErr error, err error)
 }
 
 func NewMim(p Protocol) *Mim {
@@ -22,9 +25,9 @@ func NewMim(p Protocol) *Mim {
 }
 
 func (m *Mim) SendPacket(dev uint32, id uint32, data []byte, urgency Urgency) (uint32, error) {
-	pid, err := m.p.SendPacket(dev, id, data, urgency)
+	pid, sperr := m.p.SendPacket(dev, id, data, urgency)
 	if m.PostSendPacket != nil {
-		m.PostSendPacket(dev, id, data, urgency, pid, err)
+		m.PostSendPacket(dev, id, data, urgency, pid, sperr)
 	}
 	if len(data) > 0 {
 		switch data[0] {
@@ -37,6 +40,11 @@ func (m *Mim) SendPacket(dev uint32, id uint32, data []byte, urgency Urgency) (u
 			if m.PostSendAlternateSources != nil {
 				as, err := packets.DecodeAlternateSources(data)
 				m.PostSendAlternateSources(dev, id, as, err)
+			}
+		case packets.CommandEvent:
+			if m.PostSendEvent != nil {
+				ev, err := packets.DecodeEvent(data)
+				m.PostSendEvent(dev, id, ev, err)
 			}
 		case packets.CommandWriteAt:
 			switch data[1] {
@@ -74,15 +82,38 @@ func (m *Mim) SendPacket(dev uint32, id uint32, data []byte, urgency Urgency) (u
 			}
 		}
 	}
-	return pid, err
+	return pid, sperr
 }
 
 func (m *Mim) WaitForPacket(dev uint32, id uint32) ([]byte, error) {
-	data, err := m.p.WaitForPacket(dev, id)
+	data, wfperr := m.p.WaitForPacket(dev, id)
 	if m.PostWaitForPacket != nil {
-		m.PostWaitForPacket(dev, id, data, err)
+		m.PostWaitForPacket(dev, id, data, wfperr)
 	}
-	return data, err
+	if len(data) > 1 {
+		switch data[0] {
+		case packets.CommandDirtyListResponse:
+		case packets.CommandEventResponse:
+			if m.PostRecvEventResponse != nil {
+				err := packets.DecodeEventResponse(data)
+				m.PostRecvEventResponse(dev, id, err)
+			}
+		case packets.CommandHashesResponse:
+		case packets.CommandReadAtResponse:
+		case packets.CommandReadAtResponseErr:
+			if m.PostWriteAtResponse != nil {
+				war, err := packets.DecodeWriteAtResponse(data)
+				m.PostWriteAtResponse(dev, id, war.Bytes, war.Error, err)
+			}
+		case packets.CommandWriteAtResponse:
+			if m.PostWriteAtResponse != nil {
+				war, err := packets.DecodeWriteAtResponse(data)
+				m.PostWriteAtResponse(dev, id, war.Bytes, war.Error, err)
+			}
+		case packets.CommandWriteAtResponseErr:
+		}
+	}
+	return data, wfperr
 }
 
 func (m *Mim) WaitForCommand(dev uint32, cmd byte) (uint32, []byte, error) {

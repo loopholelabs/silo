@@ -3,6 +3,7 @@ package swarming
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -165,11 +166,27 @@ func TestSwarmingMigrate(t *testing.T) {
 		fmt.Printf(" -> WriteAtHash %d %d offset=%d length=%d hash=%x loc=%d %v\n", dev, id, offset, length, hash, loc, err)
 	}
 
-	prSourceMim.PostWaitForPacket = func(dev uint32, id uint32, data []byte, err error) {
-		cmdString := packets.CommandString(data[0])
-		fmt.Printf("  # src-> WaitForPacket dev %d id %d data %d err %v cmd %s\n", dev, id, len(data), err, cmdString)
+	prSourceMim.PostSendEvent = func(dev uint32, id uint32, ev *packets.Event, err error) {
+		fmt.Printf(" -> Event %d %d event=%d/%d data=%d %v\n", dev, id, ev.Type, ev.CustomType, len(ev.CustomPayload), err)
 	}
+
+	prSourceMim.PostRecvEventResponse = func(dev uint32, id uint32, err error) {
+		fmt.Printf(" <- EventResponse %d %d %v\n", dev, id, err)
+	}
+
+	prSourceMim.PostWriteAtResponse = func(dev uint32, id uint32, bytes int, writeErr error, err error) {
+		fmt.Printf(" <- WriteAtResponse %d %d bytes=%d writeErr=%v %v\n", dev, id, bytes, writeErr, err)
+	}
+	/*
+		prSourceMim.PostWaitForPacket = func(dev uint32, id uint32, data []byte, err error) {
+			cmdString := packets.CommandString(data[0])
+			fmt.Printf("  # src-> WaitForPacket dev %d id %d data %d err %v cmd %s\n", dev, id, len(data), err, cmdString)
+		}
+	*/
 	prSourceMim.PostWaitForCommand = func(dev uint32, cmd byte, id uint32, data []byte, err error) {
+		if errors.Is(err, context.Canceled) {
+			return // Don't really care
+		}
 		cmdString := packets.CommandString(cmd)
 		fmt.Printf("  # src-> WaitForCommand dev %d cmd %s id %d data %d err %v\n", dev, cmdString, id, len(data), err)
 	}
