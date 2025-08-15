@@ -90,7 +90,7 @@ func setupDeviceGroup(t *testing.T, log types.Logger) *devicegroup.DeviceGroup {
 
 	testDeviceSchema[1].Sync = sync
 
-	dg, err := devicegroup.NewFromSchema("test-instance", testDeviceSchema, false, log, nil)
+	dg, err := devicegroup.NewFromSchema("test-instance", testDeviceSchema, false, nil, nil)
 	assert.NoError(t, err)
 
 	err = sources.CreateBucket(sync.Secure, sync.Endpoint, sync.AccessKey, sync.SecretKey, sync.Bucket)
@@ -126,25 +126,52 @@ func TestSwarmingMigrate(t *testing.T) {
 
 	// Wrap protocol so we can see what's going on...
 	prSourceMim := protocol.NewMim(prSource)
-	prSourceMim.PostSendPacket = func(dev uint32, id uint32, data []byte, urgency protocol.Urgency, pid uint32, err error) {
-		cmdString := packets.CommandString(data[0])
-		if data[0] == packets.CommandWriteAt {
-			cmdString = packets.WriteAtType(data[1])
+	/*
+		prSourceMim.PostSendPacket = func(dev uint32, id uint32, data []byte, urgency protocol.Urgency, pid uint32, err error) {
+			cmdString := packets.CommandString(data[0])
+			if data[0] == packets.CommandWriteAt {
+				cmdString = packets.WriteAtType(data[1])
+			}
+			fmt.Printf("  # Send src-> dev %d id %d data %d urgency %d pid %d err %v cmd %s\n", dev, id, len(data), urgency, pid, err, cmdString)
 		}
-		fmt.Printf(" src-> dev %d id %d data %d urgency %d pid %d err %v cmd %s\n", dev, id, len(data), urgency, pid, err, cmdString)
-	}
+	*/
 
 	prSourceMim.PostSendDeviceGroupInfo = func(dev uint32, id uint32, dgi *packets.DeviceGroupInfo, err error) {
-		fmt.Printf(" src-> DeviceGroupInfo %d %d %v\n", dev, id, dgi)
+		fmt.Printf(" -> DeviceGroupInfo\n")
+		for i, dg := range dgi.Devices {
+			fmt.Printf("     Device%d size=%d bs=%d name=%s\n", i, dg.Size, dg.BlockSize, dg.Name)
+		}
+	}
+
+	prSourceMim.PostSendAlternateSources = func(dev uint32, id uint32, as []packets.AlternateSource, err error) {
+		fmt.Printf(" -> AlternateSources %d %d %d\n", dev, id, len(as))
+		for i, s := range as {
+			fmt.Printf("     Source%d offset=%d length=%d location=%s hash=%x\n", i, s.Offset, s.Length, s.Location, s.Hash)
+		}
+	}
+
+	prSourceMim.PostSendWriteAtData = func(dev uint32, id uint32, offset int64, data []byte, err error) {
+		fmt.Printf(" -> WriteAtData %d %d offset=%d length=%d %v\n", dev, id, offset, len(data), err)
+	}
+
+	prSourceMim.PostSendWriteAtYouAlreadyHave = func(dev uint32, id uint32, blocksize uint64, blocks []uint32, err error) {
+		fmt.Printf(" -> WriteAtYouAlreadyHave %d %d blocksize=%d %v\n", dev, id, blocksize, err)
+		for _, b := range blocks {
+			fmt.Printf("     Block %d\n", b)
+		}
+	}
+
+	prSourceMim.PostSendWriteAtHash = func(dev uint32, id uint32, offset int64, length int64, hash []byte, loc packets.DataLocation, err error) {
+		fmt.Printf(" -> WriteAtHash %d %d offset=%d length=%d hash=%x loc=%d %v\n", dev, id, offset, length, hash, loc, err)
 	}
 
 	prSourceMim.PostWaitForPacket = func(dev uint32, id uint32, data []byte, err error) {
 		cmdString := packets.CommandString(data[0])
-		fmt.Printf(" src-> WaitForPacket dev %d id %d data %d err %v cmd %s\n", dev, id, len(data), err, cmdString)
+		fmt.Printf("  # src-> WaitForPacket dev %d id %d data %d err %v cmd %s\n", dev, id, len(data), err, cmdString)
 	}
 	prSourceMim.PostWaitForCommand = func(dev uint32, cmd byte, id uint32, data []byte, err error) {
 		cmdString := packets.CommandString(cmd)
-		fmt.Printf(" src-> WaitForCommand dev %d cmd %s id %d data %d err %v\n", dev, cmdString, id, len(data), err)
+		fmt.Printf("  # src-> WaitForCommand dev %d cmd %s id %d data %d err %v\n", dev, cmdString, id, len(data), err)
 	}
 
 	var prDone sync.WaitGroup
