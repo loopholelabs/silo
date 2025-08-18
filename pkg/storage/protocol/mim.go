@@ -34,50 +34,50 @@ func (m *Mim) SendPacket(dev uint32, id uint32, data []byte, urgency Urgency) (u
 		case packets.CommandDeviceGroupInfo:
 			if m.PostSendDeviceGroupInfo != nil {
 				dgi, err := packets.DecodeDeviceGroupInfo(data)
-				m.PostSendDeviceGroupInfo(dev, id, dgi, err)
+				m.PostSendDeviceGroupInfo(dev, pid, dgi, err)
 			}
 		case packets.CommandAlternateSources:
 			if m.PostSendAlternateSources != nil {
 				as, err := packets.DecodeAlternateSources(data)
-				m.PostSendAlternateSources(dev, id, as, err)
+				m.PostSendAlternateSources(dev, pid, as, err)
 			}
 		case packets.CommandEvent:
 			if m.PostSendEvent != nil {
 				ev, err := packets.DecodeEvent(data)
-				m.PostSendEvent(dev, id, ev, err)
+				m.PostSendEvent(dev, pid, ev, err)
 			}
 		case packets.CommandWriteAt:
 			switch data[1] {
 			case packets.WriteAtData:
 				if m.PostSendWriteAtData != nil {
 					off, d, err := packets.DecodeWriteAt(data)
-					m.PostSendWriteAtData(dev, id, off, d, err)
+					m.PostSendWriteAtData(dev, pid, off, d, err)
 				}
 			case packets.WriteAtHash:
 				if m.PostSendWriteAtHash != nil {
 					off, length, hash, loc, err := packets.DecodeWriteAtHash(data)
-					m.PostSendWriteAtHash(dev, id, off, length, hash, loc, err)
+					m.PostSendWriteAtHash(dev, pid, off, length, hash, loc, err)
 				}
 			case packets.WriteAtYouAlreadyHave:
 				if m.PostSendWriteAtYouAlreadyHave != nil {
 					blocksize, blocks, err := packets.DecodeYouAlreadyHave(data)
-					m.PostSendWriteAtYouAlreadyHave(dev, id, blocksize, blocks, err)
+					m.PostSendWriteAtYouAlreadyHave(dev, pid, blocksize, blocks, err)
 				}
 
 			case packets.WriteAtCompRLE:
 				if m.PostSendWriteAtData != nil {
 					off, d, err := packets.DecodeWriteAtCompRLE(data)
-					m.PostSendWriteAtData(dev, id, off, d, err)
+					m.PostSendWriteAtData(dev, pid, off, d, err)
 				}
 			case packets.WriteAtCompGzip:
 				if m.PostSendWriteAtData != nil {
 					off, d, err := packets.DecodeWriteAtCompGzip(data)
-					m.PostSendWriteAtData(dev, id, off, d, err)
+					m.PostSendWriteAtData(dev, pid, off, d, err)
 				}
 			case packets.WriteAtCompZeroes:
 				if m.PostSendWriteAtData != nil {
 					off, d, err := packets.DecodeWriteAtCompZeroes(data)
-					m.PostSendWriteAtData(dev, id, off, d, err)
+					m.PostSendWriteAtData(dev, pid, off, d, err)
 				}
 			}
 		}
