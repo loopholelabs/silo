@@ -121,6 +121,8 @@ func TestSwarmingMigrate(t *testing.T) {
 	r1, w1 := io.Pipe()
 	r2, w2 := io.Pipe()
 
+	var dg2 *devicegroup.DeviceGroup
+
 	ctx, cancelfn := context.WithCancel(context.TODO())
 
 	prSource := protocol.NewRW(ctx, []io.Reader{r1}, []io.Writer{w2}, nil)
@@ -165,6 +167,18 @@ func TestSwarmingMigrate(t *testing.T) {
 
 	prSourceMim.PostSendWriteAtHash = func(dev uint32, id uint32, offset int64, length int64, hash []byte, loc packets.DataLocation, err error) {
 		fmt.Printf(" -> WriteAtHash %d %d offset=%d length=%d hash=%x loc=%d %v\n", dev, id, offset, length, hash, loc, err)
+		// Check if we can get the data anyway...
+		// NB: This will only work if the data at source has not changed
+		names := dg2.GetAllNames()
+		dn := names[dev-1] // TODO: Make this better...
+		di := dg2.GetDeviceInformationByName(dn)
+
+		buffer := make([]byte, length)
+		n, err := di.From.ReadAt(buffer, offset)
+		assert.NoError(t, err)
+		assert.Equal(t, len(buffer), n)
+		hash2 := sha256.Sum256(buffer)
+		assert.Equal(t, hash2[:], hash)
 	}
 
 	prSourceMim.PostSendEvent = func(dev uint32, id uint32, ev *packets.Event, err error) {
@@ -227,7 +241,6 @@ func TestSwarmingMigrate(t *testing.T) {
 	// Make sure it has some time to write to S3
 	time.Sleep(5 * time.Second)
 
-	var dg2 *devicegroup.DeviceGroup
 	var wg sync.WaitGroup
 
 	// We will tweak schema in recv here so we have separate paths.
@@ -285,21 +298,6 @@ func TestSwarmingMigrate(t *testing.T) {
 
 	// Make sure all incoming devices are complete
 	dg2.WaitForCompletion()
-
-	// Do some remote reads now...
-	for _, n := range dg2.GetAllNames() {
-		di := dg2.GetDeviceInformationByName(n)
-		fmt.Printf("Device %s\n", di.Schema.Name)
-		buffer := make([]byte, di.BlockSize)
-		// NB only works if multiple of blocksize atm
-		for offset := int64(0); offset < int64(di.Size); offset += int64(di.BlockSize) {
-			n, err := di.From.ReadAt(buffer, offset)
-			assert.NoError(t, err)
-			assert.Equal(t, len(buffer), n)
-			hash := sha256.Sum256(buffer)
-			fmt.Printf(" Offset %d - hash %x\n", offset, hash)
-		}
-	}
 
 	// Check the data all got migrated correctly from dg to dg2.
 	for _, s := range testDeviceSchema {
