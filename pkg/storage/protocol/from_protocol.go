@@ -59,6 +59,7 @@ type FromProtocol struct {
 	metricRecvDirtyList             uint64
 	metricSentNeedAt                uint64
 	metricSentDontNeedAt            uint64
+	metricSentReadAt                uint64
 }
 
 type FromProtocolMetrics struct {
@@ -77,6 +78,7 @@ type FromProtocolMetrics struct {
 	RecvDirtyList             uint64
 	SentNeedAt                uint64
 	SentDontNeedAt            uint64
+	SentReadAt                uint64
 	WritesAllowedP2P          uint64
 	WritesBlockedP2P          uint64
 	WritesAllowedAltSources   uint64
@@ -122,6 +124,7 @@ func (fp *FromProtocol) GetMetrics() *FromProtocolMetrics {
 		RecvDirtyList:             atomic.LoadUint64(&fp.metricRecvDirtyList),
 		SentNeedAt:                atomic.LoadUint64(&fp.metricSentNeedAt),
 		SentDontNeedAt:            atomic.LoadUint64(&fp.metricSentDontNeedAt),
+		SentReadAt:                atomic.LoadUint64(&fp.metricSentReadAt),
 		WritesAllowedP2P:          0,
 		WritesBlockedP2P:          0,
 		WritesAllowedAltSources:   0,
@@ -602,7 +605,7 @@ func (fp *FromProtocol) HandleDirtyList(cb func(blocks []uint)) error {
 func (fp *FromProtocol) NeedAt(offset int64, length int32) error {
 	b := packets.EncodeNeedAt(offset, length)
 	_, err := fp.protocol.SendPacket(fp.dev, IDPickAny, b, UrgencyUrgent)
-	if err != nil {
+	if err == nil {
 		atomic.AddUint64(&fp.metricSentNeedAt, 1)
 	}
 	return err
@@ -611,8 +614,34 @@ func (fp *FromProtocol) NeedAt(offset int64, length int32) error {
 func (fp *FromProtocol) DontNeedAt(offset int64, length int32) error {
 	b := packets.EncodeDontNeedAt(offset, length)
 	_, err := fp.protocol.SendPacket(fp.dev, IDPickAny, b, UrgencyUrgent)
-	if err != nil {
+	if err == nil {
 		atomic.AddUint64(&fp.metricSentDontNeedAt, 1)
 	}
 	return err
+}
+
+// Support remote reads
+func (fp *FromProtocol) ReadAt(buffer []byte, offset int64) (int, error) {
+	b := packets.EncodeReadAt(offset, int32(len(buffer)))
+	id, err := fp.protocol.SendPacket(fp.dev, IDPickAny, b, UrgencyUrgent)
+	if err != nil {
+		return 0, err
+	}
+
+	atomic.AddUint64(&fp.metricSentReadAt, 1)
+
+	ret, err := fp.protocol.WaitForPacket(fp.dev, id)
+	if err != nil {
+		return 0, err
+	}
+	rar, err := packets.DecodeReadAtResponse(ret)
+	if err != nil {
+		return 0, err
+	}
+
+	// Copy the data into the provided buffer
+	if rar.Data != nil {
+		copy(buffer, rar.Data)
+	}
+	return rar.Bytes, rar.Error
 }

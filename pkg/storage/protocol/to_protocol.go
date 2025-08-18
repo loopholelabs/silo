@@ -38,6 +38,7 @@ type ToProtocol struct {
 	metricSentYouAlreadyHaveBytes  uint64
 	metricRecvNeedAt               uint64
 	metricRecvDontNeedAt           uint64
+	metricRecvReadAt               uint64
 }
 
 func NewToProtocol(size uint64, deviceID uint32, p Protocol) *ToProtocol {
@@ -69,6 +70,7 @@ type ToProtocolMetrics struct {
 	SentYouAlreadyHaveBytes  uint64
 	RecvNeedAt               uint64
 	RecvDontNeedAt           uint64
+	RecvReadAt               uint64
 }
 
 func (i *ToProtocol) GetMetrics() *ToProtocolMetrics {
@@ -93,6 +95,7 @@ func (i *ToProtocol) GetMetrics() *ToProtocolMetrics {
 		SentYouAlreadyHaveBytes:  atomic.LoadUint64(&i.metricSentYouAlreadyHaveBytes),
 		RecvNeedAt:               atomic.LoadUint64(&i.metricRecvNeedAt),
 		RecvDontNeedAt:           atomic.LoadUint64(&i.metricRecvDontNeedAt),
+		RecvReadAt:               atomic.LoadUint64(&i.metricRecvReadAt),
 	}
 }
 
@@ -415,5 +418,34 @@ func (i *ToProtocol) HandleDontNeedAt(cb func(offset int64, length int32)) error
 
 		// We could spin up a goroutine here, but the assumption is that cb won't take long.
 		cb(offset, length)
+	}
+}
+
+// Handle any ReadAt commands
+func (i *ToProtocol) HandleReadAt(p storage.Provider) error {
+
+	for {
+		id, data, err := i.protocol.WaitForCommand(i.dev, packets.CommandReadAt)
+		if err != nil {
+			return err
+		}
+		offset, length, err := packets.DecodeReadAt(data)
+		if err != nil {
+			return err
+		}
+
+		atomic.AddUint64(&i.metricRecvReadAt, 1)
+
+		go func(off int64, idd uint32) {
+			buffer := make([]byte, length)
+			n, err := p.ReadAt(buffer, off)
+			// Send the data back
+			rar := packets.EncodeReadAtResponse(&packets.ReadAtResponse{
+				Bytes: n,
+				Data:  buffer,
+				Error: err,
+			})
+			i.protocol.SendPacket(i.dev, idd, rar, UrgencyUrgent)
+		}(offset, id)
 	}
 }

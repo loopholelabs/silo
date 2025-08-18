@@ -3,6 +3,7 @@ package swarming
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
@@ -284,6 +285,21 @@ func TestSwarmingMigrate(t *testing.T) {
 
 	// Make sure all incoming devices are complete
 	dg2.WaitForCompletion()
+
+	// Do some remote reads now...
+	for _, n := range dg2.GetAllNames() {
+		di := dg2.GetDeviceInformationByName(n)
+		fmt.Printf("Device %s\n", di.Schema.Name)
+		buffer := make([]byte, di.BlockSize)
+		// NB only works if multiple of blocksize atm
+		for offset := int64(0); offset < int64(di.Size); offset += int64(di.BlockSize) {
+			n, err := di.From.ReadAt(buffer, offset)
+			assert.NoError(t, err)
+			assert.Equal(t, len(buffer), n)
+			hash := sha256.Sum256(buffer)
+			fmt.Printf(" Offset %d - hash %x\n", offset, hash)
+		}
+	}
 
 	// Check the data all got migrated correctly from dg to dg2.
 	for _, s := range testDeviceSchema {
