@@ -43,6 +43,8 @@ type FromProtocol struct {
 	completeFunc     func()
 	completeFuncLock sync.Mutex
 
+	HashWriteHandler func(offset int64, length int64, hash []byte, loc packets.DataLocation, prov storage.Provider)
+
 	// metrics
 	metricRecvEvents                uint64
 	metricRecvHashes                uint64
@@ -399,7 +401,7 @@ func (fp *FromProtocol) HandleWriteAt() error {
 
 		// WriteAtHash command...
 		if len(data) > 1 && data[1] == packets.WriteAtHash {
-			_, length, _, _, err := packets.DecodeWriteAtHash(data)
+			offset, length, hash, loc, err := packets.DecodeWriteAtHash(data)
 			if err != nil {
 				return err
 			}
@@ -413,6 +415,9 @@ func (fp *FromProtocol) HandleWriteAt() error {
 			_, err = fp.protocol.SendPacket(fp.dev, id, packets.EncodeWriteAtResponse(war), UrgencyNormal)
 			if err != nil {
 				return err
+			}
+			if fp.HashWriteHandler != nil {
+				fp.HashWriteHandler(offset, length, hash, loc, fp.provP2P)
 			}
 			continue
 		}

@@ -15,6 +15,7 @@ type ToProtocol struct {
 	size                           uint64
 	dev                            uint32
 	protocol                       Protocol
+	SendNoData                     bool
 	compressedWrites               atomic.Bool
 	compressedWritesType           int32
 	alternateSources               []packets.AlternateSource
@@ -261,22 +262,33 @@ func (i *ToProtocol) WriteAt(buffer []byte, offset int64) (int, error) {
 
 	dontSendData := false
 
-	// If it's in the alternateSources list, we only need to send a WriteAtHash command.
-	// For now, we only match exact block ranges here.
-	for _, as := range i.alternateSources {
-		if as.Offset == offset && as.Length == int64(len(buffer)) {
-			// Only allow this if the hash is still correct/current for the data.
-			hash := sha256.Sum256(buffer)
-			if bytes.Equal(hash[:], as.Hash[:]) {
-				data := packets.EncodeWriteAtHash(as.Offset, as.Length, as.Hash[:], packets.DataLocationS3)
-				id, err = i.protocol.SendPacket(i.dev, IDPickAny, data, UrgencyNormal)
-				if err == nil {
-					atomic.AddUint64(&i.metricSentWriteAtHash, 1)
-					atomic.AddUint64(&i.metricSentWriteAtHashBytes, uint64(as.Length))
+	if i.SendNoData {
+		hash := sha256.Sum256(buffer)
+		data := packets.EncodeWriteAtHash(offset, int64(len(buffer)), hash[:], packets.DataLocationS3)
+		id, err = i.protocol.SendPacket(i.dev, IDPickAny, data, UrgencyNormal)
+		if err == nil {
+			atomic.AddUint64(&i.metricSentWriteAtHash, 1)
+			atomic.AddUint64(&i.metricSentWriteAtHashBytes, uint64(len(buffer)))
+		}
+		dontSendData = true
+	} else {
+		// If it's in the alternateSources list, we only need to send a WriteAtHash command.
+		// For now, we only match exact block ranges here.
+		for _, as := range i.alternateSources {
+			if as.Offset == offset && as.Length == int64(len(buffer)) {
+				// Only allow this if the hash is still correct/current for the data.
+				hash := sha256.Sum256(buffer)
+				if bytes.Equal(hash[:], as.Hash[:]) {
+					data := packets.EncodeWriteAtHash(as.Offset, as.Length, as.Hash[:], packets.DataLocationS3)
+					id, err = i.protocol.SendPacket(i.dev, IDPickAny, data, UrgencyNormal)
+					if err == nil {
+						atomic.AddUint64(&i.metricSentWriteAtHash, 1)
+						atomic.AddUint64(&i.metricSentWriteAtHashBytes, uint64(as.Length))
+					}
+					dontSendData = true
 				}
-				dontSendData = true
+				break
 			}
-			break
 		}
 	}
 

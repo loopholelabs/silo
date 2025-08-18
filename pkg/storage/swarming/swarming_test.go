@@ -275,8 +275,29 @@ func TestSwarmingMigrate(t *testing.T) {
 	err := dg.StartMigrationTo(prSourceMim, true, packets.CompressionTypeRLE)
 	assert.NoError(t, err)
 
+	// Tell it to send no data, we'll get it elsewhere...
+	for _, n := range dg.GetAllNames() {
+		di := dg.GetDeviceInformationByName(n)
+		di.To.SendNoData = true
+	}
+
 	// Make sure the incoming devices were setup completely
 	wg.Wait()
+
+	for _, n := range dg.GetAllNames() {
+		di2 := dg2.GetDeviceInformationByName(n)
+		di2.From.HashWriteHandler = func(offset int64, length int64, hash []byte, loc packets.DataLocation, prov storage.Provider) {
+			fmt.Printf(" ### Incoming hash write %d %d %x\n", offset, length, hash)
+
+			// Do the remote read, and write it to the device...
+			buffer := make([]byte, length)
+			n, err := di2.From.ReadAt(buffer, offset)
+			assert.NoError(t, err)
+			n2, err := prov.WriteAt(buffer[:n], offset)
+			assert.NoError(t, err)
+			assert.Equal(t, n, n2)
+		}
+	}
 
 	// TransferAuthority
 	tawg.Add(1)
@@ -296,8 +317,12 @@ func TestSwarmingMigrate(t *testing.T) {
 	err = dg.Completed()
 	assert.NoError(t, err)
 
+	fmt.Printf("WaitForCompletion...\n")
+
 	// Make sure all incoming devices are complete
 	dg2.WaitForCompletion()
+
+	fmt.Printf("Checking devices...\n")
 
 	// Check the data all got migrated correctly from dg to dg2.
 	for _, s := range testDeviceSchema {
