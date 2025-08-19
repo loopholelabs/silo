@@ -121,8 +121,6 @@ func TestSwarmingMigrate(t *testing.T) {
 	r1, w1 := io.Pipe()
 	r2, w2 := io.Pipe()
 
-	var dg2 *devicegroup.DeviceGroup
-
 	ctx, cancelfn := context.WithCancel(context.TODO())
 
 	prSource := protocol.NewRW(ctx, []io.Reader{r1}, []io.Writer{w2}, nil)
@@ -167,18 +165,6 @@ func TestSwarmingMigrate(t *testing.T) {
 
 	prSourceMim.PostSendWriteAtHash = func(dev uint32, id uint32, offset int64, length int64, hash []byte, loc packets.DataLocation, err error) {
 		fmt.Printf(" -> WriteAtHash %d %d offset=%d length=%d hash=%x loc=%d %v\n", dev, id, offset, length, hash, loc, err)
-		// Check if we can get the data anyway...
-		// NB: This will only work if the data at source has not changed
-		names := dg2.GetAllNames()
-		dn := names[dev-1] // TODO: Make this better...
-		di := dg2.GetDeviceInformationByName(dn)
-
-		buffer := make([]byte, length)
-		n, err := di.From.ReadAt(buffer, offset)
-		assert.NoError(t, err)
-		assert.Equal(t, len(buffer), n)
-		hash2 := sha256.Sum256(buffer)
-		assert.Equal(t, hash2[:], hash)
 	}
 
 	prSourceMim.PostSendEvent = func(dev uint32, id uint32, ev *packets.Event, err error) {
@@ -241,6 +227,7 @@ func TestSwarmingMigrate(t *testing.T) {
 	// Make sure it has some time to write to S3
 	time.Sleep(5 * time.Second)
 
+	var dg2 *devicegroup.DeviceGroup
 	var wg sync.WaitGroup
 
 	// We will tweak schema in recv here so we have separate paths.
@@ -284,18 +271,33 @@ func TestSwarmingMigrate(t *testing.T) {
 	// Make sure the incoming devices were setup completely
 	wg.Wait()
 
+	type hashWrite struct {
+		offset int64
+		length int64
+		hash   []byte
+	}
+	type hashWriteInfo struct {
+		writes []*hashWrite
+		lock   sync.Mutex
+	}
+
+	pendingHashWrites := make(map[string]*hashWriteInfo, 0)
+
 	for _, n := range dg.GetAllNames() {
+		pendingHashWrites[n] = &hashWriteInfo{
+			writes: make([]*hashWrite, 0),
+		}
 		di2 := dg2.GetDeviceInformationByName(n)
 		di2.From.HashWriteHandler = func(offset int64, length int64, hash []byte, loc packets.DataLocation, prov storage.Provider) {
 			fmt.Printf(" ### Incoming hash write %d %d %x\n", offset, length, hash)
 
-			// Do the remote read, and write it to the device...
-			buffer := make([]byte, length)
-			n, err := di2.From.ReadAt(buffer, offset)
-			assert.NoError(t, err)
-			n2, err := prov.WriteAt(buffer[:n], offset)
-			assert.NoError(t, err)
-			assert.Equal(t, n, n2)
+			pendingHashWrites[n].lock.Lock()
+			defer pendingHashWrites[n].lock.Unlock()
+			pendingHashWrites[n].writes = append(pendingHashWrites[n].writes, &hashWrite{
+				offset: offset,
+				length: length,
+				hash:   hash,
+			})
 		}
 	}
 
@@ -322,7 +324,29 @@ func TestSwarmingMigrate(t *testing.T) {
 	// Make sure all incoming devices are complete
 	dg2.WaitForCompletion()
 
-	fmt.Printf("Checking devices...\n")
+	// Show some metrics...
+	pMetrics := prSource.GetMetrics()
+	fmt.Printf("Protocol SENT (packets %d data %d urgentPackets %d urgentData %d) RECV (packets %d data %d)\n",
+		pMetrics.PacketsSent, pMetrics.DataSent, pMetrics.UrgentPacketsSent, pMetrics.UrgentDataSent,
+		pMetrics.PacketsRecv, pMetrics.DataRecv)
+
+	fmt.Printf("Grabbing data from source\n")
+
+	for n, w := range pendingHashWrites {
+		di2 := dg2.GetDeviceInformationByName(n)
+		for _, ww := range w.writes {
+			// Do the remote read, and write it to the device...
+			// NB We might want to use prov, since it goes through a writeCombinator
+			buffer := make([]byte, ww.length)
+			n, err := di2.From.ReadAt(buffer, ww.offset)
+			assert.NoError(t, err)
+			n2, err := di2.WaitingCacheRemote.WriteAt(buffer[:n], ww.offset)
+			assert.NoError(t, err)
+			assert.Equal(t, n, n2)
+			hash := sha256.Sum256(buffer)
+			assert.Equal(t, hash[:], ww.hash)
+		}
+	}
 
 	// Check the data all got migrated correctly from dg to dg2.
 	for _, s := range testDeviceSchema {
@@ -353,8 +377,8 @@ func TestSwarmingMigrate(t *testing.T) {
 	w2.Close()
 
 	// Show some metrics...
-	pMetrics := prSource.GetMetrics()
-	fmt.Printf("Protocol SENT (packets %d data %d urgentPackets %d urgentData %d) RECV (packets %d data %d)\n",
+	pMetrics = prSource.GetMetrics()
+	fmt.Printf("Final Protocol SENT (packets %d data %d urgentPackets %d urgentData %d) RECV (packets %d data %d)\n",
 		pMetrics.PacketsSent, pMetrics.DataSent, pMetrics.UrgentPacketsSent, pMetrics.UrgentDataSent,
 		pMetrics.PacketsRecv, pMetrics.DataRecv)
 }
