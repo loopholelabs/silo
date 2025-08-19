@@ -23,6 +23,8 @@ const (
 	CommandRemoveFromMap    = CommandRequest | byte(11)
 	CommandAlternateSources = CommandRequest | byte(12)
 	CommandDeviceGroupInfo  = CommandRequest | byte(13)
+
+	CommandReadByHash = CommandRequest | byte(14)
 )
 
 const (
@@ -33,6 +35,9 @@ const (
 	CommandEventResponse      = CommandResponse | byte(5)
 	CommandHashesResponse     = CommandResponse | byte(6)
 	CommandDirtyListResponse  = CommandResponse | byte(7)
+
+	CommandReadByHashResponse    = CommandResponse | byte(8)
+	CommandReadByHashResponseErr = CommandResponse | byte(9)
 )
 
 func IsResponse(cmd byte) bool {
@@ -67,6 +72,8 @@ func CommandString(cmd byte) string {
 		return "AlternateSources"
 	case CommandDeviceGroupInfo:
 		return "DeviceGroupInfo"
+	case CommandReadByHash:
+		return "ReadByHash"
 
 		// Responses
 	case CommandReadAtResponse:
@@ -83,6 +90,10 @@ func CommandString(cmd byte) string {
 		return "HashesResponse"
 	case CommandDirtyListResponse:
 		return "DirtyListResponse"
+	case CommandReadByHashResponse:
+		return "ReadByHashResponse"
+	case CommandReadByHashResponseErr:
+		return "ReadByHashResponseErr"
 	}
 	return "unknown"
 }

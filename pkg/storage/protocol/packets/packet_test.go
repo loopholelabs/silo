@@ -1,6 +1,7 @@
 package packets
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"errors"
 	"testing"
@@ -404,4 +405,58 @@ func TestYouAlreadyHave(t *testing.T) {
 	assert.Equal(t, blockSize, blockSize2)
 	assert.Equal(t, blocks, blocks2)
 
+}
+
+func TestReadByHash(t *testing.T) {
+
+	hash := make([]byte, sha256.Size)
+	rand.Read(hash)
+	b := EncodeReadByHash([sha256.Size]byte(hash))
+
+	hash2, err := DecodeReadByHash(b)
+	assert.NoError(t, err)
+	assert.Equal(t, hash2, hash)
+
+	// Make sure we can't decode silly things
+	_, err = DecodeReadByHash(nil)
+	assert.Error(t, err)
+
+	_, err = DecodeReadByHash([]byte{
+		99,
+	})
+	assert.Error(t, err)
+
+}
+
+func TestReadByHashResponse(t *testing.T) {
+	rar := &ReadByHashResponse{
+		Bytes: 10,
+		Error: nil,
+		Data:  []byte{1, 2, 3, 4, 5},
+	}
+
+	b := EncodeReadByHashResponse(rar)
+
+	rar2, err := DecodeReadByHashResponse(b)
+	assert.NoError(t, err)
+	assert.Equal(t, rar.Bytes, rar2.Bytes)
+	assert.Equal(t, rar.Data, rar2.Data)
+	assert.Equal(t, rar.Error, rar2.Error)
+
+	// Make sure we can't decode silly things
+	_, err = DecodeReadByHashResponse(nil)
+	assert.Error(t, err)
+
+	_, err = DecodeReadByHashResponse([]byte{
+		99,
+	})
+	assert.Error(t, err)
+
+	// Test encoding error
+	be := EncodeReadByHashResponse(&ReadByHashResponse{Error: errors.New("Something")})
+
+	rare, err := DecodeReadByHashResponse(be)
+	assert.NoError(t, err)
+	assert.Error(t, rare.Error)
+	assert.Equal(t, "Something", rare.Error.Error())
 }
