@@ -62,6 +62,7 @@ func (hbm *HashBlockManager) Get(hash string) ([]byte, error) {
 	if !ok {
 		return nil, ErrBlockNotFound
 	}
+	// TODO: We might want to do *some*? concurrently here - to try different locations until one is successful
 	var allErrors error
 	for _, l := range hb.Locations {
 		data, err := l.GetBytes()
@@ -69,6 +70,7 @@ func (hbm *HashBlockManager) Get(hash string) ([]byte, error) {
 			return data, nil
 		}
 		allErrors = errors.Join(allErrors, err)
+		// We might need a mechanism here to remove this location from the list. Or at least mark it.
 	}
 	return nil, allErrors
 }
