@@ -2,11 +2,14 @@ package swarming
 
 import (
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"sync"
 
 	"github.com/loopholelabs/silo/pkg/storage"
 )
+
+var ErrBlockNotFound = errors.New("block not found")
 
 // A manager keeps track of lots of different blocks, and their location(s)
 type HashBlockManager struct {
@@ -51,11 +54,30 @@ func (hbm *HashBlockManager) Add(hash string, hb *HashBlock) {
 	hbm.blocks[hash] = hb
 }
 
+// Get some data
+func (hbm *HashBlockManager) Get(hash string) ([]byte, error) {
+	hbm.lock.Lock()
+	defer hbm.lock.Unlock()
+	hb, ok := hbm.blocks[hash]
+	if !ok {
+		return nil, ErrBlockNotFound
+	}
+	var allErrors error
+	for _, l := range hb.Locations {
+		data, err := l.GetBytes()
+		if err == nil {
+			return data, nil
+		}
+		allErrors = errors.Join(allErrors, err)
+	}
+	return nil, allErrors
+}
+
 // Index a complete provider into this hashblockmanager
 func (hbm *HashBlockManager) IndexStorage(p storage.Provider, blockSize int) error {
 	size := p.Size()
 	buffer := make([]byte, blockSize)
-	for offset := uint64(0); offset < size; offset++ {
+	for offset := uint64(0); offset < size; offset += uint64(blockSize) {
 		// Read, hash, and create an entry.
 		n, err := p.ReadAt(buffer, int64(offset))
 		if err != nil {
