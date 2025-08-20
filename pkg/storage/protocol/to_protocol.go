@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
+	"fmt"
 	"sync/atomic"
 
 	"github.com/loopholelabs/silo/pkg/storage"
@@ -40,6 +41,7 @@ type ToProtocol struct {
 	metricRecvNeedAt               uint64
 	metricRecvDontNeedAt           uint64
 	metricRecvReadAt               uint64
+	metricRecvReadByHash           uint64
 }
 
 func NewToProtocol(size uint64, deviceID uint32, p Protocol) *ToProtocol {
@@ -72,6 +74,7 @@ type ToProtocolMetrics struct {
 	RecvNeedAt               uint64
 	RecvDontNeedAt           uint64
 	RecvReadAt               uint64
+	RecvReadByHash           uint64
 }
 
 func (i *ToProtocol) GetMetrics() *ToProtocolMetrics {
@@ -97,6 +100,7 @@ func (i *ToProtocol) GetMetrics() *ToProtocolMetrics {
 		RecvNeedAt:               atomic.LoadUint64(&i.metricRecvNeedAt),
 		RecvDontNeedAt:           atomic.LoadUint64(&i.metricRecvDontNeedAt),
 		RecvReadAt:               atomic.LoadUint64(&i.metricRecvReadAt),
+		RecvReadByHash:           atomic.LoadUint64(&i.metricRecvReadByHash),
 	}
 }
 
@@ -459,5 +463,37 @@ func (i *ToProtocol) HandleReadAt(p storage.Provider) error {
 			})
 			i.protocol.SendPacket(i.dev, idd, rar, UrgencyUrgent)
 		}(offset, id)
+	}
+}
+
+type HashManager interface {
+	Get(string) ([]byte, error)
+}
+
+// Handle any ReadByHash commands
+func (i *ToProtocol) HandleReadByHash(hm HashManager) error {
+
+	for {
+		id, data, err := i.protocol.WaitForCommand(i.dev, packets.CommandReadByHash)
+		if err != nil {
+			return err
+		}
+		hash, err := packets.DecodeReadByHash(data)
+		if err != nil {
+			return err
+		}
+
+		atomic.AddUint64(&i.metricRecvReadByHash, 1)
+
+		go func(h []byte, idd uint32) {
+			buffer, err := hm.Get(fmt.Sprintf("%x", h))
+			// Send the data back
+			rar := packets.EncodeReadAtResponse(&packets.ReadAtResponse{
+				Bytes: len(buffer),
+				Data:  buffer,
+				Error: err,
+			})
+			i.protocol.SendPacket(i.dev, idd, rar, UrgencyUrgent)
+		}(hash, id)
 	}
 }

@@ -62,6 +62,7 @@ type FromProtocol struct {
 	metricSentNeedAt                uint64
 	metricSentDontNeedAt            uint64
 	metricSentReadAt                uint64
+	metricSentReadByHash            uint64
 }
 
 type FromProtocolMetrics struct {
@@ -81,6 +82,7 @@ type FromProtocolMetrics struct {
 	SentNeedAt                uint64
 	SentDontNeedAt            uint64
 	SentReadAt                uint64
+	SentReadByHash            uint64
 	WritesAllowedP2P          uint64
 	WritesBlockedP2P          uint64
 	WritesAllowedAltSources   uint64
@@ -127,6 +129,7 @@ func (fp *FromProtocol) GetMetrics() *FromProtocolMetrics {
 		SentNeedAt:                atomic.LoadUint64(&fp.metricSentNeedAt),
 		SentDontNeedAt:            atomic.LoadUint64(&fp.metricSentDontNeedAt),
 		SentReadAt:                atomic.LoadUint64(&fp.metricSentReadAt),
+		SentReadByHash:            atomic.LoadUint64(&fp.metricSentReadByHash),
 		WritesAllowedP2P:          0,
 		WritesBlockedP2P:          0,
 		WritesAllowedAltSources:   0,
@@ -649,4 +652,26 @@ func (fp *FromProtocol) ReadAt(buffer []byte, offset int64) (int, error) {
 		copy(buffer, rar.Data)
 	}
 	return rar.Bytes, rar.Error
+}
+
+// Support remote reads by hash
+func (fp *FromProtocol) ReadByHash(hash [sha256.Size]byte) ([]byte, error) {
+	b := packets.EncodeReadByHash(hash)
+	id, err := fp.protocol.SendPacket(fp.dev, IDPickAny, b, UrgencyUrgent)
+	if err != nil {
+		return nil, err
+	}
+
+	atomic.AddUint64(&fp.metricSentReadByHash, 1)
+
+	ret, err := fp.protocol.WaitForPacket(fp.dev, id)
+	if err != nil {
+		return nil, err
+	}
+	rar, err := packets.DecodeReadByHashResponse(ret)
+	if err != nil {
+		return nil, err
+	}
+
+	return rar.Data, rar.Error
 }
