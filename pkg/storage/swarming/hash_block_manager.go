@@ -1,6 +1,7 @@
 package swarming
 
 import (
+	"context"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -28,7 +29,7 @@ type HashBlock struct {
 }
 
 type HashBlockLocation interface {
-	GetBytes() ([]byte, error)
+	GetBytes(context.Context) ([]byte, error)
 }
 
 type HashBlockManagerMetrics struct {
@@ -55,21 +56,6 @@ func (hbm *HashBlockManager) GetMetrics() *HashBlockManagerMetrics {
 	}
 }
 
-type ProviderHBL struct {
-	Offset   int64
-	Size     int64
-	Provider storage.Provider
-}
-
-func (p *ProviderHBL) GetBytes() ([]byte, error) {
-	buffer := make([]byte, p.Size)
-	n, err := p.Provider.ReadAt(buffer, p.Offset)
-	if err == nil {
-		return buffer[:n], nil
-	}
-	return nil, err
-}
-
 func NewHashBlockManager() *HashBlockManager {
 	return &HashBlockManager{
 		blocks: make(map[string]*HashBlock),
@@ -92,7 +78,7 @@ func (hbm *HashBlockManager) Add(hash string, hb *HashBlock) {
 }
 
 // Get some data
-func (hbm *HashBlockManager) Get(hash string) ([]byte, error) {
+func (hbm *HashBlockManager) Get(ctx context.Context, hash string) ([]byte, error) {
 	hbm.lock.Lock()
 	defer hbm.lock.Unlock()
 	hb, ok := hbm.blocks[hash]
@@ -107,7 +93,7 @@ func (hbm *HashBlockManager) Get(hash string) ([]byte, error) {
 	// TODO: We might want to do *some*? concurrently here - to try different locations until one is successful
 	var allErrors error
 	for _, l := range hb.Locations {
-		data, err := l.GetBytes()
+		data, err := l.GetBytes(ctx)
 		if err == nil {
 			return data, nil
 		}

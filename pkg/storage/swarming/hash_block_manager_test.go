@@ -1,10 +1,12 @@
 package swarming
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/loopholelabs/silo/pkg/storage/sources"
 	"github.com/stretchr/testify/assert"
@@ -25,6 +27,9 @@ func TestHashBlockManager(t *testing.T) {
 	blockSize := 1024 * 1024
 	hbm.IndexStorage(dataSource, blockSize)
 
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
 	// Now try getting the data...
 	data := make([]byte, blockSize)
 	for offset := uint64(0); offset < dataSource.Size(); offset += uint64(blockSize) {
@@ -33,7 +38,7 @@ func TestHashBlockManager(t *testing.T) {
 
 		hash := sha256.Sum256(data[:n])
 
-		data2, err := hbm.Get(fmt.Sprintf("%x", hash))
+		data2, err := hbm.Get(ctx, fmt.Sprintf("%x", hash))
 		assert.NoError(t, err)
 
 		assert.Equal(t, data, data2)
@@ -42,7 +47,7 @@ func TestHashBlockManager(t *testing.T) {
 	// Make sure we can't get some non-existant block
 	hash := make([]byte, sha256.Size)
 	rand.Read(hash)
-	_, err = hbm.Get(fmt.Sprintf("%x", hash))
+	_, err = hbm.Get(ctx, fmt.Sprintf("%x", hash))
 	assert.ErrorIs(t, err, ErrBlockNotFound)
 
 }

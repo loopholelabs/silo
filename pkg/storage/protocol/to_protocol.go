@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
@@ -467,7 +468,7 @@ func (i *ToProtocol) HandleReadAt(p storage.Provider) error {
 }
 
 type HashManager interface {
-	Get(string) ([]byte, error)
+	Get(context.Context, string) ([]byte, error)
 }
 
 // Handle any ReadByHash commands
@@ -486,7 +487,7 @@ func (i *ToProtocol) HandleReadByHash(hm HashManager) error {
 		atomic.AddUint64(&i.metricRecvReadByHash, 1)
 
 		go func(h []byte, idd uint32) {
-			buffer, err := hm.Get(fmt.Sprintf("%x", h))
+			buffer, err := hm.Get(context.Background(), fmt.Sprintf("%x", h))
 			// Send the data back
 			rar := packets.EncodeReadByHashResponse(&packets.ReadByHashResponse{
 				Bytes: len(buffer),
