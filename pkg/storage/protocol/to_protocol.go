@@ -488,7 +488,7 @@ func (i *ToProtocol) HandleReadByHash(hm HashManager) error {
 		go func(h []byte, idd uint32) {
 			buffer, err := hm.Get(fmt.Sprintf("%x", h))
 			// Send the data back
-			rar := packets.EncodeReadAtResponse(&packets.ReadAtResponse{
+			rar := packets.EncodeReadByHashResponse(&packets.ReadByHashResponse{
 				Bytes: len(buffer),
 				Data:  buffer,
 				Error: err,

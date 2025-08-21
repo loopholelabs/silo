@@ -39,7 +39,7 @@ func EncodeReadByHashResponse(rar *ReadByHashResponse) []byte {
 	}
 	buff := make([]byte, 1+4+len(rar.Data))
 	buff[0] = CommandReadByHashResponse
-	binary.LittleEndian.PutUint32(buff[1:], uint32(rar.Bytes))
+	binary.LittleEndian.PutUint32(buff[1:], uint32(len(rar.Data)))
 	copy(buff[5:], rar.Data)
 	return buff
 }
@@ -60,10 +60,14 @@ func DecodeReadByHashResponse(buff []byte) (*ReadByHashResponse, error) {
 		if len(buff) < 5 {
 			return nil, ErrInvalidPacket
 		}
+		length := int(binary.LittleEndian.Uint32(buff[1:]))
+		if len(buff) < 5+length {
+			return nil, ErrInvalidPacket
+		}
 		return &ReadByHashResponse{
 			Error: nil,
-			Bytes: int(binary.LittleEndian.Uint32(buff[1:])),
-			Data:  buff[5:],
+			Bytes: length,
+			Data:  buff[5 : 5+length],
 		}, nil
 	}
 

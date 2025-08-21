@@ -51,7 +51,12 @@ func NewHashBlockManager() *HashBlockManager {
 func (hbm *HashBlockManager) Add(hash string, hb *HashBlock) {
 	hbm.lock.Lock()
 	defer hbm.lock.Unlock()
-	hbm.blocks[hash] = hb
+	h, ok := hbm.blocks[hash]
+	if !ok {
+		hbm.blocks[hash] = hb
+	} else {
+		h.Locations = append(h.Locations, hb.Locations...)
+	}
 }
 
 // Get some data
@@ -100,4 +105,10 @@ func (hbm *HashBlockManager) IndexStorage(p storage.Provider, blockSize int) err
 		})
 	}
 	return nil
+}
+
+func (hbm *HashBlockManager) Size() int {
+	hbm.lock.Lock()
+	defer hbm.lock.Unlock()
+	return len(hbm.blocks)
 }
