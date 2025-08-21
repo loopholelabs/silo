@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 
 	"github.com/loopholelabs/silo/pkg/storage"
 )
@@ -15,6 +16,10 @@ var ErrBlockNotFound = errors.New("block not found")
 type HashBlockManager struct {
 	lock   sync.Mutex
 	blocks map[string]*HashBlock
+
+	metricGets         uint64
+	metricGetsNotFound uint64
+	metricAdds         uint64
 }
 
 type HashBlock struct {
@@ -24,6 +29,30 @@ type HashBlock struct {
 
 type HashBlockLocation interface {
 	GetBytes() ([]byte, error)
+}
+
+type HashBlockManagerMetrics struct {
+	StoredHashes    uint64
+	StoredLocations uint64
+	Adds            uint64
+	Gets            uint64
+	GetsNotFound    uint64
+}
+
+func (hbm *HashBlockManager) GetMetrics() *HashBlockManagerMetrics {
+	hbm.lock.Lock()
+	defer hbm.lock.Unlock()
+	totalLocations := 0
+	for _, l := range hbm.blocks {
+		totalLocations += len(l.Locations)
+	}
+	return &HashBlockManagerMetrics{
+		StoredHashes:    uint64(len(hbm.blocks)),
+		StoredLocations: uint64(totalLocations),
+		Adds:            atomic.LoadUint64(&hbm.metricAdds),
+		Gets:            atomic.LoadUint64(&hbm.metricGets),
+		GetsNotFound:    atomic.LoadUint64(&hbm.metricGetsNotFound),
+	}
 }
 
 type ProviderHBL struct {
@@ -51,6 +80,9 @@ func NewHashBlockManager() *HashBlockManager {
 func (hbm *HashBlockManager) Add(hash string, hb *HashBlock) {
 	hbm.lock.Lock()
 	defer hbm.lock.Unlock()
+
+	atomic.AddUint64(&hbm.metricAdds, 1)
+
 	h, ok := hbm.blocks[hash]
 	if !ok {
 		hbm.blocks[hash] = hb
@@ -65,8 +97,13 @@ func (hbm *HashBlockManager) Get(hash string) ([]byte, error) {
 	defer hbm.lock.Unlock()
 	hb, ok := hbm.blocks[hash]
 	if !ok {
+		atomic.AddUint64(&hbm.metricGetsNotFound, 1)
+
 		return nil, ErrBlockNotFound
 	}
+
+	atomic.AddUint64(&hbm.metricGets, 1)
+
 	// TODO: We might want to do *some*? concurrently here - to try different locations until one is successful
 	var allErrors error
 	for _, l := range hb.Locations {
@@ -105,10 +142,4 @@ func (hbm *HashBlockManager) IndexStorage(p storage.Provider, blockSize int) err
 		})
 	}
 	return nil
-}
-
-func (hbm *HashBlockManager) Size() int {
-	hbm.lock.Lock()
-	defer hbm.lock.Unlock()
-	return len(hbm.blocks)
 }
