@@ -331,9 +331,10 @@ func (i *ToProtocol) WriteAt(buffer []byte, offset int64) (int, error) {
 	if len(r) < 1 {
 		return 0, packets.ErrInvalidPacket
 	}
-	if r[0] == packets.CommandWriteAtResponseErr {
+	switch r[0] {
+	case packets.CommandWriteAtResponseErr:
 		return 0, packets.ErrWriteError
-	} else if r[0] == packets.CommandWriteAtResponse {
+	case packets.CommandWriteAtResponse:
 		if len(r) < 5 {
 			return 0, packets.ErrInvalidPacket
 		}
@@ -363,9 +364,10 @@ func (i *ToProtocol) WriteAtWithMap(buffer []byte, offset int64, idMap map[uint6
 	if len(r) < 1 {
 		return 0, packets.ErrInvalidPacket
 	}
-	if r[0] == packets.CommandWriteAtResponseErr {
+	switch r[0] {
+	case packets.CommandWriteAtResponseErr:
 		return 0, packets.ErrWriteError
-	} else if r[0] == packets.CommandWriteAtResponse {
+	case packets.CommandWriteAtResponse:
 		if len(r) < 5 {
 			return 0, packets.ErrInvalidPacket
 		}

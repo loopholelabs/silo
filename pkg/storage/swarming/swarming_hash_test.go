@@ -152,7 +152,7 @@ func TestSwarmingHashMigrate(t *testing.T) {
 			writes: make([]*hashWrite, 0),
 		}
 		di2 := dg2.GetDeviceInformationByName(n)
-		di2.From.HashWriteHandler = func(offset int64, length int64, hash []byte, loc packets.DataLocation, prov storage.Provider) {
+		di2.From.HashWriteHandler = func(offset int64, length int64, hash []byte, _ packets.DataLocation, _ storage.Provider) {
 			fmt.Printf(" ### Incoming hash write %d %d %x\n", offset, length, hash)
 
 			pendingHashWrites[n].lock.Lock()

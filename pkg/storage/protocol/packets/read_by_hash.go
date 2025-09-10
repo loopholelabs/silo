@@ -48,13 +48,14 @@ func DecodeReadByHashResponse(buff []byte) (*ReadByHashResponse, error) {
 		return nil, ErrInvalidPacket
 	}
 
-	if buff[0] == CommandReadByHashResponseErr {
+	switch buff[0] {
+	case CommandReadByHashResponseErr:
 		errLen := binary.LittleEndian.Uint32(buff[1:])
 		return &ReadByHashResponse{
 			Error: errors.New(string(buff[5 : 5+errLen])),
 			Data:  make([]byte, 0),
 		}, nil
-	} else if buff[0] == CommandReadByHashResponse {
+	case CommandReadByHashResponse:
 		if len(buff) < 5 {
 			return nil, ErrInvalidPacket
 		}

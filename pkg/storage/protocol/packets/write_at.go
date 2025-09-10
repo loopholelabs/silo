@@ -68,12 +68,13 @@ func DecodeWriteAtResponse(buff []byte) (*WriteAtResponse, error) {
 	if buff == nil {
 		return nil, ErrInvalidPacket
 	}
-	if buff[0] == CommandWriteAtResponseErr {
+	switch buff[0] {
+	case CommandWriteAtResponseErr:
 		return &WriteAtResponse{
 			Error: ErrWriteError,
 			Bytes: 0,
 		}, nil
-	} else if buff[0] == CommandWriteAtResponse {
+	case CommandWriteAtResponse:
 		if len(buff) < 5 {
 			return nil, ErrInvalidPacket
 		}

@@ -45,13 +45,14 @@ func DecodeReadAtResponse(buff []byte) (*ReadAtResponse, error) {
 		return nil, ErrInvalidPacket
 	}
 
-	if buff[0] == CommandReadAtResponseErr {
+	switch buff[0] {
+	case CommandReadAtResponseErr:
 		return &ReadAtResponse{
 			Error: ErrReadError,
 			Bytes: 0,
 			Data:  make([]byte, 0),
 		}, nil
-	} else if buff[0] == CommandReadAtResponse {
+	case CommandReadAtResponse:
 		if len(buff) < 5 {
 			return nil, ErrInvalidPacket
 		}

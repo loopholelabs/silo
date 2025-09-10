@@ -30,7 +30,7 @@ func (i *ShardedStorage) SendSiloEvent(eventType storage.EventType, eventData st
 
 func NewShardedStorage(size int, blocksize int, creator func(index int, size int) (storage.Provider, error)) (*ShardedStorage, error) {
 	if blocksize == 0 {
-		return nil, fmt.Errorf("Invalid block size of 0")
+		return nil, fmt.Errorf("invalid block size of 0")
 	}
 	bms := &ShardedStorage{
 		blocks:    make([]storage.Provider, 0),
@@ -62,10 +62,7 @@ func (i *ShardedStorage) ReadAt(buffer []byte, offset int64) (int, error) {
 	left := len(buffer)
 	ptr := 0
 	numReads := 0
-	for {
-		if left == 0 || offset >= int64(i.size) {
-			break
-		}
+	for left > 0 && offset < int64(i.size) {
 		s := offset / int64(i.blockSize)
 		si := offset - (s * int64(i.blockSize)) // Index into block
 
@@ -109,10 +106,7 @@ func (i *ShardedStorage) WriteAt(buffer []byte, offset int64) (int, error) {
 	left := len(buffer)
 	ptr := 0
 	numWrites := 0
-	for {
-		if left == 0 || offset >= int64(i.size) {
-			break
-		}
+	for left > 0 && offset < int64(i.size) {
 		s := offset / int64(i.blockSize)
 		si := offset - (s * int64(i.blockSize))
 

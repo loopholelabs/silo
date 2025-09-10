@@ -55,7 +55,7 @@ var testDeviceSchema = []*config.DeviceSchema{
 	},
 }
 
-func setupDeviceGroup(t *testing.T, log types.Logger) *devicegroup.DeviceGroup {
+func setupDeviceGroup(t *testing.T, _ types.Logger) *devicegroup.DeviceGroup {
 	MinioPort := testutils.SetupMinio(t.Cleanup)
 
 	sync := &config.SyncS3Schema{
@@ -138,14 +138,14 @@ func TestSwarmingMigrate(t *testing.T) {
 		}
 	*/
 
-	prSourceMim.PostSendDeviceGroupInfo = func(dev uint32, id uint32, dgi *packets.DeviceGroupInfo, err error) {
+	prSourceMim.PostSendDeviceGroupInfo = func(_ uint32, _ uint32, dgi *packets.DeviceGroupInfo, _ error) {
 		fmt.Printf(" -> DeviceGroupInfo\n")
 		for i, dg := range dgi.Devices {
 			fmt.Printf("     Device%d size=%d bs=%d name=%s\n", i, dg.Size, dg.BlockSize, dg.Name)
 		}
 	}
 
-	prSourceMim.PostSendAlternateSources = func(dev uint32, id uint32, as []packets.AlternateSource, err error) {
+	prSourceMim.PostSendAlternateSources = func(dev uint32, id uint32, as []packets.AlternateSource, _ error) {
 		fmt.Printf(" -> AlternateSources %d %d %d\n", dev, id, len(as))
 		for i, s := range as {
 			fmt.Printf("     Source%d offset=%d length=%d location=%s hash=%x\n", i, s.Offset, s.Length, s.Location, s.Hash)
@@ -288,7 +288,7 @@ func TestSwarmingMigrate(t *testing.T) {
 			writes: make([]*hashWrite, 0),
 		}
 		di2 := dg2.GetDeviceInformationByName(n)
-		di2.From.HashWriteHandler = func(offset int64, length int64, hash []byte, loc packets.DataLocation, prov storage.Provider) {
+		di2.From.HashWriteHandler = func(offset int64, length int64, hash []byte, _ packets.DataLocation, _ storage.Provider) {
 			fmt.Printf(" ### Incoming hash write %d %d %x\n", offset, length, hash)
 
 			pendingHashWrites[n].lock.Lock()
