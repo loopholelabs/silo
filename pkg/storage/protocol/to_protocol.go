@@ -2,8 +2,10 @@ package protocol
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/binary"
+	"fmt"
 	"sync/atomic"
 
 	"github.com/loopholelabs/silo/pkg/storage"
@@ -15,6 +17,7 @@ type ToProtocol struct {
 	size                           uint64
 	dev                            uint32
 	protocol                       Protocol
+	SendNoData                     bool
 	compressedWrites               atomic.Bool
 	compressedWritesType           int32
 	alternateSources               []packets.AlternateSource
@@ -38,6 +41,8 @@ type ToProtocol struct {
 	metricSentYouAlreadyHaveBytes  uint64
 	metricRecvNeedAt               uint64
 	metricRecvDontNeedAt           uint64
+	metricRecvReadAt               uint64
+	metricRecvReadByHash           uint64
 }
 
 func NewToProtocol(size uint64, deviceID uint32, p Protocol) *ToProtocol {
@@ -69,6 +74,8 @@ type ToProtocolMetrics struct {
 	SentYouAlreadyHaveBytes  uint64
 	RecvNeedAt               uint64
 	RecvDontNeedAt           uint64
+	RecvReadAt               uint64
+	RecvReadByHash           uint64
 }
 
 func (i *ToProtocol) GetMetrics() *ToProtocolMetrics {
@@ -93,6 +100,8 @@ func (i *ToProtocol) GetMetrics() *ToProtocolMetrics {
 		SentYouAlreadyHaveBytes:  atomic.LoadUint64(&i.metricSentYouAlreadyHaveBytes),
 		RecvNeedAt:               atomic.LoadUint64(&i.metricRecvNeedAt),
 		RecvDontNeedAt:           atomic.LoadUint64(&i.metricRecvDontNeedAt),
+		RecvReadAt:               atomic.LoadUint64(&i.metricRecvReadAt),
+		RecvReadByHash:           atomic.LoadUint64(&i.metricRecvReadByHash),
 	}
 }
 
@@ -258,22 +267,33 @@ func (i *ToProtocol) WriteAt(buffer []byte, offset int64) (int, error) {
 
 	dontSendData := false
 
-	// If it's in the alternateSources list, we only need to send a WriteAtHash command.
-	// For now, we only match exact block ranges here.
-	for _, as := range i.alternateSources {
-		if as.Offset == offset && as.Length == int64(len(buffer)) {
-			// Only allow this if the hash is still correct/current for the data.
-			hash := sha256.Sum256(buffer)
-			if bytes.Equal(hash[:], as.Hash[:]) {
-				data := packets.EncodeWriteAtHash(as.Offset, as.Length, as.Hash[:], packets.DataLocationS3)
-				id, err = i.protocol.SendPacket(i.dev, IDPickAny, data, UrgencyNormal)
-				if err == nil {
-					atomic.AddUint64(&i.metricSentWriteAtHash, 1)
-					atomic.AddUint64(&i.metricSentWriteAtHashBytes, uint64(as.Length))
+	if i.SendNoData {
+		hash := sha256.Sum256(buffer)
+		data := packets.EncodeWriteAtHash(offset, int64(len(buffer)), hash[:], packets.DataLocationS3)
+		id, err = i.protocol.SendPacket(i.dev, IDPickAny, data, UrgencyNormal)
+		if err == nil {
+			atomic.AddUint64(&i.metricSentWriteAtHash, 1)
+			atomic.AddUint64(&i.metricSentWriteAtHashBytes, uint64(len(buffer)))
+		}
+		dontSendData = true
+	} else {
+		// If it's in the alternateSources list, we only need to send a WriteAtHash command.
+		// For now, we only match exact block ranges here.
+		for _, as := range i.alternateSources {
+			if as.Offset == offset && as.Length == int64(len(buffer)) {
+				// Only allow this if the hash is still correct/current for the data.
+				hash := sha256.Sum256(buffer)
+				if bytes.Equal(hash[:], as.Hash[:]) {
+					data := packets.EncodeWriteAtHash(as.Offset, as.Length, as.Hash[:], packets.DataLocationS3)
+					id, err = i.protocol.SendPacket(i.dev, IDPickAny, data, UrgencyNormal)
+					if err == nil {
+						atomic.AddUint64(&i.metricSentWriteAtHash, 1)
+						atomic.AddUint64(&i.metricSentWriteAtHashBytes, uint64(as.Length))
+					}
+					dontSendData = true
 				}
-				dontSendData = true
+				break
 			}
-			break
 		}
 	}
 
@@ -311,9 +331,10 @@ func (i *ToProtocol) WriteAt(buffer []byte, offset int64) (int, error) {
 	if len(r) < 1 {
 		return 0, packets.ErrInvalidPacket
 	}
-	if r[0] == packets.CommandWriteAtResponseErr {
+	switch r[0] {
+	case packets.CommandWriteAtResponseErr:
 		return 0, packets.ErrWriteError
-	} else if r[0] == packets.CommandWriteAtResponse {
+	case packets.CommandWriteAtResponse:
 		if len(r) < 5 {
 			return 0, packets.ErrInvalidPacket
 		}
@@ -343,9 +364,10 @@ func (i *ToProtocol) WriteAtWithMap(buffer []byte, offset int64, idMap map[uint6
 	if len(r) < 1 {
 		return 0, packets.ErrInvalidPacket
 	}
-	if r[0] == packets.CommandWriteAtResponseErr {
+	switch r[0] {
+	case packets.CommandWriteAtResponseErr:
 		return 0, packets.ErrWriteError
-	} else if r[0] == packets.CommandWriteAtResponse {
+	case packets.CommandWriteAtResponse:
 		if len(r) < 5 {
 			return 0, packets.ErrInvalidPacket
 		}
@@ -415,5 +437,65 @@ func (i *ToProtocol) HandleDontNeedAt(cb func(offset int64, length int32)) error
 
 		// We could spin up a goroutine here, but the assumption is that cb won't take long.
 		cb(offset, length)
+	}
+}
+
+// Handle any ReadAt commands
+func (i *ToProtocol) HandleReadAt(p storage.Provider) error {
+
+	for {
+		id, data, err := i.protocol.WaitForCommand(i.dev, packets.CommandReadAt)
+		if err != nil {
+			return err
+		}
+		offset, length, err := packets.DecodeReadAt(data)
+		if err != nil {
+			return err
+		}
+
+		atomic.AddUint64(&i.metricRecvReadAt, 1)
+
+		go func(off int64, idd uint32) {
+			buffer := make([]byte, length)
+			n, err := p.ReadAt(buffer, off)
+			// Send the data back
+			rar := packets.EncodeReadAtResponse(&packets.ReadAtResponse{
+				Bytes: n,
+				Data:  buffer,
+				Error: err,
+			})
+			i.protocol.SendPacket(i.dev, idd, rar, UrgencyUrgent)
+		}(offset, id)
+	}
+}
+
+type HashManager interface {
+	Get(context.Context, string) ([]byte, error)
+}
+
+// Handle any ReadByHash commands
+func (i *ToProtocol) HandleReadByHash(hm HashManager) error {
+
+	for {
+		id, data, err := i.protocol.WaitForCommand(i.dev, packets.CommandReadByHash)
+		if err != nil {
+			return err
+		}
+		hash, err := packets.DecodeReadByHash(data)
+		if err != nil {
+			return err
+		}
+
+		atomic.AddUint64(&i.metricRecvReadByHash, 1)
+
+		go func(h []byte, idd uint32) {
+			buffer, err := hm.Get(context.Background(), fmt.Sprintf("%x", h))
+			// Send the data back
+			rar := packets.EncodeReadByHashResponse(&packets.ReadByHashResponse{
+				Data:  buffer,
+				Error: err,
+			})
+			i.protocol.SendPacket(i.dev, idd, rar, UrgencyUrgent)
+		}(hash, id)
 	}
 }

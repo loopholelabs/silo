@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/loopholelabs/silo/pkg/storage"
-	"github.com/loopholelabs/silo/pkg/storage/util"
+	"github.com/loopholelabs/silo/pkg/storage/bitfield"
 )
 
 type VolatilityMonitor struct {
@@ -16,7 +16,7 @@ type VolatilityMonitor struct {
 	numBlocks     int
 	blockSize     int
 	blockDataLock sync.Mutex
-	available     util.Bitfield
+	available     bitfield.Bitfield
 	blockData     map[uint]*volatilityData
 	totalData     *volatilityData
 }
@@ -43,7 +43,7 @@ func NewVolatilityMonitor(prov storage.Provider, blockSize int, expiry time.Dura
 		numBlocks: numBlocks,
 		blockSize: blockSize,
 		blockData: make(map[uint]*volatilityData),
-		available: *util.NewBitfield(numBlocks),
+		available: *bitfield.NewBitfield(numBlocks),
 		expiry:    expiry,
 		totalData: &volatilityData{log: make([]int64, 0)},
 	}

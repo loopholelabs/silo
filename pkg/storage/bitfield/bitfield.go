@@ -1,4 +1,4 @@
-package util
+package bitfield
 
 import (
 	"errors"
@@ -492,7 +492,7 @@ func (bf *Bitfield) CollectFirstAndClear(start uint, end uint) (uint, error) {
 			}
 		}
 	}
-	return 0, errors.New("Nothing left")
+	return 0, errors.New("nothing left")
 }
 
 /**

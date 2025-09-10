@@ -93,7 +93,8 @@ func (i *BinLogReplay) Next(speed float64, execute bool) (error, error) {
 
 	if execute {
 		// Dispatch the command
-		if data[0] == packets.CommandReadAt {
+		switch data[0] {
+		case packets.CommandReadAt:
 			offset, length, err := packets.DecodeReadAt(data)
 			if err != nil {
 				return nil, err
@@ -101,7 +102,7 @@ func (i *BinLogReplay) Next(speed float64, execute bool) (error, error) {
 			buffer := make([]byte, length)
 			_, err = i.prov.ReadAt(buffer, offset)
 			return err, nil
-		} else if data[0] == packets.CommandWriteAt {
+		case packets.CommandWriteAt:
 			offset, buffer, err := packets.DecodeWriteAt(data)
 			if err != nil {
 				return nil, err

@@ -342,10 +342,7 @@ func syncMigrateS3(_ uint32, name string,
 
 	ctime := time.Now()
 
-	for {
-		if time.Since(ctime) > syncTimeLimit {
-			break
-		}
+	for time.Since(ctime) < syncTimeLimit {
 
 		blocks := mig.GetLatestDirtyFunc(getter)
 

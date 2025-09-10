@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/loopholelabs/silo/pkg/storage/bitfield"
 	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
-	"github.com/loopholelabs/silo/pkg/storage/util"
 )
 
 type Provider interface {
@@ -29,7 +29,7 @@ type TrackingProvider interface {
 	Provider
 	GetUnrequiredBlocks() []uint
 	TrackAt(length int64, offset int64)
-	Sync() *util.Bitfield
+	Sync() *bitfield.Bitfield
 }
 
 type ExposedStorage interface {

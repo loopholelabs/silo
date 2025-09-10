@@ -4,20 +4,20 @@ import (
 	"sync"
 
 	"github.com/loopholelabs/silo/pkg/storage"
-	"github.com/loopholelabs/silo/pkg/storage/util"
+	"github.com/loopholelabs/silo/pkg/storage/bitfield"
 )
 
 type AnyBlockOrder struct {
 	lock      sync.Mutex
 	numBlocks int
-	available util.Bitfield
+	available bitfield.Bitfield
 	next      storage.BlockOrder
 }
 
 func NewAnyBlockOrder(numBlocks int, next storage.BlockOrder) *AnyBlockOrder {
 	return &AnyBlockOrder{
 		numBlocks: numBlocks,
-		available: *util.NewBitfield(numBlocks),
+		available: *bitfield.NewBitfield(numBlocks),
 		next:      next,
 	}
 }

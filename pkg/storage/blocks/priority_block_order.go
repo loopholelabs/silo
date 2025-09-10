@@ -5,14 +5,14 @@ import (
 	"time"
 
 	"github.com/loopholelabs/silo/pkg/storage"
-	"github.com/loopholelabs/silo/pkg/storage/util"
+	"github.com/loopholelabs/silo/pkg/storage/bitfield"
 )
 
 type PriorityBlockOrder struct {
 	lock           sync.Mutex
 	priorityBlocks map[uint]time.Time
 	numBlocks      int
-	available      util.Bitfield
+	available      bitfield.Bitfield
 	next           storage.BlockOrder
 }
 
@@ -24,7 +24,7 @@ type PriorityBlockInfo struct {
 func NewPriorityBlockOrder(numBlocks int, next storage.BlockOrder) *PriorityBlockOrder {
 	return &PriorityBlockOrder{
 		numBlocks:      numBlocks,
-		available:      *util.NewBitfield(numBlocks),
+		available:      *bitfield.NewBitfield(numBlocks),
 		next:           next,
 		priorityBlocks: make(map[uint]time.Time),
 	}

@@ -23,6 +23,8 @@ const (
 	CommandRemoveFromMap    = CommandRequest | byte(11)
 	CommandAlternateSources = CommandRequest | byte(12)
 	CommandDeviceGroupInfo  = CommandRequest | byte(13)
+
+	CommandReadByHash = CommandRequest | byte(14)
 )
 
 const (
@@ -33,8 +35,65 @@ const (
 	CommandEventResponse      = CommandResponse | byte(5)
 	CommandHashesResponse     = CommandResponse | byte(6)
 	CommandDirtyListResponse  = CommandResponse | byte(7)
+
+	CommandReadByHashResponse    = CommandResponse | byte(8)
+	CommandReadByHashResponseErr = CommandResponse | byte(9)
 )
 
 func IsResponse(cmd byte) bool {
 	return (cmd & CommandResponse) == CommandResponse
+}
+
+func CommandString(cmd byte) string {
+	switch cmd {
+	case CommandReadAt:
+		return "ReadAt"
+	case CommandWriteAt:
+		return "WriteAt"
+	case CommandNeedAt:
+		return "NeedAt"
+	case CommandDontNeedAt:
+		return "DontNeedAt"
+	case CommandDirtyList:
+		return "DirtyList"
+	case CommandDevInfo:
+		return "DevInfo"
+	case CommandEvent:
+		return "Event"
+	case CommandHashes:
+		return "Hashes"
+	case CommandWriteAtWithMap:
+		return "WriteAtWithMap"
+	case CommandRemoveDev:
+		return "RemoveDev"
+	case CommandRemoveFromMap:
+		return "RemoveFromMap"
+	case CommandAlternateSources:
+		return "AlternateSources"
+	case CommandDeviceGroupInfo:
+		return "DeviceGroupInfo"
+	case CommandReadByHash:
+		return "ReadByHash"
+
+		// Responses
+	case CommandReadAtResponse:
+		return "ReadAtResponse"
+	case CommandReadAtResponseErr:
+		return "ReadAtResponseErr"
+	case CommandWriteAtResponse:
+		return "WriteAtResponse"
+	case CommandWriteAtResponseErr:
+		return "WriteAtResponseErr"
+	case CommandEventResponse:
+		return "EventResponse"
+	case CommandHashesResponse:
+		return "HashesResponse"
+	case CommandDirtyListResponse:
+		return "DirtyListResponse"
+	case CommandReadByHashResponse:
+		return "ReadByHashResponse"
+	case CommandReadByHashResponseErr:
+		return "ReadByHashResponseErr"
+	}
+	return "unknown"
 }

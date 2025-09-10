@@ -25,10 +25,7 @@ func DecodeHashes(buff []byte) (map[uint][sha256.Size]byte, error) {
 	}
 	hashes := make(map[uint][sha256.Size]byte)
 	ptr := 1
-	for {
-		if ptr == len(buff) {
-			break
-		}
+	for ptr < len(buff) {
 		if ptr+(4+sha256.Size) > len(buff) {
 			return nil, ErrInvalidPacket
 		}

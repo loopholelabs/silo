@@ -2,13 +2,13 @@ package waitingcache
 
 import (
 	"github.com/loopholelabs/silo/pkg/storage"
-	"github.com/loopholelabs/silo/pkg/storage/util"
+	"github.com/loopholelabs/silo/pkg/storage/bitfield"
 )
 
 type Local struct {
 	storage.ProviderWithEvents
 	wc         *WaitingCache
-	available  util.Bitfield
+	available  bitfield.Bitfield
 	NeedAt     func(offset int64, length int32)
 	DontNeedAt func(offset int64, length int32)
 }

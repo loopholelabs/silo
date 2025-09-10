@@ -11,10 +11,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/loopholelabs/logging/types"
 	"github.com/loopholelabs/silo/pkg/storage"
+	"github.com/loopholelabs/silo/pkg/storage/bitfield"
 	"github.com/loopholelabs/silo/pkg/storage/integrity"
 	"github.com/loopholelabs/silo/pkg/storage/modules"
 	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
-	"github.com/loopholelabs/silo/pkg/storage/util"
 )
 
 type Config struct {
@@ -96,10 +96,10 @@ type Migrator struct {
 	metricBlocksCanceled   int64
 	metricBlocksDuplicates int64
 	blockLocks             []sync.Mutex
-	movingBlocks           *util.Bitfield
-	migratedBlocks         *util.Bitfield
-	cleanBlocks            *util.Bitfield
-	waitingBlocks          *util.Bitfield
+	movingBlocks           *bitfield.Bitfield
+	migratedBlocks         *bitfield.Bitfield
+	cleanBlocks            *bitfield.Bitfield
+	waitingBlocks          *bitfield.Bitfield
 	lastWrittenBlocks      []time.Time
 	blockOrder             storage.BlockOrder
 	ctime                  time.Time
@@ -137,10 +137,10 @@ func NewMigrator(source storage.TrackingProvider,
 		metricBlocksCanceled:   0,
 		metricBlocksDuplicates: 0,
 		blockOrder:             blockOrder,
-		movingBlocks:           util.NewBitfield(numBlocks),
-		migratedBlocks:         util.NewBitfield(numBlocks),
-		cleanBlocks:            util.NewBitfield(numBlocks),
-		waitingBlocks:          util.NewBitfield(numBlocks),
+		movingBlocks:           bitfield.NewBitfield(numBlocks),
+		migratedBlocks:         bitfield.NewBitfield(numBlocks),
+		cleanBlocks:            bitfield.NewBitfield(numBlocks),
+		waitingBlocks:          bitfield.NewBitfield(numBlocks),
 		blockLocks:             make([]sync.Mutex, numBlocks),
 		concurrency:            make(map[int]chan bool),
 		progressLastStatus:     &MigrationProgress{},

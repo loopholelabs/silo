@@ -42,10 +42,7 @@ func EncodeWriteAtCompRLE(offset int64, data []byte) ([]byte, error) {
 	// Now we encode the data...
 	p := 0
 	start := 0
-	for {
-		if p == len(data) {
-			break
-		}
+	for p < len(data) {
 		// Check if it's a RLE range
 		l, ok := areas[p]
 		if ok {
@@ -91,10 +88,7 @@ func DecodeWriteAtCompRLE(buff []byte) (offset int64, data []byte, err error) {
 
 	// Now read the RLE data and put it in d buffer...
 	p := 10
-	for {
-		if p == len(buff) {
-			break
-		}
+	for p < len(buff) {
 		// Read something
 		l, llen := binary.Uvarint(buff[p:])
 		p += llen
