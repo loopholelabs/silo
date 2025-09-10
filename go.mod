@@ -1,8 +1,6 @@
 module github.com/loopholelabs/silo
 
-go 1.23.0
-
-toolchain go1.23.8
+go 1.24.0
 
 require (
 	github.com/Merovius/nbd v0.0.0-20231017152624-27b78b60d8da
@@ -14,7 +12,7 @@ require (
 	github.com/prometheus/client_golang v1.23.2
 	github.com/spf13/cobra v1.10.1
 	github.com/stretchr/testify v1.11.1
-	golang.org/x/sys v0.35.0
+	golang.org/x/sys v0.36.0
 )
 
 require (
