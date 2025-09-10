@@ -490,7 +490,6 @@ func (i *ToProtocol) HandleReadByHash(hm HashManager) error {
 			buffer, err := hm.Get(context.Background(), fmt.Sprintf("%x", h))
 			// Send the data back
 			rar := packets.EncodeReadByHashResponse(&packets.ReadByHashResponse{
-				Bytes: len(buffer),
 				Data:  buffer,
 				Error: err,
 			})

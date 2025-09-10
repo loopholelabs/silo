@@ -23,7 +23,6 @@ func DecodeReadByHash(buff []byte) ([]byte, error) {
 }
 
 type ReadByHashResponse struct {
-	Bytes int
 	Data  []byte
 	Error error
 }
@@ -53,7 +52,6 @@ func DecodeReadByHashResponse(buff []byte) (*ReadByHashResponse, error) {
 		errLen := binary.LittleEndian.Uint32(buff[1:])
 		return &ReadByHashResponse{
 			Error: errors.New(string(buff[5 : 5+errLen])),
-			Bytes: 0,
 			Data:  make([]byte, 0),
 		}, nil
 	} else if buff[0] == CommandReadByHashResponse {
@@ -66,7 +64,6 @@ func DecodeReadByHashResponse(buff []byte) (*ReadByHashResponse, error) {
 		}
 		return &ReadByHashResponse{
 			Error: nil,
-			Bytes: length,
 			Data:  buff[5 : 5+length],
 		}, nil
 	}

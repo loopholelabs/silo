@@ -430,7 +430,6 @@ func TestReadByHash(t *testing.T) {
 
 func TestReadByHashResponse(t *testing.T) {
 	rar := &ReadByHashResponse{
-		Bytes: 10,
 		Error: nil,
 		Data:  []byte{1, 2, 3, 4, 5},
 	}
@@ -439,7 +438,6 @@ func TestReadByHashResponse(t *testing.T) {
 
 	rar2, err := DecodeReadByHashResponse(b)
 	assert.NoError(t, err)
-	assert.Equal(t, rar.Bytes, rar2.Bytes)
 	assert.Equal(t, rar.Data, rar2.Data)
 	assert.Equal(t, rar.Error, rar2.Error)
 
