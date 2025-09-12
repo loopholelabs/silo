@@ -2,6 +2,7 @@ package migrator
 
 import (
 	crand "crypto/rand"
+	"fmt"
 	"math/rand"
 	"testing"
 
@@ -14,13 +15,12 @@ import (
 )
 
 /**
- * Test a simple migration.
+ * Test a simple migration of mapped storage. (Mapped storage being a series of blocks which also have IDs associated with them)
  *
  */
 func TestMigratorSimpleMapped(t *testing.T) {
 	size := 1024 * 1024
 	blockSize := 4096
-	numBlocks := (size + blockSize - 1) / blockSize
 
 	sourceStorageMem := sources.NewMemoryStorage(size)
 	sourceDirtyLocal, sourceDirtyRemote := dirtytracker.NewDirtyTracker(sourceStorageMem, blockSize)
@@ -39,7 +39,9 @@ func TestMigratorSimpleMapped(t *testing.T) {
 		assert.NoError(t, err)
 	}
 
-	orderer := blocks.NewAnyBlockOrder(numBlocks, nil)
+	usedBlocks := (int(mappedStorage.Size()) + blockSize - 1) / blockSize
+
+	orderer := blocks.NewAnyBlockOrder(usedBlocks, nil)
 	orderer.AddAll()
 
 	// START moving data from sourceStorage to destStorage
@@ -59,6 +61,8 @@ func TestMigratorSimpleMapped(t *testing.T) {
 	assert.NoError(t, err)
 
 	writer := func(data []byte, offset int64, idmap map[uint64]uint64) (int, error) {
+		fmt.Printf("Write offset %d, idmap %v\n", offset, idmap)
+
 		// Write to the destination map and storage...
 		destMappedStorage.AppendMap(idmap)
 		return destStorage.WriteAt(data, offset)
@@ -67,7 +71,6 @@ func TestMigratorSimpleMapped(t *testing.T) {
 	mig.SetSourceMapped(mappedStorage, writer)
 
 	// Migrate only the blocks we need...
-	usedBlocks := (int(mappedStorage.Size()) + blockSize - 1) / blockSize
 	err = mig.Migrate(usedBlocks)
 	assert.NoError(t, err)
 
@@ -83,4 +86,7 @@ func TestMigratorSimpleMapped(t *testing.T) {
 	srcMap := mappedStorage.GetMap()
 	destMap := destMappedStorage.GetMap()
 	assert.Equal(t, srcMap, destMap)
+
+	migMetrics := mig.GetMetrics()
+	fmt.Printf("Migration total migrated blocks %d\n", migMetrics.TotalMigratedBlocks)
 }
