@@ -160,6 +160,14 @@ func TestMigratorPipeSimpleMapped(t *testing.T) {
 			})
 		}()
 		go func() {
+			_ = destFrom.HandleRemoveFromMap(func(ids []uint64) {
+				for _, id := range ids {
+					fmt.Printf("Remove block %d\n", id)
+					destMappedStorage.RemoveBlock(id)
+				}
+			})
+		}()
+		go func() {
 			_ = destFrom.HandleDevInfo()
 		}()
 	}
@@ -199,6 +207,16 @@ func TestMigratorPipeSimpleMapped(t *testing.T) {
 
 	err = mig.WaitForCompletion()
 	assert.NoError(t, err)
+
+	// Lets remove one, and make sure it gets removed remotely.
+	idmap := mappedStorage.GetMap()
+	for i, _ := range idmap {
+		err = destination.RemoveFromMap([]uint64{i})
+		assert.NoError(t, err)
+		err = mappedStorage.RemoveBlock(i)
+		assert.NoError(t, err)
+		break
+	}
 
 	// This will end with migration completed, and consumer Locked.
 	eq, err := storage.Equals(sourceStorageMem, destStorage, blockSize)
