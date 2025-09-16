@@ -79,16 +79,6 @@ func setupDeviceGroup(t *testing.T, _ types.Logger) *devicegroup.DeviceGroup {
 
 	err := os.Mkdir("test_data", 0777)
 	assert.NoError(t, err)
-	/*
-		currentUser, err := user.Current()
-		if err != nil {
-			panic(err)
-		}
-		if currentUser.Username != "root" {
-			fmt.Printf("Cannot run test unless we are root.\n")
-			return nil
-		}
-	*/
 
 	testDeviceSchema[1].Sync = sync
 
