@@ -17,15 +17,17 @@ import (
  */
 
 type DirtyTracker struct {
-	prov          storage.Provider
-	size          uint64
-	blockSize     int
-	numBlocks     int
-	dirtyLog      *util.Bitfield
-	tracking      *util.Bitfield
-	trackingTimes map[uint]time.Time
-	trackingLock  sync.Mutex
-	writeLock     sync.RWMutex
+	prov               storage.Provider
+	remoteReadProvLock sync.RWMutex
+	remoteReadProv     storage.Provider
+	size               uint64
+	blockSize          int
+	numBlocks          int
+	dirtyLog           *util.Bitfield
+	tracking           *util.Bitfield
+	trackingTimes      map[uint]time.Time
+	trackingLock       sync.Mutex
+	writeLock          sync.RWMutex
 }
 
 type Metrics struct {
@@ -65,8 +67,10 @@ type Local struct {
 
 // Relay events to embedded StorageProvider
 func (dtl *Local) SendSiloEvent(eventType storage.EventType, eventData storage.EventData) []storage.EventReturnData {
+	dtl.dt.remoteReadProvLock.RLock()
+	defer dtl.dt.remoteReadProvLock.RUnlock()
 	data := dtl.ProviderWithEvents.SendSiloEvent(eventType, eventData)
-	return append(data, storage.SendSiloEvent(dtl.dt.prov, eventType, eventData)...)
+	return append(data, storage.SendSiloEvent(dtl.dt.remoteReadProv, eventType, eventData)...)
 }
 
 func (dtl *Local) ReadAt(buffer []byte, offset int64) (int, error) {
@@ -128,17 +132,34 @@ func (dtr *Remote) CancelWrites(offset int64, length int64) {
 	dtr.dt.prov.CancelWrites(offset, length)
 }
 
+func (dtr *Remote) MarkDirty(offset int64, length int64) {
+	dtr.dt.markDirty(offset, length)
+}
+
+func (dtr *Remote) SetRemoteReadProv(prov storage.Provider) {
+	dtr.dt.remoteReadProvLock.Lock()
+	defer dtr.dt.remoteReadProvLock.Unlock()
+	dtr.dt.remoteReadProv = prov
+}
+
+func (dtr *Remote) GetRemoteReadProv() storage.Provider {
+	dtr.dt.remoteReadProvLock.RLock()
+	defer dtr.dt.remoteReadProvLock.RUnlock()
+	return dtr.dt.remoteReadProv
+}
+
 func NewDirtyTracker(prov storage.Provider, blockSize int) (*Local, *Remote) {
 	size := int(prov.Size())
 	numBlocks := (size + blockSize - 1) / blockSize
 	dt := &DirtyTracker{
-		size:          prov.Size(),
-		blockSize:     blockSize,
-		numBlocks:     numBlocks,
-		prov:          prov,
-		tracking:      util.NewBitfield(numBlocks),
-		dirtyLog:      util.NewBitfield(numBlocks),
-		trackingTimes: make(map[uint]time.Time),
+		size:           prov.Size(),
+		blockSize:      blockSize,
+		numBlocks:      numBlocks,
+		prov:           prov,
+		remoteReadProv: prov,
+		tracking:       util.NewBitfield(numBlocks),
+		dirtyLog:       util.NewBitfield(numBlocks),
+		trackingTimes:  make(map[uint]time.Time),
 	}
 	return &Local{dt: dt}, &Remote{dt: dt}
 }
@@ -162,12 +183,15 @@ func (dt *DirtyTracker) trackArea(length int64, offset int64) {
  * As well as returning the blocks, this call will update the dirty tracker as if the blocks had been read (To start tracking dirty changes)
  */
 func (dtr *Remote) GetUnrequiredBlocks() []uint {
+	dtr.dt.remoteReadProvLock.RLock()
+	defer dtr.dt.remoteReadProvLock.RUnlock()
+
 	// Make sure no writes get through...
 	dtr.dt.writeLock.Lock()
 	defer dtr.dt.writeLock.Unlock()
 
 	// Snapshot blocks from any CoW, and update the tracking
-	cowBlocks := storage.SendSiloEvent(dtr.dt.prov, storage.EventTypeCowGetBlocks, dtr)
+	cowBlocks := storage.SendSiloEvent(dtr.dt.remoteReadProv, storage.EventTypeCowGetBlocks, dtr)
 	if len(cowBlocks) == 1 {
 		blocks := cowBlocks[0].([]uint)
 		for _, b := range blocks {
@@ -359,26 +383,30 @@ func (dt *DirtyTracker) localWriteAt(buffer []byte, offset int64) (int, error) {
 	n, err := dt.prov.WriteAt(buffer, offset)
 
 	if err == nil {
-		end := uint64(offset + int64(len(buffer)))
-		if end > dt.size {
-			end = dt.size
-		}
-
-		bStart := uint(offset / int64(dt.blockSize))
-		bEnd := uint((end-1)/uint64(dt.blockSize)) + 1
-
-		// Update tracking times for last block write
-		dt.trackingLock.Lock()
-		dt.dirtyLog.SetBitsIf(dt.tracking, bStart, bEnd)
-		now := time.Now()
-		for b := bStart; b < bEnd; b++ {
-			if dt.tracking.BitSet(int(b)) {
-				dt.trackingTimes[b] = now
-			}
-		}
-		dt.trackingLock.Unlock()
+		dt.markDirty(offset, int64(len(buffer)))
 	}
 	return n, err
+}
+
+func (dt *DirtyTracker) markDirty(offset int64, length int64) {
+	end := uint64(offset + length)
+	if end > dt.size {
+		end = dt.size
+	}
+
+	bStart := uint(offset / int64(dt.blockSize))
+	bEnd := uint((end-1)/uint64(dt.blockSize)) + 1
+
+	// Update tracking times for last block write
+	dt.trackingLock.Lock()
+	dt.dirtyLog.SetBitsIf(dt.tracking, bStart, bEnd)
+	now := time.Now()
+	for b := bStart; b < bEnd; b++ {
+		if dt.tracking.BitSet(int(b)) {
+			dt.trackingTimes[b] = now
+		}
+	}
+	dt.trackingLock.Unlock()
 }
 
 func (dt *DirtyTracker) localFlush() error {
@@ -390,13 +418,15 @@ func (dt *DirtyTracker) localSize() uint64 {
 }
 
 func (dt *DirtyTracker) remoteReadAt(buffer []byte, offset int64) (int, error) {
+	dt.remoteReadProvLock.RLock()
+	defer dt.remoteReadProvLock.RUnlock()
 
 	// Start tracking dirty on the area we read.
 	dt.trackArea(int64(len(buffer)), offset)
 	// NB: A WriteAt could occur here, which would result in an incorrect dirty marking.
 	// TODO: Do something to mitigate this without affecting performance.
 	// Note though, that this is still preferable to tracking everything before it's been read for migration.
-	n, err := dt.prov.ReadAt(buffer, offset)
+	n, err := dt.remoteReadProv.ReadAt(buffer, offset)
 
 	return n, err
 }

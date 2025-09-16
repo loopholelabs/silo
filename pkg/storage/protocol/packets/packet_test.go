@@ -249,25 +249,18 @@ func TestWriteAtComp(t *testing.T) {
 		4, 4, 4, 4, 4,
 		0, 0, 9, 9, 5, 23,
 		8, 8, 8, 8, 8, 8, 8, 8,
-		0}
+		0, 7}
 
-	// ENCODES AS
-	// 08 | 39 30 00 00 00 00 00 00
-	// 02 | 1a
-	// 09 | 00
-	// 0a | 01 02 00 00 00
-	// 0b | 04
-	// 0c | 00 00 09 09 05 17
-	// 11 | 08
-	// 02 | 00
+	for _, compType := range []CompressionType{CompressionTypeRLE, CompressionTypeGzip, CompressionTypeZeroes} {
+		b, err := EncodeWriteAtComp(compType, 12345, buff)
+		assert.NoError(t, err)
 
-	b := EncodeWriteAtComp(12345, buff)
+		off, data, err := DecodeWriteAtComp(b)
+		assert.NoError(t, err)
 
-	off, data, err := DecodeWriteAtComp(b)
-	assert.NoError(t, err)
-
-	assert.Equal(t, int64(12345), off)
-	assert.Equal(t, buff, data)
+		assert.Equal(t, int64(12345), off)
+		assert.Equal(t, buff, data)
+	}
 }
 
 func TestWriteAtWithMap(t *testing.T) {

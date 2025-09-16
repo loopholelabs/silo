@@ -208,3 +208,16 @@ func TestBitfieldShortText(t *testing.T) {
 
 	assert.True(t, bf.Equals(nbf))
 }
+
+func TestCollectZeroExtents(t *testing.T) {
+	bf := NewBitfield(1000)
+	bf.SetBits(0, 1000)
+	for _, v := range []int{7, 100, 101, 102, 905, 907} {
+		bf.ClearBit(v)
+	}
+
+	start, end := bf.CollectZeroExtents(0, 1000)
+
+	assert.Equal(t, uint(7), start)
+	assert.Equal(t, uint(908), end)
+}
