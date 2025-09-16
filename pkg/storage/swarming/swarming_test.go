@@ -118,15 +118,6 @@ func TestSwarmingMigrate(t *testing.T) {
 
 	// Wrap protocol so we can see what's going on...
 	prSourceMim := protocol.NewMim(prSource)
-	/*
-		prSourceMim.PostSendPacket = func(dev uint32, id uint32, data []byte, urgency protocol.Urgency, pid uint32, err error) {
-			cmdString := packets.CommandString(data[0])
-			if data[0] == packets.CommandWriteAt {
-				cmdString = packets.WriteAtType(data[1])
-			}
-			fmt.Printf("  # Send src-> dev %d id %d data %d urgency %d pid %d err %v cmd %s\n", dev, id, len(data), urgency, pid, err, cmdString)
-		}
-	*/
 
 	prSourceMim.PostSendDeviceGroupInfo = func(_ uint32, _ uint32, dgi *packets.DeviceGroupInfo, _ error) {
 		fmt.Printf(" -> DeviceGroupInfo\n")
@@ -168,12 +159,6 @@ func TestSwarmingMigrate(t *testing.T) {
 	prSourceMim.PostWriteAtResponse = func(dev uint32, id uint32, bytes int, writeErr error, err error) {
 		fmt.Printf(" <- WriteAtResponse %d %d bytes=%d writeErr=%v %v\n", dev, id, bytes, writeErr, err)
 	}
-	/*
-		prSourceMim.PostWaitForPacket = func(dev uint32, id uint32, data []byte, err error) {
-			cmdString := packets.CommandString(data[0])
-			fmt.Printf("  # src-> WaitForPacket dev %d id %d data %d err %v cmd %s\n", dev, id, len(data), err, cmdString)
-		}
-	*/
 	prSourceMim.PostWaitForCommand = func(dev uint32, cmd byte, id uint32, data []byte, err error) {
 		if errors.Is(err, context.Canceled) {
 			return // Don't really care
