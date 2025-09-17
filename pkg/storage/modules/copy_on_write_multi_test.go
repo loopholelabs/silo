@@ -16,7 +16,7 @@ func TestCopyOnWriteMulti(t *testing.T) {
 
 	// Fill the base with known data
 	data := make([]byte, size)
-	for i:=0;i<len(data);i++ {
+	for i := 0; i < len(data); i++ {
 		data[i] = 99
 	}
 	_, err := mem.WriteAt(data, 0)
@@ -89,7 +89,7 @@ func TestCopyOnWriteMultiOverlap(t *testing.T) {
 
 	// Fill the base with known data
 	data := make([]byte, size)
-	for i:=0;i<len(data);i++ {
+	for i := 0; i < len(data); i++ {
 		data[i] = 99
 	}
 	_, err := mem.WriteAt(data, 0)
