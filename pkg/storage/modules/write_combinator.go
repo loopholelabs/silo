@@ -5,7 +5,7 @@ import (
 	"sync/atomic"
 
 	"github.com/loopholelabs/silo/pkg/storage"
-	"github.com/loopholelabs/silo/pkg/storage/util"
+	"github.com/loopholelabs/silo/pkg/storage/bitfield"
 )
 
 // Restrictions
@@ -73,8 +73,8 @@ func (i *WriteCombinator) AddSource(priority int) storage.Provider {
 	ws := &writeSource{
 		priority:   priority,
 		combinator: i,
-		available:  util.NewBitfield(i.numBlocks),
-		duplicated: util.NewBitfield(i.numBlocks),
+		available:  bitfield.NewBitfield(i.numBlocks),
+		duplicated: bitfield.NewBitfield(i.numBlocks),
 	}
 	i.sources[priority] = ws
 	return ws
@@ -112,8 +112,8 @@ type writeSource struct {
 	storage.ProviderWithEvents
 	priority              int
 	combinator            *WriteCombinator
-	available             *util.Bitfield
-	duplicated            *util.Bitfield
+	available             *bitfield.Bitfield
+	duplicated            *bitfield.Bitfield
 	metricWritesAllowed   uint64
 	metricWritesBlocked   uint64
 	metricWritesDuplicate uint64

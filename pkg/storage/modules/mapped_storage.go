@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/loopholelabs/silo/pkg/storage"
-	"github.com/loopholelabs/silo/pkg/storage/util"
+	"github.com/loopholelabs/silo/pkg/storage/bitfield"
 )
 
 var ErrOutOfSpace = errors.New("out of space")
@@ -18,7 +18,7 @@ type MappedStorage struct {
 	prov           storage.Provider
 	IDs            []uint64
 	idToBlock      map[uint64]uint64
-	blockAvailable util.Bitfield
+	blockAvailable bitfield.Bitfield
 	lock           sync.Mutex
 	blockSize      int
 
@@ -44,7 +44,7 @@ type MappedStorageStats struct {
 
 func NewMappedStorage(prov storage.Provider, blockSize int) *MappedStorage {
 	numBlocks := (prov.Size() + uint64(blockSize) - 1) / uint64(blockSize)
-	available := *util.NewBitfield(int(numBlocks))
+	available := *bitfield.NewBitfield(int(numBlocks))
 	available.SetBits(0, available.Length())
 
 	return &MappedStorage{
@@ -438,10 +438,7 @@ func (ms *MappedStorage) GetRegions(addresses []uint64, maxSize uint64) map[uint
 			ranges[a] = uint64(ms.blockSize)
 			// Try to combine some more...
 			ptr := ms.blockSize
-			for {
-				if maxSize != 0 && ranges[a] >= maxSize {
-					break
-				}
+			for maxSize == 0 || ranges[a] < maxSize {
 				// Make sure it exists
 				_, mok := exists[a+uint64(ptr)]
 				if mok {

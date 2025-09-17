@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/loopholelabs/silo/pkg/storage"
+	"github.com/loopholelabs/silo/pkg/storage/bitfield"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
-	"github.com/loopholelabs/silo/pkg/storage/util"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -275,7 +275,7 @@ func TestCopyOnWriteReadsNonzero(t *testing.T) {
 	_, err = mem.WriteAt(data, 0)
 	assert.NoError(t, err)
 
-	nonzero := util.NewBitfield((1024*1024 + 10 - 1) / 10)
+	nonzero := bitfield.NewBitfield((1024*1024 + 10 - 1) / 10)
 	// Set some bits
 	nonzero.SetBits(0, nonzero.Length()/2)
 

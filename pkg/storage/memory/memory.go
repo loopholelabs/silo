@@ -75,10 +75,7 @@ func (i *ProcessMemoryStorage) ReadAt(buffer []byte, offset int64) (int, error) 
 	defer i.lock.RUnlock()
 
 	bufferOffset := int64(0)
-	for {
-		if bufferOffset == int64(len(buffer)) {
-			break // We're done
-		}
+	for bufferOffset < int64(len(buffer)) {
 		r := i.findMemoryRange(uint64(offset + bufferOffset))
 		if r == nil {
 			// If we do not have the range, return zeroes.
@@ -111,10 +108,7 @@ func (i *ProcessMemoryStorage) WriteAt(buffer []byte, offset int64) (int, error)
 	defer i.lock.Unlock()
 
 	bufferOffset := int64(0)
-	for {
-		if bufferOffset == int64(len(buffer)) {
-			break // We're done
-		}
+	for bufferOffset < int64(len(buffer)) {
 		r := i.findMemoryRange(uint64(offset + bufferOffset))
 		if r == nil {
 			return 0, ErrNotFound

@@ -10,7 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/loopholelabs/silo/pkg/storage"
-	"github.com/loopholelabs/silo/pkg/storage/util"
+	"github.com/loopholelabs/silo/pkg/storage/bitfield"
 )
 
 type WriteCache struct {
@@ -262,7 +262,7 @@ func (i *WriteCache) flushBlock(b int) error {
 		if i.minimizeReadBytes {
 			// Check if we need to do a read, and the extents
 			// TODO: Do this as we receive the writes?
-			bf := util.NewBitfield(i.blockSize)
+			bf := bitfield.NewBitfield(i.blockSize)
 			for _, w := range bi.writes {
 				bf.SetBits(uint(w.offset), uint(w.offset+int64(len(w.data))))
 			}
