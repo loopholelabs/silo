@@ -1,7 +1,6 @@
 package modules
 
 import (
-	"crypto/rand"
 	"testing"
 
 	"github.com/loopholelabs/silo/pkg/storage"
@@ -15,11 +14,12 @@ func TestCopyOnWriteMulti(t *testing.T) {
 	size := 1024 * 1024
 	mem := sources.NewMemoryStorage(size)
 
-	// Fill the base with random data...
+	// Fill the base with known data
 	data := make([]byte, size)
-	_, err := rand.Read(data)
-	assert.NoError(t, err)
-	_, err = mem.WriteAt(data, 0)
+	for i := 0; i < len(data); i++ {
+		data[i] = 99
+	}
+	_, err := mem.WriteAt(data, 0)
 	assert.NoError(t, err)
 
 	cache1 := sources.NewMemoryStorage(size)
@@ -87,11 +87,12 @@ func TestCopyOnWriteMultiOverlap(t *testing.T) {
 	size := 100
 	mem := sources.NewMemoryStorage(size)
 
-	// Fill the base with random data...
+	// Fill the base with known data
 	data := make([]byte, size)
-	_, err := rand.Read(data)
-	assert.NoError(t, err)
-	_, err = mem.WriteAt(data, 0)
+	for i := 0; i < len(data); i++ {
+		data[i] = 99
+	}
+	_, err := mem.WriteAt(data, 0)
 	assert.NoError(t, err)
 
 	cache1 := sources.NewMemoryStorage(size)
