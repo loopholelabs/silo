@@ -1,7 +1,6 @@
 package modules
 
 import (
-	"crypto/rand"
 	"testing"
 
 	"github.com/loopholelabs/silo/pkg/storage"
