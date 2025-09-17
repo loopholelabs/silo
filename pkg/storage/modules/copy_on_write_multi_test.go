@@ -156,11 +156,11 @@ func TestCopyOnWriteMultiOverlap(t *testing.T) {
 		switch c {
 		case cow1:
 			assert.Equal(t, int64(3), chgBlocks)
-			assert.Equal(t, int64(18), chgBytes)	// This is sometimes 16
+			assert.Equal(t, int64(18), chgBytes)
 			assert.Equal(t, []uint{0x1, 0x2, 0x3, 0x4, 0x5, 0x7, 0x8}, bl)
 		case cow2:
 			assert.Equal(t, int64(4), chgBlocks)
-			assert.Equal(t, int64(18), chgBytes)	// This is sometimes 17
+			assert.Equal(t, int64(18), chgBytes)
 			assert.Equal(t, []uint{0x2, 0x3, 0x4, 0x5, 0x8}, bl)
 		case cow3:
 			assert.Equal(t, int64(4), chgBlocks)
