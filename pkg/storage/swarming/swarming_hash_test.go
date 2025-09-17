@@ -83,6 +83,7 @@ func TestSwarmingHashMigrate(t *testing.T) {
 	}()
 
 	// Make sure it has some time to write to S3
+	// TODO: Rather than sleep, we could wait for some time until some blocks get written (check metrics)
 	time.Sleep(5 * time.Second)
 
 	var dg2 *devicegroup.DeviceGroup
