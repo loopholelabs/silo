@@ -9,15 +9,15 @@ import (
 	"sync/atomic"
 
 	"github.com/loopholelabs/silo/pkg/storage"
-	"github.com/loopholelabs/silo/pkg/storage/util"
+	"github.com/loopholelabs/silo/pkg/storage/bitfield"
 )
 
 type CopyOnWrite struct {
 	storage.ProviderWithEvents
 	source     storage.Provider
 	cache      storage.Provider
-	exists     *util.Bitfield
-	nonzero    *util.Bitfield
+	exists     *bitfield.Bitfield
+	nonzero    *bitfield.Bitfield
 	size       uint64
 	blockSize  int
 	CloseFn    func()
@@ -163,7 +163,7 @@ func NewCopyOnWrite(source storage.Provider, cache storage.Provider, blockSize i
 		locks[t] = &sync.Mutex{}
 	}
 
-	nonzero := util.NewBitfield(int(numBlocks))
+	nonzero := bitfield.NewBitfield(int(numBlocks))
 
 	zeroHash := make([]byte, sha256.Size)
 
@@ -182,7 +182,7 @@ func NewCopyOnWrite(source storage.Provider, cache storage.Provider, blockSize i
 	return &CopyOnWrite{
 		source:     source,
 		cache:      cache,
-		exists:     util.NewBitfield(int(numBlocks)),
+		exists:     bitfield.NewBitfield(int(numBlocks)),
 		nonzero:    nonzero,
 		writeLocks: locks,
 		size:       source.Size(),

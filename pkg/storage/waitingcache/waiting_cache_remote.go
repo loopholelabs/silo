@@ -4,13 +4,13 @@ import (
 	"io"
 
 	"github.com/loopholelabs/silo/pkg/storage"
-	"github.com/loopholelabs/silo/pkg/storage/util"
+	"github.com/loopholelabs/silo/pkg/storage/bitfield"
 )
 
 type Remote struct {
 	storage.ProviderWithEvents
 	wc        *WaitingCache
-	available util.Bitfield
+	available bitfield.Bitfield
 }
 
 // Relay events to embedded StorageProvider

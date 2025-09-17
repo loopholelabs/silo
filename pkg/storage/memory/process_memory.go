@@ -627,7 +627,7 @@ waitStop:
 	for {
 		select {
 		case <-waitCtx.Done():
-			return fmt.Errorf("Could not signal process? %s %s", sig, lastState)
+			return fmt.Errorf("could not signal process? %s %s", sig, lastState)
 		case <-waitTick.C:
 			dd, err := os.ReadFile(fmt.Sprintf("/proc/%d/status", pm.pid))
 			if err == nil {

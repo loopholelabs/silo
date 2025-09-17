@@ -93,10 +93,7 @@ func DecodeWriteAtCompZeroes(buff []byte) (offset int64, data []byte, err error)
 	d := make([]byte, length)
 
 	p := 18
-	for {
-		if p == len(buff) {
-			break
-		}
+	for p < len(buff) {
 		rangeStart, n := binary.Varint(buff[p:])
 		p += n
 		rangeLength, n := binary.Varint(buff[p:])

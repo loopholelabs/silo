@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/loopholelabs/silo/pkg/storage"
-	"github.com/loopholelabs/silo/pkg/storage/util"
+	"github.com/loopholelabs/silo/pkg/storage/bitfield"
 )
 
 /**
@@ -23,8 +23,8 @@ type DirtyTracker struct {
 	size               uint64
 	blockSize          int
 	numBlocks          int
-	dirtyLog           *util.Bitfield
-	tracking           *util.Bitfield
+	dirtyLog           *bitfield.Bitfield
+	tracking           *bitfield.Bitfield
 	trackingTimes      map[uint]time.Time
 	trackingLock       sync.Mutex
 	writeLock          sync.RWMutex
@@ -157,8 +157,8 @@ func NewDirtyTracker(prov storage.Provider, blockSize int) (*Local, *Remote) {
 		numBlocks:      numBlocks,
 		prov:           prov,
 		remoteReadProv: prov,
-		tracking:       util.NewBitfield(numBlocks),
-		dirtyLog:       util.NewBitfield(numBlocks),
+		tracking:       bitfield.NewBitfield(numBlocks),
+		dirtyLog:       bitfield.NewBitfield(numBlocks),
 		trackingTimes:  make(map[uint]time.Time),
 	}
 	return &Local{dt: dt}, &Remote{dt: dt}
@@ -311,13 +311,7 @@ func (dtr *Remote) GetDirtyBlocks(maxAge time.Duration, limit int, groupByShift 
 		})
 
 		// Now add them into grouped_blocks if we can...
-		for {
-			if len(groupedBlocks) == limit {
-				break
-			}
-			if len(keys) == 0 {
-				break
-			}
+		for len(groupedBlocks) < limit && len(keys) > 0 {
 			// Pick one out of grouped_blocks_changed, and try to add it
 			k := keys[0]
 			keys = keys[1:]
@@ -344,7 +338,7 @@ func (dtr *Remote) GetDirtyBlocks(maxAge time.Duration, limit int, groupByShift 
 	return rblocks
 }
 
-func (dtr *Remote) GetAllDirtyBlocks() *util.Bitfield {
+func (dtr *Remote) GetAllDirtyBlocks() *bitfield.Bitfield {
 	// Prevent any writes while we do the Sync()
 	dtr.dt.writeLock.Lock()
 	defer dtr.dt.writeLock.Unlock()
@@ -367,7 +361,7 @@ func (dtr *Remote) GetAllDirtyBlocks() *util.Bitfield {
 	return info
 }
 
-func (dtr *Remote) Sync() *util.Bitfield {
+func (dtr *Remote) Sync() *bitfield.Bitfield {
 	info := dtr.GetAllDirtyBlocks()
 	return info
 }

@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/loopholelabs/logging/types"
 	"github.com/loopholelabs/silo/pkg/storage"
-	"github.com/loopholelabs/silo/pkg/storage/util"
+	"github.com/loopholelabs/silo/pkg/storage/bitfield"
 )
 
 /**
@@ -69,13 +69,13 @@ func NewWaitingCacheWithLogger(prov storage.Provider, blockSize int, log types.L
 	}
 	wc.local = &Local{
 		wc:         wc,
-		available:  *util.NewBitfield(numBlocks),
+		available:  *bitfield.NewBitfield(numBlocks),
 		NeedAt:     func(_ int64, _ int32) {},
 		DontNeedAt: func(_ int64, _ int32) {},
 	}
 	wc.remote = &Remote{
 		wc:        wc,
-		available: *util.NewBitfield(numBlocks),
+		available: *bitfield.NewBitfield(numBlocks),
 	}
 	return wc.local, wc.remote
 }

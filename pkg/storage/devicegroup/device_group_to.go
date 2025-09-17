@@ -258,6 +258,12 @@ func (dg *DeviceGroup) MigrateAll(maxConcurrency int, progressHandler func(p map
 			setMigrationError(err)
 		}()
 
+		// Support direct remote reads
+		go func() {
+			err := d.To.HandleReadAt(d.DirtyRemote)
+			setMigrationError(err)
+		}()
+
 		cfg := migrator.NewConfig()
 		cfg.Logger = dg.log
 		cfg.BlockSize = int(d.BlockSize)

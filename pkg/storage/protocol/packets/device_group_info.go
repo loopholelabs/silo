@@ -34,10 +34,7 @@ func DecodeDeviceGroupInfo(buff []byte) (*DeviceGroupInfo, error) {
 	}
 
 	ptr := 1
-	for {
-		if ptr == len(buff) {
-			break
-		}
+	for ptr < len(buff) {
 		if len(buff)-ptr < 8 {
 			return nil, ErrInvalidPacket
 		}
