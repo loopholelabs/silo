@@ -15,11 +15,12 @@ func TestCopyOnWriteMulti(t *testing.T) {
 	size := 1024 * 1024
 	mem := sources.NewMemoryStorage(size)
 
-	// Fill the base with random data...
+	// Fill the base with known data
 	data := make([]byte, size)
-	_, err := rand.Read(data)
-	assert.NoError(t, err)
-	_, err = mem.WriteAt(data, 0)
+	for i:=0;i<len(data);i++ {
+		data[i] = 99
+	}
+	_, err := mem.WriteAt(data, 0)
 	assert.NoError(t, err)
 
 	cache1 := sources.NewMemoryStorage(size)
@@ -87,11 +88,12 @@ func TestCopyOnWriteMultiOverlap(t *testing.T) {
 	size := 100
 	mem := sources.NewMemoryStorage(size)
 
-	// Fill the base with random data...
+	// Fill the base with known data
 	data := make([]byte, size)
-	_, err := rand.Read(data)
-	assert.NoError(t, err)
-	_, err = mem.WriteAt(data, 0)
+	for i:=0;i<len(data);i++ {
+		data[i] = 99
+	}
+	_, err := mem.WriteAt(data, 0)
 	assert.NoError(t, err)
 
 	cache1 := sources.NewMemoryStorage(size)
@@ -154,11 +156,11 @@ func TestCopyOnWriteMultiOverlap(t *testing.T) {
 		switch c {
 		case cow1:
 			assert.Equal(t, int64(3), chgBlocks)
-			assert.Equal(t, int64(18), chgBytes)
+			assert.Equal(t, int64(18), chgBytes)	// This is sometimes 16
 			assert.Equal(t, []uint{0x1, 0x2, 0x3, 0x4, 0x5, 0x7, 0x8}, bl)
 		case cow2:
 			assert.Equal(t, int64(4), chgBlocks)
-			assert.Equal(t, int64(18), chgBytes)
+			assert.Equal(t, int64(18), chgBytes)	// This is sometimes 17
 			assert.Equal(t, []uint{0x2, 0x3, 0x4, 0x5, 0x8}, bl)
 		case cow3:
 			assert.Equal(t, int64(4), chgBlocks)
