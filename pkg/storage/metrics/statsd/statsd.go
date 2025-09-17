@@ -100,6 +100,7 @@ func New(addr string, config *MetricsConfig) *Metrics {
 
 func (m *Metrics) remove(subsystem string, id string, name string) {
 	m.lock.Lock()
+	defer m.lock.Unlock()
 	cancelfns, ok := m.cancelfns[id]
 	if ok {
 		cancelfn, ok := cancelfns[fmt.Sprintf("%s_%s", subsystem, name)]
@@ -111,7 +112,6 @@ func (m *Metrics) remove(subsystem string, id string, name string) {
 			}
 		}
 	}
-	m.lock.Unlock()
 }
 
 func (m *Metrics) add(subsystem string, id string, name string, interval time.Duration, tickfn func()) {
