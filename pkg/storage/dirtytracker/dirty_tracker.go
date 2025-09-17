@@ -41,15 +41,22 @@ type Metrics struct {
 func (dtr *Remote) GetMetrics() *Metrics {
 	// Figure out oldest dirty block...
 	dtr.dt.trackingLock.Lock()
-	maxAgeDirty := time.Duration(0)
-	minAge := time.Now()
+	defer dtr.dt.trackingLock.Unlock()
+
+	// Find the oldest tracking time.
+	minTime := time.Now()
+	hasDirtyBlocks := false
 	for _, t := range dtr.dt.trackingTimes {
-		if t.Before(minAge) {
-			minAge = t
-			maxAgeDirty = time.Since(minAge)
+		if t.Before(minTime) {
+			minTime = t
+			hasDirtyBlocks = true
 		}
 	}
-	dtr.dt.trackingLock.Unlock()
+
+	var maxAgeDirty time.Duration
+	if hasDirtyBlocks {
+		maxAgeDirty = time.Since(minTime)
+	}
 
 	return &Metrics{
 		BlockSize:      uint64(dtr.dt.blockSize),
