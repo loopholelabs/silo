@@ -2,13 +2,13 @@ package modules
 
 import (
 	"github.com/loopholelabs/silo/pkg/storage"
-	"github.com/loopholelabs/silo/pkg/storage/util"
+	"github.com/loopholelabs/silo/pkg/storage/bitfield"
 )
 
 type DummyTracker struct {
 	storage.ProviderWithEvents
 	prov storage.Provider
-	bf   *util.Bitfield
+	bf   *bitfield.Bitfield
 }
 
 // Relay events to embedded StorageProvider
@@ -21,12 +21,12 @@ func NewDummyTracker(prov storage.Provider, blockSize int) *DummyTracker {
 	numBlocks := (int(prov.Size()) + blockSize - 1) / blockSize
 	l := &DummyTracker{
 		prov: prov,
-		bf:   util.NewBitfield(numBlocks),
+		bf:   bitfield.NewBitfield(numBlocks),
 	}
 	return l
 }
 
-func (i *DummyTracker) Sync() *util.Bitfield {
+func (i *DummyTracker) Sync() *bitfield.Bitfield {
 	return i.bf
 }
 

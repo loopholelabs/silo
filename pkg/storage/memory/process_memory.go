@@ -1,4 +1,4 @@
-package expose
+package memory
 
 import (
 	"context"
@@ -20,17 +20,16 @@ const PageSize = 1 << PageShift // 4096
 
 const ReadBufferSize = 4 * 1024 * 1024 // 4mb should be fairly fast reading memory
 
-const WaitProcessChangeTimeout = 10 * time.Second
 const WaitProcessChangePollInterval = 10 * time.Millisecond
 
 // pagemap flags
-const PagemapFlagSoftDirty = 1 << 55
-const PagemapFlagExclusive = 1 << 56
-const PagemapFlagFilepage = 1 << 61
-const PagemapFlagSwapped = 1 << 62
-const PagemapFlagPresent = 1 << 63
+const PagemapFlagSoftDirty = 1 << 55 // 00 80 00 00 00 00 00 00
+const PagemapFlagExclusive = 1 << 56 // 01 00 00 00 00 00 00 00
+const PagemapFlagFilepage = 1 << 61  // 20 00 00 00 00 00 00 00
+const PagemapFlagSwapped = 1 << 62   // 40 00 00 00 00 00 00 00
+const PagemapFlagPresent = 1 << 63   // 80 00 00 00 00 00 00 00
 const PagemapMaskPfn = (1 << 55) - 1
-const PagemapMaskSwapType = (1 << 5) - 1
+const PagemapMaskSwapType = (1 << 5) - 1 // Lowest 5 bits
 const PagemapSwapOffsetShift = 5
 const PagemapMaskSwapOffset = (1 << 50) - 1
 
@@ -347,7 +346,7 @@ func (pm *ProcessMemory) CopySoftDirtyMemory(addrStart uint64, addrEnd uint64, p
  * CopyMemoryRanges
  *
  */
-func (pm *ProcessMemory) CopyMemoryRanges(addrAdjust int64, ranges []MemoryRange, prov storage.Provider) (uint64, error) {
+func (pm *ProcessMemory) CopyMemoryRanges(addrAdjust int64, ranges []Range, prov storage.Provider) (uint64, error) {
 	bytesRead := uint64(0)
 	memf, err := os.OpenFile(fmt.Sprintf("/proc/%d/mem", pm.pid), os.O_RDONLY, 0)
 	if err != nil {
@@ -393,17 +392,18 @@ func (pm *ProcessMemory) CopyMemoryRanges(addrAdjust int64, ranges []MemoryRange
 	return bytesRead, nil
 }
 
-type MemoryRange struct {
-	Start uint64
-	End   uint64
+type Range struct {
+	Start   uint64
+	End     uint64
+	Swapped uint64
 }
 
 /**
  * ReadSoftDirtyMemoryRangeList
  *
  */
-func (pm *ProcessMemory) ReadSoftDirtyMemoryRangeList(addrStart uint64, addrEnd uint64, lockCB func() error, unlockCB func() error) ([]MemoryRange, error) {
-	ranges := make([]MemoryRange, 0)
+func (pm *ProcessMemory) ReadSoftDirtyMemoryRangeList(addrStart uint64, addrEnd uint64, lockCB func() error, unlockCB func() error) ([]Range, error) {
+	ranges := make([]Range, 0)
 
 	f, err := os.OpenFile(fmt.Sprintf("/proc/%d/pagemap", pm.pid), os.O_RDONLY, 0)
 	if err != nil {
@@ -438,35 +438,54 @@ func (pm *ProcessMemory) ReadSoftDirtyMemoryRangeList(addrStart uint64, addrEnd 
 
 	currentStart := uint64(0)
 	currentEnd := uint64(0)
+	currentSwapped := uint64(0)
 
 	dataIndex := 0
 	for xx := addrStart; xx < addrEnd; xx += PageSize {
 		val := binary.LittleEndian.Uint64(pageBuffer[dataIndex:])
 		dataIndex += 8
 
-		if (val&PagemapFlagPresent) == PagemapFlagPresent &&
-			(val&PagemapFlagSoftDirty) == PagemapFlagSoftDirty {
+		// When mmap is called, all the memory is marked as NOT_PRESENT SOFT_DIRTY.
+		//
+		// START		NOT_PRESENT			SOFT_DIRTY
+		// changed		PRESENT				SOFT_DIRTY
+		// swapped		SWAPPED NOT_PRESENT SOFT_DIRTY
 
-			if currentEnd == xx {
-				currentEnd = xx + PageSize
-			} else {
-				if currentEnd != 0 {
-					ranges = append(ranges, MemoryRange{
-						Start: currentStart,
-						End:   currentEnd,
-					})
+		if (val & PagemapFlagSoftDirty) == PagemapFlagSoftDirty {
+			if (val&PagemapFlagPresent) == PagemapFlagPresent ||
+				(val&PagemapFlagSwapped) == PagemapFlagSwapped {
+
+				if currentEnd == xx {
+					currentEnd = xx + PageSize
+					if (val & PagemapFlagSwapped) == PagemapFlagSwapped {
+						currentSwapped += PageSize
+					}
+
+				} else {
+					if currentEnd != 0 {
+						ranges = append(ranges, Range{
+							Start:   currentStart,
+							End:     currentEnd,
+							Swapped: currentSwapped,
+						})
+					}
+					currentStart = xx
+					currentEnd = xx + PageSize
+					currentSwapped = 0
+					if (val & PagemapFlagSwapped) == PagemapFlagSwapped {
+						currentSwapped += PageSize
+					}
 				}
-				currentStart = xx
-				currentEnd = xx + PageSize
 			}
 		}
 
 	}
 
 	if currentEnd != 0 {
-		ranges = append(ranges, MemoryRange{
-			Start: currentStart,
-			End:   currentEnd,
+		ranges = append(ranges, Range{
+			Start:   currentStart,
+			End:     currentEnd,
+			Swapped: currentSwapped,
 		})
 	}
 
@@ -579,16 +598,16 @@ func (pm *ProcessMemory) CopyDirtyMemory(addrStart uint64, addrEnd uint64, prov 
 	return nil
 }
 
-func (pm *ProcessMemory) PauseProcess() error {
-	return pm.signalProcess(syscall.SIGSTOP, []string{"T (stopped)"})
+func (pm *ProcessMemory) PauseProcess(timeout time.Duration) error {
+	return pm.signalProcess(timeout, syscall.SIGSTOP, []string{"T (stopped)"})
 }
 
-func (pm *ProcessMemory) ResumeProcess() error {
-	return pm.signalProcess(syscall.SIGCONT, []string{"S (sleeping)", "D (disk sleep)", "R (running)"})
+func (pm *ProcessMemory) ResumeProcess(timeout time.Duration) error {
+	return pm.signalProcess(timeout, syscall.SIGCONT, []string{"S (sleeping)", "D (disk sleep)", "R (running)"})
 }
 
 // signalProcess send a signal
-func (pm *ProcessMemory) signalProcess(sig syscall.Signal, expects []string) error {
+func (pm *ProcessMemory) signalProcess(timeout time.Duration, sig syscall.Signal, expects []string) error {
 
 	// Send a signal to STOP
 	err := syscall.Kill(pm.pid, sig)
@@ -599,23 +618,25 @@ func (pm *ProcessMemory) signalProcess(sig syscall.Signal, expects []string) err
 	// Wait until it's stopped
 	waitTick := time.NewTicker(WaitProcessChangePollInterval)
 	defer waitTick.Stop()
-	waitCtx, waitCancel := context.WithTimeout(context.Background(), WaitProcessChangeTimeout)
+	waitCtx, waitCancel := context.WithTimeout(context.Background(), timeout)
 	defer waitCancel()
+
+	lastState := ""
+
 waitStop:
 	for {
 		select {
 		case <-waitCtx.Done():
-			return errors.New("Could not stop process?")
+			return fmt.Errorf("could not signal process? %s %s", sig, lastState)
 		case <-waitTick.C:
-			state := ""
 			dd, err := os.ReadFile(fmt.Sprintf("/proc/%d/status", pm.pid))
 			if err == nil {
 				lines := strings.Split(string(dd), "\n")
 				for _, l := range lines {
 					if strings.HasPrefix(l, "State:") {
-						state = strings.Trim(l[6:], "\r\n \t")
+						lastState = strings.Trim(l[6:], "\r\n \t")
 						for _, expect := range expects {
-							if state == expect {
+							if lastState == expect {
 								break waitStop
 							}
 						}

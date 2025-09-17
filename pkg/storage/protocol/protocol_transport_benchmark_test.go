@@ -106,7 +106,7 @@ func BenchmarkWriteAt(mb *testing.B) {
 func BenchmarkWriteAtComp(mb *testing.B) {
 	sourceToProtocol := setup(1)
 
-	sourceToProtocol.SetCompression(true)
+	sourceToProtocol.SetCompression(true, packets.WriteAtCompRLE)
 
 	// Do some writes
 	buff := make([]byte, 256*1024)

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/loopholelabs/silo/pkg/storage/bitfield"
 	"github.com/loopholelabs/silo/pkg/storage/sources"
-	"github.com/loopholelabs/silo/pkg/storage/util"
 	"github.com/spf13/cobra"
 )
 
@@ -44,7 +44,7 @@ func runCheckDev(_ *cobra.Command, _ []string) {
 	buffer := make([]byte, checkDevBlockSize)
 	b := 0
 	numBlocks := (source.Size() + uint64(checkDevBlockSize) - 1) / uint64(checkDevBlockSize)
-	bitmap := util.NewBitfield(int(numBlocks))
+	bitmap := bitfield.NewBitfield(int(numBlocks))
 
 	hashData := make([]byte, 0)
 

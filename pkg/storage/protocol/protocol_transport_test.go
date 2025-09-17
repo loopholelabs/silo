@@ -73,7 +73,7 @@ func TestProtocolWriteAtComp(t *testing.T) {
 
 	sourceToProtocol := NewToProtocol(uint64(size), 1, pr)
 
-	sourceToProtocol.SetCompression(true)
+	sourceToProtocol.SetCompression(true, packets.WriteAtCompRLE)
 
 	storeFactory := func(di *packets.DevInfo) storage.Provider {
 		store = sources.NewMemoryStorage(int(di.Size))

@@ -1,6 +1,7 @@
 package packets
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"errors"
 	"testing"
@@ -249,25 +250,18 @@ func TestWriteAtComp(t *testing.T) {
 		4, 4, 4, 4, 4,
 		0, 0, 9, 9, 5, 23,
 		8, 8, 8, 8, 8, 8, 8, 8,
-		0}
+		0, 7}
 
-	// ENCODES AS
-	// 08 | 39 30 00 00 00 00 00 00
-	// 02 | 1a
-	// 09 | 00
-	// 0a | 01 02 00 00 00
-	// 0b | 04
-	// 0c | 00 00 09 09 05 17
-	// 11 | 08
-	// 02 | 00
+	for _, compType := range []CompressionType{CompressionTypeRLE, CompressionTypeGzip, CompressionTypeZeroes} {
+		b, err := EncodeWriteAtComp(compType, 12345, buff)
+		assert.NoError(t, err)
 
-	b := EncodeWriteAtComp(12345, buff)
+		off, data, err := DecodeWriteAtComp(b)
+		assert.NoError(t, err)
 
-	off, data, err := DecodeWriteAtComp(b)
-	assert.NoError(t, err)
-
-	assert.Equal(t, int64(12345), off)
-	assert.Equal(t, buff, data)
+		assert.Equal(t, int64(12345), off)
+		assert.Equal(t, buff, data)
+	}
 }
 
 func TestWriteAtWithMap(t *testing.T) {
@@ -411,4 +405,56 @@ func TestYouAlreadyHave(t *testing.T) {
 	assert.Equal(t, blockSize, blockSize2)
 	assert.Equal(t, blocks, blocks2)
 
+}
+
+func TestReadByHash(t *testing.T) {
+
+	hash := make([]byte, sha256.Size)
+	rand.Read(hash)
+	b := EncodeReadByHash([sha256.Size]byte(hash))
+
+	hash2, err := DecodeReadByHash(b)
+	assert.NoError(t, err)
+	assert.Equal(t, hash2, hash)
+
+	// Make sure we can't decode silly things
+	_, err = DecodeReadByHash(nil)
+	assert.Error(t, err)
+
+	_, err = DecodeReadByHash([]byte{
+		99,
+	})
+	assert.Error(t, err)
+
+}
+
+func TestReadByHashResponse(t *testing.T) {
+	rar := &ReadByHashResponse{
+		Error: nil,
+		Data:  []byte{1, 2, 3, 4, 5},
+	}
+
+	b := EncodeReadByHashResponse(rar)
+
+	rar2, err := DecodeReadByHashResponse(b)
+	assert.NoError(t, err)
+	assert.Equal(t, rar.Data, rar2.Data)
+	assert.Equal(t, rar.Error, rar2.Error)
+
+	// Make sure we can't decode silly things
+	_, err = DecodeReadByHashResponse(nil)
+	assert.Error(t, err)
+
+	_, err = DecodeReadByHashResponse([]byte{
+		99,
+	})
+	assert.Error(t, err)
+
+	// Test encoding error
+	be := EncodeReadByHashResponse(&ReadByHashResponse{Error: errors.New("Something")})
+
+	rare, err := DecodeReadByHashResponse(be)
+	assert.NoError(t, err)
+	assert.Error(t, rare.Error)
+	assert.Equal(t, "Something", rare.Error.Error())
 }

@@ -19,6 +19,7 @@ import (
 	siloprom "github.com/loopholelabs/silo/pkg/storage/metrics/prometheus"
 	"github.com/loopholelabs/silo/pkg/storage/migrator"
 	"github.com/loopholelabs/silo/pkg/storage/protocol"
+	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -140,7 +141,7 @@ func runServe(_ *cobra.Command, _ []string) {
 		ctime := time.Now()
 
 		// Migrate everything to the destination...
-		err = dg.StartMigrationTo(pro, true)
+		err = dg.StartMigrationTo(pro, true, packets.CompressionTypeRLE)
 		if err != nil {
 			dg.CloseAll()
 			panic(err)
@@ -163,9 +164,9 @@ func runServe(_ *cobra.Command, _ []string) {
 
 		// Now do a dirty block phase...
 		hooks := &devicegroup.MigrateDirtyHooks{
-			PreGetDirty: func(name string) error {
+			PreGetDirty: func(name string) (bool, error) {
 				fmt.Printf("# [%s]PreGetDirty\n", name)
-				return nil
+				return true, nil
 			},
 			PostGetDirty: func(name string, blocks []uint) (bool, error) {
 				fmt.Printf("# [%s]PostGetDirty %d\n", name, len(blocks))

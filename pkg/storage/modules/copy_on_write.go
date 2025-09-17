@@ -9,15 +9,15 @@ import (
 	"sync/atomic"
 
 	"github.com/loopholelabs/silo/pkg/storage"
-	"github.com/loopholelabs/silo/pkg/storage/util"
+	"github.com/loopholelabs/silo/pkg/storage/bitfield"
 )
 
 type CopyOnWrite struct {
 	storage.ProviderWithEvents
 	source     storage.Provider
 	cache      storage.Provider
-	exists     *util.Bitfield
-	nonzero    *util.Bitfield
+	exists     *bitfield.Bitfield
+	nonzero    *bitfield.Bitfield
 	size       uint64
 	blockSize  int
 	CloseFn    func()
@@ -121,6 +121,30 @@ func (i *CopyOnWrite) SendSiloEvent(eventType storage.EventType, eventData stora
 			i.lockAll() // Just makes sure that no writes are in progress while we snapshot.
 			unrequired := i.exists.CollectZeroes(0, i.exists.Length())
 			i.unlockAll()
+
+			orgData := storage.SendSiloEvent(i.source, eventType, eventData)
+
+			// Now we need to combine the two...
+			if len(orgData) == 1 {
+				orgBlockMap := make(map[uint]bool)
+				orgUnrequired := orgData[0].([]uint)
+				for _, b := range orgUnrequired {
+					orgBlockMap[b] = true
+				}
+				// If we don't require it, AND any lower layers don't require it, then include it in the list.
+				unrequiredAll := make([]uint, 0)
+				for _, b := range unrequired {
+					if orgBlockMap[b] {
+						unrequiredAll = append(unrequiredAll, b)
+					}
+				}
+
+				return []storage.EventReturnData{
+					unrequiredAll,
+				}
+			}
+
+			// Lower layers aren't cow, so we just return our own.
 			return []storage.EventReturnData{
 				unrequired,
 			}
@@ -139,7 +163,7 @@ func NewCopyOnWrite(source storage.Provider, cache storage.Provider, blockSize i
 		locks[t] = &sync.Mutex{}
 	}
 
-	nonzero := util.NewBitfield(int(numBlocks))
+	nonzero := bitfield.NewBitfield(int(numBlocks))
 
 	zeroHash := make([]byte, sha256.Size)
 
@@ -158,7 +182,7 @@ func NewCopyOnWrite(source storage.Provider, cache storage.Provider, blockSize i
 	return &CopyOnWrite{
 		source:     source,
 		cache:      cache,
-		exists:     util.NewBitfield(int(numBlocks)),
+		exists:     bitfield.NewBitfield(int(numBlocks)),
 		nonzero:    nonzero,
 		writeLocks: locks,
 		size:       source.Size(),
