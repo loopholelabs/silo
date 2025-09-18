@@ -134,6 +134,7 @@ func (m *Metrics) add(subsystem string, id string, name string, interval time.Du
 	m.lock.Unlock()
 
 	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
 	go func() {
 		for {
 			select {
@@ -200,12 +201,12 @@ func (m *Metrics) AddMigrator(id string, name string, mig *migrator.Migrator) {
 	m.add(m.config.SubMigrator, id, name, m.config.TickSyncer, func() {
 		met := mig.GetMetrics()
 		if met != nil {
-			m.updateMetric(id, name, m.config.SubSyncer, "block_size", uint64(lastmet.BlockSize), uint64(met.BlockSize))
-			m.updateMetric(id, name, m.config.SubSyncer, "total_blocks", uint64(lastmet.TotalBlocks), uint64(met.TotalBlocks))
-			m.updateMetric(id, name, m.config.SubSyncer, "active_blocks", uint64(lastmet.ActiveBlocks), uint64(met.ActiveBlocks))
-			m.updateMetric(id, name, m.config.SubSyncer, "migrated_blocks", uint64(lastmet.MigratedBlocks), uint64(met.MigratedBlocks))
-			m.updateMetric(id, name, m.config.SubSyncer, "ready_blocks", uint64(lastmet.ReadyBlocks), uint64(met.ReadyBlocks))
-			m.updateMetric(id, name, m.config.SubSyncer, "total_migrated_blocks", uint64(lastmet.TotalMigratedBlocks), uint64(met.TotalMigratedBlocks))
+			m.updateMetric(id, name, m.config.SubMigrator, "block_size", uint64(lastmet.BlockSize), uint64(met.BlockSize))
+			m.updateMetric(id, name, m.config.SubMigrator, "total_blocks", uint64(lastmet.TotalBlocks), uint64(met.TotalBlocks))
+			m.updateMetric(id, name, m.config.SubMigrator, "active_blocks", uint64(lastmet.ActiveBlocks), uint64(met.ActiveBlocks))
+			m.updateMetric(id, name, m.config.SubMigrator, "migrated_blocks", uint64(lastmet.MigratedBlocks), uint64(met.MigratedBlocks))
+			m.updateMetric(id, name, m.config.SubMigrator, "ready_blocks", uint64(lastmet.ReadyBlocks), uint64(met.ReadyBlocks))
+			m.updateMetric(id, name, m.config.SubMigrator, "total_migrated_blocks", uint64(lastmet.TotalMigratedBlocks), uint64(met.TotalMigratedBlocks))
 		}
 		lastmet = met
 	})
