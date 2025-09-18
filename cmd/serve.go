@@ -17,6 +17,7 @@ import (
 	"github.com/loopholelabs/silo/pkg/storage/devicegroup"
 	"github.com/loopholelabs/silo/pkg/storage/metrics"
 	siloprom "github.com/loopholelabs/silo/pkg/storage/metrics/prometheus"
+	silostatsd "github.com/loopholelabs/silo/pkg/storage/metrics/statsd"
 	"github.com/loopholelabs/silo/pkg/storage/migrator"
 	"github.com/loopholelabs/silo/pkg/storage/protocol"
 	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
@@ -40,22 +41,30 @@ var serveConf string
 var serveContinuous bool
 
 var serveMetrics string
+var serveMetricsSystem string
 var serveDebug bool
 var serveConcurrency int
+
+type MetricsSystem string
+
+const (
+	MetricsPrometheus MetricsSystem = "prometheus"
+	MetricsStatsD     MetricsSystem = "statsd"
+)
 
 func init() {
 	rootCmd.AddCommand(cmdServe)
 	cmdServe.Flags().StringVarP(&serveAddr, "addr", "a", ":5170", "Address to serve from")
 	cmdServe.Flags().StringVarP(&serveConf, "conf", "c", "silo.conf", "Configuration file")
 	cmdServe.Flags().BoolVarP(&serveDebug, "debug", "d", false, "Debug logging (trace)")
-	cmdServe.Flags().StringVarP(&serveMetrics, "metrics", "m", "", "Prom metrics address")
+	cmdServe.Flags().StringVarP(&serveMetrics, "metrics", "m", "", "Metrics address")
+	cmdServe.Flags().StringVarP(&serveMetricsSystem, "metrics-system", "M", string(MetricsPrometheus), "Metrics system (prometheus or statsd)")
 	cmdServe.Flags().BoolVarP(&serveContinuous, "continuous", "C", false, "Continuous sync")
 	cmdServe.Flags().IntVarP(&serveConcurrency, "concurrency", "x", 100, "Max total concurrency")
 }
 
 func runServe(_ *cobra.Command, _ []string) {
 	var log types.RootLogger
-	var reg *prometheus.Registry
 	var siloMetrics metrics.SiloMetrics
 
 	if serveDebug {
@@ -64,27 +73,34 @@ func runServe(_ *cobra.Command, _ []string) {
 	}
 
 	if serveMetrics != "" {
-		reg = prometheus.NewRegistry()
+		switch MetricsSystem(serveMetricsSystem) {
+		case MetricsPrometheus:
+			reg := prometheus.NewRegistry()
 
-		siloMetrics = siloprom.New(reg, siloprom.DefaultConfig())
+			siloMetrics = siloprom.New(reg, siloprom.DefaultConfig())
 
-		// Add the default go metrics
-		reg.MustRegister(
-			collectors.NewGoCollector(),
-			collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
-		)
+			// Add the default go metrics
+			reg.MustRegister(
+				collectors.NewGoCollector(),
+				collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+			)
 
-		http.Handle("/metrics", promhttp.HandlerFor(
-			reg,
-			promhttp.HandlerOpts{
-				// Opt into OpenMetrics to support exemplars.
-				EnableOpenMetrics: true,
-				// Pass custom registry
-				Registry: reg,
-			},
-		))
+			http.Handle("/metrics", promhttp.HandlerFor(
+				reg,
+				promhttp.HandlerOpts{
+					// Opt into OpenMetrics to support exemplars.
+					EnableOpenMetrics: true,
+					// Pass custom registry
+					Registry: reg,
+				},
+			))
 
-		go http.ListenAndServe(serveMetrics, nil)
+			go http.ListenAndServe(serveMetrics, nil)
+		case MetricsStatsD:
+			siloMetrics = silostatsd.New(serveMetrics, silostatsd.DefaultConfig())
+		default:
+			panic("Unknown metrics system")
+		}
 	}
 
 	fmt.Printf("Starting silo serve %s\n", serveAddr)

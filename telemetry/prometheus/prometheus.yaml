@@ -31,3 +31,7 @@ scrape_configs:
   - job_name: "silo"
     static_configs:
       - targets: ["localhost:2112", "localhost:2113"]
+
+  - job_name: "vector"
+    static_configs:
+      - targets: ["localhost:2114"]
