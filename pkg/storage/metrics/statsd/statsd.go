@@ -197,7 +197,7 @@ func (m *Metrics) RemoveSyncer(id string, name string) {
 
 func (m *Metrics) AddMigrator(id string, name string, mig *migrator.Migrator) {
 	lastmet := &migrator.MigrationProgress{}
-	m.add(m.config.SubSyncer, id, name, m.config.TickSyncer, func() {
+	m.add(m.config.SubMigrator, id, name, m.config.TickSyncer, func() {
 		met := mig.GetMetrics()
 		if met != nil {
 			m.updateMetric(id, name, m.config.SubSyncer, "block_size", uint64(lastmet.BlockSize), uint64(met.BlockSize))
