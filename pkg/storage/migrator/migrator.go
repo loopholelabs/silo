@@ -12,7 +12,6 @@ import (
 	"github.com/loopholelabs/logging/types"
 	"github.com/loopholelabs/silo/pkg/storage"
 	"github.com/loopholelabs/silo/pkg/storage/integrity"
-	"github.com/loopholelabs/silo/pkg/storage/modules"
 	"github.com/loopholelabs/silo/pkg/storage/protocol/packets"
 	"github.com/loopholelabs/silo/pkg/storage/util"
 )
@@ -78,7 +77,7 @@ type Migrator struct {
 	uuid                   uuid.UUID
 	logger                 types.Logger
 	sourceTracker          storage.TrackingProvider // Tracks writes so we know which are dirty
-	sourceMapped           *modules.MappedStorage
+	sourceMapped           storage.MappedProvider
 	destWriteWithMap       func([]byte, int64, map[uint64]uint64) (int, error)
 	dest                   storage.Provider
 	sourceLockFn           func()
@@ -178,7 +177,7 @@ func NewMigrator(source storage.TrackingProvider,
  * Set a MappedStorage for the source.
  *
  */
-func (m *Migrator) SetSourceMapped(ms *modules.MappedStorage, writer func([]byte, int64, map[uint64]uint64) (int, error)) {
+func (m *Migrator) SetSourceMapped(ms storage.MappedProvider, writer func([]byte, int64, map[uint64]uint64) (int, error)) {
 	m.sourceMapped = ms
 	m.destWriteWithMap = writer
 }

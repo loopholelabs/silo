@@ -19,6 +19,10 @@ type Provider interface {
 	CancelWrites(offset int64, length int64)
 }
 
+type MappedProvider interface {
+	GetMapForSourceRange(offset int64, length int) map[uint64]uint64
+}
+
 type LockableProvider interface {
 	Provider
 	Lock()
