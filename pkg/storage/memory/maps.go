@@ -51,13 +51,15 @@ func (me *MapsEntry) String() string {
 	if me.PermExecute {
 		perms[2] = MapsPermExecute
 	}
-	if me.PermPrivate && !me.PermShared {
+	switch {
+	case me.PermPrivate && !me.PermShared:
 		perms[3] = MapsPermPrivate
-	} else if me.PermShared && !me.PermPrivate {
+	case me.PermShared && !me.PermPrivate:
 		perms[3] = MapsPermShared
-	} else {
+	default:
 		perms[3] = MapsPermUnknown
 	}
+
 	return fmt.Sprintf("%016x-%016x %s %08x %s %s %s", me.AddrStart, me.AddrEnd, perms, me.Offset, me.Dev, me.Inode, me.Pathname)
 }
 
