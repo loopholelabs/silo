@@ -87,4 +87,5 @@ func TestMaps(t *testing.T) {
 	// We expect at least one range to have been removed
 	assert.Greater(t, len(oldRanges2.Entries), 0)
 
+	assert.Less(t, map3.Size(), map2.Size())
 }

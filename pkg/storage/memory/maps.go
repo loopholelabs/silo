@@ -187,7 +187,7 @@ func (mf *MapsFile) FindAddressPage(addr uint64) []*MapsEntry {
 	return matches
 }
 
-// Sub removes anything that is equal, and leaves things that aren't
+// Sub returns things in mf which aren't *exactly* in mf2
 func (mf *MapsFile) Sub(mf2 *MapsFile) *MapsFile {
 	entries := make([]*MapsEntry, 0)
 	for _, v := range mf.Entries {
@@ -211,14 +211,15 @@ func (mf *MapsFile) Size() uint64 {
 	return total
 }
 
-// AddedPages works out which memory pages have been added
+// AddedPages works out which memory pages have been added from mf->mf2
 func (mf *MapsFile) AddedPages(mf2 *MapsFile) []uint64 {
 	pages := make([]uint64, 0)
 	diff := mf2.Sub(mf) // Only look at entries in mf2 that differ
 
+	// NB: This is not optimized, but we can revisit later if needed.
 	for _, e := range diff.Entries {
 		for a := e.AddrStart; a < e.AddrEnd; a += PageSize {
-			matches := mf.FindAddressPage(a) // This could be optimized
+			matches := mf.FindAddressPage(a)
 			if len(matches) == 0 {
 				// It's been added
 				pages = append(pages, a)
