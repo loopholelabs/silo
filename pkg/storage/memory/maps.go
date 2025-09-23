@@ -7,6 +7,11 @@ import (
 	"strings"
 )
 
+type MapsFile struct {
+	Pid     int
+	Entries []*MapsEntry
+}
+
 type MapsEntry struct {
 	AddrStart   uint64
 	AddrEnd     uint64
@@ -50,7 +55,7 @@ const MapsPermPrivate = 'p'
 const MapsPermUnknown = '?'
 
 // GetMaps reads the /proc/<PID>/maps file and parses.
-func GetMaps(pid int) ([]*MapsEntry, error) {
+func GetMaps(pid int) (*MapsFile, error) {
 	maps, err := os.ReadFile(fmt.Sprintf("/proc/%d/maps", pid))
 	if err != nil {
 		return nil, err
@@ -126,5 +131,20 @@ func GetMaps(pid int) ([]*MapsEntry, error) {
 			entries = append(entries, entry)
 		}
 	}
-	return entries, nil
+
+	return &MapsFile{
+		Pid:     pid,
+		Entries: entries,
+	}, nil
+}
+
+// FindPathname searches for all matches for the given pathname (exact match)
+func (mf *MapsFile) FindPathname(pathname string) []*MapsEntry {
+	matches := make([]*MapsEntry, 0)
+	for _, e := range mf.Entries {
+		if e.Pathname == pathname {
+			matches = append(matches, e)
+		}
+	}
+	return matches
 }
