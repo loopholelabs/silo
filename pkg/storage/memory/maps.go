@@ -126,6 +126,5 @@ func GetMaps(pid int) ([]*MapsEntry, error) {
 			entries = append(entries, entry)
 		}
 	}
-
 	return entries, nil
 }
