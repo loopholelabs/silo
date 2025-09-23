@@ -16,16 +16,7 @@ func TestMaps(t *testing.T) {
 	map1, err := GetMaps(myPID)
 	assert.NoError(t, err)
 
-	totalMemory := uint64(0)
-	totalRO := uint64(0)
-	for _, v := range map1.Entries {
-		totalMemory += (v.AddrEnd - v.AddrStart)
-		if v.PermRead && !v.PermWrite {
-			totalRO += (v.AddrEnd - v.AddrStart)
-		}
-	}
-
-	fmt.Printf("Total memory %d, Read Only %d\n", totalMemory, totalRO)
+	fmt.Printf("Total memory %d\n", map1.Size())
 
 	// mmap a file, and make sure it shows up
 
@@ -42,53 +33,51 @@ func TestMaps(t *testing.T) {
 	mmdata, err := syscall.Mmap(int(f.Fd()), int64(offset), int(fileinfo.Size())-offset, prot, syscall.MAP_SHARED)
 	assert.NoError(t, err)
 
-	// Perform cleanup.
-	t.Cleanup(func() {
-		err = syscall.Munmap(mmdata)
-		assert.NoError(t, err)
-
-		err = f.Close()
-		assert.NoError(t, err)
-	})
-
 	// Check the maps again here...
 
 	map2, err := GetMaps(myPID)
 	assert.NoError(t, err)
 
-	// Make sure maps is right...
-
-	totalMemory2 := uint64(0)
-	totalRO2 := uint64(0)
-	for l, v := range map2.Entries {
-		fmt.Printf("%d | %v\n", l, v)
-		totalMemory2 += (v.AddrEnd - v.AddrStart)
-		if v.PermRead && !v.PermWrite {
-			totalRO2 += (v.AddrEnd - v.AddrStart)
-		}
-	}
-
-	fmt.Printf("Total memory2 %d, Read Only %d\n", totalMemory2, totalRO2)
+	fmt.Printf("Total memory2 %d\n", map2.Size())
 
 	// There should be more memory mapped to the process
-	assert.Greater(t, totalMemory2, totalMemory)
+	assert.Greater(t, map2.Size(), map1.Size())
 
-	// Look for the entry
+	// Look for the entry by pathname
 	matches := map2.FindPathname(file)
 
 	assert.Equal(t, 1, len(matches))
 
 	entry := matches[0]
-	// Check permissions
+	// Check permissions, offset, size
 	assert.True(t, entry.PermRead)
 	assert.True(t, entry.PermWrite)
 	assert.True(t, entry.PermShared)
-
 	assert.Equal(t, offset, int(entry.Offset))
-
 	assert.Equal(t, int(fileinfo.Size())-offset, int(entry.AddrEnd-entry.AddrStart))
 
-	for _, e := range matches {
-		fmt.Printf("- %v\n", e)
-	}
+	// Look at the diffs in the maps
+	oldRanges1 := map1.Sub(map2)
+	newRanges1 := map2.Sub(map1)
+
+	assert.Equal(t, 0, len(oldRanges1.Entries))
+	assert.Equal(t, 1, len(newRanges1.Entries))
+
+	// Now unmap the file
+	err = syscall.Munmap(mmdata)
+	assert.NoError(t, err)
+
+	err = f.Close()
+	assert.NoError(t, err)
+
+	map3, err := GetMaps(myPID)
+	assert.NoError(t, err)
+
+	// Look at the diffs again in the maps
+	oldRanges2 := map2.Sub(map3)
+	newRanges2 := map3.Sub(map2)
+
+	assert.Equal(t, 1, len(oldRanges2.Entries))
+	assert.Equal(t, 0, len(newRanges2.Entries))
+
 }

@@ -26,6 +26,20 @@ type MapsEntry struct {
 	Pathname    string
 }
 
+func (me *MapsEntry) Equal(me2 *MapsEntry) bool {
+	return me.AddrStart == me2.AddrStart &&
+		me.AddrEnd == me2.AddrEnd &&
+		me.PermRead == me2.PermRead &&
+		me.PermWrite == me2.PermWrite &&
+		me.PermExecute == me2.PermExecute &&
+		me.PermShared == me2.PermShared &&
+		me.PermPrivate == me2.PermPrivate &&
+		me.Offset == me2.Offset &&
+		me.Dev == me2.Dev &&
+		me.Inode == me2.Inode &&
+		me.Pathname == me2.Pathname
+}
+
 func (me *MapsEntry) String() string {
 	perms := []byte("----")
 	if me.PermRead {
@@ -147,4 +161,39 @@ func (mf *MapsFile) FindPathname(pathname string) []*MapsEntry {
 		}
 	}
 	return matches
+}
+
+// FindMemoryRange searches for all matches for the given memory range (exact match)
+func (mf *MapsFile) FindMemoryRange(addrStart uint64, addrEnd uint64) []*MapsEntry {
+	matches := make([]*MapsEntry, 0)
+	for _, e := range mf.Entries {
+		if e.AddrStart == addrStart && e.AddrEnd == addrEnd {
+			matches = append(matches, e)
+		}
+	}
+	return matches
+}
+
+// Sub removes anything that is equal, and leaves things that aren't
+func (mf *MapsFile) Sub(mf2 *MapsFile) *MapsFile {
+	entries := make([]*MapsEntry, 0)
+	for _, v := range mf.Entries {
+		matches := mf2.FindMemoryRange(v.AddrStart, v.AddrEnd)
+		if len(matches) != 1 || !matches[0].Equal(v) {
+			entries = append(entries, v)
+		}
+	}
+	return &MapsFile{
+		Pid:     mf.Pid,
+		Entries: entries,
+	}
+}
+
+// Total memory size
+func (mf *MapsFile) Size() uint64 {
+	total := uint64(0)
+	for _, v := range mf.Entries {
+		total += v.AddrEnd - v.AddrStart
+	}
+	return total
 }
