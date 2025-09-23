@@ -176,6 +176,17 @@ func (mf *MapsFile) FindMemoryRange(addrStart uint64, addrEnd uint64) []*MapsEnt
 	return matches
 }
 
+// FindAddress searches for all matches for the given memory address page (contains)
+func (mf *MapsFile) FindAddressPage(addr uint64) []*MapsEntry {
+	matches := make([]*MapsEntry, 0)
+	for _, e := range mf.Entries {
+		if addr >= e.AddrStart && addr+PageSize <= e.AddrEnd {
+			matches = append(matches, e)
+		}
+	}
+	return matches
+}
+
 // Sub removes anything that is equal, and leaves things that aren't
 func (mf *MapsFile) Sub(mf2 *MapsFile) *MapsFile {
 	entries := make([]*MapsEntry, 0)
@@ -198,4 +209,21 @@ func (mf *MapsFile) Size() uint64 {
 		total += v.AddrEnd - v.AddrStart
 	}
 	return total
+}
+
+// AddedPages works out which memory pages have been added
+func (mf *MapsFile) AddedPages(mf2 *MapsFile) []uint64 {
+	pages := make([]uint64, 0)
+	diff := mf2.Sub(mf) // Only look at entries in mf2 that differ
+
+	for _, e := range diff.Entries {
+		for a := e.AddrStart; a < e.AddrEnd; a += PageSize {
+			matches := mf.FindAddressPage(a) // This could be optimized
+			if len(matches) == 0 {
+				// It's been added
+				pages = append(pages, a)
+			}
+		}
+	}
+	return pages
 }

@@ -62,6 +62,10 @@ func TestMaps(t *testing.T) {
 	// We expect there to be a new one
 	assert.Greater(t, len(newRanges1.Entries), 0)
 
+	newpages := map1.AddedPages(map2)
+	oldpages := map2.AddedPages(map1)
+	fmt.Printf("New pages %d Old pages %d\n", len(newpages), len(oldpages))
+
 	// Now unmap the file
 	err = syscall.Munmap(mmdata)
 	assert.NoError(t, err)
