@@ -1,7 +1,6 @@
 package memory
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -16,8 +15,6 @@ func TestMaps(t *testing.T) {
 	map1, err := GetMaps(myPID)
 	assert.NoError(t, err)
 
-	fmt.Printf("Total memory %d\n", map1.Size())
-
 	// mmap a file, and make sure it shows up
 
 	file, err := filepath.Abs("testdata")
@@ -29,16 +26,15 @@ func TestMaps(t *testing.T) {
 	assert.NoError(t, err)
 
 	offset := 4096
+	mapsize := int(fileinfo.Size()) - offset
 	prot := syscall.PROT_READ | syscall.PROT_WRITE
-	mmdata, err := syscall.Mmap(int(f.Fd()), int64(offset), int(fileinfo.Size())-offset, prot, syscall.MAP_SHARED)
+	mmdata, err := syscall.Mmap(int(f.Fd()), int64(offset), mapsize, prot, syscall.MAP_SHARED)
 	assert.NoError(t, err)
 
 	// Check the maps again here...
 
 	map2, err := GetMaps(myPID)
 	assert.NoError(t, err)
-
-	fmt.Printf("Total memory2 %d\n", map2.Size())
 
 	// There should be more memory mapped to the process
 	assert.Greater(t, map2.Size(), map1.Size())
@@ -54,7 +50,17 @@ func TestMaps(t *testing.T) {
 	assert.True(t, entry.PermWrite)
 	assert.True(t, entry.PermShared)
 	assert.Equal(t, offset, int(entry.Offset))
-	assert.Equal(t, int(fileinfo.Size())-offset, int(entry.AddrEnd-entry.AddrStart))
+	assert.Equal(t, mapsize, int(entry.AddrEnd-entry.AddrStart))
+
+	// Check we can also lookup by the address range
+	matches2 := map2.FindMemoryRange(entry.AddrStart, entry.AddrEnd)
+	assert.Equal(t, 1, len(matches2))
+	assert.True(t, entry.Equal(matches2[0]))
+
+	// Check we can also lookup by an address inside
+	matches3 := map2.FindAddressPage(entry.AddrStart + PageSize)
+	assert.Equal(t, 1, len(matches3))
+	assert.True(t, entry.Equal(matches3[0]))
 
 	// Look at the diffs in the maps
 	newRanges1 := map2.Sub(map1)
@@ -63,8 +69,7 @@ func TestMaps(t *testing.T) {
 	assert.Greater(t, len(newRanges1.Entries), 0)
 
 	newpages := map1.AddedPages(map2)
-	oldpages := map2.AddedPages(map1)
-	fmt.Printf("New pages %d Old pages %d\n", len(newpages), len(oldpages))
+	assert.GreaterOrEqual(t, len(newpages), (mapsize+PageSize-1)/PageSize)
 
 	// Now unmap the file
 	err = syscall.Munmap(mmdata)
