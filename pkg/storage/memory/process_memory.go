@@ -347,6 +347,15 @@ func (pm *ProcessMemory) CopySoftDirtyMemory(addrStart uint64, addrEnd uint64, p
  *
  */
 func (pm *ProcessMemory) CopyMemoryRanges(addrAdjust int64, ranges []Range, prov storage.Provider) (uint64, error) {
+	cb := func(data []byte, offset uint64) error {
+		// NB here we adjust for the start of memory
+		_, err := prov.WriteAt(data, int64(offset)-addrAdjust)
+		return err
+	}
+	return pm.CopyMemoryRangesFunc(ranges, cb)
+}
+
+func (pm *ProcessMemory) CopyMemoryRangesFunc(ranges []Range, cb func([]byte, uint64) error) (uint64, error) {
 	bytesRead := uint64(0)
 	memf, err := os.OpenFile(fmt.Sprintf("/proc/%d/mem", pm.pid), os.O_RDONLY, 0)
 	if err != nil {
@@ -362,8 +371,7 @@ func (pm *ProcessMemory) CopyMemoryRanges(addrAdjust int64, ranges []Range, prov
 		if err != nil {
 			return err
 		}
-		// NB here we adjust for the start of memory
-		_, err = prov.WriteAt(dataBuffer[:length], int64(start)-addrAdjust)
+		err = cb(dataBuffer[:length], start)
 		return err
 	}
 
@@ -398,11 +406,15 @@ type Range struct {
 	Swapped uint64
 }
 
-/**
- * ReadSoftDirtyMemoryRangeList
- *
- */
 func (pm *ProcessMemory) ReadSoftDirtyMemoryRangeList(addrStart uint64, addrEnd uint64, lockCB func() error, unlockCB func() error) ([]Range, error) {
+	filterfn := func(val uint64) bool {
+		return (val&PagemapFlagPresent) == PagemapFlagPresent ||
+			(val&PagemapFlagSwapped) == PagemapFlagSwapped
+	}
+	return pm.ReadSoftDirtyMemoryRangeListFilter(addrStart, addrEnd, lockCB, unlockCB, filterfn)
+}
+
+func (pm *ProcessMemory) ReadSoftDirtyMemoryRangeListFilter(addrStart uint64, addrEnd uint64, lockCB func() error, unlockCB func() error, filterfn func(uint64) bool) ([]Range, error) {
 	ranges := make([]Range, 0)
 
 	f, err := os.OpenFile(fmt.Sprintf("/proc/%d/pagemap", pm.pid), os.O_RDONLY, 0)
@@ -452,9 +464,7 @@ func (pm *ProcessMemory) ReadSoftDirtyMemoryRangeList(addrStart uint64, addrEnd 
 		// swapped		SWAPPED NOT_PRESENT SOFT_DIRTY
 
 		if (val & PagemapFlagSoftDirty) == PagemapFlagSoftDirty {
-			if (val&PagemapFlagPresent) == PagemapFlagPresent ||
-				(val&PagemapFlagSwapped) == PagemapFlagSwapped {
-
+			if filterfn(val) {
 				if currentEnd == xx {
 					currentEnd = xx + PageSize
 					if (val & PagemapFlagSwapped) == PagemapFlagSwapped {
@@ -478,7 +488,6 @@ func (pm *ProcessMemory) ReadSoftDirtyMemoryRangeList(addrStart uint64, addrEnd 
 				}
 			}
 		}
-
 	}
 
 	if currentEnd != 0 {
