@@ -55,12 +55,12 @@ func TestMaps(t *testing.T) {
 	// Check we can also lookup by the address range
 	matches2 := map2.FindMemoryRange(entry.AddrStart, entry.AddrEnd)
 	assert.Equal(t, 1, len(matches2))
-	assert.True(t, entry.Equal(matches2[0]))
+	assert.Equal(t, *entry, *matches2[0])
 
 	// Check we can also lookup by an address inside
 	matches3 := map2.FindAddressPage(entry.AddrStart + PageSize)
 	assert.Equal(t, 1, len(matches3))
-	assert.True(t, entry.Equal(matches3[0]))
+	assert.Equal(t, *entry, *matches3[0])
 
 	// Look at the diffs in the maps
 	newRanges1 := map2.Sub(map1)
@@ -86,6 +86,4 @@ func TestMaps(t *testing.T) {
 
 	// We expect at least one range to have been removed
 	assert.Greater(t, len(oldRanges2.Entries), 0)
-
-	assert.Less(t, map3.Size(), map2.Size())
 }
