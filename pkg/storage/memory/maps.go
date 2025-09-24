@@ -68,15 +68,20 @@ func GetMaps(pid int) (*MapsFile, error) {
 	// Look through for the data we need...
 	lines := strings.Split(string(maps), "\n")
 	for _, line := range lines {
-		// Read the header...
-		headerData := strings.Fields(line)
-		// eg
+		// Parse the line into fields
+		lineFields := strings.Fields(line)
+		// Sample valid line is as follows
 		// 7b0bcb38c000-7b0bcb39e000 rw-p 00279000 07:00 8261                       /snap/code/206/usr/share/code/libffmpeg.so
 		entry := &MapsEntry{}
 
+		// Parsing logic
+		// * Address range must be present, in hex.
+		// * Permissions can be in any order, and any unknown permissions are ignored
+		// * All the other fields are optional.
+
 		// Parse address
-		if len(headerData) > 0 {
-			addrBits := strings.Split(headerData[0], "-")
+		if len(lineFields) > 0 {
+			addrBits := strings.Split(lineFields[0], "-")
 			if len(addrBits) == 2 {
 				addrStart, err := strconv.ParseUint(addrBits[0], 16, 64)
 				if err != nil {
@@ -91,8 +96,8 @@ func GetMaps(pid int) (*MapsFile, error) {
 			}
 
 			// Perms
-			if len(headerData) > 1 {
-				for _, c := range headerData[1] {
+			if len(lineFields) > 1 {
+				for _, c := range lineFields[1] {
 					switch c {
 					case MapsPermRead:
 						entry.PermRead = true
@@ -108,26 +113,26 @@ func GetMaps(pid int) (*MapsFile, error) {
 				}
 			}
 			// Offset
-			if len(headerData) > 2 {
-				offset, err := strconv.ParseUint(headerData[2], 16, 64)
+			if len(lineFields) > 2 {
+				offset, err := strconv.ParseUint(lineFields[2], 16, 64)
 				if err != nil {
 					return nil, err
 				}
 				entry.Offset = offset
 			}
 			// Dev
-			if len(headerData) > 3 {
-				entry.Dev = headerData[3]
+			if len(lineFields) > 3 {
+				entry.Dev = lineFields[3]
 			}
 
 			// Inode
-			if len(headerData) > 4 {
-				entry.Inode = headerData[4]
+			if len(lineFields) > 4 {
+				entry.Inode = lineFields[4]
 			}
 
 			// Pathname
-			if len(headerData) > 5 {
-				entry.Pathname = headerData[5]
+			if len(lineFields) > 5 {
+				entry.Pathname = lineFields[5]
 			}
 
 			entries = append(entries, entry)
