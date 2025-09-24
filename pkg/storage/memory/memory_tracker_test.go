@@ -1,6 +1,7 @@
 package memory
 
 import (
+	crand "crypto/rand"
 	"fmt"
 	"math/rand/v2"
 	"os"
@@ -12,37 +13,64 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+const testfile = "testdata"
+
 func TestTracker(t *testing.T) {
 	myPID := os.Getpid()
 
 	// Create a new tracker for the processes memory
-	tracker := NewMemoryTracker(myPID)
+	lock := func() error {
+		fmt.Printf("Lock process\n")
+		return nil
+	}
+	unlock := func() error {
+		fmt.Printf("Unlock process\n")
+		return nil
+	}
+
+	tracker := NewMemoryTracker(myPID, lock, unlock)
+
+	size := 1024 * 1024
+	buffer := make([]byte, size)
+	_, err := crand.Read(buffer)
+	assert.NoError(t, err)
+	err = os.WriteFile(testfile, buffer, 0666)
+	assert.NoError(t, err)
+	t.Cleanup(func() {
+		os.Remove(testfile)
+	})
 
 	// mmap a file, and make sure it shows up
-	file, err := filepath.Abs("testdata")
+	file, err := filepath.Abs(testfile)
 	assert.NoError(t, err)
 
 	f, err := os.OpenFile(file, os.O_RDWR, 0666)
 	assert.NoError(t, err)
-	fileinfo, err := f.Stat()
-	assert.NoError(t, err)
 
 	offset := 0
-	mapsize := int(fileinfo.Size()) - offset
+	mapsize := size - offset
 
 	var mappedEntry *MapsEntry
 	var mappedLock sync.Mutex
 	mappedData := make([]byte, mapsize)
 	mappedWrites := 0
 
+	totalMemoryAdded := uint64(0)
+	totalMemoryRemoved := uint64(0)
+	totalMemoryModified := uint64(0)
+
 	cb := &Callbacks{
 		AddPages: func(addr []uint64) {
 			fmt.Printf("# AddPages %d\n", len(addr))
+			totalMemoryAdded += uint64(len(addr) * PageSize)
 		},
 		RemovePages: func(addr []uint64) {
 			fmt.Printf("# RemovePages %d\n", len(addr))
+			totalMemoryRemoved += uint64(len(addr) * PageSize)
 		},
 		UpdatePages: func(data []byte, addr uint64) error {
+			totalMemoryModified += uint64(len(data))
+
 			// Here's we'll just concentrate on the mmapped file for now...
 			mappedLock.Lock()
 			defer mappedLock.Unlock()
@@ -91,7 +119,7 @@ func TestTracker(t *testing.T) {
 	// This should get any changes in the memory
 	_ = tracker.Update(cb)
 
-	// Make sure it picked them up
+	// Make sure it picked these memory changes up
 	assert.Equal(t, mmdata, mappedData)
 
 	// Now unmap the file
@@ -100,4 +128,9 @@ func TestTracker(t *testing.T) {
 
 	err = f.Close()
 	assert.NoError(t, err)
+
+	// This should get any changes in the memory
+	_ = tracker.Update(cb)
+
+	fmt.Printf("Memory added %d bytes, removed %d bytes, modified %d bytes\n", totalMemoryAdded, totalMemoryRemoved, totalMemoryModified)
 }
