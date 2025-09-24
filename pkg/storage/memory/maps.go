@@ -7,6 +7,13 @@ import (
 	"strings"
 )
 
+const MapsPermRead = 'r'
+const MapsPermWrite = 'w'
+const MapsPermExecute = 'x'
+const MapsPermShared = 's'
+const MapsPermPrivate = 'p'
+const MapsPermUnknown = '?'
+
 type MapsFile struct {
 	Pid     int
 	Entries []*MapsEntry
@@ -62,13 +69,6 @@ func (me *MapsEntry) String() string {
 
 	return fmt.Sprintf("%016x-%016x %s %08x %s %s %s", me.AddrStart, me.AddrEnd, perms, me.Offset, me.Dev, me.Inode, me.Pathname)
 }
-
-const MapsPermRead = 'r'
-const MapsPermWrite = 'w'
-const MapsPermExecute = 'x'
-const MapsPermShared = 's'
-const MapsPermPrivate = 'p'
-const MapsPermUnknown = '?'
 
 // GetMaps reads the /proc/<PID>/maps file and parses.
 func GetMaps(pid int) (*MapsFile, error) {
