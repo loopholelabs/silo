@@ -76,8 +76,10 @@ func GetMaps(pid int) (*MapsFile, error) {
 
 		// Parsing logic
 		// * Address range must be present, in hex.
-		// * Permissions can be in any order, and any unknown permissions are ignored
-		// * All the other fields are optional.
+		// * All other fields are optional.
+		// * Permissions can be in any order, and any unknown permissions are ignored.
+		// * Offset must be valid hex.
+		// * Any fields past the pathname are ignored.
 
 		// Parse address
 		if len(lineFields) > 0 {
