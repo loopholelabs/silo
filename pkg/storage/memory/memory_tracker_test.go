@@ -74,7 +74,7 @@ func TestTracker(t *testing.T) {
 			fmt.Printf("# RemovePages %d %d\n", pid, len(addr))
 			totalMemoryRemoved += uint64(len(addr) * PageSize)
 		},
-		UpdatePages: func(pid int, data []byte, addr uint64) error {
+		UpdatePages: func(_ int, data []byte, addr uint64) error {
 			totalMemoryModified += uint64(len(data))
 
 			// Here's we'll just concentrate on the mmapped file for now...
