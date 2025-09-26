@@ -60,6 +60,12 @@ func TestTracker(t *testing.T) {
 	totalMemoryModified := uint64(0)
 
 	cb := &Callbacks{
+		AddPID: func(pid int) {
+			fmt.Printf("# AddPID %d\n", pid)
+		},
+		RemovePID: func(pid int) {
+			fmt.Printf("# RemovePID %d\n", pid)
+		},
 		AddPages: func(pid int, addr []uint64) {
 			fmt.Printf("# AddPages %d %d\n", pid, len(addr))
 			totalMemoryAdded += uint64(len(addr) * PageSize)
