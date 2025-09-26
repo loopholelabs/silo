@@ -1,6 +1,7 @@
 package memory
 
 import (
+	crand "crypto/rand"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -10,6 +11,16 @@ import (
 )
 
 func TestMaps(t *testing.T) {
+	size := 1024 * 1024
+	buffer := make([]byte, size)
+	_, err := crand.Read(buffer)
+	assert.NoError(t, err)
+	err = os.WriteFile(testfile, buffer, 0666)
+	assert.NoError(t, err)
+	t.Cleanup(func() {
+		os.Remove(testfile)
+	})
+
 	myPID := os.Getpid()
 
 	map1, err := GetMaps(myPID)
@@ -17,7 +28,7 @@ func TestMaps(t *testing.T) {
 
 	// mmap a file, and make sure it shows up
 
-	file, err := filepath.Abs("testdata")
+	file, err := filepath.Abs(testfile)
 	assert.NoError(t, err)
 
 	f, err := os.OpenFile(file, os.O_RDWR, 0666)
