@@ -7,7 +7,6 @@ import (
 type Tracker struct {
 	Pid           int
 	lastMaps      *MapsFile
-	processMemory *ProcessMemory
 	lockProcess   func() error
 	unlockProcess func() error
 }
@@ -19,7 +18,6 @@ func NewMemoryTracker(pid int, lockProcess func() error, unlockProcess func() er
 			Pid:     pid,
 			Entries: []*MapsEntry{},
 		},
-		processMemory: NewProcessMemory(pid),
 		lockProcess:   lockProcess,
 		unlockProcess: unlockProcess,
 	}
@@ -27,9 +25,9 @@ func NewMemoryTracker(pid int, lockProcess func() error, unlockProcess func() er
 
 // Callbacks for Update()
 type Callbacks struct {
-	AddPages    func(addr []uint64)
-	RemovePages func(addrs []uint64)
-	UpdatePages func(data []byte, addr uint64) error
+	AddPages    func(pid int, addr []uint64)
+	RemovePages func(pid int, addrs []uint64)
+	UpdatePages func(pid int, data []byte, addr uint64) error
 }
 
 // Update finds what has changed in memory
@@ -47,9 +45,11 @@ func (mt *Tracker) Update(cb *Callbacks) error {
 	var pmErrors error
 	allRanges := make([]Range, 0)
 
+	processMemory := NewProcessMemory(mt.Pid)
+
 	// Now look for dirty pages, and copy out the memory
 	for _, e := range maps.Entries {
-		ranges, err := mt.processMemory.ReadSoftDirtyMemoryRangeListFilter(e.AddrStart, e.AddrEnd,
+		ranges, err := processMemory.ReadSoftDirtyMemoryRangeListFilter(e.AddrStart, e.AddrEnd,
 			func() error { return nil },
 			func() error { return nil },
 			func(_ uint64) bool { return true })
@@ -59,7 +59,7 @@ func (mt *Tracker) Update(cb *Callbacks) error {
 			allRanges = append(allRanges, ranges...)
 		}
 	}
-	err = mt.processMemory.ClearSoftDirty()
+	err = processMemory.ClearSoftDirty()
 	if err != nil {
 		errUnlock := mt.unlockProcess()
 		return errors.Join(err, errUnlock)
@@ -73,16 +73,19 @@ func (mt *Tracker) Update(cb *Callbacks) error {
 	// Report changes to the callbacks
 	addedPages := mt.lastMaps.AddedPages(maps)
 	if len(addedPages) > 0 {
-		cb.AddPages(addedPages)
+		cb.AddPages(mt.Pid, addedPages)
 	}
 	removedPages := maps.AddedPages(mt.lastMaps)
 	if len(removedPages) > 0 {
-		cb.RemovePages(removedPages)
+		cb.RemovePages(mt.Pid, removedPages)
 	}
 	mt.lastMaps = maps
 
 	// Now copy the memory, and report to callbacks
-	_, err = mt.processMemory.CopyMemoryRangesFunc(allRanges, cb.UpdatePages)
+	_, err = processMemory.CopyMemoryRangesFunc(allRanges, func(b []byte, u uint64) error {
+		return cb.UpdatePages(mt.Pid, b, u)
+	})
+
 	if err != nil {
 		pmErrors = errors.Join(pmErrors, err)
 	}

@@ -60,15 +60,15 @@ func TestTracker(t *testing.T) {
 	totalMemoryModified := uint64(0)
 
 	cb := &Callbacks{
-		AddPages: func(addr []uint64) {
-			fmt.Printf("# AddPages %d\n", len(addr))
+		AddPages: func(pid int, addr []uint64) {
+			fmt.Printf("# AddPages %d %d\n", pid, len(addr))
 			totalMemoryAdded += uint64(len(addr) * PageSize)
 		},
-		RemovePages: func(addr []uint64) {
-			fmt.Printf("# RemovePages %d\n", len(addr))
+		RemovePages: func(pid int, addr []uint64) {
+			fmt.Printf("# RemovePages %d %d\n", pid, len(addr))
 			totalMemoryRemoved += uint64(len(addr) * PageSize)
 		},
-		UpdatePages: func(data []byte, addr uint64) error {
+		UpdatePages: func(pid int, data []byte, addr uint64) error {
 			totalMemoryModified += uint64(len(data))
 
 			// Here's we'll just concentrate on the mmapped file for now...
