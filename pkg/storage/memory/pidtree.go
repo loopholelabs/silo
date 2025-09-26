@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// GetPids gets all children PIDs from a root PID
+// GetPids gets all children PIDs from a root PID. The process is assumed to be STOPPED.
 func GetPids(pid int) ([]int, error) {
 	pids := make([]int, 0)
 	entries, err := os.ReadDir(fmt.Sprintf("/proc/%d/task", pid))
